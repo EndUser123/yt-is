@@ -11,10 +11,17 @@ import time as time_module
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 # Ensure the package is importable
 sys.path.insert(0, str(Path(r"P:\\\\\\\packages\\yt-is").absolute()))
 
 from csf.transcript import LanguageConfig, TranscriptResult, fetch_transcript_chain
+
+
+@pytest.fixture(autouse=True)
+def _default_notebooklm_profile(monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "test-worker")
 
 
 class TestVideoIdValidation:
@@ -1379,7 +1386,7 @@ class TestCookieFreshnessTracker:
                 assert result is True
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
-                assert call_args[1:] == ["login", "--check"]
+                assert call_args[1:] == ["login", "--check", "--profile", "test-worker"]
                 assert call_args[0].endswith("csf-nlm-wrapper.cmd")
         finally:
             csf.transcript._cookie_freshness_tracker = None
@@ -1435,9 +1442,9 @@ class TestNlmAuthLogging:
         import csf.transcript
 
         def mock_run(cmd, **kwargs):
-            if cmd[1:] == ["login", "--check"]:
+            if cmd[1:] == ["login", "--check", "--profile", "test-worker"]:
                 return subprocess.CompletedProcess(cmd, 1, "", "Auth expired")
-            if cmd[1:] == ["login", "--force"]:
+            if cmd[1:] == ["login", "--force", "--profile", "test-worker"]:
                 return subprocess.CompletedProcess(cmd, 0, "", "OK")
             return subprocess.CompletedProcess(cmd, 0, "", "")
 

@@ -12,6 +12,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import time
@@ -52,20 +53,47 @@ def run_nlm_query(notebook_id: str, prompt: str) -> dict:
         return {"error": "Failed to parse JSON response"}
 
 
+def _extract_account(stdout: str, stderr: str = "") -> str:
+    for line in f"{stdout}\n{stderr}".splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("account:"):
+            return stripped.split(":", 1)[1].strip().lower()
+    return ""
+
+
 def check_auth() -> bool:
     """Verify nlm authentication is valid."""
-    result = nlm_auth_guard.run_nlm(nlm_auth_guard.add_profile_args(["notebook", "list", "--quiet"]), timeout_s=300)
-    return result.returncode == 0
+    profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
+    expected_email = os.getenv("YTIS_NLM_EXPECTED_EMAIL", "").strip().lower()
+    result = nlm_auth_guard.run_nlm(
+        nlm_auth_guard.add_profile_args(["login", "--check"], profile),
+        timeout_s=300,
+    )
+    if result.returncode != 0:
+        return False
+    if expected_email and _extract_account(result.stdout or "", result.stderr or "") != expected_email:
+        return False
+    return True
 
 
 def ensure_auth() -> None:
     """Re-authenticate if session expired."""
     if not check_auth():
         print("[AUTH] Session expired, re-authenticating...")
-        result = nlm_auth_guard.run_nlm(["login"], timeout_s=120)
+        profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
+        expected_email = os.getenv("YTIS_NLM_EXPECTED_EMAIL", "").strip().lower()
+        result = nlm_auth_guard.run_nlm(
+            nlm_auth_guard.add_profile_args(["login", "--force"], profile),
+            timeout_s=120,
+        )
         if result.returncode != 0:
             print(f"[AUTH] Failed to re-authenticate: {result.stderr}")
             raise RuntimeError("Authentication failed")
+        if expected_email and _extract_account(result.stdout or "", result.stderr or "") != expected_email:
+            raise RuntimeError(
+                f"Authentication returned {_extract_account(result.stdout or '', result.stderr or '') or '<missing account>'}, "
+                f"expected {expected_email}"
+            )
         print("[AUTH] Re-authenticated successfully")
 
 

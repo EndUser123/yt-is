@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,15 @@ def test_add_profile_args_pins_non_login_commands(monkeypatch, args, expected):
 def test_add_profile_args_leaves_login_commands_unpinned(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_PROFILE", "worker-01")
 
-    assert nlm_auth_guard.add_profile_args(["login", "--check"]) == ["login", "--check"]
+    assert nlm_auth_guard.add_profile_args(["login", "profile", "list"]) == ["login", "profile", "list"]
+    assert nlm_auth_guard.add_profile_args(["login", "switch"]) == ["login", "switch"]
+
+
+def test_add_profile_args_pins_login_auth_commands(monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "worker-01")
+
+    assert nlm_auth_guard.add_profile_args(["login", "--check"]) == ["login", "--check", "--profile", "worker-01"]
+    assert nlm_auth_guard.add_profile_args(["login", "--force"]) == ["login", "--force", "--profile", "worker-01"]
 
 
 def _browser_health_sample(
@@ -211,3 +220,56 @@ def test_browser_health_gate_marks_unrelated_chrome_degraded_when_over_budget(mo
     assert report["unexpected_process_count"] == 1
     assert report["warnings"]
     assert not report["issues"]
+
+
+def test_run_nlm_pins_profile_automatically(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, "ok", "")
+
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "worker-01")
+    monkeypatch.setattr(nlm_auth_guard, "ensure_latest_nlm_cli", lambda: None)
+    monkeypatch.setattr(nlm_auth_guard.subprocess, "run", fake_run)
+
+    result = nlm_auth_guard.run_nlm(["notebook", "list"], timeout_s=1)
+
+    assert result.returncode == 0
+    assert calls == [[nlm_auth_guard.get_nlm_executable(), "notebook", "list", "--profile", "worker-01"]]
+
+
+def test_run_nlm_fails_closed_without_profile(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, "ok", "")
+
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(nlm_auth_guard, "ensure_latest_nlm_cli", lambda: None)
+    monkeypatch.setattr(nlm_auth_guard.subprocess, "run", fake_run)
+
+    result = nlm_auth_guard.run_nlm(["notebook", "list"], timeout_s=1)
+
+    assert result.returncode == 1
+    assert "profile is required" in result.stderr.lower()
+    assert calls == []
+
+
+def test_run_nlm_uses_profile_from_env_override(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, "ok", "")
+
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    monkeypatch.setattr(nlm_auth_guard, "ensure_latest_nlm_cli", lambda: None)
+    monkeypatch.setattr(nlm_auth_guard.subprocess, "run", fake_run)
+
+    result = nlm_auth_guard.run_nlm(["notebook", "list"], timeout_s=1, env={"NOTEBOOKLM_PROFILE": "worker-02"})
+
+    assert result.returncode == 0
+    assert calls == [[nlm_auth_guard.get_nlm_executable(), "notebook", "list", "--profile", "worker-02"]]

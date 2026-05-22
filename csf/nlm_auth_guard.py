@@ -63,14 +63,20 @@ def add_profile_args(args: list[str], profile: str | None = None) -> list[str]:
     if not args:
         return list(args)
     command = args[0]
-    if command in {"login", "help", "--help", "-h", "version"}:
+    if command in {"help", "--help", "-h", "version", "--version"}:
+        return list(args)
+    if command == "login" and len(args) > 1 and args[1] in {"profile", "switch", "--help", "-h", "--version"}:
         return list(args)
     return [*args, "--profile", resolved_profile]
 
 
-def is_nlm_auth_noninteractive() -> bool:
-    value = os.getenv("YTIS_NLM_AUTH_NONINTERACTIVE", "").strip().lower()
+def _is_nlm_auth_noninteractive(env: dict[str, str] | None = None) -> bool:
+    value = _resolved_env_value("YTIS_NLM_AUTH_NONINTERACTIVE", env).lower()
     return value in {"1", "true", "yes", "on"}
+
+
+def is_nlm_auth_noninteractive() -> bool:
+    return _is_nlm_auth_noninteractive()
 
 
 def get_nlm_auth_context(*, profile: str | None = None, expected_email: str = "") -> NLMAuthContext:
@@ -92,11 +98,37 @@ def get_nlm_executable() -> str:
     return _bootstrap_get_nlm_executable()
 
 
+def _resolved_env_value(key: str, env: dict[str, str] | None = None) -> str:
+    if env is not None and key in env and env[key] is not None:
+        return str(env[key]).strip()
+    return os.getenv(key, "").strip()
+
+
+def _command_requires_profile(args: list[str]) -> bool:
+    if not args:
+        return False
+    command = args[0]
+    if command in {"help", "--help", "-h", "version", "--version"}:
+        return False
+    if command == "login" and len(args) > 1 and args[1] in {"profile", "switch", "--help", "-h", "--version"}:
+        return False
+    return True
+
+
 def run_nlm(args: list[str], *, timeout_s: float, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     ensure_latest_nlm_cli()
+    effective_profile = _resolved_env_value("NOTEBOOKLM_PROFILE", env)
+    resolved_args = add_profile_args(list(args), profile=effective_profile)
+    if _command_requires_profile(resolved_args) and "--profile" not in resolved_args and "-p" not in resolved_args:
+        return subprocess.CompletedProcess(
+            build_nlm_command(*resolved_args),
+            1,
+            "",
+            "NotebookLM profile is required for auth-bearing commands",
+        )
     try:
         return subprocess.run(
-            build_nlm_command(*args),
+            build_nlm_command(*resolved_args),
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -104,7 +136,7 @@ def run_nlm(args: list[str], *, timeout_s: float, env: dict[str, str] | None = N
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return subprocess.CompletedProcess(build_nlm_command(*args), 1, "", "NLM command timed out")
+        return subprocess.CompletedProcess(build_nlm_command(*resolved_args), 1, "", "NLM command timed out")
 
 
 def chrome_pids_for_root(browser_root: str | Path) -> set[int]:

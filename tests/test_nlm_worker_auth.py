@@ -676,7 +676,7 @@ def test_refresh_source_profile_fails_closed_when_default_chrome_profile_appears
 
     def fake_run(cmd, **kwargs):
         called.append(cmd)
-        if cmd[:2] == ["login"] and "--provider" in cmd and "--cdp-url" in cmd:
+        if len(cmd) >= 2 and cmd[1] == "login" and "--provider" in cmd and "--cdp-url" in cmd:
             return subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", "")
         return subprocess.CompletedProcess(cmd, 1, "", "unexpected command")
 
@@ -688,7 +688,7 @@ def test_refresh_source_profile_fails_closed_when_default_chrome_profile_appears
     assert stopped_pids == [12345]
     assert called == [
         [
-            "nlm",
+            nlm_worker_auth.nlm_auth_guard.get_nlm_executable(),
             "login",
             "--profile",
             "ytis-pro-worker-01",

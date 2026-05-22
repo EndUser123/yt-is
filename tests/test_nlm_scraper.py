@@ -15,6 +15,11 @@ import sys
 sys.path.insert(0, str(Path(r"P:\\\\\\packages\yt-is").absolute()))
 
 
+@pytest.fixture(autouse=True)
+def _default_notebooklm_profile(monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "test-worker")
+
+
 class TestNLMIndustrialScraperStagingNotebook:
     """Test staging notebook lifecycle: create, add, auto-clear at 300."""
 
@@ -596,14 +601,15 @@ class TestRunNlmAuthRetry:
         # call_count: 1 for failed attempt, 2 for login, 3 for retry
         assert mock_run.call_count == 3
         calls = mock_run.call_args_list
+        profile_suffix = ["--profile", "test-worker"]
         # First call: the actual command (failed)
-        assert calls[0][0][0][1:] == ["notebook", "list"]
+        assert calls[0][0][0][1:] == ["notebook", "list", *profile_suffix]
         assert calls[0][0][0][0].endswith("csf-nlm-wrapper.cmd")
         # Second call: login --force
-        assert calls[1][0][0][1:] == ["login", "--force"]
+        assert calls[1][0][0][1:] == ["login", "--force", *profile_suffix]
         assert calls[1][0][0][0].endswith("csf-nlm-wrapper.cmd")
         # Third call: retry of original command
-        assert calls[2][0][0][1:] == ["notebook", "list"]
+        assert calls[2][0][0][1:] == ["notebook", "list", *profile_suffix]
         assert calls[2][0][0][0].endswith("csf-nlm-wrapper.cmd")
         assert res.stdout == "retry-success"
 
