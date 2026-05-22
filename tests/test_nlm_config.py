@@ -22,7 +22,7 @@ class TestSharedNlmConfig:
         assert cfg.browser_profile_name == "notebooklm"
         assert cfg.browser_profile_seed_root.endswith("notebooklm-browser-session")
         assert cfg.nlm_browser_mode == "persistent"
-        assert cfg.nlm_browser_profile_root.replace("\\", "/").endswith("browser/notebooklm")
+        assert cfg.nlm_browser_profile_root.endswith(r"browser\notebooklm")
         assert cfg.nlm_browser_executable.endswith(r"chrome.exe")
         assert cfg.nlm_browser_channel == "chrome"
         assert cfg.nlm_browser_bootstrap_headless is False
@@ -127,7 +127,7 @@ class TestSharedNlmConfig:
             browser_profile_name="notebooklm-test",
             browser_profile_seed_root="P:\\\\\\.data/yt-is/notebooklm-browser-session-test",
             nlm_browser_mode="persistent",
-            nlm_browser_profile_root="P:/.data/yt-is/browser/notebooklm-test",
+            nlm_browser_profile_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-test",
             nlm_browser_executable=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             nlm_browser_channel="chrome",
             nlm_browser_bootstrap_headless=False,

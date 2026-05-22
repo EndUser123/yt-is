@@ -11,8 +11,8 @@ Standard run order: `doctor` on the lane config and run root, then a short smoke
 
 ## NotebookLM CLI Update Note
 
-- `nlm` / `notebooklm-mcp-cli` is now pinned in this workspace to GitHub commit `3711e782cfa63db948bd34f9ae6e97210821223c`, which installs `0.6.2`.
-- The update matters to this project because it keeps the auth helper on the current launcher/runtime path and includes upstream auth robustness fixes that shipped after `0.5.30`.
+- yt-is now probes the latest `notebooklm-mcp-cli` release first and falls back to the known-good pinned GitHub commit `3711e782cfa63db948bd34f9ae6e97210821223c` if `nlm login --check` breaks on this machine; the pinned commit installs `0.6.2`.
+- The update matters to this project because it keeps the auth helper on the current launcher/runtime path when the latest build is healthy, while preserving a stable fallback that includes upstream auth robustness fixes shipped after `0.5.30`.
 - Relevant upstream changes to remember:
   - `0.5.30` fixed stale `NOTEBOOKLM_COOKIES` auth loops and removed deprecated cookie/session env vars.
 - `0.5.31` separated MCP stdout and stderr so the server does not exit on startup chatter.

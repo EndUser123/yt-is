@@ -14,6 +14,7 @@ The best single-lane sustained hot-path result is about `3928` videos/hour on th
 - `4` workers
 - benchmark `--batch-size 200`
 - serial reusable pipeline mode
+- reusable active windows disabled unless explicitly testing cadence (`YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE`)
 - Whisper excluded from hot-path VPH
 
 The sharded lane test runs matched CLI/browser account lanes concurrently and reports combined hot-path VPH from wall-clock elapsed time.
@@ -38,7 +39,9 @@ Each lane also gets its own `YTIS_BATCH_STATUS_DB_PATH` under the lane output ro
 When the worker auth profiles are not prefix-derived, set `notebooklm_profiles` to the exact CLI profile names in worker order.
 The browser-health gate normalizes Chrome subprocess `--user-data-dir` paths before matching them against lane roots, so escaped subprocess cmdlines do not trip false `unexpected_process` reports during preflight.
 The sharded lane runner now defaults to a fresh per-run worker-state root under `<run-root>/<lane>/worker_states`. Pass `--preserve-worker-state-root` only when you are explicitly testing reuse against the lane JSON fallback root.
-Lane throughput is measured with `throughput_wall_elapsed_s`, not the full end-to-end `wall_elapsed_s`. The full wall span still records hygiene and cleanup for diagnostics, but `combined.hot_path_videos_per_hour` uses the cleanup-free throughput span.
+Lane throughput is measured with `throughput_wall_elapsed_s`, not the full end-to-end `wall_elapsed_s`. The full wall span still records hygiene and cleanup for diagnostics, but `combined.hot_path_videos_per_hour` uses the lane-process throughput span, which excludes only the parent-process Chrome reap and does not subtract per-batch worker cleanup.
+Reusable NotebookLM workers support opt-in active windows: large worker batches can be internally processed as `add -> extract -> reset_sources` windows when `YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE` is greater than `0`. Leave it unset for normal throughput runs; set it only when the experiment is explicitly about source-age cadence.
+Reusable workers also support an opt-in source-age-aware cadence when `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED` is true. That mode keeps the notebook alive, trims the next add/extract window as the oldest source ages toward the cliff, and uses the soft/hard thresholds from `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S` and `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S` with a minimum window floor from `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE`.
 For the YT-IS Pro/Free lanes, keep the browser roots lane-specific and persistent:
 
 - Pro root: `P:\\\\\\.data/yt-is/browser/notebooklm-pro`
@@ -87,7 +90,7 @@ Save a config like this as `P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro
 ## Command
 
 Workers are lane-specific in the JSON config.
-Use `python P:\\\\\\packages/yt-is/bin/csf-sharded-lane-sequence --lane-config <lane-config> --run-root <run-root>` for the guarded sequence. It runs doctor, smoke, evidence check, then soak, writes smoke and soak outputs under `<run-root>/smoke` and `<run-root>/soak` by default, uses `<run-root>/<lane>/worker_states` unless you pass `--preserve-worker-state-root`, and reads the shared benchmark trace corpus from `P:\\\\\\packages/yt-is/.logs/worker_count_trials` unless you pass `--trace-root`. The same trace corpus is used for both phases.
+Use `python P:\\\\\\packages/yt-is/bin/csf-sharded-lane-sequence --lane-config <lane-config> --run-root <run-root>` for the guarded sequence. It runs doctor, smoke, evidence check, then soak, writes smoke and soak outputs under `<run-root>/smoke` and `<run-root>/soak` by default, uses `<run-root>/<lane>/worker_states` unless you pass `--preserve-worker-state-root`, and reads the shared benchmark trace corpus from `P:\\\\\\packages/yt-is/.logs/worker_count_trials` unless you pass `--trace-root`. The same trace corpus is used for both phases. If you know the intended worker geometry, pass `--expected-worker-shape` so the smoke evidence check fails closed when a run is mislabeled.
 
 ## Dedicated Browser Auth Refresh
 
@@ -493,6 +496,12 @@ The age cap held both lanes under the earlier cliff, with Pro `source_ready_age_
 and Free `source_ready_age_s_max=160.966`, and the residual failures shifted to
 `nlm_content_below_threshold` rather than `NOT_FOUND`. That makes the next branch a tighter age-cap
 or sparse-content follow-up, not broader retry markers.
+The smaller-subbatch source-readiness follow-up later regressed to `980.81` combined hot-path VPH
+with `710/90/800` on the same 4+4 shape, so batch-size `100` is not the next ceiling branch;
+move to earlier notebook rotation or readiness polling instead of more subbatch tuning.
+The newer minimum-window source-age cadence rerun, `fresh_state_3plus3_source_age_cadence_hygiene_run05`,
+finished smoke only at `1185.78` combined hot-path VPH with `613/137/750` and a free-lane shortfall at
+`350/400`, so the more aggressive hard-threshold collapse is not a usable control run.
 
 ## Success Criteria
 

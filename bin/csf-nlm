@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import fasteners
-import subprocess
 import sys
 from pathlib import Path
 
@@ -58,22 +57,8 @@ def _check_auth() -> bool:
 
     Returns True if authenticated, False otherwise.
     """
-    nlm_path = Path("P:/npm/bin/nlm-cli.js")
-    if nlm_path.exists():
-        cmd = ["node", str(nlm_path), "login", "--check"]
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            return False
-    else:
-        result = nlm_auth_guard.run_nlm(["login", "--check"], timeout_s=30)
-        return result.returncode == 0
+    result = nlm_auth_guard.run_nlm(["login", "--check"], timeout_s=30)
+    return result.returncode == 0
 
 
 def cmd_sync(notebook: str | None = None) -> None:

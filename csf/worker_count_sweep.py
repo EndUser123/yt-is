@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from csf.nlm_batch import cleanup_stale_worker_notebooks
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CSF_SOURCE_SCRIPT = REPO_ROOT / "bin" / "csf-source"
 DEFAULT_WORKER_COUNTS = (1, 2, 3, 4, 5, 6, 7, 8)
@@ -450,7 +452,10 @@ def _load_fetch_completed_event(log_dir: Path) -> dict[str, Any]:
             line = line.strip()
             if not line:
                 continue
-            entry = json.loads(line)
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             if entry.get("action") == "fetch_completed":
                 data = entry.get("data", {})
                 if isinstance(data, dict):
@@ -554,12 +559,20 @@ def _run_fetch_trial(
     limit: int,
     sample_label: str,
     output_dir: Path,
-        source_filter: str | None = None,
-        python_executable: str | None = None,
-    ) -> TrialArtifact:
+    source_filter: str | None = None,
+    python_executable: str | None = None,
+) -> TrialArtifact:
     run_dir = output_dir / f"workers_{workers:02d}"
     log_dir = run_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    deleted, failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
+    if failed:
+        raise RuntimeError(
+            f"worker notebook preflight cleanup failed before workers={workers}: deleted={deleted} failed={failed}"
+        )
+    if deleted:
+        print(f"[trial] preflight worker notebook cleanup deleted={deleted} failed={failed}")
 
     stdout_path = run_dir / "stdout.txt"
     stderr_path = run_dir / "stderr.txt"
@@ -583,18 +596,27 @@ def _run_fetch_trial(
         "--limit",
         str(limit),
     ])
-    proc = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        cwd=str(REPO_ROOT),
-        env=env,
-        check=False,
-    )
-    returncode = proc.returncode
-    stdout_text = proc.stdout or ""
-    stderr_text = proc.stderr or ""
-    elapsed_s = round(time.monotonic() - started_at, 3)
+    try:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+            env=env,
+            check=False,
+        )
+        returncode = proc.returncode
+        stdout_text = proc.stdout or ""
+        stderr_text = proc.stderr or ""
+        elapsed_s = round(time.monotonic() - started_at, 3)
+    finally:
+        post_deleted, post_failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
+        if post_failed:
+            print(f"[trial] post-run worker notebook cleanup deleted={post_deleted} failed={post_failed}")
+            raise RuntimeError(
+                f"worker notebook post-run cleanup failed after workers={workers}: "
+                f"deleted={post_deleted} failed={post_failed}"
+            )
 
     stdout_path.write_text(stdout_text, encoding="utf-8")
     stderr_path.write_text(stderr_text, encoding="utf-8")

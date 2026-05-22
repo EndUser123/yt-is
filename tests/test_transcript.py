@@ -67,7 +67,7 @@ class TestVideoIdValidation:
 
 
 class TestFallbackChain:
-    """Test the fallback chain order: ytdlp → ytdlp_ejs → direct_api → notebooklm → selenium → whisper.
+    """Test the fallback chain order: oEmbed → ytdlp → ytdlp_ejs → direct_api → notebooklm → selenium → whisper.
 
     Free sources (ytdlp) are tried before paid/notebooklm to conserve resources.
     """
@@ -222,7 +222,7 @@ class TestFallbackChain:
             assert result.source == "ytdlp_ejs"
 
     def test_ytdlp_ejs_fails_notebooklm_succeeds(self):
-        """ytdlp and ytdlp_ejs fail, notebooklm succeeds (now 3rd in chain)."""
+        """ytdlp and ytdlp_ejs fail, notebooklm succeeds after direct_api."""
         with (
             mock.patch("csf.transcript._fetch_via_ytdlp") as mock_ytdlp,
             mock.patch("csf.transcript._fetch_via_ytdlp_with_cookies") as mock_ejs,
@@ -252,7 +252,7 @@ class TestFallbackChain:
             assert result.source == "notebooklm"
 
     def test_notebooklm_fails_selenium_succeeds(self):
-        """ytdlp, ytdlp_ejs, notebooklm fail, selenium succeeds (now 4th in chain)."""
+        """ytdlp, ytdlp_ejs, direct_api, notebooklm fail, selenium succeeds."""
         with (
             mock.patch("csf.transcript._fetch_via_ytdlp") as mock_ytdlp,
             mock.patch("csf.transcript._fetch_via_ytdlp_with_cookies") as mock_ejs,
@@ -280,6 +280,114 @@ class TestFallbackChain:
             mock_whisper.assert_not_called()
             assert result.transcript == "transcript via selenium"
             assert result.source == "selenium"
+
+    def test_stage_logging_records_each_attempt_and_winner(self):
+        """Each fallback stage should emit start/completion timing metadata."""
+        with (
+            mock.patch("csf.transcript._fetch_via_ytdlp") as mock_ytdlp,
+            mock.patch("csf.transcript._fetch_via_ytdlp_with_cookies") as mock_ejs,
+            mock.patch("csf.transcript._fetch_via_direct_api") as mock_direct,
+            mock.patch("csf.transcript._fetch_via_notebooklm") as mock_nlm,
+            mock.patch("csf.transcript._fetch_via_selenium_firefox") as mock_selenium,
+            mock.patch("csf.transcript._fetch_via_whisper") as mock_whisper,
+            mock.patch("csf.transcript.log_action") as mock_log,
+            mock.patch("time.sleep"),
+        ):
+            mock_ytdlp.return_value = (False, None, "no captions")
+            mock_ejs.return_value = (False, None, "no cookies")
+            mock_direct.return_value = (False, None, "direct_api no_transcript: subtitles disabled")
+            mock_nlm.return_value = (True, "transcript via notebooklm", None)
+            mock_selenium.return_value = (True, "should not be called", None)
+            mock_whisper.return_value = (True, "should not be called", None)
+
+            result = fetch_transcript_chain(
+                "dQw4w9WgXcQ", LanguageConfig(prefer_lang="en")
+            )
+
+        assert result.source == "notebooklm"
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args and call.args[0] == "transcript_stage_completed"
+        ]
+        assert [event["stage"] for event in completed[:2]] == ["ytdlp", "ytdlp"]
+        assert [event["stage"] for event in completed[-2:]] == ["direct_api", "notebooklm"]
+        assert completed[-1]["status"] == "success"
+        assert completed[-1]["chars"] == len("transcript via notebooklm")
+
+    def test_notebooklm_source_add_failure_can_skip_expensive_fallbacks(self, monkeypatch):
+        """Throughput runs can stop before Selenium/Whisper after NLM add failure."""
+        from csf import nlm_config
+
+        monkeypatch.setenv("YTIS_WHISPER_ON_NOTEBOOKLM_ADD_FAILED", "false")
+        nlm_config.reset_nlm_config()
+        try:
+            with (
+                mock.patch("csf.transcript._fetch_via_ytdlp") as mock_ytdlp,
+                mock.patch("csf.transcript._fetch_via_ytdlp_with_cookies") as mock_ejs,
+                mock.patch("csf.transcript._fetch_via_direct_api") as mock_direct,
+                mock.patch("csf.transcript._fetch_via_notebooklm") as mock_nlm,
+                mock.patch("csf.transcript._fetch_via_selenium_firefox") as mock_selenium,
+                mock.patch("csf.transcript._fetch_via_whisper") as mock_whisper,
+                mock.patch("csf.transcript._record_soft_negative") as mock_soft_negative,
+                mock.patch("time.sleep"),
+            ):
+                mock_ytdlp.return_value = (False, None, "no captions")
+                mock_ejs.return_value = (False, None, "no cookies")
+                mock_direct.return_value = (False, None, "direct_api no_transcript: subtitles disabled")
+                mock_nlm.return_value = (False, None, "source add failed")
+
+                result = fetch_transcript_chain(
+                    "dQw4w9WgXcQ", LanguageConfig(prefer_lang="en")
+                )
+        finally:
+            nlm_config.reset_nlm_config()
+
+        assert result.source == "none"
+        assert result.last_stage == "notebooklm"
+        assert result.failure_reason == "source_add_failed"
+        mock_selenium.assert_not_called()
+        mock_whisper.assert_not_called()
+        mock_soft_negative.assert_called_once()
+
+    def test_expensive_fallbacks_can_be_disabled(self, monkeypatch):
+        """Selenium and Whisper should be skipped when throughput policy disables them."""
+        from csf import nlm_config
+
+        monkeypatch.setenv("YTIS_TRANSCRIPT_EXPENSIVE_FALLBACK_ENABLED", "false")
+        nlm_config.reset_nlm_config()
+        try:
+            with (
+                mock.patch("csf.transcript._fetch_via_ytdlp") as mock_ytdlp,
+                mock.patch("csf.transcript._fetch_via_ytdlp_with_cookies") as mock_ejs,
+                mock.patch("csf.transcript._fetch_via_direct_api") as mock_direct,
+                mock.patch("csf.transcript._fetch_via_notebooklm") as mock_nlm,
+                mock.patch("csf.transcript._fetch_via_selenium_firefox") as mock_selenium,
+                mock.patch("csf.transcript._fetch_via_whisper") as mock_whisper,
+                mock.patch("csf.transcript.log_action") as mock_log,
+                mock.patch("time.sleep"),
+            ):
+                mock_ytdlp.return_value = (False, None, "no captions")
+                mock_ejs.return_value = (False, None, "no cookies")
+                mock_direct.return_value = (False, None, "direct_api no_transcript: subtitles disabled")
+                mock_nlm.return_value = (False, None, "nlm failed")
+
+                result = fetch_transcript_chain(
+                    "dQw4w9WgXcQ", LanguageConfig(prefer_lang="en")
+                )
+        finally:
+            nlm_config.reset_nlm_config()
+
+        assert result.source == "none"
+        mock_selenium.assert_not_called()
+        mock_whisper.assert_not_called()
+        skipped = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args and call.args[0] == "transcript_stage_completed"
+            and call.args[1]["status"] == "skipped"
+        ]
+        assert [event["stage"] for event in skipped] == ["selenium", "whisper"]
 
     def test_all_methods_fail_returns_empty_result(self):
         """When all methods fail, returns TranscriptResult with empty transcript."""
@@ -1258,17 +1366,21 @@ class TestCookieFreshnessTracker:
         finally:
             csf.transcript._cookie_freshness_tracker = None
 
-    def test_cookie_freshness_expired_ttl(self):
-        """is_fresh() returns False and does not call subprocess when TTL expired."""
+    def test_cookie_freshness_probe_on_expired_ttl(self):
+        """is_fresh() calls nlm login --check when TTL expired."""
         import csf.transcript
         csf.transcript._cookie_freshness_tracker = None
         try:
             tracker = csf.transcript._get_cookie_freshness_tracker()
             tracker._last_check = 0.0  # TTL expired
             with mock.patch("subprocess.run") as mock_run:
+                mock_run.return_value = mock.Mock(returncode=0)
                 result = tracker.is_fresh()
-                assert result is False
-                mock_run.assert_not_called()
+                assert result is True
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
+                assert call_args[1:] == ["login", "--check"]
+                assert call_args[0].endswith("csf-nlm-wrapper.cmd")
         finally:
             csf.transcript._cookie_freshness_tracker = None
 
@@ -1284,22 +1396,18 @@ class TestCookieFreshnessTracker:
         finally:
             csf.transcript._cookie_freshness_tracker = None
 
-    def test_cookie_freshness_starts_daemon(self):
-        """is_fresh() starts daemon thread when auth_daemon_enabled is True."""
+    def test_cookie_freshness_probe_failure_invalidates(self):
+        """Probe failure calls invalidate() and returns False."""
         import csf.transcript
         csf.transcript._cookie_freshness_tracker = None
         try:
             tracker = csf.transcript._get_cookie_freshness_tracker()
-            tracker._last_check = time_module.monotonic()
-            # Enable daemon
-            with mock.patch("csf.transcript.get_nlm_config") as mock_cfg:
-                cfg = mock.Mock()
-                cfg.auth_daemon_enabled = True
-                mock_cfg.return_value = cfg
-                with mock.patch.object(tracker, "_start_daemon") as mock_start:
-                    result = tracker.is_fresh()
-                    assert result is True
-                    mock_start.assert_called_once()
+            tracker._last_check = 0.0
+            with mock.patch("subprocess.run") as mock_run:
+                mock_run.return_value = mock.Mock(returncode=1)
+                result = tracker.is_fresh()
+                assert result is False
+                assert tracker._last_check == 0.0
         finally:
             csf.transcript._cookie_freshness_tracker = None
 
@@ -1327,9 +1435,9 @@ class TestNlmAuthLogging:
         import csf.transcript
 
         def mock_run(cmd, **kwargs):
-            if cmd == ["nlm", "login", "--check"]:
+            if cmd[1:] == ["login", "--check"]:
                 return subprocess.CompletedProcess(cmd, 1, "", "Auth expired")
-            if cmd == ["nlm", "login"]:
+            if cmd[1:] == ["login", "--force"]:
                 return subprocess.CompletedProcess(cmd, 0, "", "OK")
             return subprocess.CompletedProcess(cmd, 0, "", "")
 
@@ -1351,9 +1459,9 @@ class TestNlmAuthLogging:
 
         def mock_run(cmd, **kwargs):
             calls.append(cmd)
-            if cmd == ["nlm", "login", "--check", "--profile", "ytis-pro-worker-01"]:
+            if cmd[1:] == ["login", "--check", "--profile", "ytis-pro-worker-01"]:
                 return mock.MagicMock(returncode=1, stdout="", stderr="Auth expired")
-            if cmd == ["nlm", "login", "--force", "--profile", "ytis-pro-worker-01"]:
+            if cmd[1:] == ["login", "--force", "--profile", "ytis-pro-worker-01"]:
                 return mock.MagicMock(returncode=0, stdout="", stderr="OK")
             return mock.MagicMock(returncode=0, stdout="", stderr="")
 
@@ -1363,8 +1471,8 @@ class TestNlmAuthLogging:
                     assert csf.transcript._ensure_nlm_auth() is True
 
         assert calls[:2] == [
-            ["nlm", "login", "--check", "--profile", "ytis-pro-worker-01"],
-            ["nlm", "login", "--force", "--profile", "ytis-pro-worker-01"],
+            [calls[0][0], "login", "--check", "--profile", "ytis-pro-worker-01"],
+            [calls[1][0], "login", "--force", "--profile", "ytis-pro-worker-01"],
         ]
 
 

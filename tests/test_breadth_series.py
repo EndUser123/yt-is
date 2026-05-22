@@ -9,6 +9,7 @@ from csf.breadth_series import (
     build_breadth_series_plan,
     build_breadth_tiers,
     choose_best_breadth_tier,
+    _aggregate_summary,
     run_breadth_series,
 )
 
@@ -41,6 +42,54 @@ def test_build_breadth_series_plan_includes_phase_names_and_workers():
     assert plan["phase_b"]["worker_counts"] == [2, 4, 6, 8, 10]
     assert [tier["name"] for tier in plan["phase_a"]["tiers"]] == ["broad", "mid", "narrow"]
     assert [tier["cohort_shape"] for tier in plan["phase_a"]["tiers"]] == ["trace", "mixed", "captioned"]
+
+
+def test_aggregate_summary_includes_extract_elapsed_from_worker_stage_totals():
+    summary = {
+        "batches": [
+            {
+                "policies": [
+                    {
+                        "policy": "notebooklm_route_plus_fallback_30s_1w",
+                        "results": [
+                            {
+                                "success_count": 10,
+                                "fail_count": 0,
+                                "skip_count": 0,
+                                "processed_count": 10,
+                                "hot_path_success_count": 10,
+                                "transcript_fallback_success_count": 0,
+                                "elapsed_s": 100.0,
+                                "process_elapsed_s": 100.0,
+                                "add_elapsed_s": 12.0,
+                                "readiness_elapsed_s": 5.0,
+                                "cleanup_elapsed_s": 2.0,
+                                "worker_idle_wait_s": 1.0,
+                                "source_ready_age_s_total": 20.0,
+                                "source_ready_age_s_max": 4.0,
+                                "content_fetch_status_counts": {"ready": 10},
+                                "fetch_completed": {
+                                    "worker_stage_totals": {
+                                        "startup_prepare_total_elapsed_s_total": 3.0,
+                                        "setup_elapsed_s_total": 4.0,
+                                        "extract_elapsed_s_total": 8.0,
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+    aggregate = _aggregate_summary(summary, "notebooklm_route_plus_fallback_30s_1w")
+
+    assert aggregate["startup_prepare_total_elapsed_s_total"] == 3.0
+    assert aggregate["setup_elapsed_s_total"] == 4.0
+    assert aggregate["extract_elapsed_s_total"] == 8.0
+    assert aggregate["add_elapsed_s_total"] == 12.0
+    assert aggregate["content_fetch_status_counts_total"] == {"ready": 10}
 
 
 def test_run_breadth_series_runs_breadth_then_scaling(tmp_path, monkeypatch):

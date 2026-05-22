@@ -129,7 +129,7 @@ STAGE_VERSION_NOTEBOOKLM = 1
 STAGE_VERSION_DIRECT_API = 2
 
 # Pluggable external transcript provider hook — called after all built-in
-# stages (yt-dlp → cookies → Selenium → NLM) have failed.
+# stages (yt-dlp → cookies → direct_api → NLM → Selenium → Whisper) have failed.
 # Set via register_external_transcript_provider().
 # Signature: (video_id: str, lang: str) -> tuple[bool, str | None, str | None]
 # Returns: (success, transcript_text, error)
@@ -299,54 +299,34 @@ class CookieFreshnessTracker:
         self._last_check: float = 0.0
         self._ttl: float = 300.0
         self._lock = threading.Lock()
-        self._daemon_started: bool = False
-
-    def _start_daemon(self) -> None:
-        with self._lock:
-            if self._daemon_started:
-                return
-            self._daemon_started = True
-            # Spawn daemon thread
-            t = threading.Thread(target=self._daemon_loop, name="NLMAuthDaemon", daemon=True)
-            t.start()
-            logging.info("[CookieFreshnessTracker] Asynchronous background keep-alive NLMAuthDaemon started.")
-
-    def _daemon_loop(self) -> None:
-        while True:
-            cfg = get_nlm_config()
-            if not cfg.auth_daemon_enabled:
-                time.sleep(10)
-                continue
-
-            try:
-                check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
-                if check.returncode == 0:
-                    with self._lock:
-                        self._last_check = time.monotonic()
-                    log_action("nlm_auth_checked", {"component": "transcript", "status": "ok", "mode": "daemon"})
-                else:
-                    self.invalidate()
-                    log_action("nlm_auth_checked", {"component": "transcript", "status": "failed", "mode": "daemon"})
-            except subprocess.TimeoutExpired:
-                logging.warning("[CookieFreshnessTracker] background daemon probe timed out after 30s — invalidating")
-                self.invalidate()
-            except Exception as e:
-                logging.warning(f"[CookieFreshnessTracker] background daemon probe error: {e} — invalidating")
-                self.invalidate()
-
-            time.sleep(cfg.auth_check_interval)
 
     def is_fresh(self) -> bool:
-        """Return True if cookie is fresh in-memory TTL cache.
+        """Return True if cookie is fresh (TTL not expired or active probe passes).
 
-        If daemon is enabled, starts it if not already started.
+        If TTL has expired, runs `nlm login --check` (30s timeout) as authoritative.
+        On probe failure or timeout, calls invalidate() and returns False.
         """
-        cfg = get_nlm_config()
-        if cfg.auth_daemon_enabled:
-            if not self._daemon_started:
-                self._start_daemon()
         with self._lock:
-            return time.monotonic() - self._last_check <= self._ttl
+            if time.monotonic() - self._last_check <= self._ttl:
+                return True
+
+        # TTL expired — run active probe
+        try:
+            check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
+            if check.returncode == 0:
+                with self._lock:
+                    self._last_check = time.monotonic()
+                return True
+            # Probe failed — invalidate and fall through
+            self.invalidate()
+            return False
+        except subprocess.TimeoutExpired:
+            logging.warning("[CookieFreshnessTracker] probe timed out after 30s — invalidating")
+            self.invalidate()
+            return False
+        except Exception:
+            self.invalidate()
+            return False
 
     def invalidate(self) -> None:
         """Force re-auth on next _ensure_nlm_auth call."""
@@ -1548,24 +1528,19 @@ def _ensure_nlm_auth() -> bool:
 
     freshness = _get_cookie_freshness_tracker()
 
-    # 2. CookieFreshnessTracker — check cache/probe freshness
-    if freshness.is_fresh():
-        return True
+    # 2. CookieFreshnessTracker — if stale, force re-auth
+    if not freshness.is_fresh():
+        logging.info("[_ensure_nlm_auth] cookie stale, forcing re-auth")
 
-    logging.info("[_ensure_nlm_auth] cookie stale, forcing re-auth")
-
-    # 3. Run --check probe (only if daemon is disabled)
-    if not get_nlm_config().auth_daemon_enabled:
-        try:
-            check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
-            if check.returncode == 0:
-                log_action("nlm_auth_checked", {"component": "transcript", "status": "ok"})
-                rate_limiter.record_call()
-                with freshness._lock:
-                    freshness._last_check = time.monotonic()
-                return True
-        except Exception:
-            pass
+    # 3. Run --check probe (for freshness tracker to record success)
+    try:
+        check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
+        if check.returncode == 0:
+            log_action("nlm_auth_checked", {"component": "transcript", "status": "ok"})
+            rate_limiter.record_call()
+            return True
+    except Exception:
+        pass
 
     # 4. Auth expired — auto-recover with force login
     try:

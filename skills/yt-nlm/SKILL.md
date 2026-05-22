@@ -157,7 +157,7 @@ When transcript fetch fails, `last_stage` and `failure_reason` are recorded:
 
 - `/nlm` — NotebookLM CLI operations
 - `/yt-is` — Video discovery and tracking
-- `/yt-is fetch` — yt-dlp → Selenium transcript download (escalation chain)
+- `/yt-is fetch` — full transcript fallback chain download
 - `/yt-dlp` — Local transcript download via yt-dlp
 
 ## ADR Reference

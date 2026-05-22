@@ -29,12 +29,16 @@ Check all tracked YouTube channels for new videos and manage your channel list.
 - `sync` — Check all tracked channels for new videos (RSS + gap detection + API)
 - `list` — List all tracked channels with metadata
 - `add <url>` — Add a new channel or playlist to track
-- `fetch` — Download pending transcripts via escalation chain (yt-dlp → Selenium)
+- `fetch` — Download pending transcripts via the full fallback chain (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper)
 
 **Escalation Chain:**
-1. yt-dlp (WEB client) — fastest, works for most public videos
-2. yt-dlp with cookies — for age-restricted videos
-3. Selenium Firefox — fallback for bot-check failures
+1. oEmbed reachability probe — cheap early skip for removed/private videos
+2. yt-dlp (WEB client) — fastest, works for most public videos
+3. yt-dlp with cookies — for age-restricted videos
+4. direct API — cheap terminal/no-transcript discriminator
+5. NotebookLM Industrial — best for backlog and clean transcripts
+6. Selenium Firefox — fallback for bot-check failures
+7. Whisper — audio fallback
 
 **Key files:**
 - `bin/yt-is` — CLI entry point
@@ -51,7 +55,7 @@ Check all tracked YouTube channels for new videos and manage your channel list.
 
 Extract YouTube transcripts using NotebookLM's batch notebook workflow.
 
-**Entry point**: `csf/transcript.py` via `bin/csf-source fetch --method nlm`
+**Entry point**: `csf/transcript.py` via the NotebookLM batch path inside `bin/csf-source fetch`
 
 **Why batch over ephemeral:**
 - **Ephemeral (deprecated)**: 1 notebook per video — wastes NotebookLM slots, slow
@@ -64,8 +68,10 @@ Extract YouTube transcripts using NotebookLM's batch notebook workflow.
 4. Delete notebook: `nlm notebook delete <nb-id> --confirm`
 
 **Auth auto-recovery:**
+- yt-is bootstraps the NotebookLM CLI with `uv tool install --upgrade notebooklm-mcp-cli` on first use unless `YTIS_NLM_AUTO_UPDATE=0`, then probes `nlm login --check` and falls back to the known-good pinned git spec via `YTIS_NLM_FALLBACK_SPEC` if the latest build breaks login on this machine.
 - Before commands: `nlm login --check`
 - If expired: `nlm login --force` (no user prompt)
+- Before any benchmark trial: clear stale worker notebooks through the existing worker-notebook cleanup path, then let the worker process prewarm its notebook before timed batches start.
 
 **Key files:**
 - `csf/transcript.py` — `_fetch_via_notebooklm_batch()` with auth recovery
@@ -116,7 +122,7 @@ When launching from a shell inside the repo, prefer `python bin/csf-source ...` 
     batch_status.sqlite: analysis_status (pending)
             │
             ├─► /yt-is fetch ──► python bin/csf-source fetch ──► transcripts.sqlite
-            │                              └─► Selenium ──► transcripts.sqlite
+            │                              └─► full fallback chain
             │
             └─► /yt-nlm ──► NotebookLM batch ──► transcripts.sqlite
                         │

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import types
 from concurrent.futures import Future
@@ -16,7 +17,7 @@ import pytest
 
 def _load_csf_source_module():
     """Load the extensionless bin/csf-source script as a module."""
-    path = Path(r"$CLAUDE_PLUGIN_ROOT/bin\csf-source")
+    path = Path(os.path.expandvars(r"$CLAUDE_PLUGIN_ROOT/bin\csf-source"))
     loader = SourceFileLoader("csf_source_timing_test", str(path))
     spec = spec_from_loader(loader.name, loader)
     if spec is None or spec.loader is None:
@@ -83,6 +84,28 @@ def test_industrial_worker_default_notebook_title_uses_explicit_profile(tmp_path
 
     assert worker["notebook_title"] == "ytis-free2-worker-02"
     assert worker["env"]["YTIS_NLM_OWNER_NOTEBOOK_TITLE"] == "ytis-free2-worker-02"
+
+
+def test_parent_nlm_auth_uses_first_explicit_worker_profile(monkeypatch):
+    """Live industrial fetches should not require a separate parent NotebookLM profile."""
+    mod = _load_csf_source_module()
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return types.SimpleNamespace(returncode=0, stdout="Account: a.hominidae@gmail.com\n", stderr="")
+
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    monkeypatch.setenv(
+        "YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILES",
+        "ytis-pro-worker-01,ytis-pro-worker-02",
+    )
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(mod.nlm_auth_guard, "run_nlm", fake_run)
+
+    assert mod._ensure_nlm_auth() is True
+    assert calls == [["login", "--check", "--profile", "ytis-pro-worker-01"]]
+    assert mod.os.environ["NOTEBOOKLM_PROFILE"] == "ytis-pro-worker-01"
 
 
 def test_ensure_nlm_auth_noninteractive_uses_force_refresh(monkeypatch):

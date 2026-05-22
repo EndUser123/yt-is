@@ -64,12 +64,13 @@ When yt-dlp fails, the chain escalates automatically:
 
 | Step | Method | Source | Sleep Interval |
 |------|--------|--------|-----------------|
-| 1 | yt-dlp (WEB client, curl_cffi TLS) | ytdlp | 15-60s |
-| 2 | yt-dlp with cookies (age-restricted) | ytdlp_ejs | 20-90s |
-| 3 | Selenium Firefox | selenium | varies |
-| 4 | NotebookLM | notebooklm | varies |
-| 5 | faster-whisper (audio) | whisper | N/A |
-| 6 | Direct API | direct_api | varies |
+| 1 | oEmbed reachability probe | oembed | N/A |
+| 2 | yt-dlp (WEB client, curl_cffi TLS) | ytdlp | 15-60s |
+| 3 | yt-dlp with cookies (age-restricted) | ytdlp_ejs | 20-90s |
+| 4 | Direct API | direct_api | varies |
+| 5 | NotebookLM | notebooklm | varies |
+| 6 | Selenium Firefox | selenium | varies |
+| 7 | faster-whisper (audio) | whisper | N/A |
 
 ## How It Works
 
@@ -86,13 +87,14 @@ When yt-dlp fails, the chain escalates automatically:
 - Must release cookie file on exit (reference counting via `_release_cookie_file()`)
 - Sleep interval: 20-90 seconds (more conservative with authenticated requests)
 
-**Full chain: `fetch_transcript_chain()` (transcript.py:1560)**
-1. `_fetch_via_ytdlp()` — WEB client, public videos
-2. `_fetch_via_ytdlp_with_cookies()` — cookies + EJS, age-restricted
-3. `_fetch_via_selenium_firefox()` — full browser, bot-blocked
-4. `_fetch_via_notebooklm()` — NotebookLM batch
-5. `_fetch_via_whisper()` — audio download + transcription
-6. `_fetch_via_direct_api()` — final fallback
+**Full chain: `fetch_transcript_chain()`**
+1. oEmbed reachability probe — cheap early skip for removed/private videos
+2. `_fetch_via_ytdlp()` — WEB client, public videos
+3. `_fetch_via_ytdlp_with_cookies()` — cookies + EJS, age-restricted
+4. `_fetch_via_direct_api()` — cheap terminal/no-transcript discriminator
+5. `_fetch_via_notebooklm()` — NotebookLM batch
+6. `_fetch_via_selenium_firefox()` — full browser, bot-blocked
+7. `_fetch_via_whisper()` — audio download + transcription
 
 ## Error Handling
 
@@ -150,7 +152,7 @@ fetch_transcript_chain()
 # 1. Discover new videos (RSS + API gap fill)
 /yt-is sync
 
-# 2. Download transcripts (yt-dlp → Selenium → NLM escalation)
+# 2. Download transcripts (full fallback chain)
 # Recommended: use yt-is fetch instead of yt-dlp directly
 /yt-is fetch
 

@@ -6,7 +6,7 @@ Usage:
     csf-source list                               # List all tracked sources
     csf-source check <source_id>                  # Daily check: RSS → gap detection → API if needed
     csf-source sync <source_id>                   # Process all pending videos via batch
-    csf-source fetch [--source <url>]             # ESCALATION: fetch transcripts (yt-dlp → NotebookLM CLI batch)
+    csf-source fetch [--source <url>]             # ESCALATION: fetch transcripts (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper)
     csf-source history                            # Extract channels from YouTube watch history and add new ones
 
 Commands:
@@ -27,8 +27,9 @@ Commands:
               Does NOT check for new videos — use 'check' first.
 
     fetch     ESCALATION BATCH PROCESS: Fetch transcripts for pending videos using
-              yt-dlp → NotebookLM CLI batch fallback chain. This is the RECOMMENDED way to download
-              transcripts in bulk. Handles retries, caching, and status updates automatically.
+              Full transcript fallback chain: oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper.
+              This is the RECOMMENDED way to download transcripts in bulk. Handles retries,
+              caching, and status updates automatically.
               --source <url>   Process only this channel URL (default: all channels)
               --dry-run        Show what would be fetched without fetching
               --workers <n>    Number of parallel workers (default: 1)
@@ -89,10 +90,7 @@ from csf.transcript import (
     LanguageConfig,
     build_transcript_cache_metadata,
     fetch_transcript_chain,
-    _get_cookie_freshness_tracker,
 )
-from csf.nlm_config import get_nlm_config
-
 from csf.batch_status import (
     get_channel_metadata,
     set_channel_metadata,
@@ -154,6 +152,37 @@ def _take_industrial_dispatch_groups(
                 continue
             group.append(batch_queue.pop(0))
     return [group for group in groups if group]
+
+
+def _drain_balanced_pending_batches(
+    pending_buffer: deque[tuple[str, str]],
+    *,
+    batch_size: int,
+    worker_count: int,
+) -> list[list[tuple[str, str]]]:
+    """Drain full worker batches and interleave items across workers.
+
+    Without balancing, contiguous DB-order slices can hand one worker a
+    pathological chunk of similar sources. When multiple worker batches are
+    ready, distribute items round-robin across those batches so each worker
+    receives a mix from the same scan window.
+    """
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    if worker_count < 1:
+        raise ValueError("worker_count must be >= 1")
+    full_batch_count = len(pending_buffer) // batch_size
+    if full_batch_count < 1:
+        return []
+    batch_count = min(worker_count, full_batch_count)
+    if batch_count == 1:
+        return [[pending_buffer.popleft() for _ in range(batch_size)]]
+
+    drained = [pending_buffer.popleft() for _ in range(batch_count * batch_size)]
+    batches: list[list[tuple[str, str]]] = [[] for _ in range(batch_count)]
+    for index, item in enumerate(drained):
+        batches[index % batch_count].append(item)
+    return batches
 
 
 def _load_worker_summary(result_path: Path | None, stdout_text: str) -> dict[str, object]:
@@ -320,6 +349,26 @@ def _get_nlm_login_profile_args() -> list[str]:
     return nlm_auth_guard.get_login_profile_args(profile)
 
 
+def _resolve_parent_nlm_profile() -> str:
+    """Return the profile the parent process should use for auth checks."""
+    profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
+    if profile:
+        return profile
+    explicit_profiles = [
+        item.strip()
+        for item in os.getenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILES", "").split(",")
+        if item.strip()
+    ]
+    if explicit_profiles:
+        profile = explicit_profiles[0]
+    else:
+        prefix = os.getenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILE_PREFIX", "").strip()
+        profile = f"{prefix}-01" if prefix else ""
+    if profile:
+        os.environ["NOTEBOOKLM_PROFILE"] = profile
+    return profile
+
+
 def _get_nlm_auth_force_refresh_every_checks() -> int:
     raw = os.getenv("YTIS_NLM_AUTH_FORCE_REFRESH_EVERY_CHECKS", "").strip()
     if not raw:
@@ -372,8 +421,8 @@ def _stop_default_nlm_chrome_profile(stage: str) -> bool:
 
 def _ensure_nlm_auth() -> bool:
     """Check NotebookLM auth and refresh it within the active profile if needed."""
+    profile = _resolve_parent_nlm_profile()
     login_profile_args = _get_nlm_login_profile_args()
-    profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
     expected_email = expected_email_for_profile(profile).lower()
     check_count = _next_nlm_auth_check_count()
     force_every = _get_nlm_auth_force_refresh_every_checks()
@@ -381,37 +430,22 @@ def _ensure_nlm_auth() -> bool:
     if _is_nlm_auth_noninteractive() and not profile:
         print("[source] FATAL: noninteractive NLM auth requires NOTEBOOKLM_PROFILE.", file=sys.stderr)
         sys.exit(1)
-
-    # 1. CookieFreshnessTracker check
-    freshness = _get_cookie_freshness_tracker()
-    if freshness.is_fresh():
+    _stop_default_nlm_chrome_profile("auth_check_before")
+    login_check = nlm_auth_guard.run_nlm(["login", "--check", *login_profile_args], timeout_s=30)
+    if login_check.stderr == "NLM command timed out":
+        print("[source] FATAL: NLM auth check timed out.", file=sys.stderr)
+        sys.exit(1)
+    if _stop_default_nlm_chrome_profile("auth_check_after"):
+        print("[source] FATAL: NLM auth check opened the default chrome-profile.", file=sys.stderr)
+        sys.exit(1)
+    account = _extract_nlm_account(login_check.stdout or "", login_check.stderr or "")
+    if login_check.returncode == 0 and (not expected_email or account == expected_email) and not force_scheduled:
         return True
-
-    # 2. Run --check probe (only if daemon is disabled)
-    if not get_nlm_config().auth_daemon_enabled:
-        _stop_default_nlm_chrome_profile("auth_check_before")
-        login_check = nlm_auth_guard.run_nlm(["login", "--check", *login_profile_args], timeout_s=30)
-        if login_check.stderr == "NLM command timed out":
-            print("[source] FATAL: NLM auth check timed out.", file=sys.stderr)
-            sys.exit(1)
-        if _stop_default_nlm_chrome_profile("auth_check_after"):
-            print("[source] FATAL: NLM auth check opened the default chrome-profile.", file=sys.stderr)
-            sys.exit(1)
-        account = _extract_nlm_account(login_check.stdout or "", login_check.stderr or "")
-        if login_check.returncode == 0 and (not expected_email or account == expected_email) and not force_scheduled:
-            with freshness._lock:
-                freshness._last_check = time.monotonic()
-            return True
-        if login_check.returncode == 0 and expected_email and account and account != expected_email:
-            print(
-                f"[source] NLM auth profile {profile} is mapped to {account}, expected {expected_email}.",
-                file=sys.stderr,
-            )
-    else:
-        # If daemon is enabled, and we got here, it means we don't do the active check,
-        # but the freshness cache was stale. We fall through to perform the refresh.
-        pass
-
+    if login_check.returncode == 0 and expected_email and account and account != expected_email:
+        print(
+            f"[source] NLM auth profile {profile} is mapped to {account}, expected {expected_email}.",
+            file=sys.stderr,
+        )
     if force_scheduled:
         log_action(
             "nlm_auth_forced_refresh_scheduled",
@@ -496,8 +530,6 @@ def _ensure_nlm_auth() -> bool:
         print("[source] FATAL: NLM auth refresh did not produce the expected profile session.", file=sys.stderr)
         sys.exit(1)
     print("[source] NLM re-authenticated.", file=sys.stderr)
-    with freshness._lock:
-        freshness._last_check = time.monotonic()
     return True
 
 
@@ -1682,10 +1714,11 @@ def cmd_fetch(
     workers: int = 1,
     max_items: int | None = None,
 ) -> None:
-    """Fetch transcripts for pending videos using escalation chain (yt-dlp → Selenium).
+    """Fetch transcripts for pending videos using the full fallback chain.
 
-    This is the ESCALATION BATCH PROCESS - tries fastest methods first, falls back
-    to slower but more reliable methods.
+    This is the ESCALATION BATCH PROCESS - tries the fastest methods first and
+    falls back to slower but more reliable methods:
+    oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper.
 
     Args:
         source_filter: Optional channel URL to process only that source.
@@ -2838,8 +2871,16 @@ def cmd_fetch(
 
             if not dry_run and industrial_selected and len(pending_buffer) >= batch_size:
                 while len(pending_buffer) >= batch_size:
-                    batch_items = [pending_buffer.popleft() for _ in range(batch_size)]
-                    industrial_batch_queue.append([vid for vid, _src in batch_items])
+                    drained_batches = _drain_balanced_pending_batches(
+                        pending_buffer,
+                        batch_size=batch_size,
+                        worker_count=workers if industrial_parallel_enabled else 1,
+                    )
+                    if not drained_batches:
+                        break
+                    industrial_batch_queue.extend(
+                        [[vid for vid, _src in batch_items] for batch_items in drained_batches]
+                    )
                     if industrial_parallel_enabled:
                         _service_industrial_workers(wait_for_completion=False)
         if max_items_reached:
@@ -2961,8 +3002,20 @@ def cmd_fetch(
         neg_ids = ", ".join(item["video_id"] for item in negative_cache_sample)
         print(f"[source] Negative-cache sample: {neg_ids}")
     if not dry_run and industrial_selected and pending_buffer:
-        industrial_batch_queue.append([vid for vid, _src in pending_buffer])
-        pending_buffer.clear()
+        while len(pending_buffer) >= batch_size:
+            drained_batches = _drain_balanced_pending_batches(
+                pending_buffer,
+                batch_size=batch_size,
+                worker_count=workers if industrial_parallel_enabled else 1,
+            )
+            if not drained_batches:
+                break
+            industrial_batch_queue.extend(
+                [[vid for vid, _src in batch_items] for batch_items in drained_batches]
+            )
+        if pending_buffer:
+            industrial_batch_queue.append([vid for vid, _src in pending_buffer])
+            pending_buffer.clear()
     if industrial_parallel_enabled:
         _service_industrial_workers(wait_for_completion=False)
     print(f"[source] Escalation Batch Process")
@@ -3115,7 +3168,7 @@ def cmd_fetch(
         print(
             f"[source] Strategy: {'Industrial (Batch NLM)' if use_industrial else 'Surgical (Chain)'}"
         )
-        print("[source] Method: yt-dlp → cookies → Selenium escalation chain")
+        print("[source] Method: oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper")
     print(f"[source] Workers: {workers}")
     print()
 
@@ -3129,11 +3182,15 @@ def cmd_fetch(
     industrial_run_id = uuid.uuid4().hex
     os.environ["YTIS_INDUSTRIAL_RUN_ID"] = industrial_run_id
 
-    if workers > 1:
-        deleted, failed = cleanup_stale_worker_notebooks(delete=True)
+    if use_industrial and not dry_run:
+        deleted, failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
         print(
             f"[source] Pre-flight worker notebook cleanup: {deleted} worker notebooks deleted, {failed} failed"
         )
+        if failed:
+            raise RuntimeError(
+                f"worker notebook preflight cleanup failed: deleted={deleted} failed={failed}"
+            )
         log_action(
             "fetch_worker_prewarm_summary",
             {
@@ -3175,6 +3232,8 @@ def cmd_fetch(
     if use_industrial:
         # --- INDUSTRIAL PATH: NotebookLM CLI batch content fetch ---
         # Group the backlog into batches and run them through isolated workers.
+        post_deleted = 0
+        post_failed = 0
         try:
             if transcript_fallback_queue:
                 _service_transcript_fallback_workers(wait_for_completion=False)
@@ -3196,6 +3255,29 @@ def cmd_fetch(
             if transcript_fallback_worker_executor is not None:
                 transcript_fallback_worker_executor.shutdown(wait=True, cancel_futures=False)
             close_reusable_ingestor()
+            if use_industrial and not dry_run:
+                post_deleted, post_failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
+                log_action(
+                    "fetch_worker_postrun_cleanup",
+                    {
+                        "deleted": post_deleted,
+                        "failed": post_failed,
+                        "run_id": industrial_run_id,
+                        "state_root": os.getenv(
+                            "YTIS_INDUSTRIAL_WORKER_STATE_ROOT",
+                            "P:/.data/yt-is/industrial-worker-states",
+                        ),
+                    },
+                )
+                if post_deleted or post_failed:
+                    print(
+                        f"[source] Post-run worker notebook cleanup: {post_deleted} worker notebooks deleted, "
+                        f"{post_failed} failed"
+                    )
+                if post_failed:
+                    raise RuntimeError(
+                        f"worker notebook post-run cleanup failed: deleted={post_deleted} failed={post_failed}"
+                    )
 
     else:
         # --- SURGICAL PATH: Sequential Escalation Chain ---
@@ -3203,7 +3285,7 @@ def cmd_fetch(
         all_pending.extend(transcript_fallback_queue)
         transcript_fallback_queue.clear()
         def _process_video(video_id: str, source_url: str, skip_notebooklm: bool) -> tuple[str, bool, str, str]:
-            """Process a single video using the escalation chain."""
+            """Process a single video using the full transcript fallback chain."""
             if has_cached_transcript(video_id):
                 return (video_id, True, "cache", "")
 
@@ -3295,7 +3377,7 @@ def cmd_fetch(
             f"{name}={count}" for name, count in negative_cache_reason_counts.most_common(5)
         )
         print(f"[source] Negative-cache reasons: {top_negative_reasons}")
-    if workers > 1:
+    if use_industrial and not dry_run:
         print(f"[source] Worker notebook cleanup: {deleted} deleted, {failed} failed")
     if stage_totals["batch_elapsed_s_total"] > 0:
         print(
@@ -3964,7 +4046,10 @@ def main() -> None:
     subparsers.add_parser("quota", help="Show per-key quota state and recommended workers")
 
     # fetch command (escalation batch process)
-    fetch_parser = subparsers.add_parser("fetch", help="Fetch transcripts using escalation chain (yt-dlp → Selenium)")
+    fetch_parser = subparsers.add_parser(
+        "fetch",
+        help="Fetch transcripts using the full fallback chain (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper)",
+    )
     fetch_parser.add_argument("--source", help="Process only this channel URL")
     fetch_parser.add_argument("--dry-run", action="store_true", help="Show what would be fetched without fetching")
     fetch_parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")

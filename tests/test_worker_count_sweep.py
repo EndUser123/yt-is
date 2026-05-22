@@ -79,7 +79,47 @@ def test_load_fetch_completed_event_from_jsonl(tmp_path):
     assert payload["worker_stage_totals"]["youtube_page_elapsed_s_count"] == 1
 
 
+def test_load_fetch_completed_event_skips_malformed_jsonl_lines(tmp_path):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    trace = log_dir / "fake-terminal.jsonl"
+    trace.write_text(
+        "\n".join(
+            [
+                "{not json",
+                json.dumps({"action": "log", "data": {"msg": "ignore me"}}),
+                json.dumps(
+                    {
+                        "action": "fetch_completed",
+                        "data": {
+                            "success_count": 4,
+                            "fail_count": 1,
+                            "processed_count": 5,
+                            "worker_stage_totals": {
+                                "setup_elapsed_s_total": 2.0,
+                                "add_sources_elapsed_s_total": 3.0,
+                            },
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = worker_count_sweep._load_fetch_completed_event(log_dir)
+
+    assert payload["success_count"] == 4
+    assert payload["fail_count"] == 1
+    assert payload["processed_count"] == 5
+    assert payload["worker_stage_totals"]["setup_elapsed_s_total"] == 2.0
+    assert payload["worker_stage_totals"]["add_sources_elapsed_s_total"] == 3.0
+
+
 def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch):
+    cleanup_calls: list[bool] = []
+
     def fake_run(command, capture_output, text, cwd, env, check, timeout=None):
         assert command[0] == "python.exe" or command[0].endswith("python.exe") or command[0].endswith("python")
         assert command[2] == "fetch"
@@ -140,6 +180,11 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
         )
         return mock.Mock(returncode=0, stdout="done\n", stderr="")
 
+    monkeypatch.setattr(
+        worker_count_sweep,
+        "cleanup_stale_worker_notebooks",
+        lambda *, delete=False, include_active=False: cleanup_calls.append((delete, include_active)) or (0, 0),
+    )
     monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
     summary = worker_count_sweep._run_fetch_trial(
         workers=2,
@@ -169,6 +214,7 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
     assert summary.worker_idle_wait_s == 3.0
     assert summary.fetch_completed["worker_stage_totals"]["startup_prepare_total_elapsed_s_total"] == 1.5
     assert summary.fetch_completed["worker_stage_totals"]["setup_elapsed_s_total"] == 3.5
+    assert cleanup_calls == [(True, True), (True, True)]
     assert summary.sample_label == "mixed_lane"
     assert summary.source_filter == "https://www.youtube.com/channel/UCYTISFALLBACKBMK"
     assert summary.materialization_started is True
@@ -197,6 +243,8 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
 
 
 def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_missing(tmp_path, monkeypatch):
+    cleanup_calls: list[bool] = []
+
     def fake_run(command, capture_output, text, cwd, env, check, timeout=None):
         log_dir = Path(env["INTELLIGENCE_STREAM_LOG_DIR"])
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -255,6 +303,11 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
         )
         return mock.Mock(returncode=0, stdout=stdout, stderr="")
 
+    monkeypatch.setattr(
+        worker_count_sweep,
+        "cleanup_stale_worker_notebooks",
+        lambda *, delete=False, include_active=False: cleanup_calls.append((delete, include_active)) or (0, 0),
+    )
     monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
     summary = worker_count_sweep._run_fetch_trial(
         workers=2,
@@ -275,5 +328,28 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
     assert summary.add_elapsed_s == 7.0
     assert summary.readiness_elapsed_s == 9.0
     assert summary.cleanup_elapsed_s == 2.5
+    assert cleanup_calls == [(True, True), (True, True)]
     assert summary.fetch_completed["worker_stage_totals"]["startup_prepare_total_elapsed_s_total"] == 3.0
     assert summary.fetch_completed["worker_stage_totals"]["setup_elapsed_s_total"] == 5.0
+
+
+def test_run_fetch_trial_stops_when_worker_notebook_cleanup_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        worker_count_sweep,
+        "cleanup_stale_worker_notebooks",
+        lambda *, delete=False, include_active=False: (0, 1),
+    )
+
+    try:
+        worker_count_sweep._run_fetch_trial(
+            workers=2,
+            limit=37,
+            sample_label="mixed_lane",
+            output_dir=tmp_path,
+            source_filter="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+            python_executable="python.exe",
+        )
+    except RuntimeError as exc:
+        assert "worker notebook preflight cleanup failed" in str(exc)
+    else:
+        raise AssertionError("cleanup failure should stop the worker-count trial")

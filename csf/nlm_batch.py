@@ -30,7 +30,6 @@ from csf.nlm_worker_auth import (
     refresh_source_profile,
     sync_worker_profiles,
 )
-from csf.transcript import _get_cookie_freshness_tracker as _get_transcript_freshness_tracker
 from csf.shared_retry_pool import enqueue as enqueue_shared_retry
 from csf.youtube_page_inspector import inspect_youtube_watch_page, inspect_youtube_watch_page_via_ytdlp
 
@@ -42,6 +41,10 @@ _DEFAULT_OWNER_NOTEBOOK_TITLE = "yt-is-worker-01"
 _DEFAULT_INDUSTRIAL_WORKER_STATE_ROOT = Path("P:\\\\\\.data/yt-is/industrial-worker-states")
 _DEFAULT_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX = "yt-is-worker"
 _LEGACY_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX = "yt-is::industrial::worker"
+_BENCHMARK_WORKER_NOTEBOOK_PREFIXES = (
+    "benchmark-shard-",
+    "benchmark-notebooklm_",
+)
 _DEFAULT_NOTEBOOKLM_PROFILE = "default"
 _AUTH_LOCK_PATH = Path("P:\\\\\\.data/yt-is/locks/nlm-auth.lock")
 DEFAULT_NLM_CHROME_PROFILE_ROOT = nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT
@@ -864,7 +867,11 @@ def _get_worker_notebook_prefixes() -> tuple[str, ...]:
 
 def _is_safe_worker_notebook_prefix(prefix: str) -> bool:
     prefix = prefix.strip()
-    return prefix.startswith(_DEFAULT_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX) or prefix.startswith(_LEGACY_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX)
+    return (
+        prefix.startswith(_DEFAULT_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX)
+        or prefix.startswith(_LEGACY_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX)
+        or any(prefix.startswith(benchmark_prefix) for benchmark_prefix in _BENCHMARK_WORKER_NOTEBOOK_PREFIXES)
+    )
 
 
 def _infer_worker_profile_from_notebook_name(name: str) -> str:
@@ -933,8 +940,28 @@ def _load_current_worker_notebook_ids() -> set[str]:
     return ids
 
 
-def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
-    """Audit worker notebooks and optionally delete stale ones."""
+def _clear_worker_notebook_state_files() -> int:
+    """Remove worker state files after their benchmark notebooks are retired."""
+    state_root = _get_worker_state_root()
+    if not state_root.exists():
+        return 0
+    removed = 0
+    for state_path in state_root.glob("worker-*.json"):
+        try:
+            state_path.unlink()
+            removed += 1
+        except Exception:
+            continue
+    return removed
+
+
+def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool = False) -> tuple[int, int]:
+    """Audit worker notebooks and optionally delete benchmark-owned stale ones.
+
+    ``include_active`` is reserved for benchmark/trial boundaries where the run
+    must start or end with no worker notebooks, including IDs still present in
+    the current worker state files.
+    """
     ingestor = NLMBatchIngestor()
     active_nb_ids = _load_current_worker_notebook_ids()
     prefix = _get_worker_notebook_prefix()
@@ -946,6 +973,7 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
             "notebook_prefix": prefix,
             "run_id": run_id or None,
             "active_nb_ids": len(active_nb_ids),
+            "include_active": include_active,
         },
     )
     if not _is_safe_worker_notebook_prefix(prefix):
@@ -959,6 +987,8 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
                 "run_id": run_id or None,
                 "worker_notebook_count": 0,
                 "stale_worker_notebook_count": 0,
+                "state_files_removed": 0,
+                "include_active": include_active,
                 "reason": "configured worker notebook prefix is not industrial-scoped",
             },
         )
@@ -970,12 +1000,13 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
             "nlm_worker_notebook_cleanup_complete",
             {
                 "deleted": 0,
-                "failed": 0,
+                "failed": 1 if delete else 0,
                 "status": "list_failed",
                 "stderr": (res.stderr or "")[:200],
+                "include_active": include_active,
             },
         )
-        return (0, 0)
+        return (0, 1 if delete else 0)
 
     try:
         notebooks = json.loads(res.stdout)
@@ -986,12 +1017,13 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
             "nlm_worker_notebook_cleanup_complete",
             {
                 "deleted": 0,
-                "failed": 0,
+                "failed": 1 if delete else 0,
                 "status": "parse_failed",
                 "error": str(exc),
+                "include_active": include_active,
             },
         )
-        return (0, 0)
+        return (0, 1 if delete else 0)
 
     worker_notebooks = [
         nb
@@ -1013,17 +1045,21 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
                 "notebook_prefix": prefix,
                 "run_id": run_id or None,
                 "worker_notebook_count": len(worker_notebooks),
+                "state_files_removed": 0,
+                "include_active": include_active,
             },
         )
         return (0, 0)
 
     deleted = 0
     failed = 0
-    stale_worker_notebooks = [
-        nb
-        for nb in worker_notebooks
-        if _notebook_entry_id(nb) and _notebook_entry_id(nb) not in active_nb_ids
-    ]
+    stale_worker_notebooks = []
+    for nb in worker_notebooks:
+        nb_id = _notebook_entry_id(nb)
+        if not nb_id:
+            continue
+        if include_active or nb_id not in active_nb_ids:
+            stale_worker_notebooks.append(nb)
     for nb in sorted(stale_worker_notebooks, key=lambda item: (_notebook_entry_title(item), _notebook_entry_id(item))):
         nb_id = _notebook_entry_id(nb)
         if not nb_id:
@@ -1048,6 +1084,7 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
             deleted += 1
         else:
             failed += 1
+    state_files_removed = _clear_worker_notebook_state_files() if include_active and failed == 0 else 0
     log_action(
         "nlm_worker_notebook_cleanup_complete",
         {
@@ -1059,6 +1096,8 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False) -> tuple[int, int]:
             "run_id": run_id or None,
             "worker_notebook_count": len(worker_notebooks),
             "stale_worker_notebook_count": len(stale_worker_notebooks),
+            "state_files_removed": state_files_removed,
+            "include_active": include_active,
         },
     )
     return (deleted, failed)
@@ -1095,24 +1134,6 @@ def _ensure_nlm_auth() -> bool:
     force_scheduled = force_every > 0 and check_count % force_every == 0
     cache_hit, _cache_session_established_at = nlm_auth_guard.auth_check_cache_hit(auth_context)
     cache_session_age_s = nlm_auth_guard.auth_check_cache_session_age(auth_context)
-
-    # Daemon fast-path: if background NLMAuthDaemon is enabled and the
-    # CookieFreshnessTracker reports fresh (daemon has confirmed auth within TTL),
-    # skip the expensive active probe / family-refresh entirely.
-    if not force_scheduled and _NLM_CONFIG.auth_daemon_enabled:
-        freshness = _get_transcript_freshness_tracker()
-        if freshness.is_fresh():
-            log_action(
-                "nlm_auth_checked",
-                {
-                    "component": "nlm_batch",
-                    "status": "daemon_fresh",
-                    "notebooklm_profile": auth_context.profile,
-                    "check_count": check_count,
-                },
-            )
-            return True
-
     if not force_scheduled and cache_hit:
         log_action(
             "nlm_auth_checked",

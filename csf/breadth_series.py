@@ -210,6 +210,7 @@ def _aggregate_summary(summary: dict[str, Any], policy_name: str) -> dict[str, A
         "startup_prepare_total_elapsed_s_total": 0.0,
         "setup_elapsed_s_total": 0.0,
         "add_elapsed_s_total": 0.0,
+        "extract_elapsed_s_total": 0.0,
         "readiness_elapsed_s_total": 0.0,
         "cleanup_elapsed_s_total": 0.0,
         "worker_idle_wait_s_total": 0.0,
@@ -245,6 +246,11 @@ def _aggregate_summary(summary: dict[str, Any], policy_name: str) -> dict[str, A
             worker_stage_totals.get("setup_elapsed_s_total") or row.get("setup_elapsed_s")
         )
         totals["add_elapsed_s_total"] += _float_value(row.get("add_elapsed_s"))
+        totals["extract_elapsed_s_total"] += _float_value(
+            worker_stage_totals.get("extract_elapsed_s_total")
+            or row.get("extract_elapsed_s_total")
+            or row.get("extract_elapsed_s")
+        )
         totals["readiness_elapsed_s_total"] += _float_value(row.get("readiness_elapsed_s"))
         totals["cleanup_elapsed_s_total"] += _float_value(row.get("cleanup_elapsed_s"))
         totals["worker_idle_wait_s_total"] += _float_value(row.get("worker_idle_wait_s"))

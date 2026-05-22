@@ -13,7 +13,8 @@ Find whether `yt-is` can exceed the current best proven sustained hot-path throu
 - Prior control artifact: `P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_v2/sharded_lane_series_summary.json`
 - Prior control combined hot-path VPH: `4148.71`
 - Current best shape: Pro+Free lanes, no startup stagger, `4` workers per lane, `--limit 400` per lane, `--batch-size 200`, serial reusable pipeline
-- Metric contract: use `combined.hot_path_videos_per_hour` from `sharded_lane_series_summary.json`; do not include Whisper fallback throughput
+- Fresh-state controls: `free_only_fresh_state_control_run01` reached `2825.29` on `400/0/400`; `two_plus_two_pressure_100_run01` reached `1474.74` on `800/800`; `fresh_worker_state_default_3plus3_run01` was actually `4+4`, not `3+3`, and the runner now publishes `worker_shape_signature` so future run labels can be checked against the real worker counts before they are trusted; `verified_3plus3_fresh_run01` completed as a clean true `3+3` run at `1452.24` combined lane-process throughput VPH on `800/800`, which is below the fresh-state solo controls, so the shape is now a negative control rather than an open question; pass `--expected-worker-shape` to the evidence check when you want mislabeled shapes to fail closed
+- Metric contract: use `combined.hot_path_videos_per_hour` from `sharded_lane_series_summary.json`; do not include Whisper fallback throughput; the throughput span excludes only parent-process Chrome reap and does not subtract per-batch worker cleanup
 - Extraction-status contract: do not use `too_short` as a NotebookLM metric. Use `nlm_content_below_threshold` for below-threshold NotebookLM source content, and record `nlm_content_chars` plus `usable_text_chars` when diagnosing sparse source content.
 
 ## Read First
@@ -28,7 +29,7 @@ Before running anything, read:
 
 These files record what has already been proven, what was negative, and how the dedicated Pro and Free browser roots must be authenticated.
 
-## Current Session State: 2026-04-30
+## Current Session State: 2026-05-13
 
 What has been actioned:
 
@@ -91,8 +92,17 @@ Current interpretation:
   - current batch logs show `nlm_worker_notebook_cleanup_started` followed by deletion of `3-4` stale worker notebooks before work begins, and `startup_notebook_check_elapsed_s_total` / `startup_prepare_cleanup_elapsed_s_total` are both higher than the historical Free leader
 - Next investigation should focus on worker-state hygiene and the notebook-check/add path: compare the shared `worker_states` lifecycle against the historical Free leader, then decide whether a fresh worker-state root or stricter preflight pruning is warranted before any more lane geometry work.
 - The fresh worker-state-root control `free_only_fresh_state_control_run01` completed at `2825.29` combined hot-path VPH with `400/0/400` across two 200-item batches. Batch 1 was `2236.72` VPH and batch 2 was `3782.61` VPH. Both batches used clean per-run worker states and did not show stale-worker cleanup. That is now the strongest evidence that worker-state hygiene is the lever, not lane geometry.
-- Throughput accounting is now split from cleanup accounting: benchmark summaries publish `throughput_wall_elapsed_s` separately from full `wall_elapsed_s`, and the combined VPH uses the cleanup-free span. Treat any cleanup timing as hygiene cost, not sustained throughput.
+- Throughput accounting is now split from cleanup accounting: benchmark summaries publish `throughput_wall_elapsed_s` separately from full `wall_elapsed_s`, and the combined VPH uses the lane-process throughput span. Treat any cleanup timing as hygiene cost, not sustained throughput.
 - The sharded lane runner now defaults to a fresh per-run worker-state root under `<run-root>/<lane>/worker_states`, with `--preserve-worker-state-root` retained only for explicit reuse experiments. The next best investigation is to rerun the canonical lane-series comparison on the same cohort with that default in place. Do not spend more time on the stale Free-only rerun shape unless the worker-state path changes again.
+- The fresh Pro-only control `fresh_state_pro_only_run01` completed cleanly but is still negative evidence for a ceiling:
+  - combined lane-process throughput VPH `1556.64`
+  - `397` hot-path successes, `3` failures, `400` processed
+  - smoke `1108.22` and soak `1556.64` are both below the fresh-state Free-only control
+  - `worker_shape_signature=4`
+- The verified `3+3` fresh-state control `verified_3plus3_fresh_run01` completed cleanly but is negative for a ceiling: combined lane-process throughput VPH `1452.24`, Pro `779.39`, Free `818.34`, `800/800`, `worker_shape_signature=3+3`. It is below both fresh-state solo controls, so the next benchmark branch is not another geometry sweep; if further benchmarking is warranted, make it a stage-attribution probe on add/extract/idle timing first.
+- The stage reducer now compares `setup_elapsed_s` as setup excluding add, because `nlm_batch.py` measures add inside setup. With that corrected, `fresh_state_pro_only_run01` and `verified_3plus3_fresh_run01` are both `stage-sum-suggested:extract`, while the historical `sweep_phase3_2lane_3w_run01` leader and `free_only_fresh_state_control_run01` are add-dominant. That means the remaining gap is not a worker-count problem; the next useful probe should explain why current combined runs spend far more aggregate extract time than the leader under similar add pressure.
+- In the current extract-heavy runs, `content_fetch_command_elapsed_s_total` dominates the extract sub-metrics; retry sleep, retry queue sleep, source-list probes, and readiness probes are smaller. Treat the next probe as a `nlm source content` command-latency attribution problem first, not a geometry, retry-marker, or source-list-probe problem.
+- The stage reducer now also accepts the benchmark-summary-only free control directly and exposes startup notebook check/create/retire plus startup-prepare cleanup sub-buckets. The fresh `1+1` pressure control was invalidated by a malformed JSONL parse in `worker_count_sweep.py`; that loader is now hardened and regression-tested, but the run itself is not throughput evidence.
 
 ## Non-Negotiable Controls
 
@@ -133,6 +143,10 @@ Get-CimInstance Win32_Process |
 ```
 
 Expected: no default NotebookLM auth browser and no unprofiled `nlm login --force`. A transient `nlm login --force --profile <worker-profile>` is acceptable only when tied to one of the named worker profiles. If `nlm login --force` appears without `--profile`, stop the run and mark it invalid.
+
+- [ ] Run the worker-notebook preflight cleanup before the benchmark starts.
+
+Expected: stale worker notebooks are cleared through the existing worker-notebook cleanup path before any timed trial begins. The worker process still prewarms its notebook before processing, so the measured run starts from a clean, reproducible notebook state.
 
 - [ ] Validate all NotebookLM worker profiles.
 
@@ -733,6 +747,8 @@ Current evidence:
 - `sweep_phase3_2lane_3w_run07` and `run08` show the age cliff / `NOT_FOUND` pressure is real, but it does not by itself identify whether the bottleneck is materialization wait, content fetch latency, or notebook rotation cadence.
 - `highest_vph_attribution_probe_run02` collapsed to `977.45` combined hot-path VPH; batch 1 carried heavy `NOT_FOUND` pressure and the source-list probe cost was large, so repeated validation is no longer a free diagnostic in storm conditions.
 - `highest_vph_not_found_probe_cap_sequence_run01` improved the same 400-item sequence shape to `1204.97` combined hot-path VPH with the bounded probe cap in place; the first `NOT_FOUND` probe remained diagnostic, repeated validation no longer dominated the storm cost, and the run still stayed well below the age-capped control.
+- `fresh_state_3plus3_extract_attr_run01` collapsed to `610.12` combined hot-path VPH; fetch logs showed very strong source-age dependence, with near-clean results below about `220s` and near-total failure above `500s`, so the new fetch-side `source_age_cliff` fast-fail path is now in place.
+- `fresh_state_3plus3_extract_attr_run02` improved the failure shape but not the outcome: combined hot-path VPH `786.98`, `750/800` processed, Pro `388/12`, Free `293/57`, and the Free lane still stopped early with source-age pressure clustered right around the cliff.
 - `pro_free_source_map_v1` remains the sustained captioned control until a newer like-for-like run beats it.
 
 Implementation target:
@@ -772,6 +788,7 @@ Current evidence:
 - `highest_vph_attribution_probe_run02` showed the source-list probe is useful on the first `NOT_FOUND`, but repeated validation becomes a throughput drag under storm conditions.
 - `highest_vph_not_found_probe_cap_sequence_run01` confirmed the bounded probe cap helps, but the remaining gap is still source-readiness / age behavior, not more probe volume.
 - `small_subbatch_source_readiness_run01` improved the same 2-lane shape further to `1998.83` combined hot-path VPH with `batch-size 100`, with Pro `source_ready_age_s_max=225.028s` and Free `source_ready_age_s_max=195.392s`.
+- `small_subbatch_source_readiness_run04` regressed to `980.81` combined hot-path VPH with `710/90/800`; Pro landed at `509.01` VPH with `source_ready_age_s_max=330.066s`, and Free landed at `660.31` VPH with `source_ready_age_s_max=284.495s`, so the batch-size `100` follow-up did not sustain the earlier full-load subbatch result.
 - `small_subbatch_source_readiness_run02` regressed to `1549.75` combined hot-path VPH with `batch-size 150`, with Pro `source_ready_age_s_max=416.751s` and Free `source_ready_age_s_max=438.977s`.
 - `pro_free_source_map_v1` remains the historical best sustained control, so any bounded probe must be measured against that baseline, not against a single diagnostic sample.
 
@@ -842,3 +859,309 @@ Do not:
 - Do not widen the source-age cliff.
 - Do not change auth TTL in the same run.
 - Do not switch captioned items to `yt-dlp` first without a same-shape A/B.
+
+## Phase 11: Source-Age-Controlled Active Windows
+
+Purpose: test whether clearing NotebookLM sources inside a reusable worker batch can keep source age under the cliff without giving up too much throughput. The mechanism remains useful as an opt-in diagnostic, but it is not the default hot-path strategy.
+
+Implementation completed:
+
+- `P:\\packages\\yt-is\\csf\\nlm_config.py` exposes `YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE`, default `0` / disabled.
+- `P:\\packages\\yt-is\\csf\\nlm_batch.py` uses active windows in `NLMReusableIngestor.process_batch` only when the configured window is greater than `0` and smaller than the worker batch.
+- Each active window is `add -> extract -> reset_sources`; per-window logs are emitted as `nlm_batch_reusable_active_window_started` and `nlm_batch_reusable_active_window_completed`.
+- Batch summaries include `active_window_enabled`, `active_window_size`, and `active_window_count`.
+- Window extract metrics are aggregated back into the normal reusable-process summary fields, including `content_fetch_status_counts`, source-age totals/max/avg, attempts, and command timing.
+
+Completed evidence:
+
+- `fresh_state_3plus3_active_window_run01` is invalid for this phase because it used the stale `4+4` lane config despite the `3+3` run-root name.
+- `fresh_state_3plus3_active_window_run02` used the correct `3+3` lane config and completed cleanly: combined hot-path VPH `1608.12`, `791/9` hot-path success/failure, `800` processed, `worker_shape_signature=3+3`, Pro `source_ready_age_s_max=219.474s`, Free `source_ready_age_s_max=190.255s`.
+- `fresh_state_3plus3_active_window_run03` repeated the same shape with `YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE=50`: combined hot-path VPH `1484.65`, `706/94` hot-path success/failure, `800` processed, `worker_shape_signature=3+3`.
+
+Conclusion:
+
+- Active windows can control source age, but they are not a ceiling path. Window size `25` stayed clean enough but far below the age-capped `3+3` control; window size `50` worsened failures and VPH.
+- Keep active windows opt-in only. Do not run more active-window widening tests unless a later code change materially reduces the `add -> extract -> reset_sources` overhead.
+
+Verification completed:
+
+```powershell
+python -m pytest -q tests/test_sharded_lane_stage_reducer.py tests/test_worker_count_sweep.py tests/test_run_evidence_check.py tests/test_sharded_lane_sequence.py tests/test_sharded_lane_series.py tests/test_nlm_config.py tests/test_nlm_batch.py
+```
+
+Result after changing active windows to opt-in: `170 passed`.
+
+## Phase 12: Next Testing Handoff - Add / Materialization / Content-Fetch Attribution
+
+Purpose: give the next LLM one diagnostic run that explains the remaining latency/failure split without changing code or running another geometry sweep.
+
+Run contract:
+
+- Do not change code before the run.
+- Do not set `YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE`; active windows should remain disabled by default.
+- Use the true `3+3` lane config: `P:\\packages\\yt-is\\.logs\\sharded_lane_series\\tmp_pro_free_3w.json`.
+- Use a fresh run root: `P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_add_materialization_attr_run01`. If it already exists, use `run02`.
+- Stop if auth fails, if `worker_shape_signature` is not `3+3`, or if fewer than `800` items are processed. Mark partial results as partial, not a ceiling.
+- Do not delete notebooks outside the industrial worker state.
+
+Preflight:
+
+```powershell
+cd P:\\packages\\yt-is
+$env:PYTHONPATH = 'P:\\packages\\yt-is'
+Remove-Item Env:\\YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE -ErrorAction SilentlyContinue
+$env:YTIS_NLM_NOT_FOUND_SOURCE_LIST_PROBE_CAP = '1'
+python -m pytest -q tests/test_nlm_config.py tests/test_nlm_batch.py tests/test_sharded_lane_sequence.py tests/test_run_evidence_check.py
+```
+
+Benchmark command:
+
+```powershell
+python P:\\packages\\yt-is\\bin\\csf-sharded-lane-sequence `
+  --lane-config P:\\packages\\yt-is\\.logs\\sharded_lane_series\\tmp_pro_free_3w.json `
+  --run-root P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_add_materialization_attr_run01 `
+  --smoke-limit 400 `
+  --smoke-batch-size 200 `
+  --soak-limit 400 `
+  --soak-batch-size 200 `
+  --expected-worker-shape 3+3 `
+  --reusable-pipeline-mode serial
+```
+
+Report back with:
+
+- Test result and exact benchmark command.
+- `combined.hot_path_videos_per_hour`, `combined.hot_path_success_count_total`, `combined.fail_count_total`, and `combined.processed_count_total`.
+- `worker_shape_signature` and `throughput_valid`.
+- Per-lane `add_elapsed_s_total`, `setup_elapsed_s_total`, `extract_elapsed_s_total`, `worker_idle_wait_s_total`, `source_ready_age_s_max`, and `content_fetch_status`.
+
+Completed control:
+
+- `status=ok`
+- `throughput_valid=true`
+- `worker_shape_signature=3+3`
+- `combined.hot_path_videos_per_hour=1174.91`
+- `combined.hot_path_success_count_total=632`
+- `combined.fail_count_total=168`
+- `combined.processed_count_total=800`
+- Pro lane: `285/115`, `setup_elapsed_s_total=1461.099`, `add_elapsed_s_total=1332.381`, `extract_elapsed_s_total=2325.48`, `worker_idle_wait_s_total=341.772`, `source_ready_age_s_max=469.374`, `content_fetch_status_counts_total={"ready":285,"source_age_cliff":114,"command_failed":1}`
+- Free lane: `347/53`, `setup_elapsed_s_total=1480.073`, `add_elapsed_s_total=1380.487`, `extract_elapsed_s_total=2377.502`, `worker_idle_wait_s_total=312.632`, `source_ready_age_s_max=481.475`, `content_fetch_status_counts_total={"ready":347,"source_age_cliff":52,"command_failed":1}`
+- Conclusion: normal serial lands between the two extract-window controls and still shows source-age-cliff pressure, so the extract-window mode stays diagnostic only.
+- From worker logs, summarize `nlm_batch_source_materialization_wait_succeeded`, `nlm_batch_subbatch_age_guard_checked`, and source-content fetch events by lane/account/worker/source age/status.
+
+Decision gates:
+
+- If add/materialization wait dominates before source age rises, investigate NotebookLM add/materialization latency.
+- If content fetch latency or failures cluster by source age, keep the problem framed as add-to-extract cadence and avoid geometry changes.
+- If failures cluster by one lane/account/worker, investigate that profile/auth/browser root before any throughput tuning.
+- If latency/failure is uniform across lanes/workers/source ages, treat it as NotebookLM backend variance and rerun the same command once with a fresh root before changing code.
+
+Do not do next:
+
+- Do not run more active-window sizes.
+- Do not widen the source-age cliff.
+- Do not change auth TTL.
+- Do not switch captioned items to `yt-dlp` without a same-shape A/B.
+- Do not run a new worker-count geometry sweep until this attribution run identifies a code-path reason to do so.
+
+Implementation note:
+
+- The source-age-aware cadence is now implemented behind `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED=1`.
+- The default soft/hard thresholds are `160s` and `190s`, with a minimum cadence window size of `5`.
+- Leave the active-window and extract-window knobs unset when using the new cadence; the next diagnostic should isolate only the age-aware scheduler, not the older window modes.
+
+Completed run:
+
+- `fresh_state_3plus3_add_materialization_attr_run01` completed cleanly with `status=ok`, `throughput_valid=true`, and `worker_shape_signature=3+3`.
+- Combined hot-path VPH was `1653.75` with `782/18` hot-path success/failure and `800` processed.
+- Pro lane: `385/15`, `source_ready_age_s_max=199.361s`, `worker_idle_wait_s_total=212.004s`, `content_fetch_status_counts_total={"ready":385,"source_age_cliff":14,"command_failed":1}`.
+- Free lane: `397/3`, `source_ready_age_s_max=233.89s`, `worker_idle_wait_s_total=108.99s`, `content_fetch_status_counts_total={"ready":397,"source_age_cliff":1,"command_failed":2}`.
+- The run is clean but still not a ceiling. It is materially better than the active-window runs, but still far below the better age-capped and historical `3+3` controls, so the next step should be log-level attribution rather than another geometry or active-window sweep.
+
+Artifact review:
+
+- Materialization wait was not the bottleneck. The completed batch logs showed materialization waits in the roughly `3s` to `7s` range, and every subbatch age-guard check before add was `skipped_no_epoch`.
+- The source-age failures came from content-fetch drain inside the worker chunk. Pro batch 1 had `14` `source_age_cliff` events with logged source ages from roughly `200.479s` to `445.884s`; the same batch had a max content-fetch command time near `398.944s`.
+- The top-level Pro `source_ready_age_s_max=199.361s` was a pre-fix aggregate blind spot: `source_age_cliff` fast-fail rows were counted in `content_fetch_status_counts_total` but their ages were not included in `source_ready_age_s_total/max/avg`.
+- Observability correction: `source_age_cliff` fast-fail rows now contribute to the normal source-age aggregate metrics. Future summaries should not show a below-cliff `source_ready_age_s_max` while also reporting source-age-cliff failures.
+
+Next after this correction:
+
+- Do not launch another geometry sweep. If another run is needed, rerun this exact Phase 12 shape once under a fresh root to regenerate summaries with corrected source-age aggregates.
+- Use the corrected aggregates plus per-fetch command timing to decide whether to change add-to-extract cadence; do not tune age cliff, auth TTL, or active-window sizes from the pre-fix summary fields.
+
+Rerun result:
+
+- `fresh_state_3plus3_add_materialization_attr_run02` reproduced the same shape with corrected source-age aggregation, but the smoke run returned `status=partial` because the Free lane processed only `200/400` items. The run is useful as validation of the observability fix, not as a new throughput ceiling.
+- Smoke Pro lane now reports `source_ready_age_s_max=489.649s` with `content_fetch_status_counts_total={"ready":347,"source_age_cliff":52,"command_failed":1}`.
+- Smoke Free lane now reports `source_ready_age_s_max=302.378s` with `content_fetch_status_counts_total={"source_age_cliff":102,"ready":98}`.
+- That is the expected post-fix behavior: the cliff-fast-fail ages are now visible in the summary, so the old below-cliff max no longer hides them.
+
+## Phase 13: Reusable Extract Windows Without Per-Window Reset
+
+Purpose: test whether shorter add/extract windows can keep source age under the cliff without paying the notebook reset tax after every window. This is the next ceiling candidate after the active-window diagnostic proved that reset-per-window lowers age but also drags throughput down.
+
+Implementation completed:
+
+- `P:\packages\yt-is\csf\nlm_config.py` exposes `YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE`, default `0` / disabled.
+- `P:\packages\yt-is\csf\nlm_batch.py` uses extract windows in `NLMReusableIngestor.process_batch` when the configured window is greater than `0` and smaller than the worker batch.
+- Each extract window is `add -> extract` without `reset_sources` after the window; cleanup/reset still happens at the normal batch boundary.
+- Active windows remain available as the diagnostic reset-per-window mode via `YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE`.
+- Batch summaries include `extract_window_enabled`, `extract_window_size`, and `extract_window_count`.
+- Window metrics are aggregated back into the normal reusable-process summary fields, including `content_fetch_status_counts`, source-age totals/max/avg, attempts, and command timing.
+
+Run contract:
+
+- Do not change code before the run.
+- Do not set `YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE`; active windows should remain disabled by default.
+- Set `YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE=25`.
+- Use the true `3+3` lane config: `P:\packages\yt-is\.logs\sharded_lane_series\tmp_pro_free_3w.json`.
+- Use a fresh run root: `P:\packages\yt-is\.logs\sharded_lane_series\fresh_state_3plus3_extract_window_run01`. If it already exists, use `run02`.
+- Stop if auth fails, if `worker_shape_signature` is not `3+3`, or if fewer than `800` items are processed. Mark partial results as partial, not a ceiling.
+- Do not delete notebooks outside the industrial worker state.
+
+Preflight:
+
+```powershell
+cd P:\packages\yt-is
+$env:PYTHONPATH = 'P:\packages\yt-is'
+Remove-Item Env:\YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE -ErrorAction SilentlyContinue
+$env:YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE = '25'
+$env:YTIS_NLM_NOT_FOUND_SOURCE_LIST_PROBE_CAP = '1'
+python -m pytest -q tests/test_nlm_config.py tests/test_nlm_batch.py tests/test_sharded_lane_sequence.py tests/test_run_evidence_check.py
+```
+
+Benchmark command:
+
+```powershell
+python P:\packages\yt-is\bin\csf-sharded-lane-sequence `
+  --lane-config P:\packages\yt-is\.logs\sharded_lane_series\tmp_pro_free_3w.json `
+  --run-root P:\packages\yt-is\.logs\sharded_lane_series\fresh_state_3plus3_extract_window_run01 `
+  --smoke-limit 400 `
+  --smoke-batch-size 200 `
+  --soak-limit 400 `
+  --soak-batch-size 200 `
+  --expected-worker-shape 3+3 `
+  --reusable-pipeline-mode serial
+```
+
+Report back with:
+
+- Test result and exact benchmark command.
+- `combined.hot_path_videos_per_hour`, `combined.hot_path_success_count_total`, `combined.fail_count_total`, and `combined.processed_count_total`.
+- `worker_shape_signature` and `throughput_valid`.
+- Per-lane `add_elapsed_s_total`, `setup_elapsed_s_total`, `extract_elapsed_s_total`, `worker_idle_wait_s_total`, `source_ready_age_s_max`, and `content_fetch_status`.
+- From worker logs, summarize `nlm_batch_source_materialization_wait_succeeded`, `nlm_batch_subbatch_age_guard_checked`, and source-content fetch events by lane/account/worker/source age/status.
+
+Decision gates:
+
+- If the run completes cleanly and keeps source age under the cliff with lower wall time than the active-window run, keep extract windows as the default next candidate.
+- If the run still spends most of its time in content fetch or source-age cliff failures, keep the problem framed as add-to-extract cadence and avoid geometry changes.
+- If failures cluster by one lane/account/worker, investigate that profile/auth/browser root before any throughput tuning.
+- If latency/failure is uniform across lanes/workers/source ages, treat it as NotebookLM backend variance and rerun the same command once with a fresh root before changing code.
+
+Do not do next:
+
+- Do not run more active-window sizes.
+- Do not widen the source-age cliff.
+- Do not change auth TTL.
+- Do not switch captioned items to `yt-dlp` without a same-shape A/B.
+- Do not run a new worker-count geometry sweep until this attribution run identifies a code-path reason to do so.
+
+Completed run:
+
+- `fresh_state_3plus3_extract_window_run01` completed cleanly with `status=ok`, `throughput_valid=true`, and `worker_shape_signature=3+3`.
+- Combined hot-path VPH was `1260.84` with `693/107` hot-path success/failure and `800` processed.
+- Pro lane: `320/80`, `setup_elapsed_s_total=92.591`, `add_elapsed_s_total=1825.089`, `worker_idle_wait_s_total=0.0`, `source_ready_age_s_max=277.452`, `content_fetch_status_counts_total={"ready":320,"source_age_cliff":2,"command_failed":5}`.
+- Free lane: `373/27`, `setup_elapsed_s_total=78.501`, `add_elapsed_s_total=1800.1`, `worker_idle_wait_s_total=0.0`, `source_ready_age_s_max=206.467`, `content_fetch_status_counts_total={"ready":373,"source_age_cliff":1,"command_failed":1}`.
+- `fresh_state_3plus3_extract_window_run02` completed cleanly with `status=ok`, `throughput_valid=true`, and `worker_shape_signature=3+3`.
+- Combined hot-path VPH was `1120.27` with `756/44` hot-path success/failure and `800` processed.
+- Pro lane: `393/7`, `setup_elapsed_s_total=93.154`, `add_elapsed_s_total=1949.02`, `extract_elapsed_s_total=4755.724`, `worker_idle_wait_s_total=307.798`, `source_ready_age_s_max=323.436`, `content_fetch_status_counts_total={"ready":393,"source_age_cliff":7,"command_failed":4}`.
+- Free lane: `363/37`, `setup_elapsed_s_total=82.165`, `add_elapsed_s_total=1925.905`, `extract_elapsed_s_total=4629.668`, `worker_idle_wait_s_total=131.068`, `source_ready_age_s_max=293.572`, `content_fetch_status_counts_total={"ready":363,"source_age_cliff":10,"command_failed":2}`.
+- The summary schema now surfaces `extract_elapsed_s_total` in the lane aggregates, so the next attribution pass can separate add from extract instead of reading add as a catch-all bucket.
+
+Conclusion:
+
+- The no-reset extract-window mode is not a ceiling path on its own. Both reruns kept the notebook alive, but throughput landed far below the active-window diagnostic and below the better age-capped control.
+- The key remaining signal is still add-to-extract cadence and content-fetch failure behavior, not notebook rotation geometry.
+- Treat extract windows as a useful option for targeted diagnosis, not the default throughput winner.
+
+## Phase 14: True `3+3` Serial Control With Windows Disabled
+
+Purpose: establish the corrected serial baseline for the same true `3+3` shape now that add and extract are separable in the summary schema. This is the missing A/B against the extract-window runs.
+
+Run contract:
+
+- Do not change code before the run.
+- Do not set `YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE`.
+- Do not set `YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE`.
+- Use the true `3+3` lane config: `P:\packages\yt-is\.logs\sharded_lane_series\tmp_pro_free_3w.json`.
+- Use a fresh run root: `P:\packages\yt-is\.logs\sharded_lane_series\fresh_state_3plus3_extract_schema_control_run01`. If it already exists, use `run02`.
+- Stop if auth fails, if `worker_shape_signature` is not `3+3`, or if fewer than `800` items are processed. Mark partial results as partial, not a ceiling.
+- Do not delete notebooks outside the industrial worker state.
+
+Preflight:
+
+```powershell
+cd P:\packages\yt-is
+$env:PYTHONPATH = 'P:\packages\yt-is'
+Remove-Item Env:\YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE -ErrorAction SilentlyContinue
+Remove-Item Env:\YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE -ErrorAction SilentlyContinue
+$env:YTIS_NLM_NOT_FOUND_SOURCE_LIST_PROBE_CAP = '1'
+python -m pytest -q tests/test_breadth_series.py tests/test_nlm_config.py tests/test_nlm_batch.py tests/test_sharded_lane_sequence.py tests/test_run_evidence_check.py
+```
+
+Benchmark command:
+
+```powershell
+python P:\packages\yt-is\bin\csf-sharded-lane-sequence `
+  --lane-config P:\packages\yt-is\.logs\sharded_lane_series\tmp_pro_free_3w.json `
+  --run-root P:\packages\yt-is\.logs\sharded_lane_series\fresh_state_3plus3_extract_schema_control_run01 `
+  --smoke-limit 400 `
+  --smoke-batch-size 200 `
+  --soak-limit 400 `
+  --soak-batch-size 200 `
+  --expected-worker-shape 3+3 `
+  --reusable-pipeline-mode serial
+```
+
+Report back with:
+
+- Test result and exact benchmark command.
+- `combined.hot_path_videos_per_hour`, `combined.hot_path_success_count_total`, `combined.fail_count_total`, and `combined.processed_count_total`.
+- `worker_shape_signature` and `throughput_valid`.
+- Per-lane `add_elapsed_s_total`, `setup_elapsed_s_total`, `extract_elapsed_s_total`, `worker_idle_wait_s_total`, `source_ready_age_s_max`, and `content_fetch_status`.
+- From worker logs, summarize `nlm_batch_source_materialization_wait_succeeded`, `nlm_batch_subbatch_age_guard_checked`, and source-content fetch events by lane/account/worker/source age/status.
+
+Decision gates:
+
+- If normal serial has materially lower `extract_elapsed_s_total` than the extract-window run, extract windows remain diagnostic only.
+- If normal serial still shows large `extract_elapsed_s_total` and the same age/failure pattern, the next move is source-age-aware extraction cadence.
+- If failures cluster by one lane/account/worker, investigate that profile/auth/browser root before any throughput tuning.
+- If latency/failure is uniform across lanes/workers/source ages, treat it as NotebookLM backend variance and rerun the same command once with a fresh root before changing code.
+
+Completed run:
+
+- `fresh_state_3plus3_source_age_cadence_run01` completed cleanly with `status=ok`, `throughput_valid=true`, and `worker_shape_signature=3+3`.
+- Combined hot-path VPH was `1238.70` with `670` hot-path successes, `130` failures, and `800` processed.
+- Pro lane: `317/83`, `setup_elapsed_s_total=77.218`, `add_elapsed_s_total=1075.465`, `extract_elapsed_s_total=3276.988`, `worker_idle_wait_s_total=453.228`, `source_ready_age_s_max=338.197`, and `content_fetch_status_counts_total={"ready":317,"source_age_cliff":83,"command_failed":13}`.
+- Free lane: `353/47`, `setup_elapsed_s_total=71.613`, `add_elapsed_s_total=1103.617`, `extract_elapsed_s_total=3330.867`, `worker_idle_wait_s_total=681.246`, `source_ready_age_s_max=367.341`, and `content_fetch_status_counts_total={"ready":353,"source_age_cliff":47,"command_failed":15}`.
+- This beat the true serial control (`1174.91` VPH) and reduced failures, but it still sits well below the age-capped control, so the cadence knob is an improvement, not the ceiling.
+- `fresh_state_3plus3_source_age_cadence_hygiene_run04` repeated the same `3+3` cadence with the cleanup/prewarm contract in place and completed cleanly at `1155.96` hot-path VPH with `667` hot-path successes, `133` failures, and `800` processed. Pro landed at `331/69` and Free at `336/64`; this is valid confirmation evidence, but it did not beat `run01`, so cadence is confirmed but not ceiling-setting.
+- `fresh_state_3plus3_source_age_cadence_hygiene_run05` used the minimum hard-threshold window size and finished smoke only with `status=partial`, `throughput_valid=false`, `613/137/750` combined, and a free-lane shortfall at `350/400`. The more aggressive window collapse did not produce a valid control, so do not treat it as throughput evidence.
+- `fresh_state_3plus3_source_age_projected_rotation_run01` is the projected-age rotation rerun under the same `3+3` shape. It completed cleanly with `status=ok`, `throughput_valid=true`, `779/21/800` combined, and `1585.31` combined hot-path VPH. Pro landed at `388/12` with `source_ready_age_s_max=259.493` and `885.03` VPH; Free landed at `391/9` with `source_ready_age_s_max=279.678` and `999.0` VPH. This is valid evidence that the projected-age guard works, but it did not beat the earlier quarter-window cadence result, so it is not a new ceiling.
+- `fresh_state_3plus3_worker_balance_ab_nlm069_run02` completed as a valid negative worker-balance rerun under the `nlm` latest-first fallback path. It finished cleanly at `1319.33` combined hot-path VPH with `357` hot-path successes, `43` failures, and `400` processed in soak. Pro landed at `719.87` VPH and Free at `840.52` VPH. The rerun did not beat the prior `1377.29` worker-balance reference, so the `nlm069` fallback path is reliability-only, not throughput-improving.
+- `fresh_state_3plus3_worker_balance_ab_nlm069_run03` is the first clean worker-balance repeat after the cleanup preflight was enforced. It finished at `1733.12` combined hot-path VPH with `784` hot-path successes, `16` failures, and `800` processed. Pro landed at `395/5` with `source_ready_age_s_max=209.771` and `971.94` VPH; Free landed at `389/11` with `source_ready_age_s_max=253.187` and `1164.78` VPH. This is materially better than the prior worker-balance reference, but it is still below the age-capped control.
+- `fresh_state_3plus3_worker_balance_ab_nlm069_run04` repeated the same `3+3` worker-balance shape under the same preflight cleanup contract and finished cleanly at `1479.01` combined hot-path VPH with `794` hot-path successes, `6` failures, and `800` processed. Pro landed at `397/3` with `source_ready_age_s_max=258.623` and `803.35` VPH; Free landed at `397/3` with `source_ready_age_s_max=215.727` and `1111.95` VPH. The repeat confirmed the branch is volatile, not ceiling-setting, and the live stage reducer now points at worker-profile assignment as the stronger signal.
+- `fresh_state_3plus3_extract_schema_control_run04` only completed smoke and stayed partial: combined hot-path VPH `494.24` on `460/290/750`; Pro `202/148` with `processed_count_total=350` and `source_ready_age_s_max=438.695`; Free `258/142` with `processed_count_total=400` and `source_ready_age_s_max=585.414`. Soak never started, so this run is not a usable control baseline or ceiling candidate.
+- Offline attribution over the new `nlm_source_content_command_completed` events in `fresh_state_3plus3_extract_schema_control_run04` shows mixed pressure rather than a single age cliff: `740` commands total; pro `worker-03` failed `76/147` (`51.7%`), free `worker-03` failed `42/109` (`38.5%`), and `last_auth_refresh_age_s` in the `5-19s` bucket had a `41.1%` failure rate versus `26.8%` for `20-59s`. Source age still matters (`60-119s` failed `40.1%`, `180+s` failed `42.6%`), but the slow and failed commands are not age-pure enough to justify another cadence tweak first.
+- `fresh_state_3plus3_extract_schema_control_run05` is the fresh same-shape control rerun with the live worker logs. The updated stage reducer now reads `workers_*/logs/*.jsonl`, understands the nested `action`/`data` shape, and surfaces command attribution automatically: Pro `worker-01/02/03` split `83/134/146` commands with `31/19/19` failures; Free `worker-01/02/03` split `207/102/87` commands with `37/41/8` failures. The reducer now also compares worker-profile spread against auth-refresh spread and the run05 split says worker balance is the stronger signal, with auth-refresh age secondary.
+- Next move after this attribution: investigate worker balance / profile assignment before changing cadence thresholds again. The projected-age rotation rerun did not raise the ceiling, and the worker-balance repeat now shows the pro lane's `worker-03` profile as the unstable one, so use the worker-profile split before retuning the age-guard branch again.
+
+Do not do next:
+
+- Do not run more extract-window sizes.
+- Do not widen the source-age cliff.
+- Do not change auth TTL.
+- Do not switch captioned items to `yt-dlp` without a same-shape A/B.
+- Do not run a new worker-count geometry sweep until this attribution run identifies a code-path reason to do so.

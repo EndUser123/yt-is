@@ -40,7 +40,7 @@ Check all tracked YouTube channels for new videos and manage your channel list.
   - ⚠️ **Quota warning**: `history` uses YouTube Data API for channel metadata resolution. Each channel lookup consumes API quota. If quota is exhausted, use `history --dry-run` to preview without adding.
   - `history --dry-run` — Preview channels without adding them
   - `history --min-history-videos <n>` — Minimum videos watched from a channel to qualify (default: 2)
-- `fetch` — **ESCALATION BATCH PROCESS**: Download transcripts for all pending videos using yt-dlp → Selenium fallback (RECOMMENDED)
+- `fetch` — **ESCALATION BATCH PROCESS**: Download transcripts for all pending videos using the full fallback chain (RECOMMENDED)
   - `fetch --dry-run` — Preview what would be fetched
   - `fetch --source <url>` — Process only one channel
   - `fetch --workers <n>` — Use N parallel workers (default: 1)
@@ -94,9 +94,13 @@ Channels are checked in order of `last_checked` (oldest first) to ensure fair co
 The `fetch` command implements automatic escalation for transcript downloading:
 
 **Escalation Chain (per video):**
-1. **yt-dlp (WEB client)** - Fastest method (~5 seconds), works for most public videos
-2. **yt-dlp with cookies** - For age-restricted videos
-3. **Selenium Firefox** - Fallback for bot-check failures (~15-30 seconds)
+1. **oEmbed reachability probe** - Cheap early skip for removed/private videos
+2. **yt-dlp (WEB client)** - Fastest method (~5 seconds), works for most public videos
+3. **yt-dlp with cookies** - For age-restricted videos
+4. **direct API** - Cheap terminal/no-transcript discriminator
+5. **NotebookLM Industrial** - Best for backlog and clean transcripts
+6. **Selenium Firefox** - Fallback for bot-check failures (~15-30 seconds)
+7. **Whisper** - Audio fallback
 
 **Features:**
 - **Automatic retries**: Each video tries all methods until one succeeds
@@ -132,7 +136,7 @@ channel_metadata table (SQLite)
   │                                                ▼
   │                                       batch_status table (pending)
   │
-  └─► python bin/csf-source fetch ──► ESCALATION CHAIN (yt-dlp → Selenium) ──► transcripts.sqlite
+  └─► python bin/csf-source fetch ──► FULL FALLBACK CHAIN ──► transcripts.sqlite
 ```
 
 ## Storage

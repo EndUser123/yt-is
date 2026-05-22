@@ -52,6 +52,8 @@ def test_route_plus_fallback_policy_enables_both_route_and_fallback_workers():
     policy = mod.POLICY_ENV["notebooklm_route_plus_fallback_30s"]
 
     assert policy["YTIS_ROUTE_NO_CAPTIONS_TO_FALLBACK"] == "true"
+    assert policy["YTIS_TRANSCRIPT_EXPENSIVE_FALLBACK_ENABLED"] == "false"
+    assert policy["YTIS_WHISPER_ON_NOTEBOOKLM_ADD_FAILED"] == "false"
     assert policy["YTIS_TRANSCRIPT_FALLBACK_WORKERS"] == "2"
     assert policy["YTIS_TRANSCRIPT_FALLBACK_MIN_START_INTERVAL_S"] == "0"
 
@@ -62,6 +64,8 @@ def test_route_plus_fallback_1w_policy_keeps_fallback_to_one_worker():
     policy = mod.POLICY_ENV["notebooklm_route_plus_fallback_30s_1w"]
 
     assert policy["YTIS_ROUTE_NO_CAPTIONS_TO_FALLBACK"] == "true"
+    assert policy["YTIS_TRANSCRIPT_EXPENSIVE_FALLBACK_ENABLED"] == "false"
+    assert policy["YTIS_WHISPER_ON_NOTEBOOKLM_ADD_FAILED"] == "false"
     assert policy["YTIS_TRANSCRIPT_FALLBACK_WORKERS"] == "1"
     assert policy["YTIS_TRANSCRIPT_FALLBACK_MIN_START_INTERVAL_S"] == "0"
 
@@ -259,7 +263,9 @@ def test_load_or_build_cohort_manifest_shape_uses_live_trace_cases(tmp_path):
     )
 
     assert cohort["cohort_shape"] == "manifest"
-    assert Path(cohort["manifest_json"]) == Path("P:/packages/yt-is/tests/fixtures/shared_benchmark_manifest.json")
+    assert cohort["manifest_json"] == str(
+        Path("P:/packages/yt-is/tests/fixtures/shared_benchmark_manifest.json")
+    )
     assert all(item["source_type"] == "live_trace" for item in cohort["items"])
     assert [item["case_id"] for item in cohort["items"]] == [
         "whisper-skip-music-001",

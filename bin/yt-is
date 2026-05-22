@@ -7,7 +7,7 @@ Usage:
     yt-is add <url>         # Add a new channel to track
     yt-is history           # Import channels from watch history
     yt-is watchlater        # Import channels from Watch Later
-    yt-is fetch             # Download pending transcripts (yt-dlp → Selenium)
+    yt-is fetch             # Download pending transcripts (full fallback chain)
     yt-is fetch --dry-run   # Preview what would be fetched
 """
 
@@ -67,8 +67,11 @@ def main() -> None:
         help="Minimum videos in Watch Later from a channel to qualify (default: 2)",
     )
 
-    # fetch command: download pending transcripts via escalation chain
-    fetch_parser = subparsers.add_parser("fetch", help="Download pending transcripts via escalation chain (yt-dlp → Selenium)")
+    # fetch command: download pending transcripts via the full fallback chain
+    fetch_parser = subparsers.add_parser(
+        "fetch",
+        help="Download pending transcripts via the full fallback chain (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper)",
+    )
     fetch_parser.add_argument("--dry-run", action="store_true", help="Preview what would be fetched")
     fetch_parser.add_argument("--source", type=str, help="Process only one channel (by URL)")
     fetch_parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")
@@ -150,7 +153,7 @@ def main() -> None:
         sys.exit(result.returncode)
 
     elif args.command == "fetch":
-        # Download pending transcripts via escalation chain
+        # Download pending transcripts via the full fallback chain
         fetch_cmd = [sys.executable, str(CSF_SOURCE), "fetch"]
         if args.dry_run:
             fetch_cmd.append("--dry-run")

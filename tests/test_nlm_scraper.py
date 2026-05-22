@@ -263,6 +263,57 @@ class TestNLMIndustrialScraperStagingNotebook:
         assert scraper._staging_nb_id is None
         assert scraper._source_count == 0
 
+    def test_prune_ephemeral_browser_cache_only_removes_cache_dirs(self, scraper, tmp_path):
+        """Cache pruning should preserve auth and preference files in the Selenium clone."""
+        profile_root = tmp_path / "yt-is" / "selenium-profiles" / "chrome" / "session-1"
+        cache_dir = profile_root / "Default" / "Cache"
+        code_cache_dir = profile_root / "Default" / "Code Cache"
+        dawn_cache_dir = profile_root / "Default" / "DawnGraphiteCache"
+        cookies = profile_root / "Default" / "Cookies"
+        preferences = profile_root / "Default" / "Preferences"
+        cache_dir.mkdir(parents=True)
+        code_cache_dir.mkdir(parents=True)
+        dawn_cache_dir.mkdir(parents=True)
+        cookies.write_text("auth", encoding="utf-8")
+        preferences.write_text("prefs", encoding="utf-8")
+        (cache_dir / "entry").write_text("cache", encoding="utf-8")
+        (code_cache_dir / "entry").write_text("code-cache", encoding="utf-8")
+        (dawn_cache_dir / "entry").write_text("dawn-cache", encoding="utf-8")
+        scraper._selected_browser_profile_root = str(profile_root)
+
+        with mock.patch("csf.nlm_scraper.log_action") as mock_log:
+            pruned, failed = scraper._prune_ephemeral_browser_cache()
+
+        assert (pruned, failed) == (3, 0)
+        assert not cache_dir.exists()
+        assert not code_cache_dir.exists()
+        assert not dawn_cache_dir.exists()
+        assert cookies.read_text(encoding="utf-8") == "auth"
+        assert preferences.read_text(encoding="utf-8") == "prefs"
+        mock_log.assert_called_with(
+            "selenium_profile_cache_pruned",
+            {
+                "profile_root": str(profile_root),
+                "pruned": 3,
+                "failed": 0,
+            },
+        )
+
+    def test_prune_ephemeral_browser_cache_refuses_non_selenium_root(self, scraper, tmp_path):
+        """Cache pruning should not operate outside the Selenium profile namespace."""
+        outside_root = tmp_path / "notebooklm-browser-session"
+        cache_dir = outside_root / "Default" / "Cache"
+        cache_dir.mkdir(parents=True)
+        scraper._selected_browser_profile_root = str(outside_root)
+
+        with mock.patch("csf.nlm_scraper.log_action") as mock_log:
+            pruned, failed = scraper._prune_ephemeral_browser_cache()
+
+        assert (pruned, failed) == (0, 0)
+        assert cache_dir.exists()
+        mock_log.assert_called_once()
+        assert mock_log.call_args.args[0] == "selenium_profile_cache_prune_skipped"
+
 
 class TestNLMIndustrialScraperPerNotebook:
     """Test the original scrape_notebook path (explicit notebook ID)."""
@@ -546,11 +597,14 @@ class TestRunNlmAuthRetry:
         assert mock_run.call_count == 3
         calls = mock_run.call_args_list
         # First call: the actual command (failed)
-        assert calls[0][0][0] == ["nlm", "notebook", "list"]
+        assert calls[0][0][0][1:] == ["notebook", "list"]
+        assert calls[0][0][0][0].endswith("csf-nlm-wrapper.cmd")
         # Second call: login --force
-        assert calls[1][0][0] == ["nlm", "login", "--force"]
+        assert calls[1][0][0][1:] == ["login", "--force"]
+        assert calls[1][0][0][0].endswith("csf-nlm-wrapper.cmd")
         # Third call: retry of original command
-        assert calls[2][0][0] == ["nlm", "notebook", "list"]
+        assert calls[2][0][0][1:] == ["notebook", "list"]
+        assert calls[2][0][0][0].endswith("csf-nlm-wrapper.cmd")
         assert res.stdout == "retry-success"
 
     def test_run_nlm_auth_error_login_fails_no_retry(self, scraper):

@@ -1990,6 +1990,104 @@ class TestWorkerNotebookCleanup:
         assert cleanup_complete["status"] == "deleted"
         assert cleanup_complete["stale_worker_notebook_count"] == 1
 
+    def test_cleanup_stale_worker_notebooks_include_active_deletes_all_worker_prefix_matches(self, tmp_path, monkeypatch):
+        """Benchmark cleanup mode should delete active and stale worker notebooks by safe title prefix."""
+        state_root = tmp_path / "worker-states"
+        state_root.mkdir()
+        (state_root / "worker-01.json").write_text(json.dumps({"nb_id": "keep-1"}), encoding="utf-8")
+        (state_root / "worker-02.json").write_text(json.dumps({"nb_id": "keep-2"}), encoding="utf-8")
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", str(state_root))
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX", "benchmark-shard-free")
+
+        notebooks = {
+            "notebooks": [
+                {"id": "keep-1", "name": "benchmark-shard-free-01"},
+                {"id": "stale-1", "name": "benchmark-shard-free-03"},
+                {"id": "ignore-1", "name": "personal-notebook"},
+            ]
+        }
+        deleted_ids: list[str] = []
+
+        def mock_run_cmd(self, args, timeout=300):
+            if args[:3] == ["notebook", "list", "--json"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"stdout": json.dumps(notebooks), "stderr": "", "returncode": 0},
+                )()
+            return type("CompletedProcess", (), {"stdout": "", "stderr": "unexpected", "returncode": 1})()
+
+        def mock_delete_notebook_with_retries(ingestor, nb_id, **kwargs):
+            deleted_ids.append(nb_id)
+            return type("CompletedProcess", (), {"stdout": "deleted", "stderr": "", "returncode": 0})()
+
+        monkeypatch.setattr(nlm_batch.NLMBatchIngestor, "_run_cmd", mock_run_cmd)
+        monkeypatch.setattr(nlm_batch, "_delete_notebook_with_retries", mock_delete_notebook_with_retries)
+        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+            deleted, failed = nlm_batch.cleanup_stale_worker_notebooks(delete=True, include_active=True)
+
+        assert deleted == 2
+        assert failed == 0
+        assert deleted_ids == ["keep-1", "stale-1"]
+        assert not list(state_root.glob("worker-*.json"))
+        cleanup_complete = next(
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_worker_notebook_cleanup_complete"
+        )
+        assert cleanup_complete["include_active"] is True
+        assert cleanup_complete["state_files_removed"] == 2
+        assert cleanup_complete["stale_worker_notebook_count"] == 2
+
+    def test_cleanup_stale_worker_notebooks_delete_fails_closed_when_list_fails(self, tmp_path, monkeypatch):
+        """Delete mode should not report success when cleanup cannot list notebooks."""
+        state_root = tmp_path / "worker-states"
+        state_root.mkdir()
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", str(state_root))
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX", "benchmark-shard-free")
+
+        def mock_run_cmd(self, args, timeout=300):
+            if args[:3] == ["notebook", "list", "--json"]:
+                return type("CompletedProcess", (), {"stdout": "", "stderr": "list failed", "returncode": 1})()
+            raise AssertionError(f"unexpected command {args}")
+
+        monkeypatch.setattr(nlm_batch.NLMBatchIngestor, "_run_cmd", mock_run_cmd)
+        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+            deleted, failed = nlm_batch.cleanup_stale_worker_notebooks(delete=True, include_active=True)
+
+        assert deleted == 0
+        assert failed == 1
+        cleanup_complete = next(
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_worker_notebook_cleanup_complete"
+        )
+        assert cleanup_complete["status"] == "list_failed"
+        assert cleanup_complete["failed"] == 1
+
+    def test_cleanup_stale_worker_notebooks_refuses_generic_benchmark_prefix(self, tmp_path, monkeypatch):
+        """Only known benchmark prefixes should be destructive-cleanup eligible."""
+        state_root = tmp_path / "worker-states"
+        state_root.mkdir()
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", str(state_root))
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX", "benchmark-personal")
+
+        def mock_run_cmd(self, args, timeout=300):
+            raise AssertionError("generic benchmark prefix should not list or delete notebooks")
+
+        monkeypatch.setattr(nlm_batch.NLMBatchIngestor, "_run_cmd", mock_run_cmd)
+        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+            deleted, failed = nlm_batch.cleanup_stale_worker_notebooks(delete=True, include_active=True)
+
+        assert deleted == 0
+        assert failed == 0
+        cleanup_complete = next(
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_worker_notebook_cleanup_complete"
+        )
+        assert cleanup_complete["status"] == "prefix_untrusted"
+
     def test_cleanup_stale_worker_notebooks_refuses_untrusted_prefix(self, tmp_path, monkeypatch):
         """Cleanup should fail closed when the configured notebook prefix is not industrial-scoped."""
         state_root = tmp_path / "worker-states"

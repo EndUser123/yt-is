@@ -4,7 +4,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%2011-blue)
 ![Claude Code](https://img.shields.io/badge/Claude%20Code-Compatible-green)
 
-YouTube transcript ingestion and analysis pipeline — discover new videos, download transcripts with automatic escalation (yt-dlp → NotebookLM), and store results in CKS.
+YouTube transcript ingestion and analysis pipeline — discover new videos, download transcripts with the full fallback chain (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper), and store results in CKS.
 
 ## Operator Notes
 
@@ -19,7 +19,7 @@ For implementation gotchas, recurring bugs, and lessons learned from live canari
 # Industrial Ingest (NLM Batch) - BEST FOR BACKLOG (worker-count dependent; benchmark sweep continues through 8 workers)
 /yt-nlm
 
-# Surgical Fetch (yt-dlp -> Selenium fallback)
+# Surgical Fetch (full transcript fallback chain)
 /yt-is fetch
 ```
 
@@ -84,7 +84,7 @@ Check all tracked YouTube channels for new videos and manage your channel list.
 - `sync` — Check all tracked channels for new videos
 - `list` — List all tracked channels with metadata
 - `add <url>` — Add a new channel or playlist to track
-- `fetch` — Download transcripts for all pending videos using escalation chain
+- `fetch` — Download transcripts for all pending videos using the full fallback chain
 
 **Escalation Chain (per video):**
 1. **yt-dlp (WEB client)** — Fastest (~5 seconds), works for most public videos
@@ -97,7 +97,7 @@ Extract YouTube transcripts using NotebookLM's batch notebook workflow.
 
 **Recommended approach:** Worker-owned batch notebooks (one notebook per worker title, reused across batches; batch size 200) — uses `nlm source content` (raw text), has auth auto-recovery built in.
 
-**Auth contract for tests:** `nlm login` covers the CLI path only. The DOM/spinner readiness path uses a separate persistent Chrome profile and must be bootstrapped once with a signed-in browser session before DOM tests will work.
+**Auth contract for tests:** `nlm login` covers the CLI path only. The DOM/spinner readiness path uses a separate persistent Chrome profile and must be bootstrapped once with a signed-in browser session before DOM tests will work. yt-is also refreshes the NotebookLM CLI itself with `uv tool install --upgrade notebooklm-mcp-cli` unless `YTIS_NLM_AUTO_UPDATE=0`, then probes `nlm login --check` and falls back to the known-good pinned git spec via `YTIS_NLM_FALLBACK_SPEC` if the latest release breaks login on this machine.
 
 **Old approach (deprecated):** Ephemeral notebooks — one notebook per video, slow, wastes NotebookLM slots.
 
@@ -111,7 +111,7 @@ Channel management CLI wrapping `csf-source`.
 yt-is sync                  # Check all tracked channels for new videos
 yt-is list                  # List all tracked channels
 yt-is add <url>             # Add a new channel to track
-yt-is fetch                 # Download pending transcripts (escalation chain)
+yt-is fetch                 # Download pending transcripts (full fallback chain)
 yt-is fetch --dry-run       # Preview what would be fetched
 yt-is fetch --source <url>  # Process only one channel
 yt-is fetch --workers 2     # Use 2 parallel workers
@@ -159,7 +159,7 @@ channel_metadata table (SQLite)
     │                                                ▼
     │                                       batch_status table (pending)
     │
-    ├─► yt-is fetch ──► ESCALATION CHAIN (yt-dlp → Selenium) ──► transcripts.sqlite
+    ├─► yt-is fetch ──► FULL FALLBACK CHAIN ──► transcripts.sqlite
     │
     └─► /yt-nlm ──► Batch notebooks ──► nlm source content ──► transcripts.sqlite
 ```
@@ -186,7 +186,7 @@ channel_metadata table (SQLite)
 
 - Python 3.12+
 - `yt-dlp>=2024.0.0`
-- `nlm` CLI (NotebookLM command-line interface)
+- `nlm` CLI (NotebookLM command-line interface, auto-refreshed by yt-is via `uv tool install --upgrade notebooklm-mcp-cli` with a pinned fallback if the latest build fails login)
 - Firefox (for Selenium fallback)
 
 ### Key Files
@@ -228,7 +228,7 @@ graph TB
 ---
 
 **Key features:**
-- Automatic escalation chain for transcript download
+- Automatic full fallback chain for transcript download
 - Batch NotebookLM workflow with shared defaults in `csf/nlm_config.py` (`notebook_batch_size = 50`, `notebook_source_cap = 50`) and one notebook per worker title
 - Auth auto-recovery for NotebookLM sessions
 - Configurable NotebookLM policy via `csf/nlm_config.py` and the `YTIS_NLM_*` env vars it reads

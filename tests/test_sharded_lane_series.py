@@ -563,6 +563,10 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
     assert calls[1]["env"]["YTIS_BATCH_STATUS_DB_PATH"].endswith("out\\free\\batch_status.sqlite")
     assert calls[1]["env"]["YTIS_NLM_AUTH_NONINTERACTIVE"] == "1"
     assert report["report_version"] == 1
+    assert report["metric_contract"] == "combined_hot_path_videos_per_hour_excludes_whisper_and_parent_chrome_reap_includes_worker_cleanup"
+    assert report["worker_shape_signature"] == "4+4"
+    assert report["lane_worker_counts"] == {"pro": 4, "free": 4}
+    assert report["throughput_valid"] is True
     assert report["combined"]["hot_path_success_count_total"] == 594
     assert report["combined"]["hot_path_videos_per_hour"] == 5091.43
     assert report["report_version"] == 1
@@ -707,6 +711,7 @@ def test_run_sharded_lane_series_marks_partial_lane_reports_as_partial(tmp_path,
     )
 
     assert report["status"] == "partial"
+    assert report["throughput_valid"] is False
     assert report["partial_lane_count"] == 1
     assert report["completed_lane_count"] == 2
     assert report["successful_lane_count"] == 1
@@ -752,6 +757,7 @@ def test_run_sharded_lane_series_clears_stale_summary_before_run(tmp_path, monke
 
     persisted = json.loads(stale_report.read_text(encoding="utf-8"))
     assert report["status"] == "invalidated"
+    assert report["throughput_valid"] is False
     assert report["report_version"] == 1
     assert report["failure_count"] == 1
     assert report["failures"][0]["lane"] == "pro"

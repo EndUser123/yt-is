@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 
 import psutil
 
+from csf.nlm_bootstrap import ensure_latest_nlm_cli, get_nlm_executable as _bootstrap_get_nlm_executable
+
 
 DEFAULT_NLM_CHROME_PROFILE_ROOT = Path.home() / ".notebooklm-mcp-cli" / "chrome-profile"
 _AUTH_CHECK_CACHE_LOCK = threading.Lock()
@@ -87,11 +89,11 @@ def build_nlm_command(*args: str) -> list[str]:
 
 
 def get_nlm_executable() -> str:
-    override = os.getenv("YTIS_NLM_CLI", "").strip()
-    return override or "nlm"
+    return _bootstrap_get_nlm_executable()
 
 
 def run_nlm(args: list[str], *, timeout_s: float, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    ensure_latest_nlm_cli()
     try:
         return subprocess.run(
             build_nlm_command(*args),
@@ -275,8 +277,6 @@ def stop_chrome_pids(pids: set[int]) -> None:
         + "}"
     )
     subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=20, check=False)
-    # Give Windows and Chrome a brief settle window to completely flush processes from the system table
-    time.sleep(0.5)
 
 
 def default_chrome_profile_pids() -> set[int]:

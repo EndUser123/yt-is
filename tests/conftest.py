@@ -1,29 +1,9 @@
 """Pytest configuration for yt-is tests."""
 
 import os
-import sys
 from pathlib import Path
 
-# Prepend the worktree root to sys.path so that local csf files take precedence
-worktree_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, worktree_root.as_posix())
-
-# Force unload any already-loaded csf modules so they are re-imported from local path
-for mod_name in list(sys.modules.keys()):
-    if mod_name == "csf" or mod_name.startswith("csf."):
-        sys.modules.pop(mod_name)
-
 import pytest
-
-print(f"\n--- DEBUG CONFTEST RUNNING ---")
-print(f"worktree_root: {worktree_root.as_posix()}")
-print(f"sys.path: {sys.path[:5]}")
-try:
-    import csf
-    print(f"Imported csf from: {csf.__file__}")
-except Exception as e:
-    print(f"Failed to import csf: {e}")
-print(f"-------------------------------\n")
 
 
 @pytest.fixture(autouse=True)
@@ -54,15 +34,13 @@ def clean_shared_cache(tmp_path_factory):
     previous_playlist_import_db_path = os.environ.get("YTIS_PLAYLIST_IMPORT_DB_PATH")
     previous_retry_db_path = os.environ.get("YTIS_RETRY_QUEUE_DB_PATH")
     previous_shared_retry_db_path = os.environ.get("YTIS_NLM_SHARED_RETRY_POOL_DB_PATH")
-    previous_auth_daemon_enabled = os.environ.get("YTIS_NLM_AUTH_DAEMON_ENABLED")
+    previous_nlm_auto_update = os.environ.get("YTIS_NLM_AUTO_UPDATE")
     os.environ["YTIS_TRANSCRIPT_CACHE_DB_PATH"] = str(test_db_path)
     os.environ["YTIS_BATCH_STATUS_DB_PATH"] = str(batch_status_db_path)
     os.environ["YTIS_PLAYLIST_IMPORT_DB_PATH"] = str(playlist_import_db_path)
     os.environ["YTIS_RETRY_QUEUE_DB_PATH"] = str(retry_db_path)
     os.environ["YTIS_NLM_SHARED_RETRY_POOL_DB_PATH"] = str(shared_retry_db_path)
-    os.environ["YTIS_NLM_AUTH_DAEMON_ENABLED"] = "false"
-    import csf.nlm_config
-    csf.nlm_config.reset_nlm_config()
+    os.environ["YTIS_NLM_AUTO_UPDATE"] = "0"
 
     csf.cache.clear_all_storages()
     csf.batch_status._batch_status_storage = None
@@ -71,11 +49,12 @@ def clean_shared_cache(tmp_path_factory):
 
     # Also clear the per-source circuit breaker state so tests are isolated.
     import csf.transcript
-    csf.transcript._cookie_freshness_tracker = None
+    import csf.nlm_bootstrap
 
     with csf.transcript._circuit_lock:
         csf.transcript._consecutive_429.clear()
         csf.transcript._source_cooldown_until.clear()
+    csf.nlm_bootstrap.reset_nlm_bootstrap_state()
 
     # 2. Now delete the TEST DB files only.
     db_path = test_db_path
@@ -144,10 +123,8 @@ def clean_shared_cache(tmp_path_factory):
             os.environ.pop("YTIS_NLM_SHARED_RETRY_POOL_DB_PATH", None)
         else:
             os.environ["YTIS_NLM_SHARED_RETRY_POOL_DB_PATH"] = previous_shared_retry_db_path
-        if previous_auth_daemon_enabled is None:
-            os.environ.pop("YTIS_NLM_AUTH_DAEMON_ENABLED", None)
+        if previous_nlm_auto_update is None:
+            os.environ.pop("YTIS_NLM_AUTO_UPDATE", None)
         else:
-            os.environ["YTIS_NLM_AUTH_DAEMON_ENABLED"] = previous_auth_daemon_enabled
-        import csf.nlm_config
-        csf.nlm_config.reset_nlm_config()
+            os.environ["YTIS_NLM_AUTO_UPDATE"] = previous_nlm_auto_update
 
