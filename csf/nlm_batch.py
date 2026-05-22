@@ -30,6 +30,7 @@ from csf.nlm_worker_auth import (
     refresh_source_profile,
     sync_worker_profiles,
 )
+from csf.transcript import _get_cookie_freshness_tracker as _get_transcript_freshness_tracker
 from csf.shared_retry_pool import enqueue as enqueue_shared_retry
 from csf.youtube_page_inspector import inspect_youtube_watch_page, inspect_youtube_watch_page_via_ytdlp
 
@@ -123,6 +124,67 @@ def _describe_nlm_auth_refresh_reason(
     if cache_hit:
         return "cache_hit"
     return "cache_miss" if cache_session_age_s is None else "cache_expired"
+
+
+def _build_content_fetch_attribution_context(auth_context: _NLMAuthContext) -> dict[str, object]:
+    """Return stable auth/profile context for source-content fetch diagnostics."""
+    cache_hit, _ = nlm_auth_guard.auth_check_cache_hit(auth_context)
+    cache_session_age_s = nlm_auth_guard.auth_check_cache_session_age(auth_context)
+    return {
+        "notebooklm_profile": auth_context.profile,
+        "expected_email": auth_context.expected_email or None,
+        "auth_requires_profile": auth_context.requires_profile,
+        "auth_has_profile": auth_context.has_profile,
+        "auth_cache_hit": cache_hit,
+        "auth_cache_session_age_s": round(cache_session_age_s, 3) if cache_session_age_s is not None else None,
+        "auth_check_cache_ttl_s": nlm_auth_guard.auth_check_cache_ttl_seconds(),
+        "auth_check_interval_s": _NLM_CONFIG.auth_check_interval,
+        "auth_cooldown_s": _NLM_CONFIG.auth_cooldown,
+    }
+
+
+def _derive_worker_id_from_notebooklm_profile(notebooklm_profile: str | None) -> str | None:
+    """Normalize a NotebookLM profile name to the worker id used in diagnostics."""
+    if not notebooklm_profile:
+        return None
+    match = re.search(r"worker-(\d+)$", notebooklm_profile.strip())
+    if not match:
+        return None
+    return f"worker-{int(match.group(1)):02d}"
+
+
+def _build_source_content_command_completed_payload(
+    *,
+    nb_id: str | None,
+    source_id: str,
+    video_id: str | None,
+    attempt: int,
+    status: str,
+    elapsed_s: float,
+    content_length: int,
+    source_ready_age_s: float,
+    returncode: int,
+    failure_reason: str | None,
+    fetch_attribution_context: dict[str, object],
+) -> dict[str, object]:
+    notebooklm_profile = str(fetch_attribution_context.get("notebooklm_profile") or "")
+    auth_cache_session_age_s = fetch_attribution_context.get("auth_cache_session_age_s")
+    return {
+        "nb_id": nb_id,
+        "source_id": source_id,
+        "video_id": video_id,
+        "attempt": attempt,
+        "status": status,
+        "elapsed_s": elapsed_s,
+        "content_length": content_length,
+        "source_ready_age_s": source_ready_age_s,
+        "worker_id": _derive_worker_id_from_notebooklm_profile(notebooklm_profile),
+        "notebooklm_profile": notebooklm_profile or None,
+        "auth_cache_session_age_s": auth_cache_session_age_s,
+        "last_auth_refresh_age_s": auth_cache_session_age_s,
+        "returncode": returncode,
+        "failure_reason": failure_reason,
+    }
 
 
 def _log_nlm_auth_runtime_config_once(auth_context) -> None:
@@ -627,6 +689,14 @@ def _should_defer_source_content_fetch(ytdlp_probe: dict[str, object], status: s
     return classification == "ok"
 
 
+def _source_ready_age_exceeds_cliff(ready_reference_epoch: float, started_at_epoch: float) -> tuple[bool, float]:
+    """Return whether the source age already crossed the configured age cliff."""
+    if not ready_reference_epoch:
+        return False, 0.0
+    source_ready_age_s = round(started_at_epoch - ready_reference_epoch, 3)
+    return source_ready_age_s > _SOURCE_AGE_CLIFF_S, source_ready_age_s
+
+
 def _load_reusable_notebook_id() -> Optional[str]:
     try:
         state_path = _get_owner_notebook_state_path()
@@ -1025,6 +1095,24 @@ def _ensure_nlm_auth() -> bool:
     force_scheduled = force_every > 0 and check_count % force_every == 0
     cache_hit, _cache_session_established_at = nlm_auth_guard.auth_check_cache_hit(auth_context)
     cache_session_age_s = nlm_auth_guard.auth_check_cache_session_age(auth_context)
+
+    # Daemon fast-path: if background NLMAuthDaemon is enabled and the
+    # CookieFreshnessTracker reports fresh (daemon has confirmed auth within TTL),
+    # skip the expensive active probe / family-refresh entirely.
+    if not force_scheduled and _NLM_CONFIG.auth_daemon_enabled:
+        freshness = _get_transcript_freshness_tracker()
+        if freshness.is_fresh():
+            log_action(
+                "nlm_auth_checked",
+                {
+                    "component": "nlm_batch",
+                    "status": "daemon_fresh",
+                    "notebooklm_profile": auth_context.profile,
+                    "check_count": check_count,
+                },
+            )
+            return True
+
     if not force_scheduled and cache_hit:
         log_action(
             "nlm_auth_checked",
@@ -1509,12 +1597,13 @@ class NLMBatchIngestor:
     def __init__(self, batch_size: int = DEFAULT_NOTEBOOKLM_BATCH_SIZE):
         self.batch_size = batch_size
         self._nb_id = None
-        self._last_added_video_ids: List[str] = []
+        self._last_added_video_ids: List[str] | None = None
         self._last_subbatch_metrics: list[dict[str, object]] = []
         self._last_add_failure_reason: Optional[str] = None
         self._last_add_returncode: Optional[int] = None
         self._last_add_cmd_elapsed_s: float = 0.0
         self._last_materialization_wait_elapsed_s: float = 0.0
+        self._last_subbatch_elapsed_s: float = 0.0
         self._last_materialization_ready_at_epoch: float = 0.0
         self._last_added_source_ids: List[str] = []
         self._last_extract_metrics: dict[str, object] | None = None
@@ -2162,15 +2251,24 @@ class NLMBatchIngestor:
             now_epoch = time.time()
             epoch = self._oldest_source_materialization_epoch
             oldest_age_s = now_epoch - epoch if epoch is not None else 0.0
+            last_subbatch_elapsed_s = float(getattr(self, "_last_subbatch_elapsed_s", 0.0) or 0.0)
+            projected_oldest_age_s = oldest_age_s + last_subbatch_elapsed_s if epoch is not None else 0.0
             age_guard_decision = "skipped_no_epoch"
             if epoch is not None:
-                age_guard_decision = "rotate_source_age_cliff" if oldest_age_s > _SOURCE_AGE_CLIFF_S else "below_cliff"
+                if oldest_age_s > _SOURCE_AGE_CLIFF_S:
+                    age_guard_decision = "rotate_source_age_cliff"
+                elif last_subbatch_elapsed_s > 0.0 and projected_oldest_age_s > _SOURCE_AGE_CLIFF_S:
+                    age_guard_decision = "rotate_source_age_projected_cliff"
+                else:
+                    age_guard_decision = "below_cliff"
             log_action(
                 "nlm_batch_subbatch_age_guard_checked",
                 {
                     "nb_id": self._nb_id,
                     "subbatch_index": subbatch_index,
                     "oldest_source_age_s": round(oldest_age_s, 3),
+                    "last_subbatch_elapsed_s": round(last_subbatch_elapsed_s, 3),
+                    "projected_oldest_source_age_s": round(projected_oldest_age_s, 3),
                     "age_cliff_s": _SOURCE_AGE_CLIFF_S,
                     "oldest_source_materialization_epoch": epoch,
                     "current_source_count": source_count_before,
@@ -2178,20 +2276,24 @@ class NLMBatchIngestor:
                     "decision": age_guard_decision,
                 },
             )
-            if epoch is not None and oldest_age_s > _SOURCE_AGE_CLIFF_S:
+            if epoch is not None and age_guard_decision.startswith("rotate_source_age_"):
                 log_action(
                     "nlm_batch_subbatch_age_guard_rotation_requested",
                     {
                         "nb_id": self._nb_id,
                         "subbatch_index": subbatch_index,
                         "oldest_source_age_s": round(oldest_age_s, 3),
+                        "last_subbatch_elapsed_s": round(last_subbatch_elapsed_s, 3),
+                        "projected_oldest_source_age_s": round(projected_oldest_age_s, 3),
                         "age_cliff_s": _SOURCE_AGE_CLIFF_S,
                         "current_source_count": source_count_before,
                         "remaining": total - next_index,
-                        "rotation_reason": "source_age_cliff",
+                        "rotation_reason": "source_age_cliff" if age_guard_decision == "rotate_source_age_cliff" else "source_age_projected_cliff",
                     },
                 )
-                self._rotate_notebook(reason="source_age_cliff")
+                self._rotate_notebook(
+                    reason="source_age_cliff" if age_guard_decision == "rotate_source_age_cliff" else "source_age_projected_cliff"
+                )
                 source_count_before = self._current_source_count
             if source_count_before >= _NOTEBOOK_SOURCE_CAP:
                 log_action(
@@ -2335,6 +2437,7 @@ class NLMBatchIngestor:
             else:
                 subbatch_metrics["status"] = "ok"
             self._last_subbatch_metrics.append(subbatch_metrics)
+            self._last_subbatch_elapsed_s = float(subbatch_metrics.get("elapsed_s", 0.0) or 0.0)
             next_index += window_size
 
         self._last_added_video_ids = added_ids
@@ -2344,8 +2447,9 @@ class NLMBatchIngestor:
     def create_batch_notebook(self, batch_ids: List[str]) -> Optional[str]:
         nb_name = _get_reusable_notebook_title()
         notebooklm_profile = _get_notebooklm_profile()
-        self._last_added_video_ids = []
+        self._last_added_video_ids = None
         self._last_subbatch_metrics = []
+        self._nb_id = None
         print(f"[NLM-Batch] Creating notebook...")
         log_action(
             "nlm_batch_notebook_create_started",
@@ -2357,12 +2461,16 @@ class NLMBatchIngestor:
         )
         res = self._run_cmd(["notebook", "create", nb_name])
 
-        for line in res.stdout.split('\n'):
-            if "ID:" in line:
-                self._nb_id = line.split("ID:")[1].strip()
-                break
-        if not self._nb_id: self._nb_id = res.stdout.strip()
-        if self._nb_id:
+        parsed_nb_id = ""
+        if res.returncode == 0:
+            for line in (res.stdout or "").split("\n"):
+                if "ID:" in line:
+                    parsed_nb_id = line.split("ID:")[1].strip()
+                    break
+            if not parsed_nb_id:
+                parsed_nb_id = (res.stdout or "").strip()
+        if parsed_nb_id:
+            self._nb_id = parsed_nb_id
             log_action(
                 "nlm_batch_notebook_create_succeeded",
                 {
@@ -2379,10 +2487,12 @@ class NLMBatchIngestor:
                     "batch_size": len(batch_ids),
                     "nb_name": nb_name,
                     "notebooklm_profile": notebooklm_profile,
+                    "returncode": res.returncode,
                     "stdout": (res.stdout or "")[:500],
                     "stderr": (res.stderr or "")[:500],
                 },
             )
+            return None
 
         print(f"[NLM-Batch] Adding {len(batch_ids)} sources in sub-batches...")
         self._add_sources_in_subbatches(batch_ids, subbatch_size=self.batch_size)
@@ -2397,6 +2507,7 @@ class NLMBatchIngestor:
         """Extract using high-speed 'source content' method."""
         start = time.time()
         ready_reference_epoch = float(getattr(self, "_last_materialization_ready_at_epoch", 0.0) or 0.0)
+        fetch_attribution_context = _build_content_fetch_attribution_context(_get_nlm_auth_context())
         # 1. Get Source List
         res = self._run_cmd(["source", "list", self._nb_id, "--json"])
         if res.returncode != 0: return {vid: (False, None, "List failed") for vid in batch_ids}
@@ -2481,7 +2592,13 @@ class NLMBatchIngestor:
         
         results = {}
         content_fetch_stats = {
-            "status_counts": {"ready": 0, _NLM_CONTENT_BELOW_THRESHOLD_STATUS: 0, "command_failed": 0, "parse_failed": 0},
+            "status_counts": {
+                "ready": 0,
+                _NLM_CONTENT_BELOW_THRESHOLD_STATUS: 0,
+                "command_failed": 0,
+                "parse_failed": 0,
+                "source_age_cliff": 0,
+            },
             "ready_age_s_total": 0.0,
             "ready_age_s_max": 0.0,
             "attempts_total": 0,
@@ -2755,8 +2872,131 @@ class NLMBatchIngestor:
                     "source_ready_age_s": round(started_at_epoch - ready_reference_epoch, 3) if ready_reference_epoch else 0.0,
                     "materialization_ready_at_epoch": ready_reference_epoch,
                     "pass_name": pass_name,
+                    **fetch_attribution_context,
                 },
             )
+            age_cliff_hit, source_ready_age_s = _source_ready_age_exceeds_cliff(ready_reference_epoch, started_at_epoch)
+            if age_cliff_hit:
+                status = "source_age_cliff"
+                failure_reason = f"Fetch failed for {source_id}: {status}"
+                with status_lock:
+                    content_fetch_stats["status_counts"][status] = content_fetch_stats["status_counts"].get(status, 0) + 1
+                    content_fetch_stats["ready_age_s_total"] += source_ready_age_s
+                    content_fetch_stats["ready_age_s_max"] = max(content_fetch_stats["ready_age_s_max"], source_ready_age_s)
+                completed_at_epoch = time.time()
+                log_action(
+                    "nlm_batch_source_content_fetch_completed",
+                    {
+                        "nb_id": self._nb_id,
+                        "source_id": source_id,
+                        "video_id": vid_hint,
+                        "timeout_s": 30,
+                        "started_at_epoch": started_at_epoch,
+                        "completed_at_epoch": completed_at_epoch,
+                        "elapsed_s": round(completed_at_epoch - started_at_epoch, 3),
+                        "returncode": -1,
+                        "content_length": 0,
+                        "status": status,
+                        "ready_threshold": _NLM_CONTENT_READY_THRESHOLD,
+                        "extraction_outcome": status,
+                        "nlm_content_chars": 0,
+                        "usable_text_chars": 0,
+                        "source_ready_age_s": source_ready_age_s,
+                        "materialization_ready_at_epoch": ready_reference_epoch,
+                        "failure_reason": failure_reason,
+                        "attempts": 0,
+                        "stdout": "",
+                        "stderr": "",
+                        **fetch_attribution_context,
+                        "retry_initial_delay_s": _SOURCE_CONTENT_RETRY_INITIAL_DELAY_S,
+                        "retry_max_delay_s": _SOURCE_CONTENT_RETRY_MAX_DELAY_S,
+                        "retry_budget_s": _SOURCE_CONTENT_RETRY_BUDGET_S,
+                        "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
+                        "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                        "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
+                        "pass_name": pass_name,
+                        "youtube_ytdlp_classification": None,
+                        "youtube_ytdlp_available": None,
+                        "youtube_ytdlp_availability": None,
+                        "youtube_ytdlp_live_status": None,
+                        "youtube_ytdlp_was_live": None,
+                        "youtube_ytdlp_is_live": None,
+                        "youtube_ytdlp_title": None,
+                        "youtube_ytdlp_returncode": None,
+                        "youtube_ytdlp_error": None,
+                        "youtube_ytdlp_elapsed_s": None,
+                        "youtube_page_classification": None,
+                        "youtube_page_available": None,
+                        "youtube_page_status": None,
+                        "youtube_page_reason": None,
+                        "youtube_page_subreason": None,
+                        "youtube_page_is_live_content": None,
+                        "youtube_page_title": None,
+                        "youtube_page_http_status": None,
+                        "youtube_page_error": None,
+                        "youtube_page_elapsed_s": None,
+                        "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
+                        "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
+                        "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                        "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
+                        "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
+                        "source_list_probe_count": source_list_probe_count,
+                        "source_id_validated_after_not_found": None,
+                        "source_list_probe_returncode": -1,
+                        "source_list_probe_match_index": None,
+                        "source_list_probe_match_title": None,
+                        "source_list_probe_match_url": None,
+                    },
+                )
+                return {
+                    "video_id": vid_hint,
+                    "source_id": source_id,
+                    "success": False,
+                    "content": None,
+                    "error": None,
+                    "failure_reason": failure_reason,
+                    "status": status,
+                    "queued_for_retry": False,
+                    "attempts": 0,
+                    "returncode": -1,
+                    "content_length": 0,
+                    "nlm_content_chars": 0,
+                    "usable_text_chars": 0,
+                    "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
+                    "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
+                    "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                    "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
+                    "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
+                    "source_list_probe_count": source_list_probe_count,
+                    "extraction_outcome": status,
+                    "stdout": "",
+                    "stderr": "",
+                    "youtube_ytdlp_classification": None,
+                    "youtube_ytdlp_available": None,
+                    "youtube_ytdlp_availability": None,
+                    "youtube_ytdlp_live_status": None,
+                    "youtube_ytdlp_was_live": None,
+                    "youtube_ytdlp_is_live": None,
+                    "youtube_ytdlp_title": None,
+                    "youtube_ytdlp_returncode": None,
+                    "youtube_ytdlp_error": None,
+                    "youtube_page_classification": None,
+                    "youtube_page_available": None,
+                    "youtube_page_status": None,
+                    "youtube_page_reason": None,
+                    "youtube_page_subreason": None,
+                    "youtube_page_is_live_content": None,
+                    "youtube_page_title": None,
+                    "youtube_page_http_status": None,
+                    "youtube_page_error": None,
+                    "source_id_validated_after_not_found": None,
+                    "source_list_probe_returncode": -1,
+                    "source_list_probe_match_index": None,
+                    "source_list_probe_match_title": None,
+                    "source_list_probe_match_url": None,
+                    "youtube_ytdlp_elapsed_s": None,
+                    "youtube_page_elapsed_s": None,
+                }
 
             while True:
                 attempt += 1
@@ -2791,6 +3031,22 @@ class NLMBatchIngestor:
                                 content_fetch_stats["attempts_total"] += attempt
                                 content_fetch_stats["attempts_max"] = max(content_fetch_stats["attempts_max"], attempt)
                             log_action(
+                                "nlm_source_content_command_completed",
+                                _build_source_content_command_completed_payload(
+                                    nb_id=self._nb_id,
+                                    source_id=source_id,
+                                    video_id=vid_hint,
+                                    attempt=attempt,
+                                    status=status,
+                                    elapsed_s=attempt_elapsed_s,
+                                    content_length=content_length,
+                                    source_ready_age_s=attempt_ready_age_s,
+                                    returncode=res.returncode,
+                                    failure_reason=None,
+                                    fetch_attribution_context=fetch_attribution_context,
+                                ),
+                            )
+                            log_action(
                                 "nlm_batch_source_content_fetch_completed",
                                 {
                                     "nb_id": self._nb_id,
@@ -2811,6 +3067,7 @@ class NLMBatchIngestor:
                                     "materialization_ready_at_epoch": ready_reference_epoch,
                                     "attempts": attempt,
                                     "pass_name": pass_name,
+                                    **fetch_attribution_context,
                                     "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
                                     "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
                                     "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
@@ -2848,6 +3105,22 @@ class NLMBatchIngestor:
                         failure_reason = f"Fetch failed for {source_id}: {status}"
                 else:
                     retryable = _should_retry_source_content_fetch(status, res)
+                log_action(
+                    "nlm_source_content_command_completed",
+                    _build_source_content_command_completed_payload(
+                        nb_id=self._nb_id,
+                        source_id=source_id,
+                        video_id=vid_hint,
+                        attempt=attempt,
+                        status=status,
+                        elapsed_s=attempt_elapsed_s,
+                        content_length=content_length,
+                        source_ready_age_s=attempt_ready_age_s,
+                        returncode=res.returncode,
+                        failure_reason=failure_reason,
+                        fetch_attribution_context=fetch_attribution_context,
+                    ),
+                )
                 last_result = {
                     "status": status,
                     "content_length": content_length,
@@ -3031,6 +3304,7 @@ class NLMBatchIngestor:
                     "attempts": int(last_result["attempts"]),
                     "stdout": str(last_result["stdout"])[:500],
                     "stderr": str(last_result["stderr"])[:500],
+                    **fetch_attribution_context,
                     "retry_initial_delay_s": _SOURCE_CONTENT_RETRY_INITIAL_DELAY_S,
                     "retry_max_delay_s": _SOURCE_CONTENT_RETRY_MAX_DELAY_S,
                     "retry_budget_s": _SOURCE_CONTENT_RETRY_BUDGET_S,
@@ -3573,6 +3847,7 @@ class NLMBatchIngestor:
         self._last_source_count_probe_error = None
         self._not_found_source_list_probe_nb_id = None
         self._not_found_source_list_probe_count = 0
+        self._last_subbatch_elapsed_s = 0.0
         self.create_batch_notebook(list(batch_ids or []))
         log_action(
             "nlm_batch_dead_notebook_recreated",
@@ -3597,6 +3872,7 @@ class NLMBatchIngestor:
         self.reset_sources()
         self._current_source_count = self._get_current_source_count()
         self._oldest_source_materialization_epoch = None
+        self._last_subbatch_elapsed_s = 0.0
         self._last_materialization_ready_at_epoch = 0.0
         self._video_ready_epoch_by_id = {}
         log_action(
@@ -3681,7 +3957,7 @@ class NLMBatchIngestor:
             self._nb_id = nb_id
             for size in sizes:
                 add_started = time.monotonic()
-                self._last_added_video_ids = []
+                self._last_added_video_ids = None
                 print(f"[NLM-Batch] Experimenting with sub-batch size {size}...")
                 added_ids = self._add_sources_in_subbatches(batch_ids, subbatch_size=size)
                 success_count = len(added_ids)
@@ -3733,15 +4009,51 @@ class NLMReusableIngestor:
         self,
         batch_size: int = DEFAULT_NOTEBOOKLM_BATCH_SIZE,
         cleanup_every_n_batches: int | None = None,
+        active_window_size: int | None = None,
+        extract_window_size: int | None = None,
+        source_age_cadence_enabled: bool | None = None,
+        source_age_cadence_soft_threshold_s: float | None = None,
+        source_age_cadence_hard_threshold_s: float | None = None,
+        source_age_cadence_min_window_size: int | None = None,
     ):
         self._ingestor = NLMBatchIngestor(batch_size)
         self._nb_id: Optional[str] = _load_reusable_notebook_id()
         self._last_prepare_metrics: dict[str, object] | None = None
         self._last_process_metrics: dict[str, object] | None = None
+        self._last_extract_metrics: dict[str, object] | None = None
         cfg = get_nlm_config()
         self._cleanup_every_n_batches = max(
             1,
             int(cleanup_every_n_batches if cleanup_every_n_batches is not None else cfg.reusable_cleanup_every_n_batches),
+        )
+        self._active_window_size = max(
+            0,
+            int(active_window_size if active_window_size is not None else cfg.reusable_active_window_size),
+        )
+        self._extract_window_size = max(
+            0,
+            int(extract_window_size if extract_window_size is not None else cfg.reusable_extract_window_size),
+        )
+        self._source_age_cadence_enabled = bool(
+            source_age_cadence_enabled if source_age_cadence_enabled is not None else cfg.reusable_source_age_cadence_enabled
+        )
+        self._source_age_cadence_soft_threshold_s = float(
+            source_age_cadence_soft_threshold_s
+            if source_age_cadence_soft_threshold_s is not None
+            else cfg.reusable_source_age_cadence_soft_threshold_s
+        )
+        self._source_age_cadence_hard_threshold_s = float(
+            source_age_cadence_hard_threshold_s
+            if source_age_cadence_hard_threshold_s is not None
+            else cfg.reusable_source_age_cadence_hard_threshold_s
+        )
+        self._source_age_cadence_min_window_size = max(
+            1,
+            int(
+                source_age_cadence_min_window_size
+                if source_age_cadence_min_window_size is not None
+                else cfg.reusable_source_age_cadence_min_window_size
+            ),
         )
         self._batches_since_cleanup = 0
         log_action(
@@ -3752,8 +4064,114 @@ class NLMReusableIngestor:
                 "notebooklm_profile": _get_notebooklm_profile(),
                 "status": "loaded" if self._nb_id else "empty",
                 "cleanup_every_n_batches": self._cleanup_every_n_batches,
+                "active_window_size": self._active_window_size,
+                "extract_window_size": self._extract_window_size,
+                "source_age_cadence_enabled": self._source_age_cadence_enabled,
+                "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+                "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+                "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
             },
         )
+
+    @staticmethod
+    def _chunk_video_ids(video_ids: List[str], window_size: int) -> list[list[str]]:
+        if window_size <= 0:
+            return [list(video_ids)]
+        return [list(video_ids[index : index + window_size]) for index in range(0, len(video_ids), window_size)]
+
+    def _select_source_age_cadence_window_size(self, remaining_count: int) -> int:
+        """Choose a reusable cadence window size based on notebook age.
+
+        Once the notebook is past the hard threshold, collapse to the minimum
+        window size so we recycle sooner instead of just shrinking a little.
+        """
+        remaining_count = max(1, int(remaining_count))
+        base_window_size = min(self._ingestor.batch_size, remaining_count)
+        if not self._source_age_cadence_enabled:
+            return base_window_size
+        oldest_epoch = self._ingestor._oldest_source_materialization_epoch
+        if oldest_epoch is None:
+            oldest_epoch = self._ingestor._last_materialization_ready_at_epoch or 0.0
+        oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
+        selected_window_size = base_window_size
+        if oldest_age_s > self._source_age_cadence_hard_threshold_s:
+            selected_window_size = self._source_age_cadence_min_window_size
+        elif oldest_age_s > self._source_age_cadence_soft_threshold_s:
+            selected_window_size = max(self._source_age_cadence_min_window_size, base_window_size // 2)
+        return max(1, min(selected_window_size, remaining_count))
+
+    @staticmethod
+    def _merge_extract_metric_snapshots(metric_snapshots: list[dict[str, object]]) -> dict[str, object]:
+        merged: dict[str, object] = {}
+        status_counts: dict[str, int] = {}
+        sum_fields = [
+            "source_ready_age_s_total",
+            "content_fetch_attempts_total",
+            "youtube_ytdlp_elapsed_s_total",
+            "youtube_ytdlp_elapsed_s_count",
+            "youtube_page_elapsed_s_total",
+            "youtube_page_elapsed_s_count",
+            "content_fetch_command_elapsed_s_total",
+            "content_fetch_command_elapsed_s_count",
+            "content_fetch_retry_sleep_elapsed_s_total",
+            "content_fetch_retry_queue_sleep_elapsed_s_total",
+            "source_list_probe_elapsed_s_total",
+            "source_list_probe_count",
+            "source_content_readiness_probe_elapsed_s_total",
+            "source_content_readiness_probe_count",
+            "source_content_readiness_probe_sleep_elapsed_s_total",
+            "retry_queue_deferred_count",
+            "retry_queue_recovered_count",
+            "retry_queue_final_failed_count",
+            "shared_retry_deferred_count",
+            "shared_retry_recovered_count",
+            "shared_retry_final_failed_count",
+        ]
+        max_fields = [
+            "source_ready_age_s_max",
+            "content_fetch_attempts_max",
+            "youtube_ytdlp_elapsed_s_max",
+            "youtube_page_elapsed_s_max",
+            "content_fetch_command_elapsed_s_max",
+            "source_list_probe_elapsed_s_max",
+            "source_content_readiness_probe_elapsed_s_max",
+        ]
+
+        for metrics in metric_snapshots:
+            for key, value in dict(metrics.get("content_fetch_status_counts", {}) or {}).items():
+                status_counts[str(key)] = status_counts.get(str(key), 0) + int(value or 0)
+            for field in sum_fields:
+                merged[field] = float(merged.get(field, 0.0) or 0.0) + float(metrics.get(field, 0.0) or 0.0)
+            for field in max_fields:
+                merged[field] = max(float(merged.get(field, 0.0) or 0.0), float(metrics.get(field, 0.0) or 0.0))
+            materialization_ready_at_epoch = float(metrics.get("materialization_ready_at_epoch", 0.0) or 0.0)
+            if materialization_ready_at_epoch:
+                merged["materialization_ready_at_epoch"] = materialization_ready_at_epoch
+
+        fetch_count = sum(status_counts.values())
+        merged["content_fetch_status_counts"] = status_counts
+        merged["source_ready_age_s_avg"] = (
+            float(merged.get("source_ready_age_s_total", 0.0) or 0.0) / fetch_count if fetch_count else 0.0
+        )
+        merged["content_fetch_attempts_avg"] = (
+            float(merged.get("content_fetch_attempts_total", 0.0) or 0.0) / fetch_count if fetch_count else 0.0
+        )
+        for prefix in [
+            "youtube_ytdlp_elapsed_s",
+            "youtube_page_elapsed_s",
+            "content_fetch_command_elapsed_s",
+        ]:
+            total = float(merged.get(f"{prefix}_total", 0.0) or 0.0)
+            count = int(merged.get(f"{prefix}_count", 0) or 0)
+            merged[f"{prefix}_avg"] = total / count if count else 0.0
+        return merged
+
+    def _mark_sources_cleared(self) -> None:
+        """Reset source-age state after the reusable notebook has been cleared."""
+        self._ingestor._oldest_source_materialization_epoch = None
+        self._ingestor._last_materialization_ready_at_epoch = 0.0
+        self._ingestor._video_ready_epoch_by_id = {}
+        self._ingestor._current_source_count = 0
 
     def prepare(self) -> tuple[bool, str]:
         """Create or reuse the notebook, then clear it so the worker starts ready."""
@@ -3804,6 +4222,7 @@ class NLMReusableIngestor:
         cleanup_started_at = time.monotonic()
         self._ingestor._nb_id = self._nb_id
         self._ingestor.cleanup()
+        self._mark_sources_cleared()
         self._batches_since_cleanup = 0
         if self._nb_id:
             _save_reusable_notebook_id(self._nb_id)
@@ -3956,6 +4375,34 @@ class NLMReusableIngestor:
         notebook_reused = self._nb_id is not None
         self._last_process_metrics = None
         self._last_process_stage_metrics = None
+        extract_window_enabled = self._extract_window_size > 0 and len(video_ids) > self._extract_window_size
+        active_window_enabled = (
+            not extract_window_enabled and self._active_window_size > 0 and len(video_ids) > self._active_window_size
+        )
+        source_age_cadence_enabled = (
+            not extract_window_enabled
+            and not active_window_enabled
+            and self._source_age_cadence_enabled
+        )
+        window_mode = (
+            "extract_window"
+            if extract_window_enabled
+            else "active_window"
+            if active_window_enabled
+            else "source_age_cadence"
+            if source_age_cadence_enabled
+            else "batch"
+        )
+        window_size = (
+            self._extract_window_size
+            if extract_window_enabled
+            else self._active_window_size
+            if active_window_enabled
+            else self._select_source_age_cadence_window_size(len(video_ids))
+            if source_age_cadence_enabled
+            else 0
+        )
+        active_windows = self._chunk_video_ids(video_ids, window_size) if window_size and not source_age_cadence_enabled else [list(video_ids)]
         log_action(
             "nlm_batch_reusable_process_started",
             {
@@ -3964,6 +4411,17 @@ class NLMReusableIngestor:
                 "notebook_reused": notebook_reused,
                 "notebooklm_profile": _get_notebooklm_profile(),
                 "subbatch_size": self._ingestor.batch_size,
+                "active_window_size": self._active_window_size,
+                "active_window_enabled": active_window_enabled,
+                "extract_window_size": self._extract_window_size,
+                "extract_window_enabled": extract_window_enabled,
+                "source_age_cadence_enabled": source_age_cadence_enabled,
+                "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+                "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+                "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                "window_mode": window_mode,
+                "window_size": window_size,
+                "window_count": len(active_windows),
                 "cleanup_every_n_batches": self._cleanup_every_n_batches,
                 "batches_since_cleanup": self._batches_since_cleanup,
                 "strategy": "reusable",
@@ -3972,7 +4430,13 @@ class NLMReusableIngestor:
         )
 
         setup_started_at = time.monotonic()
-        created_new_notebook, setup_mode = self._ensure_notebook(video_ids)
+        created_new_notebook, setup_mode = self._ensure_notebook([] if window_mode != "batch" else video_ids)
+        if window_mode == "extract_window":
+            setup_mode = "create_extract_window" if created_new_notebook else "reuse_extract_window"
+        elif window_mode == "active_window":
+            setup_mode = "create_active_window" if created_new_notebook else "reuse_active_window"
+        elif source_age_cadence_enabled:
+            setup_mode = "create_source_age_cadence" if created_new_notebook else "reuse_source_age_cadence"
         log_action(
             "nlm_batch_reusable_process_ready",
             {
@@ -3983,6 +4447,19 @@ class NLMReusableIngestor:
                 "setup_mode": setup_mode,
                 "notebooklm_profile": _get_notebooklm_profile(),
                 "strategy": "reusable",
+                "active_window_size": self._active_window_size,
+                "active_window_enabled": active_window_enabled,
+                "extract_window_size": self._extract_window_size,
+                "extract_window_enabled": extract_window_enabled,
+                "source_age_cadence_enabled": source_age_cadence_enabled,
+                "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+                "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+                "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                "window_mode": window_mode,
+                "window_size": window_size,
+                "active_window_count": len(active_windows),
+                "extract_window_count": len(active_windows),
+                "window_count": len(active_windows),
                 "cleanup_every_n_batches": self._cleanup_every_n_batches,
                 "batches_since_cleanup": self._batches_since_cleanup,
             },
@@ -3995,9 +4472,22 @@ class NLMReusableIngestor:
                     "nb_id": None,
                     "notebook_reused": notebook_reused,
                     "notebooklm_profile": _get_notebooklm_profile(),
-                    "setup_mode": "create",
+                    "setup_mode": setup_mode,
                     "status": "notebook_create_failed",
                     "subbatch_size": self._ingestor.batch_size,
+                    "active_window_size": self._active_window_size,
+                    "active_window_enabled": active_window_enabled,
+                    "extract_window_size": self._extract_window_size,
+                    "extract_window_enabled": extract_window_enabled,
+                    "source_age_cadence_enabled": source_age_cadence_enabled,
+                    "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+                    "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+                    "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                    "window_mode": window_mode,
+                    "window_size": window_size,
+                    "active_window_count": len(active_windows),
+                    "extract_window_count": len(active_windows),
+                    "window_count": len(active_windows),
                     "strategy": "reusable",
                     "total_elapsed_s": round(time.monotonic() - batch_started_at, 3),
                     "started_at_epoch": batch_started_at_epoch,
@@ -4006,7 +4496,13 @@ class NLMReusableIngestor:
             )
             return {vid: (False, None, "Notebook failed") for vid in video_ids}
         add_sources_elapsed_s = 0.0
-        if not created_new_notebook:
+        if window_mode == "extract_window":
+            setup_mode = "reuse_extract_window" if not created_new_notebook else "create_extract_window"
+        elif active_window_enabled:
+            setup_mode = "reuse_active_window" if not created_new_notebook else "create_active_window"
+        elif source_age_cadence_enabled:
+            setup_mode = "reuse_source_age_cadence" if not created_new_notebook else "create_source_age_cadence"
+        elif not created_new_notebook:
             # Notebook already exists — add sources to it in sub-batches
             self._ingestor._nb_id = self._nb_id
             print(f"[NLM-Batch] Adding {len(video_ids)} sources in sub-batches...")
@@ -4037,20 +4533,230 @@ class NLMReusableIngestor:
         extract_started_at = time.monotonic()
         results: Dict[str, Tuple[bool, Optional[str], Optional[str]]]
         cleanup_elapsed_s = 0.0
+        extract_metric_snapshots: list[dict[str, object]] = []
+        window_count_total = len(active_windows)
         try:
-            added_video_ids = self._ingestor._last_added_video_ids or list(video_ids)
-            results = self._ingestor.extract_transcripts(added_video_ids)
-            if len(added_video_ids) != len(video_ids):
-                for vid in video_ids:
-                    if vid not in results:
-                        results[vid] = (False, None, "Source add failed")
+            if window_mode in {"active_window", "extract_window"}:
+                results = {}
+                for window_index, window_video_ids in enumerate(active_windows, start=1):
+                    window_started_at = time.monotonic()
+                    self._ingestor._nb_id = self._nb_id
+                    window_reset_performed = window_mode == "active_window"
+                    window_log_prefix = (
+                        "nlm_batch_reusable_extract_window"
+                        if window_mode == "extract_window"
+                        else "nlm_batch_reusable_active_window"
+                    )
+                    log_action(
+                        f"{window_log_prefix}_started",
+                        {
+                            "nb_id": self._nb_id,
+                            "window_index": window_index,
+                            "active_window_count": len(active_windows),
+                            "extract_window_count": len(active_windows),
+                            "window_count": len(active_windows),
+                            "window_size": len(window_video_ids),
+                            "active_window_size": self._active_window_size,
+                            "extract_window_size": self._extract_window_size,
+                            "window_mode": window_mode,
+                            "window_reset_performed": window_reset_performed,
+                            "subbatch_size": self._ingestor.batch_size,
+                            "notebooklm_profile": _get_notebooklm_profile(),
+                        },
+                    )
+                    add_sources_started_at = time.monotonic()
+                    self._ingestor._add_sources_in_subbatches(
+                        window_video_ids,
+                        subbatch_size=self._ingestor.batch_size,
+                    )
+                    window_add_elapsed_s = round(time.monotonic() - add_sources_started_at, 3)
+                    add_sources_elapsed_s = round(add_sources_elapsed_s + window_add_elapsed_s, 3)
+                    if self._ingestor._nb_id and self._ingestor._nb_id != self._nb_id:
+                        old_nb_id = self._nb_id
+                        self._nb_id = self._ingestor._nb_id
+                        _save_reusable_notebook_id(self._nb_id)
+                        log_action(
+                            "nlm_batch_reusable_state_recovered",
+                            {
+                                "old_nb_id": old_nb_id,
+                                "nb_id": self._nb_id,
+                                "state_path": str(_get_reusable_notebook_state_path()),
+                                "notebooklm_profile": _get_notebooklm_profile(),
+                            },
+                        )
+                    added_video_ids = (
+                        self._ingestor._last_added_video_ids
+                        if self._ingestor._last_added_video_ids is not None
+                        else list(window_video_ids)
+                    )
+                    window_extract_started_at = time.monotonic()
+                    window_results = self._ingestor.extract_transcripts(added_video_ids)
+                    window_extract_elapsed_s = round(time.monotonic() - window_extract_started_at, 3)
+                    window_metrics = self._ingestor.get_last_extract_metrics() or {}
+                    if window_metrics:
+                        extract_metric_snapshots.append(dict(window_metrics))
+                    if len(added_video_ids) != len(window_video_ids):
+                        for vid in window_video_ids:
+                            if vid not in window_results:
+                                window_results[vid] = (False, None, "Source add failed")
+                    results.update(window_results)
+                    window_cleanup_started_at = time.monotonic()
+                    window_cleanup_elapsed_s = 0.0
+                    if window_reset_performed:
+                        self._ingestor.reset_sources()
+                        self._mark_sources_cleared()
+                        window_cleanup_elapsed_s = round(time.monotonic() - window_cleanup_started_at, 3)
+                        cleanup_elapsed_s = round(cleanup_elapsed_s + window_cleanup_elapsed_s, 3)
+                    log_action(
+                        f"{window_log_prefix}_completed",
+                        {
+                            "nb_id": self._nb_id,
+                            "window_index": window_index,
+                            "active_window_count": len(active_windows),
+                            "extract_window_count": len(active_windows),
+                            "window_count": len(active_windows),
+                            "window_size": len(window_video_ids),
+                            "added_count": len(added_video_ids),
+                            "succeeded": sum(1 for success, transcript, _ in window_results.values() if success and transcript),
+                            "failed": len(window_results)
+                            - sum(1 for success, transcript, _ in window_results.values() if success and transcript),
+                            "add_sources_elapsed_s": window_add_elapsed_s,
+                            "extract_elapsed_s": window_extract_elapsed_s,
+                            "cleanup_elapsed_s": window_cleanup_elapsed_s,
+                            "total_elapsed_s": round(time.monotonic() - window_started_at, 3),
+                            "content_fetch_status_counts": dict(window_metrics.get("content_fetch_status_counts", {}) or {}),
+                            "source_ready_age_s_max": float(window_metrics.get("source_ready_age_s_max", 0) or 0.0),
+                            "window_mode": window_mode,
+                            "window_reset_performed": window_reset_performed,
+                            "extract_window_size": self._extract_window_size,
+                            "extract_window_enabled": extract_window_enabled,
+                            "active_window_size": self._active_window_size,
+                            "active_window_enabled": active_window_enabled,
+                        },
+                    )
+                if window_mode == "active_window":
+                    self._batches_since_cleanup = 0
+            elif source_age_cadence_enabled:
+                results = {}
+                remaining_video_ids = list(video_ids)
+                cadence_window_index = 0
+                while remaining_video_ids:
+                    cadence_window_index += 1
+                    window_count_total = cadence_window_index
+                    cadence_window_size = self._select_source_age_cadence_window_size(len(remaining_video_ids))
+                    window_video_ids = remaining_video_ids[:cadence_window_size]
+                    window_started_at = time.monotonic()
+                    self._ingestor._nb_id = self._nb_id
+                    oldest_epoch = self._ingestor._oldest_source_materialization_epoch
+                    if oldest_epoch is None:
+                        oldest_epoch = self._ingestor._last_materialization_ready_at_epoch or 0.0
+                    oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
+                    log_action(
+                        "nlm_batch_reusable_source_age_cadence_window_started",
+                        {
+                            "nb_id": self._nb_id,
+                            "window_index": cadence_window_index,
+                            "window_count": cadence_window_index,
+                            "window_size": len(window_video_ids),
+                            "selected_window_size": cadence_window_size,
+                            "remaining_count": len(remaining_video_ids),
+                            "oldest_source_age_s": round(oldest_age_s, 3),
+                            "source_age_cadence_enabled": source_age_cadence_enabled,
+                            "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+                            "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+                            "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                            "subbatch_size": self._ingestor.batch_size,
+                            "notebooklm_profile": _get_notebooklm_profile(),
+                        },
+                    )
+                    add_sources_started_at = time.monotonic()
+                    self._ingestor._add_sources_in_subbatches(
+                        window_video_ids,
+                        subbatch_size=self._ingestor.batch_size,
+                    )
+                    window_add_elapsed_s = round(time.monotonic() - add_sources_started_at, 3)
+                    add_sources_elapsed_s = round(add_sources_elapsed_s + window_add_elapsed_s, 3)
+                    if self._ingestor._nb_id and self._ingestor._nb_id != self._nb_id:
+                        old_nb_id = self._nb_id
+                        self._nb_id = self._ingestor._nb_id
+                        _save_reusable_notebook_id(self._nb_id)
+                        log_action(
+                            "nlm_batch_reusable_state_recovered",
+                            {
+                                "old_nb_id": old_nb_id,
+                                "nb_id": self._nb_id,
+                                "state_path": str(_get_reusable_notebook_state_path()),
+                                "notebooklm_profile": _get_notebooklm_profile(),
+                            },
+                        )
+                    added_video_ids = (
+                        self._ingestor._last_added_video_ids
+                        if self._ingestor._last_added_video_ids is not None
+                        else list(window_video_ids)
+                    )
+                    window_extract_started_at = time.monotonic()
+                    window_results = self._ingestor.extract_transcripts(added_video_ids)
+                    window_extract_elapsed_s = round(time.monotonic() - window_extract_started_at, 3)
+                    window_metrics = self._ingestor.get_last_extract_metrics() or {}
+                    if window_metrics:
+                        extract_metric_snapshots.append(dict(window_metrics))
+                    if len(added_video_ids) != len(window_video_ids):
+                        for vid in window_video_ids:
+                            if vid not in window_results:
+                                window_results[vid] = (False, None, "Source add failed")
+                    results.update(window_results)
+                    log_action(
+                        "nlm_batch_reusable_source_age_cadence_window_completed",
+                        {
+                            "nb_id": self._nb_id,
+                            "window_index": cadence_window_index,
+                            "window_count": cadence_window_index,
+                            "window_size": len(window_video_ids),
+                            "selected_window_size": cadence_window_size,
+                            "added_count": len(added_video_ids),
+                            "succeeded": sum(1 for success, transcript, _ in window_results.values() if success and transcript),
+                            "failed": len(window_results)
+                            - sum(1 for success, transcript, _ in window_results.values() if success and transcript),
+                            "add_sources_elapsed_s": window_add_elapsed_s,
+                            "extract_elapsed_s": window_extract_elapsed_s,
+                            "cleanup_elapsed_s": 0.0,
+                            "total_elapsed_s": round(time.monotonic() - window_started_at, 3),
+                            "content_fetch_status_counts": dict(window_metrics.get("content_fetch_status_counts", {}) or {}),
+                            "source_ready_age_s_max": float(window_metrics.get("source_ready_age_s_max", 0) or 0.0),
+                            "window_mode": window_mode,
+                            "source_age_cadence_enabled": source_age_cadence_enabled,
+                            "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+                            "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+                            "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                            "subbatch_size": self._ingestor.batch_size,
+                            "notebooklm_profile": _get_notebooklm_profile(),
+                        },
+                    )
+                    remaining_video_ids = remaining_video_ids[cadence_window_size:]
+            else:
+                added_video_ids = (
+                    self._ingestor._last_added_video_ids
+                    if self._ingestor._last_added_video_ids is not None
+                    else list(video_ids)
+                )
+                results = self._ingestor.extract_transcripts(added_video_ids)
+                window_metrics = self._ingestor.get_last_extract_metrics() or {}
+                if window_metrics:
+                    extract_metric_snapshots.append(dict(window_metrics))
+                if len(added_video_ids) != len(video_ids):
+                    for vid in video_ids:
+                        if vid not in results:
+                            results[vid] = (False, None, "Source add failed")
             extract_elapsed_s = round(time.monotonic() - extract_started_at, 3)
         finally:
             cleanup_started_at = time.monotonic()
-            self._batches_since_cleanup += 1
-            should_cleanup = self._batches_since_cleanup >= self._cleanup_every_n_batches
+            should_cleanup = False
+            if window_mode != "active_window":
+                self._batches_since_cleanup += 1
+                should_cleanup = self._batches_since_cleanup >= self._cleanup_every_n_batches
             if should_cleanup:
                 self._ingestor.reset_sources()  # clear sources, keep notebook
+                self._mark_sources_cleared()
                 self._batches_since_cleanup = 0
             if self._nb_id:
                 _save_reusable_notebook_id(self._nb_id)
@@ -4063,12 +4769,17 @@ class NLMReusableIngestor:
                         "cleanup_performed": should_cleanup,
                     },
                 )
-            cleanup_elapsed_s = round(time.monotonic() - cleanup_started_at, 3)
+            cleanup_elapsed_s = round(cleanup_elapsed_s + (time.monotonic() - cleanup_started_at), 3)
 
         succeeded = sum(1 for success, transcript, _ in results.values() if success and transcript)
         failed = len(results) - succeeded
         total_elapsed_s = round(time.monotonic() - batch_started_at, 3)
-        extract_metrics = self._ingestor.get_last_extract_metrics() or {}
+        extract_metrics = (
+            self._merge_extract_metric_snapshots(extract_metric_snapshots)
+            if len(extract_metric_snapshots) > 1
+            else (extract_metric_snapshots[0] if extract_metric_snapshots else (self._ingestor.get_last_extract_metrics() or {}))
+        )
+        self._last_extract_metrics = dict(extract_metrics)
         youtube_ytdlp_elapsed_s_total = float(extract_metrics.get("youtube_ytdlp_elapsed_s_total", 0) or 0.0)
         youtube_ytdlp_elapsed_s_max = float(extract_metrics.get("youtube_ytdlp_elapsed_s_max", 0) or 0.0)
         youtube_ytdlp_elapsed_s_count = int(extract_metrics.get("youtube_ytdlp_elapsed_s_count", 0) or 0)
@@ -4093,6 +4804,19 @@ class NLMReusableIngestor:
                 "add_sources_elapsed_s": add_sources_elapsed_s,
                 "cleanup_every_n_batches": self._cleanup_every_n_batches,
                 "batches_since_cleanup": self._batches_since_cleanup,
+                "active_window_size": self._active_window_size,
+                "active_window_enabled": active_window_enabled,
+                "extract_window_size": self._extract_window_size,
+                "extract_window_enabled": extract_window_enabled,
+                "source_age_cadence_enabled": source_age_cadence_enabled,
+                "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+                "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+                "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                "window_mode": window_mode,
+                "window_size": window_size,
+                "active_window_count": len(active_windows),
+                "extract_window_count": len(active_windows),
+                "window_count": window_count_total,
                 "ensure_notebook_elapsed_s": round(time.monotonic() - setup_started_at, 3),
                 "notebook_check_elapsed_s": self._last_ensure_metrics.get("notebook_check_elapsed_s", 0.0)
                 if getattr(self, "_last_ensure_metrics", None)
@@ -4156,6 +4880,19 @@ class NLMReusableIngestor:
             "add_sources_elapsed_s": add_sources_elapsed_s,
             "cleanup_every_n_batches": self._cleanup_every_n_batches,
             "batches_since_cleanup": self._batches_since_cleanup,
+            "active_window_size": self._active_window_size,
+            "active_window_enabled": active_window_enabled,
+            "extract_window_size": self._extract_window_size,
+            "extract_window_enabled": extract_window_enabled,
+            "source_age_cadence_enabled": source_age_cadence_enabled,
+            "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
+            "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
+            "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+            "window_mode": window_mode,
+            "window_size": window_size,
+            "active_window_count": len(active_windows),
+            "extract_window_count": len(active_windows),
+            "window_count": window_count_total,
             "add_cmd_elapsed_s": float(self._ingestor._last_add_cmd_elapsed_s or 0.0),
             "materialization_wait_elapsed_s": float(self._ingestor._last_materialization_wait_elapsed_s or 0.0),
             "ensure_notebook_elapsed_s": round(time.monotonic() - setup_started_at, 3),
@@ -4413,7 +5150,7 @@ def process_industrial_batch(video_ids: List[str]) -> Dict[str, Tuple[bool, Opti
     try:
         if not ingestor.create_batch_notebook(video_ids):
             return {vid: (False, None, "Notebook failed") for vid in video_ids}
-        added_video_ids = ingestor._last_added_video_ids or list(video_ids)
+        added_video_ids = ingestor._last_added_video_ids if ingestor._last_added_video_ids is not None else list(video_ids)
         results = ingestor.extract_transcripts(added_video_ids)
         if len(added_video_ids) != len(video_ids):
             for vid in video_ids:

@@ -109,6 +109,56 @@ def test_run_evidence_check_requires_forced_refresh_marker_when_requested(tmp_pa
     assert result == 0
 
 
+def test_run_evidence_check_accepts_expected_worker_shape(tmp_path):
+    run_root = tmp_path / "run"
+    logs = run_root / "logs"
+    logs.mkdir(parents=True)
+    (run_root / "sharded_lane_series_summary.json").write_text(
+        json.dumps(
+            {
+                "report_version": 1,
+                "status": "ok",
+                "worker_shape_signature": "4+4",
+                "combined": {"hot_path_success_count_total": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (logs / "term.jsonl").write_text(
+        json.dumps({"action": "nlm_auth_checked", "data": {"status": "ok"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_evidence_check.main(["--run-root", str(run_root), "--expected-worker-shape", "4+4"])
+
+    assert result == 0
+
+
+def test_run_evidence_check_rejects_expected_worker_shape_mismatch(tmp_path):
+    run_root = tmp_path / "run"
+    logs = run_root / "logs"
+    logs.mkdir(parents=True)
+    (run_root / "sharded_lane_series_summary.json").write_text(
+        json.dumps(
+            {
+                "report_version": 1,
+                "status": "ok",
+                "worker_shape_signature": "4+4",
+                "combined": {"hot_path_success_count_total": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (logs / "term.jsonl").write_text(
+        json.dumps({"action": "nlm_auth_checked", "data": {"status": "ok"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_evidence_check.main(["--run-root", str(run_root), "--expected-worker-shape", "3+3"])
+
+    assert result == 1
+
+
 def test_run_evidence_check_rejects_missing_report_version(tmp_path):
     run_root = tmp_path / "run"
     logs = run_root / "logs"

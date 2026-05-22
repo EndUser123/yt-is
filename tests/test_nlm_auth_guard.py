@@ -29,7 +29,14 @@ def test_add_profile_args_leaves_login_commands_unpinned(monkeypatch):
     assert nlm_auth_guard.add_profile_args(["login", "--check"]) == ["login", "--check"]
 
 
-def _browser_health_sample(*, default_pids=None, unexpected=None, chrome_process_count=0, chrome_rss_bytes_total=0):
+def _browser_health_sample(
+    *,
+    default_pids=None,
+    unexpected=None,
+    unexpected_rss_bytes_total=0,
+    chrome_process_count=0,
+    chrome_rss_bytes_total=0,
+):
     return {
         "allowed_browser_roots": [r"P:\\\\\\.data\yt-is\browser\notebooklm-pro"],
         "allowed_profile_pid_count": 0,
@@ -38,6 +45,7 @@ def _browser_health_sample(*, default_pids=None, unexpected=None, chrome_process
         "chrome_rss_bytes_total": chrome_rss_bytes_total,
         "default_profile_pids": list(default_pids or []),
         "unexpected_processes": list(unexpected or []),
+        "unexpected_process_rss_bytes_total": unexpected_rss_bytes_total,
     }
 
 
@@ -51,7 +59,7 @@ def test_normalize_cmdline_path_collapses_escaped_user_data_dir_backslashes(slas
     escaped_root = _escape_backslashes(root, slash_count)
     cmdline = f"chrome.exe --type=renderer --user-data-dir={escaped_root} --lang=en-US"
 
-    assert root in nlm_auth_guard._normalize_cmdline_path(cmdline)
+    assert nlm_auth_guard._normalize_path_for_matching(root) in nlm_auth_guard._normalize_cmdline_path(cmdline)
 
 
 def test_sample_browser_health_counts_escaped_allowed_profile_subprocess(monkeypatch):
@@ -149,7 +157,7 @@ def test_browser_health_gate_marks_recovered_clean_after_default_profile_cleanup
     assert reaped == [{12345}]
 
 
-def test_browser_health_gate_is_unhealthy_for_unexpected_chrome(monkeypatch):
+def test_browser_health_gate_keeps_unrelated_chrome_soft_when_under_budget(monkeypatch):
     monkeypatch.setattr(nlm_auth_guard, "chrome_pids_for_root", lambda root: set())
     monkeypatch.setattr(nlm_auth_guard, "stop_chrome_pids", lambda pids: None)
     monkeypatch.setattr(
@@ -157,6 +165,7 @@ def test_browser_health_gate_is_unhealthy_for_unexpected_chrome(monkeypatch):
         "_sample_browser_health",
         lambda allowed_roots: _browser_health_sample(
             unexpected=[{"pid": 222, "cmdline": r"chrome.exe --user-data-dir=C:\Users\brsth\AppData"}],
+            unexpected_rss_bytes_total=512,
             chrome_process_count=1,
             chrome_rss_bytes_total=512,
         ),
@@ -170,6 +179,35 @@ def test_browser_health_gate_is_unhealthy_for_unexpected_chrome(monkeypatch):
         sleeper=lambda _: None,
     )
 
-    assert report["status"] == "unhealthy"
+    assert report["status"] == "clean"
     assert report["unexpected_process_count"] == 1
-    assert report["issues"]
+    assert report["warnings"] == []
+    assert not report["issues"]
+
+
+def test_browser_health_gate_marks_unrelated_chrome_degraded_when_over_budget(monkeypatch):
+    monkeypatch.setattr(nlm_auth_guard, "chrome_pids_for_root", lambda root: set())
+    monkeypatch.setattr(nlm_auth_guard, "stop_chrome_pids", lambda pids: None)
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "_sample_browser_health",
+        lambda allowed_roots: _browser_health_sample(
+            unexpected=[{"pid": 222, "cmdline": r"chrome.exe --user-data-dir=C:\Users\brsth\AppData"}],
+            unexpected_rss_bytes_total=7_000_000_000,
+            chrome_process_count=1,
+            chrome_rss_bytes_total=7_000_000_000,
+        ),
+    )
+
+    report = nlm_auth_guard.browser_health_gate(
+        [Path(r"P:\\\\\\.data\yt-is\browser\notebooklm-pro")],
+        settle_window_s=0.0,
+        sample_interval_s=0.0,
+        clock=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert report["status"] == "degraded"
+    assert report["unexpected_process_count"] == 1
+    assert report["warnings"]
+    assert not report["issues"]

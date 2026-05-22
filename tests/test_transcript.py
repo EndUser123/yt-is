@@ -1258,20 +1258,17 @@ class TestCookieFreshnessTracker:
         finally:
             csf.transcript._cookie_freshness_tracker = None
 
-    def test_cookie_freshness_probe_on_expired_ttl(self):
-        """is_fresh() calls nlm login --check when TTL expired."""
+    def test_cookie_freshness_expired_ttl(self):
+        """is_fresh() returns False and does not call subprocess when TTL expired."""
         import csf.transcript
         csf.transcript._cookie_freshness_tracker = None
         try:
             tracker = csf.transcript._get_cookie_freshness_tracker()
             tracker._last_check = 0.0  # TTL expired
             with mock.patch("subprocess.run") as mock_run:
-                mock_run.return_value = mock.Mock(returncode=0)
                 result = tracker.is_fresh()
-                assert result is True
-                mock_run.assert_called_once()
-                call_args = mock_run.call_args[0][0]
-                assert call_args == ["nlm", "login", "--check"]
+                assert result is False
+                mock_run.assert_not_called()
         finally:
             csf.transcript._cookie_freshness_tracker = None
 
@@ -1287,18 +1284,22 @@ class TestCookieFreshnessTracker:
         finally:
             csf.transcript._cookie_freshness_tracker = None
 
-    def test_cookie_freshness_probe_failure_invalidates(self):
-        """Probe failure calls invalidate() and returns False."""
+    def test_cookie_freshness_starts_daemon(self):
+        """is_fresh() starts daemon thread when auth_daemon_enabled is True."""
         import csf.transcript
         csf.transcript._cookie_freshness_tracker = None
         try:
             tracker = csf.transcript._get_cookie_freshness_tracker()
-            tracker._last_check = 0.0
-            with mock.patch("subprocess.run") as mock_run:
-                mock_run.return_value = mock.Mock(returncode=1)
-                result = tracker.is_fresh()
-                assert result is False
-                assert tracker._last_check == 0.0
+            tracker._last_check = time_module.monotonic()
+            # Enable daemon
+            with mock.patch("csf.transcript.get_nlm_config") as mock_cfg:
+                cfg = mock.Mock()
+                cfg.auth_daemon_enabled = True
+                mock_cfg.return_value = cfg
+                with mock.patch.object(tracker, "_start_daemon") as mock_start:
+                    result = tracker.is_fresh()
+                    assert result is True
+                    mock_start.assert_called_once()
         finally:
             csf.transcript._cookie_freshness_tracker = None
 

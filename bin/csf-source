@@ -89,7 +89,10 @@ from csf.transcript import (
     LanguageConfig,
     build_transcript_cache_metadata,
     fetch_transcript_chain,
+    _get_cookie_freshness_tracker,
 )
+from csf.nlm_config import get_nlm_config
+
 from csf.batch_status import (
     get_channel_metadata,
     set_channel_metadata,
@@ -378,22 +381,37 @@ def _ensure_nlm_auth() -> bool:
     if _is_nlm_auth_noninteractive() and not profile:
         print("[source] FATAL: noninteractive NLM auth requires NOTEBOOKLM_PROFILE.", file=sys.stderr)
         sys.exit(1)
-    _stop_default_nlm_chrome_profile("auth_check_before")
-    login_check = nlm_auth_guard.run_nlm(["login", "--check", *login_profile_args], timeout_s=30)
-    if login_check.stderr == "NLM command timed out":
-        print("[source] FATAL: NLM auth check timed out.", file=sys.stderr)
-        sys.exit(1)
-    if _stop_default_nlm_chrome_profile("auth_check_after"):
-        print("[source] FATAL: NLM auth check opened the default chrome-profile.", file=sys.stderr)
-        sys.exit(1)
-    account = _extract_nlm_account(login_check.stdout or "", login_check.stderr or "")
-    if login_check.returncode == 0 and (not expected_email or account == expected_email) and not force_scheduled:
+
+    # 1. CookieFreshnessTracker check
+    freshness = _get_cookie_freshness_tracker()
+    if freshness.is_fresh():
         return True
-    if login_check.returncode == 0 and expected_email and account and account != expected_email:
-        print(
-            f"[source] NLM auth profile {profile} is mapped to {account}, expected {expected_email}.",
-            file=sys.stderr,
-        )
+
+    # 2. Run --check probe (only if daemon is disabled)
+    if not get_nlm_config().auth_daemon_enabled:
+        _stop_default_nlm_chrome_profile("auth_check_before")
+        login_check = nlm_auth_guard.run_nlm(["login", "--check", *login_profile_args], timeout_s=30)
+        if login_check.stderr == "NLM command timed out":
+            print("[source] FATAL: NLM auth check timed out.", file=sys.stderr)
+            sys.exit(1)
+        if _stop_default_nlm_chrome_profile("auth_check_after"):
+            print("[source] FATAL: NLM auth check opened the default chrome-profile.", file=sys.stderr)
+            sys.exit(1)
+        account = _extract_nlm_account(login_check.stdout or "", login_check.stderr or "")
+        if login_check.returncode == 0 and (not expected_email or account == expected_email) and not force_scheduled:
+            with freshness._lock:
+                freshness._last_check = time.monotonic()
+            return True
+        if login_check.returncode == 0 and expected_email and account and account != expected_email:
+            print(
+                f"[source] NLM auth profile {profile} is mapped to {account}, expected {expected_email}.",
+                file=sys.stderr,
+            )
+    else:
+        # If daemon is enabled, and we got here, it means we don't do the active check,
+        # but the freshness cache was stale. We fall through to perform the refresh.
+        pass
+
     if force_scheduled:
         log_action(
             "nlm_auth_forced_refresh_scheduled",
@@ -478,6 +496,8 @@ def _ensure_nlm_auth() -> bool:
         print("[source] FATAL: NLM auth refresh did not produce the expected profile session.", file=sys.stderr)
         sys.exit(1)
     print("[source] NLM re-authenticated.", file=sys.stderr)
+    with freshness._lock:
+        freshness._last_check = time.monotonic()
     return True
 
 

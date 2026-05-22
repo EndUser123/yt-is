@@ -65,7 +65,12 @@ def _jsonl_path_has_marker(path: Path, marker: str) -> bool:
     return False
 
 
-def inspect_run_root(run_root: Path, *, require_forced_refresh_marker: bool = False) -> EvidenceCheckResult:
+def inspect_run_root(
+    run_root: Path,
+    *,
+    require_forced_refresh_marker: bool = False,
+    expected_worker_shape_signature: str | None = None,
+) -> EvidenceCheckResult:
     run_root = Path(run_root)
     summary_path = run_root / REQUIRED_SUMMARY_NAME
     reasons: list[str] = []
@@ -90,6 +95,16 @@ def inspect_run_root(run_root: Path, *, require_forced_refresh_marker: bool = Fa
             summary_status = str(summary.get("status") or "ok")
             if summary_status != "ok":
                 reasons.append(f"summary status is {summary_status}: {summary_path}")
+            if expected_worker_shape_signature is not None:
+                actual_worker_shape_signature = str(summary.get("worker_shape_signature") or "").strip()
+                if not actual_worker_shape_signature:
+                    reasons.append(f"summary is missing worker_shape_signature: {summary_path}")
+                elif actual_worker_shape_signature != expected_worker_shape_signature:
+                    reasons.append(
+                        "summary worker_shape_signature is "
+                        f"{actual_worker_shape_signature!r}; expected {expected_worker_shape_signature!r}: "
+                        f"{summary_path}"
+                    )
 
     jsonl_paths = _iter_jsonl_paths(run_root)
     if not jsonl_paths:
@@ -117,13 +132,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Require nlm_auth_forced_refresh_scheduled to appear in the run logs.",
     )
+    parser.add_argument(
+        "--expected-worker-shape",
+        default=None,
+        help="Require summary.worker_shape_signature to match the expected lane shape, e.g. 4+4 or 3+3.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    result = inspect_run_root(args.run_root, require_forced_refresh_marker=args.require_forced_refresh_marker)
+    result = inspect_run_root(
+        args.run_root,
+        require_forced_refresh_marker=args.require_forced_refresh_marker,
+        expected_worker_shape_signature=args.expected_worker_shape,
+    )
     if result.ok:
         print(f"[evidence] ok summary={result.summary_path}")
         return 0

@@ -218,6 +218,7 @@ def _sample_browser_health(allowed_browser_roots: Iterable[str | Path]) -> dict[
     allowed_profile_pid_counts_by_root = {root: 0 for root in allowed_roots}
     default_profile_pids: list[int] = []
     unexpected_processes: list[dict[str, Any]] = []
+    unexpected_process_rss_bytes_total = 0
     chrome_process_count = 0
     chrome_rss_bytes_total = 0
     for record in _collect_chrome_process_records():
@@ -241,6 +242,7 @@ def _sample_browser_health(allowed_browser_roots: Iterable[str | Path]) -> dict[
         if default_root in cmdline or normalized_default_root in normalized_cmdline:
             default_profile_pids.append(pid)
             continue
+        unexpected_process_rss_bytes_total += rss_bytes
         unexpected_processes.append({"pid": pid, "cmdline": cmdline})
     return {
         "allowed_browser_roots": list(allowed_roots),
@@ -250,6 +252,7 @@ def _sample_browser_health(allowed_browser_roots: Iterable[str | Path]) -> dict[
         "chrome_rss_bytes_total": chrome_rss_bytes_total,
         "default_profile_pids": default_profile_pids,
         "unexpected_processes": unexpected_processes,
+        "unexpected_process_rss_bytes_total": unexpected_process_rss_bytes_total,
     }
 
 
@@ -272,6 +275,8 @@ def stop_chrome_pids(pids: set[int]) -> None:
         + "}"
     )
     subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=20, check=False)
+    # Give Windows and Chrome a brief settle window to completely flush processes from the system table
+    time.sleep(0.5)
 
 
 def default_chrome_profile_pids() -> set[int]:
@@ -318,9 +323,15 @@ def browser_health_gate(
     detected_default_profile_pids: set[int] = set(initial_default_profile_pids)
     reaped_default_profile_pids: set[int] = set(initial_default_profile_reaped_pids)
     unexpected_processes: dict[int, str] = {}
+    unexpected_process_rss_bytes_total = 0
     sample_count = 0
     chrome_process_count_max = 0
     chrome_rss_bytes_max = 0
+    unexpected_process_count_budget = max(0, int(os.getenv("YTIS_BROWSER_HEALTH_UNRELATED_CHROME_PROCESS_BUDGET", "24")))
+    unexpected_process_rss_bytes_budget = max(
+        0,
+        int(os.getenv("YTIS_BROWSER_HEALTH_UNRELATED_CHROME_RSS_BYTES_BUDGET", str(6 * 1024 * 1024 * 1024))),
+    )
 
     while True:
         sample = _sample_browser_health(allowed_roots)
@@ -336,6 +347,10 @@ def browser_health_gate(
             pid = int(process.get("pid") or 0)
             if pid:
                 unexpected_processes[pid] = str(process.get("cmdline") or "")
+        unexpected_process_rss_bytes_total = max(
+            unexpected_process_rss_bytes_total,
+            int(sample.get("unexpected_process_rss_bytes_total") or 0),
+        )
         if clock() >= deadline:
             break
         sleep_for = min(max(0.0, float(sample_interval_s)), max(0.0, deadline - clock()))
@@ -351,15 +366,25 @@ def browser_health_gate(
         pid = int(process.get("pid") or 0)
         if pid:
             unexpected_processes[pid] = str(process.get("cmdline") or "")
+    unexpected_process_rss_bytes_total = max(
+        unexpected_process_rss_bytes_total,
+        int(final_sample.get("unexpected_process_rss_bytes_total") or 0),
+    )
 
     issues: list[str] = []
+    warnings: list[str] = []
+    unrelated_process_budget_exceeded = (
+        len(unexpected_processes) > unexpected_process_count_budget
+        or unexpected_process_rss_bytes_total > unexpected_process_rss_bytes_budget
+    )
     if unexpected_processes:
-        issues.append(
-            "unexpected Chrome processes detected during browser health settle: "
-            + ", ".join(
-                f"{pid}:{cmdline}" for pid, cmdline in sorted(unexpected_processes.items())[:5]
+        if unrelated_process_budget_exceeded:
+            warnings.append(
+                "unexpected Chrome processes exceeded soft budget during browser health settle: "
+                + ", ".join(
+                    f"{pid}:{cmdline}" for pid, cmdline in sorted(unexpected_processes.items())[:5]
+                )
             )
-        )
     if remaining_default_profile_pids:
         issues.append(
             "default NotebookLM chrome-profile still present after browser health settle: "
@@ -368,6 +393,8 @@ def browser_health_gate(
 
     if issues:
         status = "unhealthy"
+    elif warnings:
+        status = "degraded"
     elif reaped_default_profile_pids:
         status = "recovered_clean"
     else:
@@ -395,9 +422,14 @@ def browser_health_gate(
             {"pid": pid, "cmdline": cmdline}
             for pid, cmdline in sorted(unexpected_processes.items())
         ],
+        "unexpected_process_rss_bytes_total": unexpected_process_rss_bytes_total,
+        "unexpected_process_count_budget": unexpected_process_count_budget,
+        "unexpected_process_rss_bytes_budget": unexpected_process_rss_bytes_budget,
+        "unexpected_process_budget_exceeded": unrelated_process_budget_exceeded,
         "chrome_process_count_max": chrome_process_count_max,
         "chrome_rss_bytes_max": chrome_rss_bytes_max,
         "issues": issues,
+        "warnings": warnings,
     }
 
 

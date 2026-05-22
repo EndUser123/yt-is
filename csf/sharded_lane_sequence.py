@@ -158,6 +158,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Require nlm_auth_forced_refresh_scheduled in the smoke evidence check.",
     )
+    parser.add_argument(
+        "--expected-worker-shape",
+        default=None,
+        help="Require the smoke evidence check to match the expected lane shape, e.g. 4+4 or 3+3.",
+    )
     return parser
 
 
@@ -204,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
         for issue in browser_health.get("issues", []):
             print(f"[sequence] ERROR: {issue}")
         return 1
+    if browser_health["status"] == "degraded":
+        for warning in browser_health.get("warnings", []):
+            print(f"[sequence] WARN: {warning}")
 
     smoke_report = _run_phase(
         phase="smoke",
@@ -223,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     evidence = inspect_run_root(
         smoke_output_root,
         require_forced_refresh_marker=args.require_forced_refresh_marker,
+        expected_worker_shape_signature=args.expected_worker_shape,
     )
     if not evidence.ok:
         for reason in evidence.reasons:
@@ -269,8 +278,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     if browser_health["status"] != "clean":
+        label = "recovered before smoke" if browser_health["status"] == "recovered_clean" else "degraded before smoke"
         print(
-            "[sequence] WARN: browser health recovered before smoke: "
+            f"[sequence] WARN: browser health {label}: "
             f"status={browser_health['status']} detected_default={browser_health['default_profile_detected_count']} "
             f"unexpected={browser_health['unexpected_process_count']}"
         )

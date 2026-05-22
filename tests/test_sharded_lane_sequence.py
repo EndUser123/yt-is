@@ -109,10 +109,16 @@ def test_main_runs_doctor_smoke_evidence_soak_in_order(tmp_path, monkeypatch):
             },
         }
 
-    def fake_inspect_run_root(run_root, *, require_forced_refresh_marker=False):
+    def fake_inspect_run_root(
+        run_root,
+        *,
+        require_forced_refresh_marker=False,
+        expected_worker_shape_signature=None,
+    ):
         calls.append("evidence")
         assert run_root == smoke_output_root
         assert require_forced_refresh_marker is False
+        assert expected_worker_shape_signature is None
         return EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ())
 
     monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run_sharded_lane_series)
@@ -181,8 +187,14 @@ def test_main_stops_before_soak_when_evidence_fails(tmp_path, monkeypatch):
             },
         }
 
-    def fake_inspect_run_root(run_root, *, require_forced_refresh_marker=False):
+    def fake_inspect_run_root(
+        run_root,
+        *,
+        require_forced_refresh_marker=False,
+        expected_worker_shape_signature=None,
+    ):
         calls.append("evidence")
+        assert expected_worker_shape_signature is None
         return EvidenceCheckResult(False, smoke_output_root / "sharded_lane_series_summary.json", ("missing marker",))
 
     monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run_sharded_lane_series)
@@ -246,9 +258,15 @@ def test_main_rewrites_run_root_summary_on_invalidated_soak(tmp_path, monkeypatc
             },
         }
 
-    def fake_inspect_run_root(run_root_arg, *, require_forced_refresh_marker=False):
+    def fake_inspect_run_root(
+        run_root_arg,
+        *,
+        require_forced_refresh_marker=False,
+        expected_worker_shape_signature=None,
+    ):
         calls.append("evidence")
         assert run_root_arg == smoke_output_root
+        assert expected_worker_shape_signature is None
         return EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ())
 
     monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run_sharded_lane_series)
@@ -301,7 +319,7 @@ def test_main_records_post_run_hygiene_and_fails_when_default_profile_persists(t
     monkeypatch.setattr(
         mod,
         "inspect_run_root",
-        lambda run_root_arg, *, require_forced_refresh_marker=False: calls.append("evidence")
+        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None: calls.append("evidence")
         or EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ()),
     )
     monkeypatch.setattr(
@@ -381,3 +399,87 @@ def test_main_stops_before_smoke_when_browser_health_is_unhealthy(tmp_path, monk
     assert result == 1
     assert calls == ["doctor", "browser_health"]
     assert (run_root / "browser_health.json").exists()
+
+
+def test_main_continues_when_browser_health_is_degraded(tmp_path, monkeypatch):
+    calls: list[str] = []
+    run_root = tmp_path / "run"
+    smoke_output_root = tmp_path / "run" / "smoke"
+    soak_output_root = tmp_path / "run" / "soak"
+
+    monkeypatch.setattr(mod, "doctor_lane_setup", lambda *args, **kwargs: calls.append("doctor") or _lanes(tmp_path))
+    monkeypatch.setattr(
+        mod,
+        "browser_health_gate",
+        lambda *args, **kwargs: calls.append("browser_health")
+        or {
+            "status": "degraded",
+            "settle_window_s": 30.0,
+            "sample_interval_s": 5.0,
+            "sample_count": 2,
+            "elapsed_s": 0.0,
+            "allowed_browser_roots": [r"P:\\\\\\.data\yt-is\browser\notebooklm-pro"],
+            "initial_default_profile_detected_count": 0,
+            "initial_default_profile_detected_pids": [],
+            "initial_default_profile_reaped_count": 0,
+            "initial_default_profile_reaped_pids": [],
+            "default_profile_detected_count": 0,
+            "default_profile_detected_pids": [],
+            "default_profile_reaped_count": 0,
+            "default_profile_reaped_pids": [],
+            "default_profile_remaining_count": 0,
+            "default_profile_remaining_pids": [],
+            "unexpected_process_count": 1,
+            "unexpected_processes": [{"pid": 9999, "cmdline": "chrome.exe --user-data-dir=C:\\Temp"}],
+            "chrome_process_count_max": 2,
+            "chrome_rss_bytes_max": 1024,
+            "issues": [],
+            "warnings": ["unexpected Chrome processes detected during browser health settle: 9999:chrome.exe --user-data-dir=C:\\Temp"],
+        },
+    )
+
+    def fake_run_sharded_lane_series(*, output_root, **kwargs):
+        phase = "smoke" if output_root == smoke_output_root else "soak"
+        calls.append(phase)
+        return {
+            "report_version": 1,
+            "status": "ok",
+            "report_path": str(output_root / "sharded_lane_series_summary.json"),
+            "combined": {
+                "hot_path_videos_per_hour": 0.0,
+                "hot_path_success_count_total": 0,
+                "fail_count_total": 0,
+                "wall_elapsed_s": 0.0,
+            },
+        }
+
+    monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run_sharded_lane_series)
+    monkeypatch.setattr(
+        mod,
+        "inspect_run_root",
+        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None: calls.append("evidence")
+        or EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ()),
+    )
+    monkeypatch.setattr(
+        mod,
+        "_check_post_run_default_profile_hygiene",
+        lambda: {
+            "status": "clean",
+            "detected_count": 0,
+            "reaped_count": 0,
+            "remaining_count": 0,
+            "detected_pids": [],
+            "reaped_pids": [],
+            "remaining_pids": [],
+        },
+    )
+
+    result = mod.main([
+        "--lane-config",
+        str(_lane_config(tmp_path)),
+        "--run-root",
+        str(run_root),
+    ])
+
+    assert result == 0
+    assert calls == ["doctor", "browser_health", "smoke", "evidence", "soak"]

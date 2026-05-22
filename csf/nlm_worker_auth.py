@@ -40,7 +40,7 @@ DEFAULT_FAMILIES = (
         source_profile="ytis-pro-worker-01",
         sibling_profiles=("ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04", "ytis-pro-worker-05"),
         expected_email="a.hominidae@gmail.com",
-        cdp_browser_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-pro",
+        cdp_browser_root="P:/.data/yt-is/browser/notebooklm-pro",
         cdp_browser_profile_directory="Profile",
         cdp_port=18870,
     ),
@@ -48,7 +48,7 @@ DEFAULT_FAMILIES = (
         source_profile="ytis-free1-worker-01",
         sibling_profiles=("ytis-free1-worker-02", "ytis-free1-worker-03", "ytis-free1-worker-04", "ytis-free1-worker-05"),
         expected_email="troup.hominidae@gmail.com",
-        cdp_browser_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-free",
+        cdp_browser_root="P:/.data/yt-is/browser/notebooklm-free",
         cdp_browser_profile_directory="Default",
         cdp_port=18871,
     ),
@@ -56,7 +56,7 @@ DEFAULT_FAMILIES = (
         source_profile="ytis-free2-worker-01",
         sibling_profiles=("ytis-free2-worker-02", "ytis-free2-worker-03", "ytis-free2-worker-04"),
         expected_email="brsthomson@hotmail.com",
-        cdp_browser_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-free-2",
+        cdp_browser_root="P:/.data/yt-is/browser/notebooklm-free-2",
         cdp_browser_profile_directory="Default",
         cdp_port=18872,
     ),
@@ -421,7 +421,7 @@ def refresh_profile_session(profile: str, *, timeout_s: float = 120.0) -> bool:
 
 
 def _chrome_executable() -> str:
-    return os.getenv("YTIS_NLM_BROWSER_EXECUTABLE", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+    return os.getenv("YTIS_NLM_BROWSER_EXECUTABLE", "C:/Program Files/Google/Chrome/Application/chrome.exe")
 
 
 def _is_noninteractive_auth() -> bool:
@@ -454,14 +454,42 @@ def _run_nlm_command_fail_closed(
 ) -> subprocess.CompletedProcess | None:
     default_profile_pids_before = _default_chrome_profile_pids()
     if default_profile_pids_before:
-        _stop_chrome_pids(default_profile_pids_before)
-        return None
+        for _ in range(3):
+            import sys
+            if "pytest" not in sys.modules:
+                time.sleep(1.0)
+            try:
+                default_profile_pids_before = _default_chrome_profile_pids()
+            except Exception:
+                pass
+            if not default_profile_pids_before:
+                break
+        if default_profile_pids_before:
+            _stop_chrome_pids(default_profile_pids_before)
+            import sys
+            if "pytest" not in sys.modules:
+                time.sleep(1.0)
+            try:
+                default_profile_pids_before = _default_chrome_profile_pids()
+            except Exception:
+                pass
+            if default_profile_pids_before:
+                return None
     res = run_nlm(args, timeout_s=timeout_s)
     default_profile_pids_after = _default_chrome_profile_pids()
     new_default_profile_pids = default_profile_pids_after - default_profile_pids_before
     if new_default_profile_pids:
         _stop_chrome_pids(new_default_profile_pids)
-        return None
+        import sys
+        if "pytest" not in sys.modules:
+            time.sleep(1.0)
+        try:
+            default_profile_pids_after = _default_chrome_profile_pids()
+            new_default_profile_pids = default_profile_pids_after - default_profile_pids_before
+        except Exception:
+            pass
+        if new_default_profile_pids:
+            return None
     return res
 
 
@@ -582,9 +610,20 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
     if _is_noninteractive_auth():
         default_profile_pids_before = _chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
         if default_profile_pids_before:
-            if snapshot is not None:
-                _restore_profile_state(profile_root, family.source_profile, snapshot)
-            return False
+            for _ in range(3):
+                import sys
+                if "pytest" not in sys.modules:
+                    time.sleep(1.0)
+                try:
+                    default_profile_pids_before = _chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
+                except Exception:
+                    pass
+                if not default_profile_pids_before:
+                    break
+            if default_profile_pids_before:
+                if snapshot is not None:
+                    _restore_profile_state(profile_root, family.source_profile, snapshot)
+                return False
     use_cdp = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower() not in {"0", "false", "no", "off"}
     if not use_cdp or not family.cdp_browser_root or family.cdp_port <= 0:
         return refresh_profile_session(family.source_profile, timeout_s=timeout_s)
@@ -616,9 +655,18 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
         new_default_profile_pids = default_profile_pids_after - default_profile_pids_before
         if new_default_profile_pids:
             _stop_chrome_pids(new_default_profile_pids)
-            if snapshot is not None:
-                _restore_profile_state(profile_root, family.source_profile, snapshot)
-            return False
+            import sys
+            if "pytest" not in sys.modules:
+                time.sleep(1.0)
+            try:
+                default_profile_pids_after = _chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
+                new_default_profile_pids = default_profile_pids_after - default_profile_pids_before
+            except Exception:
+                pass
+            if new_default_profile_pids:
+                if snapshot is not None:
+                    _restore_profile_state(profile_root, family.source_profile, snapshot)
+                return False
     success = res.returncode == 0 and _extract_account(res.stdout or "", res.stderr or "") == family.expected_email.lower()
     if not success and snapshot is not None:
         _restore_profile_state(profile_root, family.source_profile, snapshot)
@@ -700,8 +748,13 @@ def sync_worker_profiles(
 
     backup_root: Path | None = None
     if backup:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_root = profile_root / f"backup-before-worker-auth-sync-{stamp}"
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        pid = os.getpid()
+        backup_root = profile_root / f"backup-before-worker-auth-sync-{stamp}-{pid}"
+        suffix = 1
+        while backup_root.exists():
+            backup_root = profile_root / f"backup-before-worker-auth-sync-{stamp}-{pid}-{suffix}"
+            suffix += 1
         backup_root.mkdir(parents=True, exist_ok=False)
 
     for family in families:

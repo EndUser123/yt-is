@@ -22,7 +22,7 @@ class TestSharedNlmConfig:
         assert cfg.browser_profile_name == "notebooklm"
         assert cfg.browser_profile_seed_root.endswith("notebooklm-browser-session")
         assert cfg.nlm_browser_mode == "persistent"
-        assert cfg.nlm_browser_profile_root.endswith(r"browser\notebooklm")
+        assert cfg.nlm_browser_profile_root.replace("\\", "/").endswith("browser/notebooklm")
         assert cfg.nlm_browser_executable.endswith(r"chrome.exe")
         assert cfg.nlm_browser_channel == "chrome"
         assert cfg.nlm_browser_bootstrap_headless is False
@@ -36,8 +36,64 @@ class TestSharedNlmConfig:
         assert cfg.source_content_retry_queue_delay_s == 30.0
         assert cfg.source_content_retry_queue_budget_s == 30.0
         assert cfg.source_content_shared_retry_pool_enabled is False
+        assert cfg.transcript_expensive_fallback_enabled is True
+        assert cfg.whisper_on_notebooklm_add_failed is True
         assert cfg.reusable_cleanup_every_n_batches == 1
+        assert cfg.reusable_active_window_size == 0
+        assert cfg.reusable_extract_window_size == 0
+        assert cfg.reusable_source_age_cadence_enabled is False
+        assert cfg.reusable_source_age_cadence_soft_threshold_s == 160.0
+        assert cfg.reusable_source_age_cadence_hard_threshold_s == 190.0
+        assert cfg.reusable_source_age_cadence_min_window_size == 5
         assert transcript.get_nlm_config() is cfg
+
+    def test_reusable_active_window_size_follows_env(self, monkeypatch):
+        """Reusable workers should get their active window size from shared config."""
+        monkeypatch.setenv("YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE", "17")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.reusable_active_window_size == 17
+        finally:
+            nlm_config.reset_nlm_config()
+
+    def test_reusable_extract_window_size_follows_env(self, monkeypatch):
+        """Reusable workers should get their extract window size from shared config."""
+        monkeypatch.setenv("YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE", "19")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.reusable_extract_window_size == 19
+        finally:
+            nlm_config.reset_nlm_config()
+
+    def test_transcript_expensive_fallback_flags_follow_env(self, monkeypatch):
+        """Throughput runs can disable long-tail transcript recovery stages."""
+        monkeypatch.setenv("YTIS_TRANSCRIPT_EXPENSIVE_FALLBACK_ENABLED", "false")
+        monkeypatch.setenv("YTIS_WHISPER_ON_NOTEBOOKLM_ADD_FAILED", "0")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.transcript_expensive_fallback_enabled is False
+            assert cfg.whisper_on_notebooklm_add_failed is False
+        finally:
+            nlm_config.reset_nlm_config()
+
+    def test_reusable_source_age_cadence_follows_env(self, monkeypatch):
+        """Reusable workers should get the age-aware cadence settings from shared config."""
+        monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED", "true")
+        monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S", "155")
+        monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S", "185")
+        monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE", "7")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.reusable_source_age_cadence_enabled is True
+            assert cfg.reusable_source_age_cadence_soft_threshold_s == 155.0
+            assert cfg.reusable_source_age_cadence_hard_threshold_s == 185.0
+            assert cfg.reusable_source_age_cadence_min_window_size == 7
+        finally:
+            nlm_config.reset_nlm_config()
 
     def test_jitter_bounds_follow_env_and_stay_shared(self, monkeypatch):
         """Transcript and batch loops should read the same jitter bounds from config."""
@@ -71,7 +127,7 @@ class TestSharedNlmConfig:
             browser_profile_name="notebooklm-test",
             browser_profile_seed_root="P:\\\\\\.data/yt-is/notebooklm-browser-session-test",
             nlm_browser_mode="persistent",
-            nlm_browser_profile_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-test",
+            nlm_browser_profile_root="P:/.data/yt-is/browser/notebooklm-test",
             nlm_browser_executable=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             nlm_browser_channel="chrome",
             nlm_browser_bootstrap_headless=False,
@@ -85,7 +141,15 @@ class TestSharedNlmConfig:
             source_content_retry_queue_delay_s=30.0,
             source_content_retry_queue_budget_s=30.0,
             source_content_shared_retry_pool_enabled=False,
+            transcript_expensive_fallback_enabled=True,
+            whisper_on_notebooklm_add_failed=True,
             reusable_cleanup_every_n_batches=2,
+            reusable_active_window_size=0,
+            reusable_extract_window_size=0,
+            reusable_source_age_cadence_enabled=False,
+            reusable_source_age_cadence_soft_threshold_s=160.0,
+            reusable_source_age_cadence_hard_threshold_s=190.0,
+            reusable_source_age_cadence_min_window_size=5,
         )
         try:
             nlm_config.set_nlm_config(replacement)

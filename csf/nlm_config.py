@@ -27,15 +27,16 @@ class NLMConfig:
     transcript_worker_jitter_min_s: float = 2.0
     transcript_worker_jitter_max_s: float = 10.0
     auth_check_interval: float = 60.0
+    auth_daemon_enabled: bool = True
     auth_max_calls_per_window: int = 10
     auth_cooldown: float = 300.0
     browser_profile_mode: str = "persistent"
     browser_profile_name: str = "notebooklm"
-    browser_profile_seed_root: str = "P:\\\\\\.data/yt-is/notebooklm-browser-session"
+    browser_profile_seed_root: str = "P:/.data/yt-is/notebooklm-browser-session"
     nlm_browser_mode: str = "persistent"
-    nlm_browser_profile_root: str = r"P:\\\\\\.data\yt-is\browser\notebooklm"
+    nlm_browser_profile_root: str = "P:/.data/yt-is/browser/notebooklm"
     nlm_browser_profile_directory: str = ""
-    nlm_browser_executable: str = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    nlm_browser_executable: str = "C:/Program Files/Google/Chrome/Application/chrome.exe"
     nlm_browser_channel: str = "chrome"
     nlm_browser_bootstrap_headless: bool = False
     nlm_browser_start_timeout_ms: int = 30000
@@ -48,7 +49,15 @@ class NLMConfig:
     source_content_retry_queue_delay_s: float = 30.0
     source_content_retry_queue_budget_s: float = 30.0
     source_content_shared_retry_pool_enabled: bool = False
+    transcript_expensive_fallback_enabled: bool = True
+    whisper_on_notebooklm_add_failed: bool = True
     reusable_cleanup_every_n_batches: int = 1
+    reusable_active_window_size: int = 0
+    reusable_extract_window_size: int = 0
+    reusable_source_age_cadence_enabled: bool = False
+    reusable_source_age_cadence_soft_threshold_s: float = 160.0
+    reusable_source_age_cadence_hard_threshold_s: float = 190.0
+    reusable_source_age_cadence_min_window_size: int = 5
 
 
 def get_nlm_config() -> NLMConfig:
@@ -72,6 +81,10 @@ def get_nlm_config() -> NLMConfig:
                     os.environ.get("YTIS_TRANSCRIPT_WORKER_JITTER_MAX_S", "10.0")
                 ),
                 auth_check_interval=float(os.environ.get("YTIS_NLM_AUTH_CHECK_INTERVAL", "60.0")),
+                auth_daemon_enabled=(
+                    os.environ.get("YTIS_NLM_AUTH_DAEMON_ENABLED", "true").strip().lower()
+                    in {"1", "true", "yes", "on"}
+                ),
                 auth_max_calls_per_window=int(
                     os.environ.get("YTIS_NLM_AUTH_MAX_CALLS_PER_WINDOW", "10")
                 ),
@@ -82,25 +95,25 @@ def get_nlm_config() -> NLMConfig:
                 or "notebooklm",
                 browser_profile_seed_root=os.environ.get(
                     "YTIS_NLM_BROWSER_PROFILE_SEED_ROOT",
-                    "P:\\\\\\.data/yt-is/notebooklm-browser-session",
+                    "P:/.data/yt-is/notebooklm-browser-session",
                 ).strip()
-                or "P:\\\\\\.data/yt-is/notebooklm-browser-session",
+                or "P:/.data/yt-is/notebooklm-browser-session",
                 nlm_browser_mode=os.environ.get("YTIS_NLM_BROWSER_MODE", "persistent").strip().lower()
                 or "persistent",
                 nlm_browser_profile_root=os.environ.get(
                     "YTIS_NLM_BROWSER_PROFILE_ROOT",
-                    r"P:\\\\\\.data\yt-is\browser\notebooklm",
+                    "P:/.data/yt-is/browser/notebooklm",
                 ).strip()
-                or r"P:\\\\\\.data\yt-is\browser\notebooklm",
+                or "P:/.data/yt-is/browser/notebooklm",
                 nlm_browser_profile_directory=os.environ.get(
                     "YTIS_NLM_BROWSER_PROFILE_DIRECTORY",
                     "",
                 ).strip(),
                 nlm_browser_executable=os.environ.get(
                     "YTIS_NLM_BROWSER_EXECUTABLE",
-                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    "C:/Program Files/Google/Chrome/Application/chrome.exe",
                 ).strip()
-                or r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                or "C:/Program Files/Google/Chrome/Application/chrome.exe",
                 nlm_browser_channel=os.environ.get("YTIS_NLM_BROWSER_CHANNEL", "chrome").strip().lower()
                 or "chrome",
                 nlm_browser_bootstrap_headless=(
@@ -140,9 +153,45 @@ def get_nlm_config() -> NLMConfig:
                     .lower()
                     in {"1", "true", "yes", "on"}
                 ),
+                transcript_expensive_fallback_enabled=(
+                    os.environ.get("YTIS_TRANSCRIPT_EXPENSIVE_FALLBACK_ENABLED", "true")
+                    .strip()
+                    .lower()
+                    in {"1", "true", "yes", "on"}
+                ),
+                whisper_on_notebooklm_add_failed=(
+                    os.environ.get("YTIS_WHISPER_ON_NOTEBOOKLM_ADD_FAILED", "true")
+                    .strip()
+                    .lower()
+                    in {"1", "true", "yes", "on"}
+                ),
                 reusable_cleanup_every_n_batches=max(
                     1,
                     int(os.environ.get("YTIS_NLM_REUSABLE_CLEANUP_EVERY_N_BATCHES", "1")),
+                ),
+                reusable_active_window_size=max(
+                    0,
+                    int(os.environ.get("YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE", "0")),
+                ),
+                reusable_extract_window_size=max(
+                    0,
+                    int(os.environ.get("YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE", "0")),
+                ),
+                reusable_source_age_cadence_enabled=(
+                    os.environ.get("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED", "false")
+                    .strip()
+                    .lower()
+                    in {"1", "true", "yes", "on"}
+                ),
+                reusable_source_age_cadence_soft_threshold_s=float(
+                    os.environ.get("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S", "160.0")
+                ),
+                reusable_source_age_cadence_hard_threshold_s=float(
+                    os.environ.get("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S", "190.0")
+                ),
+                reusable_source_age_cadence_min_window_size=max(
+                    1,
+                    int(os.environ.get("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE", "5")),
                 ),
             )
         return _nlm_config

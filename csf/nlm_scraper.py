@@ -48,6 +48,14 @@ except ImportError:
 
 _NLM_CONTENT_READY_THRESHOLD = 100
 _NLM_CONTENT_BELOW_THRESHOLD_STATUS = "nlm_content_below_threshold"
+_EPHEMERAL_BROWSER_CACHE_DIRS = {
+    "cache",
+    "code cache",
+    "gpucache",
+    "crashpad",
+    "shadercache",
+    "grshadercache",
+}
 
 
 def _get_nlm_login_profile_args() -> list[str]:
@@ -412,7 +420,7 @@ class NLMIndustrialScraper:
         lower = name.lower()
         if name.startswith("Singleton") or name == "lockfile":
             return True
-        if lower in {"cache", "code cache", "gpucache", "shadercache", "grshadercache"}:
+        if lower in _EPHEMERAL_BROWSER_CACHE_DIRS or lower.endswith("cache"):
             return True
         if lower.endswith(".tmp"):
             return True
@@ -2271,9 +2279,51 @@ class NLMIndustrialScraper:
         if self._driver:
             self._driver.quit()
             self._driver = None
+        self._prune_ephemeral_browser_cache()
         self._cleanup_staging_on_close()
         self._staging_nb_id = None
         self._source_count = 0
+
+    def _prune_ephemeral_browser_cache(self) -> tuple[int, int]:
+        """Remove transient cache directories from this scraper's Selenium profile clone."""
+        profile_root = Path(self._selected_browser_profile_root) if self._selected_browser_profile_root else None
+        if profile_root is None:
+            return (0, 0)
+        normalized_root = str(profile_root).replace("\\", "/").lower()
+        if "yt-is/selenium-profiles/" not in normalized_root:
+            log_action(
+                "selenium_profile_cache_prune_skipped",
+                {
+                    "profile_root": str(profile_root),
+                    "reason": "outside_selenium_profile_root",
+                },
+            )
+            return (0, 0)
+        if not profile_root.exists():
+            return (0, 0)
+
+        pruned = 0
+        failed = 0
+        for path in sorted(profile_root.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            if not path.is_dir():
+                continue
+            lower_name = path.name.strip().lower()
+            if lower_name not in _EPHEMERAL_BROWSER_CACHE_DIRS and not lower_name.endswith("cache"):
+                continue
+            try:
+                shutil.rmtree(path)
+                pruned += 1
+            except Exception:
+                failed += 1
+        log_action(
+            "selenium_profile_cache_pruned",
+            {
+                "profile_root": str(profile_root),
+                "pruned": pruned,
+                "failed": failed,
+            },
+        )
+        return (pruned, failed)
 
     # --- Pre-flight cleanup: remove orphaned staging notebooks from prior runs ---
 

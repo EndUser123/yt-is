@@ -1152,6 +1152,375 @@ class TestReusableBatchLogging:
         assert summary["content_fetch_command_elapsed_s_count"] == 2
         assert summary["source_list_probe_count"] == 1
 
+    def test_reusable_batch_processes_large_batch_in_active_windows(self):
+        """Large reusable batches should add, extract, and clear smaller active windows."""
+        batch_ids = [f"vid{i:02d}" for i in range(55)]
+        windows_seen: list[list[str]] = []
+
+        def mock_add(ids, subbatch_size):
+            windows_seen.append(list(ids))
+            ingestor._ingestor._last_added_video_ids = list(ids)
+            ingestor._ingestor._oldest_source_materialization_epoch = 1234.0
+            ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
+            return list(ids)
+
+        def mock_extract(ids):
+            return {vid: (True, f"text-{vid}", None) for vid in ids}
+
+        def mock_extract_metrics():
+            current_window = windows_seen[-1]
+            return {
+                "content_fetch_status_counts": {"ready": len(current_window)},
+                "source_ready_age_s_total": float(len(current_window)),
+                "source_ready_age_s_max": 1.0,
+                "source_ready_age_s_avg": 1.0,
+                "content_fetch_attempts_total": len(current_window),
+                "content_fetch_attempts_max": 1,
+                "content_fetch_attempts_avg": 1.0,
+                "content_fetch_command_elapsed_s_total": float(len(current_window)) / 10.0,
+                "content_fetch_command_elapsed_s_max": 0.1,
+                "content_fetch_command_elapsed_s_count": len(current_window),
+                "content_fetch_command_elapsed_s_avg": 0.1,
+            }
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(active_window_size=20)
+                    with mock.patch.object(ingestor, "_ensure_notebook", return_value=(False, "reuse")):
+                        with mock.patch.object(ingestor._ingestor, "_add_sources_in_subbatches", side_effect=mock_add) as mock_add_sources:
+                            with mock.patch.object(ingestor._ingestor, "extract_transcripts", side_effect=mock_extract) as mock_extract_sources:
+                                with mock.patch.object(ingestor._ingestor, "get_last_extract_metrics", side_effect=mock_extract_metrics):
+                                    with mock.patch.object(ingestor._ingestor, "reset_sources") as mock_reset:
+                                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                            with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[500.0 + i for i in range(80)]):
+                                                results = ingestor.process_batch(batch_ids)
+
+        assert len(results) == 55
+        assert all(success for success, transcript, _ in results.values() if transcript)
+        assert [len(window) for window in windows_seen] == [20, 20, 15]
+        assert mock_add_sources.call_count == 3
+        assert mock_extract_sources.call_count == 3
+        assert mock_reset.call_count == 3
+        assert ingestor._ingestor._oldest_source_materialization_epoch is None
+        assert ingestor._ingestor._last_materialization_ready_at_epoch == 0.0
+
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["active_window_enabled"] is True
+        assert completed["active_window_size"] == 20
+        assert completed["active_window_count"] == 3
+        assert completed["succeeded"] == 55
+        assert completed["failed"] == 0
+        assert completed["content_fetch_status_counts"] == {"ready": 55}
+        assert completed["source_ready_age_s_total"] == 55.0
+        assert completed["source_ready_age_s_max"] == 1.0
+        assert completed["content_fetch_command_elapsed_s_count"] == 55
+        assert completed["content_fetch_command_elapsed_s_total"] == 5.5
+
+    def test_reusable_batch_processes_large_batch_in_extract_windows_without_reset(self):
+        """Large reusable batches should window add/extract without resetting between windows."""
+        batch_ids = [f"vid{i:02d}" for i in range(55)]
+        windows_seen: list[list[str]] = []
+
+        def mock_add(ids, subbatch_size):
+            windows_seen.append(list(ids))
+            ingestor._ingestor._last_added_video_ids = list(ids)
+            ingestor._ingestor._oldest_source_materialization_epoch = 1234.0
+            ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
+            return list(ids)
+
+        def mock_extract(ids):
+            return {vid: (True, f"text-{vid}", None) for vid in ids}
+
+        def mock_extract_metrics():
+            current_window = windows_seen[-1]
+            return {
+                "content_fetch_status_counts": {"ready": len(current_window)},
+                "source_ready_age_s_total": float(len(current_window)),
+                "source_ready_age_s_max": 1.0,
+                "source_ready_age_s_avg": 1.0,
+                "content_fetch_attempts_total": len(current_window),
+                "content_fetch_attempts_max": 1,
+                "content_fetch_attempts_avg": 1.0,
+                "content_fetch_command_elapsed_s_total": float(len(current_window)) / 10.0,
+                "content_fetch_command_elapsed_s_max": 0.1,
+                "content_fetch_command_elapsed_s_count": len(current_window),
+                "content_fetch_command_elapsed_s_avg": 0.1,
+            }
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(extract_window_size=20)
+                    with mock.patch.object(ingestor, "_ensure_notebook", return_value=(False, "reuse")):
+                        with mock.patch.object(ingestor._ingestor, "_add_sources_in_subbatches", side_effect=mock_add) as mock_add_sources:
+                            with mock.patch.object(ingestor._ingestor, "extract_transcripts", side_effect=mock_extract) as mock_extract_sources:
+                                with mock.patch.object(ingestor._ingestor, "get_last_extract_metrics", side_effect=mock_extract_metrics):
+                                    with mock.patch.object(ingestor._ingestor, "reset_sources") as mock_reset:
+                                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                            with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[600.0 + i for i in range(80)]):
+                                                results = ingestor.process_batch(batch_ids)
+
+        assert len(results) == 55
+        assert all(success for success, transcript, _ in results.values() if transcript)
+        assert [len(window) for window in windows_seen] == [20, 20, 15]
+        assert mock_add_sources.call_count == 3
+        assert mock_extract_sources.call_count == 3
+        assert mock_reset.call_count == 1
+        assert ingestor._ingestor._oldest_source_materialization_epoch is None
+        assert ingestor._ingestor._last_materialization_ready_at_epoch == 0.0
+
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["window_mode"] == "extract_window"
+        assert completed["extract_window_enabled"] is True
+        assert completed["extract_window_size"] == 20
+        assert completed["extract_window_count"] == 3
+        assert completed["window_count"] == 3
+        assert completed["succeeded"] == 55
+        assert completed["failed"] == 0
+        assert completed["content_fetch_status_counts"] == {"ready": 55}
+        assert completed["source_ready_age_s_total"] == 55.0
+        assert completed["source_ready_age_s_max"] == 1.0
+        assert completed["content_fetch_command_elapsed_s_count"] == 55
+        assert completed["content_fetch_command_elapsed_s_total"] == 5.5
+
+    def test_source_age_cadence_window_size_shrinks_as_notebook_ages(self):
+        """The source-age cadence should shrink windows as the oldest source ages."""
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(
+                        source_age_cadence_enabled=True,
+                        source_age_cadence_soft_threshold_s=160.0,
+                        source_age_cadence_hard_threshold_s=190.0,
+                        source_age_cadence_min_window_size=5,
+                    )
+                    ingestor._ingestor._oldest_source_materialization_epoch = 1000.0
+                    with mock.patch("csf.nlm_batch.time.time", return_value=1100.0):
+                        assert ingestor._select_source_age_cadence_window_size(120) == 50
+                    with mock.patch("csf.nlm_batch.time.time", return_value=1170.0):
+                        assert ingestor._select_source_age_cadence_window_size(120) == 25
+                    with mock.patch("csf.nlm_batch.time.time", return_value=1210.0):
+                        assert ingestor._select_source_age_cadence_window_size(120) == 5
+
+    def test_reusable_batch_processes_large_batch_in_source_age_cadence_windows_without_reset(self):
+        """Large reusable batches should add and extract in age-aware windows without per-window reset."""
+        batch_ids = [f"vid{i:02d}" for i in range(12)]
+        windows_seen: list[list[str]] = []
+
+        def mock_add(ids, subbatch_size):
+            windows_seen.append(list(ids))
+            ingestor._ingestor._last_added_video_ids = list(ids)
+            ingestor._ingestor._oldest_source_materialization_epoch = 1234.0
+            ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
+            return list(ids)
+
+        def mock_extract(ids):
+            return {vid: (True, f"text-{vid}", None) for vid in ids}
+
+        def mock_extract_metrics():
+            current_window = windows_seen[-1]
+            return {
+                "content_fetch_status_counts": {"ready": len(current_window)},
+                "source_ready_age_s_total": float(len(current_window)),
+                "source_ready_age_s_max": 1.0,
+                "source_ready_age_s_avg": 1.0,
+                "content_fetch_attempts_total": len(current_window),
+                "content_fetch_attempts_max": 1,
+                "content_fetch_attempts_avg": 1.0,
+                "content_fetch_command_elapsed_s_total": float(len(current_window)) / 10.0,
+                "content_fetch_command_elapsed_s_max": 0.1,
+                "content_fetch_command_elapsed_s_count": len(current_window),
+                "content_fetch_command_elapsed_s_avg": 0.1,
+            }
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(source_age_cadence_enabled=True)
+                    with mock.patch.object(ingestor, "_ensure_notebook", return_value=(False, "reuse")):
+                        with mock.patch.object(ingestor, "_select_source_age_cadence_window_size", side_effect=[6, 6, 4, 2]):
+                            with mock.patch.object(ingestor._ingestor, "_add_sources_in_subbatches", side_effect=mock_add) as mock_add_sources:
+                                with mock.patch.object(ingestor._ingestor, "extract_transcripts", side_effect=mock_extract) as mock_extract_sources:
+                                    with mock.patch.object(ingestor._ingestor, "get_last_extract_metrics", side_effect=mock_extract_metrics):
+                                        with mock.patch.object(ingestor._ingestor, "reset_sources") as mock_reset:
+                                            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                                with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[700.0 + i for i in range(80)]):
+                                                    results = ingestor.process_batch(batch_ids)
+
+        assert len(results) == 12
+        assert all(success for success, transcript, _ in results.values() if transcript)
+        assert [len(window) for window in windows_seen] == [6, 4, 2]
+        assert mock_add_sources.call_count == 3
+        assert mock_extract_sources.call_count == 3
+        assert mock_reset.call_count == 1
+        assert ingestor._ingestor._oldest_source_materialization_epoch is None
+        assert ingestor._ingestor._last_materialization_ready_at_epoch == 0.0
+
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["window_mode"] == "source_age_cadence"
+        assert completed["source_age_cadence_enabled"] is True
+        assert completed["window_count"] == 3
+        assert completed["succeeded"] == 12
+        assert completed["failed"] == 0
+        assert completed["content_fetch_status_counts"] == {"ready": 12}
+        assert completed["source_ready_age_s_total"] == 12.0
+        assert completed["source_ready_age_s_max"] == 1.0
+        assert completed["content_fetch_command_elapsed_s_count"] == 12
+        assert completed["content_fetch_command_elapsed_s_total"] == 1.2
+
+    def test_reusable_batch_source_age_cadence_counts_empty_add_shortfall_as_failures(self):
+        """A zero-add cadence window should still emit one failure per requested video."""
+        batch_ids = [f"vid{i:02d}" for i in range(4)]
+        windows_seen: list[list[str]] = []
+        extract_calls: list[list[str]] = []
+
+        def mock_add(ids, subbatch_size):
+            windows_seen.append(list(ids))
+            ingestor._ingestor._last_added_video_ids = []
+            ingestor._ingestor._last_added_source_ids = []
+            ingestor._ingestor._oldest_source_materialization_epoch = 1234.0
+            ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
+            return []
+
+        def mock_extract(ids):
+            extract_calls.append(list(ids))
+            return {vid: (True, f"text-{vid}", None) for vid in ids}
+
+        def mock_extract_metrics():
+            return {
+                "content_fetch_status_counts": {
+                    "ready": 0,
+                    "below_threshold": 0,
+                    "command_failed": 0,
+                    "parse_failed": 0,
+                    "source_age_cliff": 0,
+                },
+                "source_ready_age_s_total": 0.0,
+                "source_ready_age_s_max": 0.0,
+                "source_ready_age_s_avg": 0.0,
+                "content_fetch_attempts_total": 0,
+                "content_fetch_attempts_max": 0,
+                "content_fetch_attempts_avg": 0.0,
+                "content_fetch_command_elapsed_s_total": 0.0,
+                "content_fetch_command_elapsed_s_max": 0.0,
+                "content_fetch_command_elapsed_s_count": 0,
+                "content_fetch_command_elapsed_s_avg": 0.0,
+            }
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(source_age_cadence_enabled=True)
+                    with mock.patch.object(ingestor, "_ensure_notebook", return_value=(False, "reuse")):
+                        with mock.patch.object(ingestor, "_select_source_age_cadence_window_size", return_value=4):
+                            with mock.patch.object(ingestor._ingestor, "_add_sources_in_subbatches", side_effect=mock_add) as mock_add_sources:
+                                with mock.patch.object(ingestor._ingestor, "extract_transcripts", side_effect=mock_extract) as mock_extract_sources:
+                                    with mock.patch.object(ingestor._ingestor, "get_last_extract_metrics", side_effect=mock_extract_metrics):
+                                        with mock.patch.object(ingestor._ingestor, "reset_sources") as mock_reset:
+                                            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                                with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[800.0 + i for i in range(40)]):
+                                                    results = ingestor.process_batch(batch_ids)
+
+        assert windows_seen == [batch_ids]
+        assert extract_calls == [[]]
+        assert len(results) == 4
+        assert all((not success) and transcript is None and error == "Source add failed" for success, transcript, error in results.values())
+        assert mock_add_sources.call_count == 1
+        assert mock_extract_sources.call_count == 1
+        assert mock_reset.call_count == 1
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["window_mode"] == "source_age_cadence"
+        assert completed["window_count"] == 1
+        assert completed["succeeded"] == 0
+        assert completed["failed"] == 4
+        assert completed["content_fetch_status_counts"] == {
+            "ready": 0,
+            "below_threshold": 0,
+            "command_failed": 0,
+            "parse_failed": 0,
+            "source_age_cliff": 0,
+        }
+        assert completed["content_fetch_command_elapsed_s_count"] == 0
+
+    def test_reusable_batch_source_age_cadence_counts_partial_add_shortfall_as_failures(self):
+        """A partially added cadence window should still emit one failure per missing video."""
+        batch_ids = [f"vid{i:02d}" for i in range(4)]
+        windows_seen: list[list[str]] = []
+        extract_calls: list[list[str]] = []
+
+        def mock_add(ids, subbatch_size):
+            windows_seen.append(list(ids))
+            ingestor._ingestor._last_added_video_ids = list(ids[:2])
+            ingestor._ingestor._last_added_source_ids = ["source-1", "source-2"]
+            ingestor._ingestor._oldest_source_materialization_epoch = 1234.0
+            ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
+            return list(ids[:2])
+
+        def mock_extract(ids):
+            extract_calls.append(list(ids))
+            return {vid: (True, f"text-{vid}", None) for vid in ids}
+
+        def mock_extract_metrics():
+            return {
+                "content_fetch_status_counts": {
+                    "ready": 2,
+                    "below_threshold": 0,
+                    "command_failed": 0,
+                    "parse_failed": 0,
+                    "source_age_cliff": 0,
+                },
+                "source_ready_age_s_total": 2.0,
+                "source_ready_age_s_max": 1.0,
+                "source_ready_age_s_avg": 1.0,
+                "content_fetch_attempts_total": 2,
+                "content_fetch_attempts_max": 1,
+                "content_fetch_attempts_avg": 1.0,
+                "content_fetch_command_elapsed_s_total": 0.2,
+                "content_fetch_command_elapsed_s_max": 0.1,
+                "content_fetch_command_elapsed_s_count": 2,
+                "content_fetch_command_elapsed_s_avg": 0.1,
+            }
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(source_age_cadence_enabled=True)
+                    with mock.patch.object(ingestor, "_ensure_notebook", return_value=(False, "reuse")):
+                        with mock.patch.object(ingestor._ingestor, "_add_sources_in_subbatches", side_effect=mock_add) as mock_add_sources:
+                            with mock.patch.object(ingestor._ingestor, "extract_transcripts", side_effect=mock_extract) as mock_extract_sources:
+                                with mock.patch.object(ingestor._ingestor, "get_last_extract_metrics", side_effect=mock_extract_metrics):
+                                    with mock.patch.object(ingestor._ingestor, "reset_sources") as mock_reset:
+                                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                            with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[900.0 + i for i in range(40)]):
+                                                results = ingestor.process_batch(batch_ids)
+
+        assert windows_seen == [batch_ids]
+        assert extract_calls == [[batch_ids[0], batch_ids[1]]]
+        assert len(results) == 4
+        assert sum(1 for success, transcript, _ in results.values() if success and transcript) == 2
+        assert sum(
+            1
+            for success, transcript, error in results.values()
+            if (not success) and transcript is None and error == "Source add failed"
+        ) == 2
+        assert mock_add_sources.call_count == 1
+        assert mock_extract_sources.call_count == 1
+        assert mock_reset.call_count == 1
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["window_mode"] == "source_age_cadence"
+        assert completed["window_count"] == 1
+        assert completed["succeeded"] == 2
+        assert completed["failed"] == 2
+        assert completed["content_fetch_status_counts"] == {
+            "ready": 2,
+            "below_threshold": 0,
+            "command_failed": 0,
+            "parse_failed": 0,
+            "source_age_cliff": 0,
+        }
+        assert completed["content_fetch_command_elapsed_s_count"] == 2
+
 
 class TestDoubleBufferedReusableBatch:
     """Double-buffered reusable batches should fall back cleanly when staging fails."""
@@ -1344,6 +1713,30 @@ class TestReusableNotebookEnvironmentOverrides:
         mock_run_cmd.assert_called_once()
         assert mock_run_cmd.call_args.args[0] == ["notebook", "create", "yt-is-worker-01"]
         mock_add.assert_called_once_with(["vid1", "vid2"], subbatch_size=ingestor.batch_size)
+
+    def test_create_batch_notebook_does_not_poison_state_on_create_failure(self):
+        """A failed notebook create must not leave an error string in _nb_id."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)
+        ingestor._nb_id = "stale-id"
+        failed = type(
+            "CompletedProcess",
+            (),
+            {"stdout": "Error: Failed to create notebook: API error (code 3): INVALID_ARGUMENT\n", "stderr": "", "returncode": 1},
+        )()
+
+        with mock.patch.object(ingestor, "_run_cmd", return_value=failed) as mock_run_cmd:
+            with mock.patch.object(ingestor, "_add_sources_in_subbatches") as mock_add:
+                with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                    result = ingestor.create_batch_notebook(["vid1", "vid2"])
+
+        assert result is None
+        assert ingestor._nb_id is None
+        mock_run_cmd.assert_called_once()
+        assert mock_run_cmd.call_args.args[0] == ["notebook", "create", nlm_batch._get_reusable_notebook_title()]
+        mock_add.assert_not_called()
+        log_names = [call.args[0] for call in mock_log.call_args_list]
+        assert "nlm_batch_notebook_create_failed" in log_names
+        assert "nlm_batch_notebook_create_succeeded" not in log_names
 
     def test_ensure_nlm_auth_logs_success(self):
         """A successful auth check should emit an auth-ok marker."""
@@ -2419,10 +2812,12 @@ class TestNotebookCapRotation:
         assert wait_failed["timeout_s"] == 600
         assert wait_failed["source_count_before_wait"] == 1
 
-    def test_source_content_fetch_logs_ready_status(self):
+    def test_source_content_fetch_logs_ready_status(self, monkeypatch):
         """A ready source should log explicit ready-state completion fields."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-ready"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-02")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker02@example.com")
 
         def fake_run_cmd(cmd, timeout=300):
             if cmd[:2] == ["source", "list"]:
@@ -2439,22 +2834,55 @@ class TestNotebookCapRotation:
                 )()
             return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
-        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
-            with mock.patch("csf.nlm_batch.log_action") as mock_log:
-                results = ingestor.extract_transcripts(["vid1"])
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        results = ingestor.extract_transcripts(["vid1"])
 
         assert results["vid1"][0] is True
+        command_completed = next(
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_source_content_command_completed"
+        )
         completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_completed")
         started = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_started")
         assert started["source_id"] == "s1"
         assert started["video_id"] == "vid1"
         assert started["source_ready_age_s"] == 0.0
+        assert started["notebooklm_profile"] == "ytis-pro-worker-02"
+        assert started["expected_email"] == "worker02@example.com"
+        assert started["auth_requires_profile"] is False
+        assert started["auth_has_profile"] is True
+        assert started["auth_cache_hit"] is True
+        assert started["auth_cache_session_age_s"] == 12.345
+        assert started["auth_check_cache_ttl_s"] == completed["auth_check_cache_ttl_s"]
+        assert started["auth_check_interval_s"] == completed["auth_check_interval_s"]
+        assert started["auth_cooldown_s"] == completed["auth_cooldown_s"]
         assert completed["status"] == "ready"
         assert completed["returncode"] == 0
         assert completed["content_length"] == 101
         assert completed["ready_threshold"] == 100
         assert completed["source_ready_age_s"] == 0.0
+        assert completed["notebooklm_profile"] == "ytis-pro-worker-02"
+        assert completed["expected_email"] == "worker02@example.com"
+        assert completed["auth_requires_profile"] is False
+        assert completed["auth_has_profile"] is True
+        assert completed["auth_cache_hit"] is True
+        assert completed["auth_cache_session_age_s"] == 12.345
         assert completed["started_at_epoch"] <= completed["completed_at_epoch"]
+        assert command_completed["source_id"] == "s1"
+        assert command_completed["video_id"] == "vid1"
+        assert command_completed["attempt"] == 1
+        assert command_completed["status"] == "ready"
+        assert command_completed["elapsed_s"] >= 0.0
+        assert command_completed["content_length"] == 101
+        assert command_completed["source_ready_age_s"] == 0.0
+        assert command_completed["worker_id"] == "worker-02"
+        assert command_completed["notebooklm_profile"] == "ytis-pro-worker-02"
+        assert command_completed["auth_cache_session_age_s"] == 12.345
+        assert command_completed["last_auth_refresh_age_s"] == 12.345
         summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
         assert summary["content_fetch_status_counts"]["ready"] == 1
         assert summary["source_ready_age_s_max"] == 0.0
@@ -2515,10 +2943,12 @@ class TestNotebookCapRotation:
         assert summary["content_fetch_attempts_max"] == 4
         assert summary["content_fetch_attempts_avg"] == 4.0
 
-    def test_source_content_fetch_logs_command_failed_status(self):
+    def test_source_content_fetch_logs_command_failed_status(self, monkeypatch):
         """A failed content command should log a command-failed status."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-fail"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free-worker-01")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker01@example.com")
 
         def fake_run_cmd(cmd, timeout=300):
             if cmd[:2] == ["source", "list"]:
@@ -2536,36 +2966,111 @@ class TestNotebookCapRotation:
             return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 0.0):
-            with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
-                with mock.patch(
-                    "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
-                    return_value={
-                        "classification": "ok",
-                        "available": False,
-                        "availability": None,
-                        "live_status": None,
-                        "was_live": False,
-                        "is_live": False,
-                        "title": None,
-                        "error": None,
-                    },
-                ) as mock_ytdlp:
-                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
-                        results = ingestor.extract_transcripts(["vid1"])
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(False, None)):
+                with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=None):
+                    with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                        with mock.patch(
+                            "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                            return_value={
+                                "classification": "ok",
+                                "available": False,
+                                "availability": None,
+                                "live_status": None,
+                                "was_live": False,
+                                "is_live": False,
+                                "title": None,
+                                "error": None,
+                            },
+                        ) as mock_ytdlp:
+                            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                results = ingestor.extract_transcripts(["vid1"])
 
         assert results["vid1"][0] is False
         assert mock_ytdlp.call_count == 1
+        command_completed = next(
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_source_content_command_completed"
+        )
+        started = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_started")
         completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_completed")
+        assert started["notebooklm_profile"] == "ytis-free-worker-01"
+        assert started["expected_email"] == "worker01@example.com"
+        assert started["auth_requires_profile"] is False
+        assert started["auth_has_profile"] is True
+        assert started["auth_cache_hit"] is False
+        assert started["auth_cache_session_age_s"] is None
         assert completed["status"] == "command_failed"
         assert completed["returncode"] == 1
         assert completed["content_length"] == 0
         assert completed["failure_reason"] == "Fetch failed for s1: command_failed"
         assert completed["source_ready_age_s"] == 0.0
+        assert completed["notebooklm_profile"] == "ytis-free-worker-01"
+        assert completed["expected_email"] == "worker01@example.com"
+        assert completed["auth_requires_profile"] is False
+        assert completed["auth_has_profile"] is True
+        assert completed["auth_cache_hit"] is False
+        assert completed["auth_cache_session_age_s"] is None
+        assert completed["auth_check_cache_ttl_s"] == started["auth_check_cache_ttl_s"]
+        assert completed["auth_check_interval_s"] == started["auth_check_interval_s"]
+        assert completed["auth_cooldown_s"] == started["auth_cooldown_s"]
+        assert command_completed["source_id"] == "s1"
+        assert command_completed["video_id"] == "vid1"
+        assert command_completed["attempt"] == 1
+        assert command_completed["status"] == "command_failed"
+        assert command_completed["elapsed_s"] >= 0.0
+        assert command_completed["content_length"] == 0
+        assert command_completed["source_ready_age_s"] == 0.0
+        assert command_completed["worker_id"] == "worker-01"
+        assert command_completed["notebooklm_profile"] == "ytis-free-worker-01"
+        assert command_completed["auth_cache_session_age_s"] is None
+        assert command_completed["last_auth_refresh_age_s"] is None
         summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
         assert summary["content_fetch_status_counts"]["command_failed"] == 1
         assert summary["content_fetch_attempts_total"] == 1
         assert summary["content_fetch_attempts_max"] == 1
         assert summary["content_fetch_attempts_avg"] == 1.0
+
+    def test_source_content_fetch_skips_aged_sources_before_command(self):
+        """A source beyond the age cliff should fail fast without running source content."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-age-cliff"
+        ingestor._last_materialization_ready_at_epoch = 1000.0
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""},
+                )()
+            if cmd[:2] == ["source", "content"]:
+                raise AssertionError("source content should not run after the age cliff is exceeded")
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+            with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):
+                with mock.patch("csf.nlm_batch.time.time", return_value=1301.0):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        results = ingestor.extract_transcripts(["vid1"])
+
+        assert results["vid1"][0] is False
+        started = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_started")
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_completed")
+        assert started["source_ready_age_s"] == 301.0
+        assert completed["status"] == "source_age_cliff"
+        assert completed["failure_reason"] == "Fetch failed for s1: source_age_cliff"
+        assert completed["attempts"] == 0
+        assert completed["returncode"] == -1
+        assert not any(call.args[0] == "nlm_source_content_command_completed" for call in mock_log.call_args_list)
+        summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
+        assert summary["content_fetch_status_counts"]["source_age_cliff"] == 1
+        assert summary["source_ready_age_s_total"] == 301.0
+        assert summary["source_ready_age_s_max"] == 301.0
+        assert summary["source_ready_age_s_avg"] == 301.0
+        assert summary["content_fetch_attempts_total"] == 0
+        assert summary["content_fetch_attempts_max"] == 0
+        assert summary["content_fetch_attempts_avg"] == 0.0
 
     def test_source_content_fetch_logs_not_found_probe_metrics(self):
         """A final NOT_FOUND should contribute command and source-list probe timing."""
@@ -3678,3 +4183,36 @@ class TestAgeGuardRotatesBeforeCliff:
         check_events = [data for name, data in log_events if name == "nlm_batch_subbatch_age_guard_checked"]
         assert check_events
         assert check_events[0]["decision"] == "rotate_source_age_cliff"
+
+    def test_age_guard_rotates_on_projected_cliff_before_next_subbatch(self):
+        """The guard should rotate before the next subbatch if the last elapsed time would cross the cliff."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)
+        ingestor._nb_id = "nb-projected-age"
+        ingestor._current_source_count = 0
+        ingestor._oldest_source_materialization_epoch = 1000.0
+        log_events = []
+
+        def capture_log(name, data):
+            log_events.append((name, data))
+
+        call_state = {"count": 0}
+
+        def fake_add_sources_chunk(batch_ids, **kwargs):
+            call_state["count"] += 1
+            ingestor._last_add_cmd_elapsed_s = 15.0
+            ingestor._last_materialization_wait_elapsed_s = 10.0
+            return list(batch_ids)
+
+        with mock.patch.object(ingestor, "_get_current_source_count", return_value=0):
+            with mock.patch("csf.nlm_batch.time.time", side_effect=[1190.0, 1195.0]):
+                with mock.patch.object(ingestor, "_add_sources_chunk", side_effect=fake_add_sources_chunk):
+                    with mock.patch.object(ingestor, "_rotate_notebook") as mock_rotate:
+                        with mock.patch("csf.nlm_batch.log_action", side_effect=capture_log):
+                            ingestor._add_sources_in_subbatches(["v1", "v2", "v3", "v4"], subbatch_size=2)
+
+        assert call_state["count"] == 2
+        assert mock_rotate.call_count == 1
+        check_events = [data for name, data in log_events if name == "nlm_batch_subbatch_age_guard_checked"]
+        assert len(check_events) >= 2
+        assert check_events[1]["decision"] == "rotate_source_age_projected_cliff"
+        assert check_events[1]["projected_oldest_source_age_s"] == 220.0

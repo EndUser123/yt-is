@@ -299,34 +299,54 @@ class CookieFreshnessTracker:
         self._last_check: float = 0.0
         self._ttl: float = 300.0
         self._lock = threading.Lock()
+        self._daemon_started: bool = False
+
+    def _start_daemon(self) -> None:
+        with self._lock:
+            if self._daemon_started:
+                return
+            self._daemon_started = True
+            # Spawn daemon thread
+            t = threading.Thread(target=self._daemon_loop, name="NLMAuthDaemon", daemon=True)
+            t.start()
+            logging.info("[CookieFreshnessTracker] Asynchronous background keep-alive NLMAuthDaemon started.")
+
+    def _daemon_loop(self) -> None:
+        while True:
+            cfg = get_nlm_config()
+            if not cfg.auth_daemon_enabled:
+                time.sleep(10)
+                continue
+
+            try:
+                check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
+                if check.returncode == 0:
+                    with self._lock:
+                        self._last_check = time.monotonic()
+                    log_action("nlm_auth_checked", {"component": "transcript", "status": "ok", "mode": "daemon"})
+                else:
+                    self.invalidate()
+                    log_action("nlm_auth_checked", {"component": "transcript", "status": "failed", "mode": "daemon"})
+            except subprocess.TimeoutExpired:
+                logging.warning("[CookieFreshnessTracker] background daemon probe timed out after 30s — invalidating")
+                self.invalidate()
+            except Exception as e:
+                logging.warning(f"[CookieFreshnessTracker] background daemon probe error: {e} — invalidating")
+                self.invalidate()
+
+            time.sleep(cfg.auth_check_interval)
 
     def is_fresh(self) -> bool:
-        """Return True if cookie is fresh (TTL not expired or active probe passes).
+        """Return True if cookie is fresh in-memory TTL cache.
 
-        If TTL has expired, runs `nlm login --check` (30s timeout) as authoritative.
-        On probe failure or timeout, calls invalidate() and returns False.
+        If daemon is enabled, starts it if not already started.
         """
+        cfg = get_nlm_config()
+        if cfg.auth_daemon_enabled:
+            if not self._daemon_started:
+                self._start_daemon()
         with self._lock:
-            if time.monotonic() - self._last_check <= self._ttl:
-                return True
-
-        # TTL expired — run active probe
-        try:
-            check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
-            if check.returncode == 0:
-                with self._lock:
-                    self._last_check = time.monotonic()
-                return True
-            # Probe failed — invalidate and fall through
-            self.invalidate()
-            return False
-        except subprocess.TimeoutExpired:
-            logging.warning("[CookieFreshnessTracker] probe timed out after 30s — invalidating")
-            self.invalidate()
-            return False
-        except Exception:
-            self.invalidate()
-            return False
+            return time.monotonic() - self._last_check <= self._ttl
 
     def invalidate(self) -> None:
         """Force re-auth on next _ensure_nlm_auth call."""
@@ -1528,19 +1548,24 @@ def _ensure_nlm_auth() -> bool:
 
     freshness = _get_cookie_freshness_tracker()
 
-    # 2. CookieFreshnessTracker — if stale, force re-auth
-    if not freshness.is_fresh():
-        logging.info("[_ensure_nlm_auth] cookie stale, forcing re-auth")
+    # 2. CookieFreshnessTracker — check cache/probe freshness
+    if freshness.is_fresh():
+        return True
 
-    # 3. Run --check probe (for freshness tracker to record success)
-    try:
-        check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
-        if check.returncode == 0:
-            log_action("nlm_auth_checked", {"component": "transcript", "status": "ok"})
-            rate_limiter.record_call()
-            return True
-    except Exception:
-        pass
+    logging.info("[_ensure_nlm_auth] cookie stale, forcing re-auth")
+
+    # 3. Run --check probe (only if daemon is disabled)
+    if not get_nlm_config().auth_daemon_enabled:
+        try:
+            check = nlm_auth_guard.run_nlm(["login", "--check", *_get_nlm_login_profile_args()], timeout_s=30)
+            if check.returncode == 0:
+                log_action("nlm_auth_checked", {"component": "transcript", "status": "ok"})
+                rate_limiter.record_call()
+                with freshness._lock:
+                    freshness._last_check = time.monotonic()
+                return True
+        except Exception:
+            pass
 
     # 4. Auth expired — auto-recover with force login
     try:
@@ -1839,15 +1864,16 @@ def fetch_transcript_chain(
     skip_notebooklm: bool = False,
     admission_metadata: dict[str, object] | None = None,
 ) -> TranscriptResult:
-    """Fetch transcript using yt-dlp → Selenium → NotebookLM fallback chain.
+    """Fetch transcript using the full fallback chain.
 
     Chain order:
       1. oEmbed reachability probe — cheap early skip for removed/private videos
       2. yt-dlp (WEB client, curl_cffi TLS) — High Fidelity, Fastest Local
-      3. direct_api — cheap terminal/no-transcript discriminator
-      4. NotebookLM Industrial (Cloud) — High Fidelity, Cleanest Data, Best for Backlog
-      5. Selenium Firefox — Dirty Scraper (Polluted with page noise), Slow
-      6. Whisper — Audio Fallback
+      3. yt-dlp + cookies — fallback for cookie-gated sources
+      4. direct_api — cheap terminal/no-transcript discriminator
+      5. NotebookLM Industrial (Cloud) — High Fidelity, Cleanest Data, Best for Backlog
+      6. Selenium Firefox — Dirty Scraper (Polluted with page noise), Slow
+      7. Whisper — Audio Fallback
 
     Args:
         video_id: YouTube video ID (must be 11 chars)
@@ -1915,6 +1941,8 @@ def fetch_transcript_chain(
             return "timeout"
         if "no transcript" in err_lower or "transcript unavailable" in err_lower:
             return "no_transcript"
+        if "source add failed" in err_lower or "could not add url source" in err_lower:
+            return "source_add_failed"
         if "no speech detected" in err_lower or "likely music or silence" in err_lower:
             return "no_transcript"
         if "whisper produced empty transcript" in err_lower:
@@ -1998,8 +2026,11 @@ def fetch_transcript_chain(
 
     last_error: str | None = None
     last_stage_reached: str | None = None
+    runtime_config = get_nlm_config()
+    expensive_fallback_enabled = runtime_config.transcript_expensive_fallback_enabled
+    whisper_on_notebooklm_add_failed = runtime_config.whisper_on_notebooklm_add_failed
 
-    # Methods to try: yt-dlp (WEB) → yt-dlp with cookies → NotebookLM → Selenium → Whisper → direct_api
+    # Methods to try: yt-dlp (WEB) → yt-dlp with cookies → direct_api → NotebookLM → Selenium → Whisper
     methods_to_try = [
         (_SOURCE_YTDLP, _fetch_via_ytdlp, STAGE_VERSION_YTDLP),
         (_SOURCE_YTDLP_EJS, _fetch_via_ytdlp_with_cookies, STAGE_VERSION_EJS),
@@ -2010,9 +2041,57 @@ def fetch_transcript_chain(
     if not skip_notebooklm:
         methods_to_try.insert(3, (_SOURCE_NLM, _fetch_via_notebooklm, STAGE_VERSION_NOTEBOOKLM))
 
+    def _stage_started(source: str, lang: str | None = None) -> float:
+        started_at = time.perf_counter()
+        _log_transcript_chain_event(
+            "transcript_stage_started",
+            video_id,
+            stage=source,
+            lang=lang,
+            expensive=source in {_SOURCE_SELENIUM, _SOURCE_WHISPER},
+        )
+        return started_at
+
+    def _stage_completed(
+        source: str,
+        started_at: float,
+        *,
+        success: bool,
+        error: str | None = None,
+        chars: int = 0,
+        lang: str | None = None,
+        skipped: bool = False,
+        skip_reason: str | None = None,
+    ) -> None:
+        _log_transcript_chain_event(
+            "transcript_stage_completed",
+            video_id,
+            stage=source,
+            lang=lang,
+            status="skipped" if skipped else "success" if success else "failed",
+            success=success,
+            skipped=skipped,
+            skip_reason=skip_reason,
+            failure_reason=None if success else _classify_failure(error, source),
+            error=error,
+            chars=chars,
+            elapsed_s=round(time.perf_counter() - started_at, 3),
+            expensive=source in {_SOURCE_SELENIUM, _SOURCE_WHISPER},
+        )
+
     for source, fetch_fn, stage in methods_to_try:
         if _is_source_rate_limited(source):
             continue  # skip circuit-open source
+        if source in {_SOURCE_SELENIUM, _SOURCE_WHISPER} and not expensive_fallback_enabled:
+            stage_started_at = _stage_started(source)
+            _stage_completed(
+                source,
+                stage_started_at,
+                success=False,
+                skipped=True,
+                skip_reason="expensive_fallback_disabled",
+            )
+            continue
         # Skip whisper if disabled via env var
         if source == _SOURCE_WHISPER:
             global _WHISPER_ENABLED
@@ -2046,8 +2125,16 @@ def fetch_transcript_chain(
 
         # NLM ignores lang — call once without lang iteration (no language filtering)
         if source == _SOURCE_NLM:
+            stage_started_at = _stage_started(source, "en")
             success, transcript, error = fetch_fn(video_id, "en")
             if success and transcript:
+                _stage_completed(
+                    source,
+                    stage_started_at,
+                    success=True,
+                    chars=len(transcript),
+                    lang="en",
+                )
                 _record_source_success(source, video_id)
                 # NLM always returns English (NotebookLM extracts from YouTube source)
                 raw_lang = "en"
@@ -2084,10 +2171,24 @@ def fetch_transcript_chain(
                 )
                 return result
             last_error = error
+            _stage_completed(source, stage_started_at, success=False, error=error, lang="en")
+            if (
+                error
+                and not whisper_on_notebooklm_add_failed
+                and _classify_failure(error, source) == "source_add_failed"
+            ):
+                return _archive_failed_result(error, source)
         # direct_api uses different signature (no lang arg)
         elif source == _SOURCE_DIRECT_API:
+            stage_started_at = _stage_started(source)
             success, transcript, error = fetch_fn(video_id)
             if success and transcript:
+                _stage_completed(
+                    source,
+                    stage_started_at,
+                    success=True,
+                    chars=len(transcript),
+                )
                 _record_source_success(source, video_id)
                 result = TranscriptResult(
                     video_id=video_id,
@@ -2111,6 +2212,7 @@ def fetch_transcript_chain(
                 )
                 return result
             last_error = error
+            _stage_completed(source, stage_started_at, success=False, error=error)
             if error and (
                 "unavailable" in error.lower()
                 or "removed" in error.lower()
@@ -2131,6 +2233,7 @@ def fetch_transcript_chain(
                 # Use "en" as placeholder when lang is None (yt-dlp will use its default)
                 try_lang = lang if lang is not None else "en"
 
+                stage_started_at = _stage_started(source, try_lang)
                 result = fetch_fn(video_id, try_lang)
                 # Normalize 3-tuple (NotebookLM, Selenium, Whisper, direct_api) vs
                 # 4-tuple (yt-dlp, yt-dlp-with-cookies) which carries video metadata
@@ -2141,6 +2244,13 @@ def fetch_transcript_chain(
                     info_dict = {}
 
                 if success and transcript:
+                    _stage_completed(
+                        source,
+                        stage_started_at,
+                        success=True,
+                        chars=len(transcript),
+                        lang=try_lang,
+                    )
                     _record_source_success(source, video_id)
 
                     # Extract engagement metrics from yt-dlp info dict when available
@@ -2194,6 +2304,7 @@ def fetch_transcript_chain(
                     return result
 
                 last_error = error
+                _stage_completed(source, stage_started_at, success=False, error=error, lang=try_lang)
                 if error and ("429" in error.lower() or "rate limited" in error.lower()):
                     _record_source_429(source, video_id)
                     _apply_jitter_with_backoff(source)

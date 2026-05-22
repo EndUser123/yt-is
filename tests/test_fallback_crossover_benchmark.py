@@ -259,7 +259,7 @@ def test_load_or_build_cohort_manifest_shape_uses_live_trace_cases(tmp_path):
     )
 
     assert cohort["cohort_shape"] == "manifest"
-    assert cohort["manifest_json"] == "P:\\\\\\\packages\\yt-is\\tests\\fixtures\\shared_benchmark_manifest.json"
+    assert Path(cohort["manifest_json"]) == Path("P:/packages/yt-is/tests/fixtures/shared_benchmark_manifest.json")
     assert all(item["source_type"] == "live_trace" for item in cohort["items"])
     assert [item["case_id"] for item in cohort["items"]] == [
         "whisper-skip-music-001",

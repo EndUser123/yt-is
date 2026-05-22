@@ -632,6 +632,14 @@ def _lane_throughput_elapsed_s(report: dict[str, Any]) -> float | None:
     return round(max(float(value or 0.0), 0.0), 3)
 
 
+def _worker_shape_signature(lanes: Iterable[LaneConfig]) -> str:
+    return "+".join(str(lane.workers) for lane in lanes)
+
+
+def _lane_worker_counts(lanes: Iterable[LaneConfig]) -> dict[str, int]:
+    return {lane.lane: lane.workers for lane in lanes}
+
+
 def compute_combined_hot_path_vph(lane_reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
     """Compute combined sharded throughput using concurrent wall-clock span."""
     reports = list(lane_reports)
@@ -789,6 +797,8 @@ def run_sharded_lane_series(
         "limit": limit,
         "batch_size": batch_size,
         "reusable_pipeline_mode": reusable_pipeline_mode,
+        "worker_shape_signature": _worker_shape_signature(lane_configs),
+        "lane_worker_counts": _lane_worker_counts(lane_configs),
         "lanes": [
             asdict(lane)
             | {
