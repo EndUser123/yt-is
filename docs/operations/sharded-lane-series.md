@@ -494,11 +494,27 @@ The follow-up age-capped guarded sequence, `sweep_phase3_2lane_3w_agecap_200_run
 same 3+3 shape to `3084.08` combined hot-path VPH with `398/2/400` and clean post-run hygiene.
 The age cap held both lanes under the earlier cliff, with Pro `source_ready_age_s_max=211.292`
 and Free `source_ready_age_s_max=160.966`, and the residual failures shifted to
-`nlm_content_below_threshold` rather than `NOT_FOUND`. That makes the next branch a tighter age-cap
-or sparse-content follow-up, not broader retry markers.
+`nlm_content_below_threshold` rather than `NOT_FOUND`. That makes the next branch notebook rotation
+or age-guard refinement, not broader retry markers.
+The full-load 4+4 scaling test `highest_vph_agecap_400_run02` then completed cleanly but only
+reached `1385.45` combined hot-path VPH with `616/184/800`. Pro and Free both stayed clean in
+hygiene, but source-ready age climbed above `500s` in both lanes and the residual failures remained
+age-cliff dominated, so the age cap did not scale under full load. The next branch is notebook
+rotation or age-guard refinement rather than sparse-content or retry-marker tuning.
 The smaller-subbatch source-readiness follow-up later regressed to `980.81` combined hot-path VPH
 with `710/90/800` on the same 4+4 shape, so batch-size `100` is not the next ceiling branch;
 move to earlier notebook rotation or readiness polling instead of more subbatch tuning.
+The quarter-window hard-threshold rerun, `fresh_state_3plus3_source_age_cadence_run03`, restored
+the source-age cadence branch to `1688.15` combined hot-path VPH with `759/41/800`. Pro landed at
+`377/22` with `source_ready_age_s_max=293.889`, and Free landed at `382/18` with
+`source_ready_age_s_max=261.959`. That is materially better than the earlier cadence controls, but
+it still trails the age-capped `3084.08` result, so the branch is stronger now without becoming the
+ceiling.
+The confirmation repeat `fresh_state_3plus3_source_age_cadence_run04` did not hold that ceiling
+story: it completed Pro cleanly at `900.81` hot-path VPH, but the Free lane stopped at `199/1/200`
+and the combined smoke result was only `1184.99` combined hot-path VPH with `596/4/600`. The branch
+still helps when it lands cleanly, but the repeat showed it is not stable enough to be treated as a
+ceiling yet.
 The newer minimum-window source-age cadence rerun, `fresh_state_3plus3_source_age_cadence_hygiene_run05`,
 finished smoke only at `1185.78` combined hot-path VPH with `613/137/750` and a free-lane shortfall at
 `350/400`, so the more aggressive hard-threshold collapse is not a usable control run.

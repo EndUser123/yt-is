@@ -28,11 +28,6 @@ _DEFAULT_FALLBACK_SPEC = (
 _CLI_PROBE_ERROR_MARKERS = (
     "Failed to canonicalize script path",
 )
-_CORRUPTED_INSTALL_ERROR_MARKERS = (
-    "failed to read metadata from installed package",
-    "failed to read `more-itertools==11.0.2`",
-    "ignoring malformed tool `notebooklm-mcp-cli`",
-)
 
 _bootstrap_lock = threading.Lock()
 _bootstrap_attempted = False
@@ -80,34 +75,19 @@ def get_nlm_executable() -> str:
     return "nlm"
 
 
-def _run_install(spec: str, *, upgrade: bool, force: bool = False) -> subprocess.CompletedProcess:
+def _run_install(spec: str, *, upgrade: bool) -> subprocess.CompletedProcess:
     uv_executable = shutil.which("uv")
     if not uv_executable:
         raise RuntimeError("uv is required to install notebooklm-mcp-cli")
     cmd = [uv_executable, "tool", "install"]
     if upgrade:
         cmd.append("--upgrade")
-    if force:
-        cmd.append("--force")
     cmd.append(spec)
     return subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         timeout=_auto_update_timeout_s(),
-        check=False,
-    )
-
-
-def _run_uninstall(spec: str) -> subprocess.CompletedProcess:
-    uv_executable = shutil.which("uv")
-    if not uv_executable:
-        raise RuntimeError("uv is required to uninstall notebooklm-mcp-cli")
-    return subprocess.run(
-        [uv_executable, "tool", "uninstall", spec],
-        capture_output=True,
-        text=True,
-        timeout=_auto_update_timeout_s(120.0),
         check=False,
     )
 
@@ -129,17 +109,6 @@ def _login_probe_result() -> subprocess.CompletedProcess:
 def _probe_signals_cli_breakage(result: subprocess.CompletedProcess) -> bool:
     combined = f"{result.stdout or ''}\n{result.stderr or ''}"
     return any(marker in combined for marker in _CLI_PROBE_ERROR_MARKERS)
-
-
-def _install_error_indicates_corruption(result: subprocess.CompletedProcess) -> bool:
-    combined = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
-    return any(marker in combined for marker in _CORRUPTED_INSTALL_ERROR_MARKERS)
-
-
-def _repair_corrupted_install() -> subprocess.CompletedProcess:
-    """Remove a dangling uv tool install and replace it with a clean one."""
-    _run_uninstall(_AUTO_UPDATE_PACKAGE)
-    return _run_install(_AUTO_UPDATE_SPEC, upgrade=True, force=True)
 
 
 def reset_nlm_bootstrap_state() -> None:
@@ -201,30 +170,6 @@ def ensure_latest_nlm_cli() -> None:
     if result.returncode != 0:
         summary = _summarize_output(result.stdout or "", result.stderr or "")
         if shutil.which("nlm"):
-            if _install_error_indicates_corruption(result):
-                logging.warning(
-                    "[nlm-bootstrap] NotebookLM CLI refresh found a malformed uv tool install; attempting repair."
-                )
-                try:
-                    repair_result = _repair_corrupted_install()
-                except subprocess.TimeoutExpired as exc:
-                    logging.warning(
-                        "[nlm-bootstrap] NotebookLM CLI repair timed out; continuing with existing nlm"
-                    )
-                    return
-                except OSError:
-                    logging.warning(
-                        "[nlm-bootstrap] NotebookLM CLI repair could not start; continuing with existing nlm"
-                    )
-                    return
-                if repair_result.returncode == 0:
-                    probe = _login_probe_result()
-                    if not _probe_signals_cli_breakage(probe):
-                        logging.info(
-                            "[nlm-bootstrap] repaired NotebookLM CLI using uv tool uninstall + install --force"
-                        )
-                        return
-                    summary = _summarize_output(probe.stdout or "", probe.stderr or "") or summary
             message = "[nlm-bootstrap] NotebookLM CLI refresh failed; continuing with existing nlm"
             if summary:
                 message = f"{message}: {summary}"

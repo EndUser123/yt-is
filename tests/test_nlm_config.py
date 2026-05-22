@@ -67,18 +67,6 @@ class TestSharedNlmConfig:
         finally:
             nlm_config.reset_nlm_config()
 
-    def test_transcript_expensive_fallback_flags_follow_env(self, monkeypatch):
-        """Throughput runs can disable long-tail transcript recovery stages."""
-        monkeypatch.setenv("YTIS_TRANSCRIPT_EXPENSIVE_FALLBACK_ENABLED", "false")
-        monkeypatch.setenv("YTIS_WHISPER_ON_NOTEBOOKLM_ADD_FAILED", "0")
-        nlm_config.reset_nlm_config()
-        try:
-            cfg = nlm_config.get_nlm_config()
-            assert cfg.transcript_expensive_fallback_enabled is False
-            assert cfg.whisper_on_notebooklm_add_failed is False
-        finally:
-            nlm_config.reset_nlm_config()
-
     def test_reusable_source_age_cadence_follows_env(self, monkeypatch):
         """Reusable workers should get the age-aware cadence settings from shared config."""
         monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED", "true")

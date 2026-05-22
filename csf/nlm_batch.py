@@ -4103,8 +4103,10 @@ class NLMReusableIngestor:
     def _select_source_age_cadence_window_size(self, remaining_count: int) -> int:
         """Choose a reusable cadence window size based on notebook age.
 
-        Once the notebook is past the hard threshold, collapse to the minimum
-        window size so we recycle sooner instead of just shrinking a little.
+        The soft threshold halves the window; the hard threshold falls back to
+        a quarter-window instead of collapsing straight to the minimum. That
+        keeps the notebook turning over earlier without turning every old
+        notebook into a tiny serial bottleneck.
         """
         remaining_count = max(1, int(remaining_count))
         base_window_size = min(self._ingestor.batch_size, remaining_count)
@@ -4116,7 +4118,10 @@ class NLMReusableIngestor:
         oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
         selected_window_size = base_window_size
         if oldest_age_s > self._source_age_cadence_hard_threshold_s:
-            selected_window_size = self._source_age_cadence_min_window_size
+            selected_window_size = max(
+                self._source_age_cadence_min_window_size,
+                base_window_size // 4,
+            )
         elif oldest_age_s > self._source_age_cadence_soft_threshold_s:
             selected_window_size = max(self._source_age_cadence_min_window_size, base_window_size // 2)
         return max(1, min(selected_window_size, remaining_count))

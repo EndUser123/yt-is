@@ -1301,7 +1301,7 @@ class TestReusableBatchLogging:
                     with mock.patch("csf.nlm_batch.time.time", return_value=1170.0):
                         assert ingestor._select_source_age_cadence_window_size(120) == 25
                     with mock.patch("csf.nlm_batch.time.time", return_value=1210.0):
-                        assert ingestor._select_source_age_cadence_window_size(120) == 5
+                        assert ingestor._select_source_age_cadence_window_size(120) == 12
 
     def test_reusable_batch_processes_large_batch_in_source_age_cadence_windows_without_reset(self):
         """Large reusable batches should add and extract in age-aware windows without per-window reset."""
@@ -1389,13 +1389,7 @@ class TestReusableBatchLogging:
 
         def mock_extract_metrics():
             return {
-                "content_fetch_status_counts": {
-                    "ready": 0,
-                    "below_threshold": 0,
-                    "command_failed": 0,
-                    "parse_failed": 0,
-                    "source_age_cliff": 0,
-                },
+                "content_fetch_status_counts": {"ready": 0, "below_threshold": 0, "command_failed": 0, "parse_failed": 0, "source_age_cliff": 0},
                 "source_ready_age_s_total": 0.0,
                 "source_ready_age_s_max": 0.0,
                 "source_ready_age_s_avg": 0.0,
@@ -1434,13 +1428,7 @@ class TestReusableBatchLogging:
         assert completed["window_count"] == 1
         assert completed["succeeded"] == 0
         assert completed["failed"] == 4
-        assert completed["content_fetch_status_counts"] == {
-            "ready": 0,
-            "below_threshold": 0,
-            "command_failed": 0,
-            "parse_failed": 0,
-            "source_age_cliff": 0,
-        }
+        assert completed["content_fetch_status_counts"] == {"ready": 0, "below_threshold": 0, "command_failed": 0, "parse_failed": 0, "source_age_cliff": 0}
         assert completed["content_fetch_command_elapsed_s_count"] == 0
 
     def test_reusable_batch_source_age_cadence_counts_partial_add_shortfall_as_failures(self):
@@ -1463,13 +1451,7 @@ class TestReusableBatchLogging:
 
         def mock_extract_metrics():
             return {
-                "content_fetch_status_counts": {
-                    "ready": 2,
-                    "below_threshold": 0,
-                    "command_failed": 0,
-                    "parse_failed": 0,
-                    "source_age_cliff": 0,
-                },
+                "content_fetch_status_counts": {"ready": 2, "below_threshold": 0, "command_failed": 0, "parse_failed": 0, "source_age_cliff": 0},
                 "source_ready_age_s_total": 2.0,
                 "source_ready_age_s_max": 1.0,
                 "source_ready_age_s_avg": 1.0,
@@ -1499,11 +1481,7 @@ class TestReusableBatchLogging:
         assert extract_calls == [[batch_ids[0], batch_ids[1]]]
         assert len(results) == 4
         assert sum(1 for success, transcript, _ in results.values() if success and transcript) == 2
-        assert sum(
-            1
-            for success, transcript, error in results.values()
-            if (not success) and transcript is None and error == "Source add failed"
-        ) == 2
+        assert sum(1 for success, transcript, error in results.values() if (not success) and transcript is None and error == "Source add failed") == 2
         assert mock_add_sources.call_count == 1
         assert mock_extract_sources.call_count == 1
         assert mock_reset.call_count == 1
@@ -1512,13 +1490,7 @@ class TestReusableBatchLogging:
         assert completed["window_count"] == 1
         assert completed["succeeded"] == 2
         assert completed["failed"] == 2
-        assert completed["content_fetch_status_counts"] == {
-            "ready": 2,
-            "below_threshold": 0,
-            "command_failed": 0,
-            "parse_failed": 0,
-            "source_age_cliff": 0,
-        }
+        assert completed["content_fetch_status_counts"] == {"ready": 2, "below_threshold": 0, "command_failed": 0, "parse_failed": 0, "source_age_cliff": 0}
         assert completed["content_fetch_command_elapsed_s_count"] == 2
 
 

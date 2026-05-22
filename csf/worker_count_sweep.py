@@ -566,7 +566,7 @@ def _run_fetch_trial(
     log_dir = run_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    deleted, failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
+    deleted, failed = cleanup_stale_worker_notebooks(delete=True)
     if failed:
         raise RuntimeError(
             f"worker notebook preflight cleanup failed before workers={workers}: deleted={deleted} failed={failed}"
