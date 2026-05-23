@@ -14,20 +14,20 @@
 
 This plan touches both runtime evidence and follow-up analysis:
 
-- Read: `P:\packages\yt-is\docs\operations\hot-path-throughput-next-test-plan.md`
-- Read: `P:\packages\yt-is\docs\operations\sharded-lane-series.md`
-- Read: `P:\packages\yt-is\docs\operations\test-registry.md`
-- Read: `P:\packages\yt-is\.logs\sharded_lane_series\sweep_phase3_2lane_3w_agecap_200_run02\sharded_lane_series_summary.json`
-- Read: `P:\packages\yt-is\.logs\sharded_lane_series\sweep_phase3_2lane_3w_run08\sharded_lane_series_summary.json`
-- Read: `P:\packages\yt-is\.logs\nlm_content_probe\run07_age_300_probe\probe_summary.json`
+- Read: `P:/packages/yt-is/docs/operations/hot-path-throughput-next-test-plan.md`
+- Read: `P:/packages/yt-is/docs/operations/sharded-lane-series.md`
+- Read: `P:/packages/yt-is/docs/operations/test-registry.md`
+- Read: `P:/packages/yt-is/.logs/sharded_lane_series/sweep_phase3_2lane_3w_agecap_200_run02/sharded_lane_series_summary.json`
+- Read: `P:/packages/yt-is/.logs/sharded_lane_series/sweep_phase3_2lane_3w_run08/sharded_lane_series_summary.json`
+- Read: `P:/packages/yt-is/.logs/nlm_content_probe/run07_age_300_probe/probe_summary.json`
 
 Follow-up files only if a branch is triggered:
 
-- Modify: `P:\packages\yt-is\csf\nlm_batch.py`
-- Modify: `P:\packages\yt-is\tests\test_nlm_batch.py`
-- Modify: `P:\packages\yt-is\docs\operations\hot-path-throughput-next-test-plan.md`
-- Modify: `P:\packages\yt-is\docs\operations\sharded-lane-series.md`
-- Modify: `P:\packages\yt-is\docs\operations\test-registry.md`
+- Modify: `P:/packages/yt-is/csf/nlm_batch.py`
+- Modify: `P:/packages/yt-is/tests/test_nlm_batch.py`
+- Modify: `P:/packages/yt-is/docs/operations/hot-path-throughput-next-test-plan.md`
+- Modify: `P:/packages/yt-is/docs/operations/sharded-lane-series.md`
+- Modify: `P:/packages/yt-is/docs/operations/test-registry.md`
 
 ---
 
@@ -46,17 +46,17 @@ Follow-up files only if a branch is triggered:
 ## Task 1: Run The Full-Load Scaling Test
 
 **Files:**
-- Read: `P:\packages\yt-is\.logs\sharded_lane_series\pro_free_lanes.json`
-- Read: `P:\packages\yt-is\.logs\sharded_lane_series\sweep_phase3_2lane_3w_agecap_200_run02\sharded_lane_series_summary.json`
-- Read: `P:\packages\yt-is\docs\operations\hot-path-throughput-next-test-plan.md`
+- Read: `P:/packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json`
+- Read: `P:/packages/yt-is/.logs/sharded_lane_series/sweep_phase3_2lane_3w_agecap_200_run02/sharded_lane_series_summary.json`
+- Read: `P:/packages/yt-is/docs/operations/hot-path-throughput-next-test-plan.md`
 
 - [ ] **Step 1: Refresh worker auth**
 
 Run:
 
 ```powershell
-$env:PYTHONPATH = 'P:\packages\yt-is'
-python P:\packages\yt-is\bin\csf-nlm-worker-auth sync
+$env:PYTHONPATH = 'P:/packages/yt-is'
+python P:/packages/yt-is/bin/csf-nlm-worker-auth sync
 ```
 
 Expected: all configured worker `01` profiles validate against the intended accounts and the copy step succeeds. Stop if any profile maps to the wrong account or if the command reports an unprofiled auth path.
@@ -66,10 +66,10 @@ Expected: all configured worker `01` profiles validate against the intended acco
 Run:
 
 ```powershell
-$env:PYTHONPATH = 'P:\packages\yt-is'
-python P:\packages\yt-is\bin\csf-sharded-lane-sequence `
-  --lane-config P:\packages\yt-is\.logs\sharded_lane_series\pro_free_lanes.json `
-  --run-root P:\packages\yt-is\.logs\sharded_lane_series\highest_vph_agecap_400_run01 `
+$env:PYTHONPATH = 'P:/packages/yt-is'
+python P:/packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P:/packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json `
+  --run-root P:/packages/yt-is/.logs/sharded_lane_series/highest_vph_agecap_400_run01 `
   --smoke-limit 50 `
   --smoke-batch-size 200 `
   --soak-limit 400 `
@@ -90,7 +90,7 @@ Run:
 import json
 from pathlib import Path
 
-path = Path(r"P:\packages\yt-is\.logs\sharded_lane_series\highest_vph_agecap_400_run01\sharded_lane_series_summary.json")
+path = Path(r"P:/packages/yt-is/.logs/sharded_lane_series/highest_vph_agecap_400_run01/sharded_lane_series_summary.json")
 summary = json.loads(path.read_text())
 print(json.dumps({
     "artifact": str(path),
@@ -144,8 +144,8 @@ Stop if the run is invalidated, if the shared profile leaks, or if the benchmark
 ## Task 2: Add A Real Age Guard Only If The Scaling Test Fails
 
 **Files:**
-- Modify: `P:\packages\yt-is\csf\nlm_batch.py`
-- Test: `P:\packages\yt-is\tests\test_nlm_batch.py`
+- Modify: `P:/packages/yt-is/csf/nlm_batch.py`
+- Test: `P:/packages/yt-is/tests/test_nlm_batch.py`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -163,8 +163,8 @@ def test_age_guard_rotates_before_cliff(monkeypatch):
 Run:
 
 ```powershell
-$env:PYTHONPATH = 'P:\packages\yt-is'
-pytest P:\packages\yt-is\tests\test_nlm_batch.py -q -k age_guard_rotates_before_cliff
+$env:PYTHONPATH = 'P:/packages/yt-is'
+pytest P:/packages/yt-is/tests/test_nlm_batch.py -q -k age_guard_rotates_before_cliff
 ```
 
 Expected: fail until the age guard exists.
@@ -178,8 +178,8 @@ Implement the smallest notebook-rotation or source-refresh check that prevents s
 Run:
 
 ```powershell
-$env:PYTHONPATH = 'P:\packages\yt-is'
-pytest P:\packages\yt-is\tests\test_nlm_batch.py -q -k age_guard_rotates_before_cliff
+$env:PYTHONPATH = 'P:/packages/yt-is'
+pytest P:/packages/yt-is/tests/test_nlm_batch.py -q -k age_guard_rotates_before_cliff
 ```
 
 Expected: pass.
@@ -195,8 +195,8 @@ Decision: keep the guard only if it improves sustained VPH without increasing `c
 ## Task 3: Measure Auth Cost Precisely
 
 **Files:**
-- Read: `P:\packages\yt-is\.logs\sharded_lane_series\highest_vph_agecap_400_run01\sharded_lane_series_summary.json`
-- Read: `P:\packages\yt-is\.logs\sharded_lane_series\highest_vph_agecap_400_run01\soak\*\benchmark_summary.json`
+- Read: `P:/packages/yt-is/.logs/sharded_lane_series/highest_vph_agecap_400_run01/sharded_lane_series_summary.json`
+- Read: `P:/packages/yt-is/.logs/sharded_lane_series/highest_vph_agecap_400_run01/soak/*\benchmark_summary.json`
 
 - [ ] **Step 1: Sum actual auth elapsed time**
 
@@ -216,8 +216,8 @@ If auth is not a real limiter, do not touch auth again until another branch prov
 ## Task 4: Investigate Sparse-Content Residuals Only After Age Is Stable
 
 **Files:**
-- Read: `P:\packages\yt-is\.logs\nlm_content_probe\run07_age_300_probe\probe_summary.json`
-- Read: `P:\packages\yt-is\.logs\sharded_lane_series\sweep_phase3_2lane_3w_agecap_200_run02\sharded_lane_series_summary.json`
+- Read: `P:/packages/yt-is/.logs/nlm_content_probe/run07_age_300_probe/probe_summary.json`
+- Read: `P:/packages/yt-is/.logs/sharded_lane_series/sweep_phase3_2lane_3w_agecap_200_run02/sharded_lane_series_summary.json`
 
 - [ ] **Step 1: Extract the residual `nlm_content_below_threshold` IDs**
 
@@ -237,8 +237,8 @@ If they recover on delay, tune the delay instead of the threshold.
 ## Task 5: Revisit Lane Geometry Only After The Mechanism Is Stable
 
 **Files:**
-- Read: `P:\packages\yt-is\docs\operations\sharded-lane-series.md`
-- Read: `P:\packages\yt-is\docs\operations\test-registry.md`
+- Read: `P:/packages/yt-is/docs/operations/sharded-lane-series.md`
+- Read: `P:/packages/yt-is/docs/operations/test-registry.md`
 
 - [ ] **Step 1: Compare only after the age / sparse-content branch is resolved**
 
@@ -252,9 +252,9 @@ Only then compare the current `4+4` guarded run, the age-capped run, and the his
 
 Record the new proven or negative outcome in:
 
-- `P:\packages\yt-is\docs\operations\test-registry.md`
-- `P:\packages\yt-is\docs\operations\sharded-lane-series.md`
-- `P:\packages\yt-is\docs\operations\hot-path-throughput-next-test-plan.md`
+- `P:/packages/yt-is/docs/operations/test-registry.md`
+- `P:/packages/yt-is/docs/operations/sharded-lane-series.md`
+- `P:/packages/yt-is/docs/operations/hot-path-throughput-next-test-plan.md`
 
 ---
 

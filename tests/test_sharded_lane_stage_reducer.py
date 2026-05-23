@@ -3,6 +3,108 @@ import json
 import csf.sharded_lane_stage_reducer as reducer
 
 
+def _make_sweep_summary(wst: dict) -> dict:
+    """Build a sweep_summary.json with the real producer key names."""
+    return {
+        "results": [
+            {
+                "workers": 4,
+                "elapsed_s": 1541.673,
+                "success_count": 151,
+                "fail_count": 9,
+                "content_fetch_status_counts_total": {
+                    "ready": 151,
+                    "source_age_cliff": 48,
+                    "command_failed": 9,
+                },
+                "fetch_completed": {"worker_stage_totals": wst},
+            }
+        ]
+    }
+
+
+def test_extract_batch_metrics_reads_producer_command_and_retry_keys(tmp_path):
+    """Reducer must read the producer key names: *_elapsed_s_total suffix."""
+    wst = {
+        "content_fetch_command_elapsed_s_total": 6095.208,
+        "content_fetch_command_elapsed_s_avg": 46.113,
+        "content_fetch_command_elapsed_s_max": 209.11,
+        "content_fetch_command_elapsed_s_count": 276,
+        "content_fetch_retry_sleep_elapsed_s_total": 139.334,
+        "content_fetch_retry_queue_sleep_elapsed_s_total": 120.0,
+        "source_ready_age_s_total": 19114.513,
+        "source_ready_age_s_avg": 178.007,
+        "source_ready_age_s_max": 290.224,
+        "worker_idle_wait_s_total": 0.0,
+        "startup_prepare_total_elapsed_s_total": 79.355,
+        "setup_elapsed_s_total": 250.51,
+        "extract_elapsed_s_total": 1218.013,
+        "add_sources_elapsed_s_total": 232.001,
+        "cleanup_elapsed_s_total": 73.148,
+        "notebook_check_elapsed_s_total": 18.507,
+        "notebook_create_elapsed_s_total": 0.0,
+        "notebook_retire_elapsed_s_total": 0.0,
+        "startup_prepare_cleanup_elapsed_s_total": 10.272,
+    }
+    data = _make_sweep_summary(wst)
+    ts_dir = tmp_path / "20260521_234443"
+    ts_dir.mkdir()
+    (ts_dir / "sweep_summary.json").write_text(json.dumps(data), encoding="utf-8")
+
+    batch = reducer._extract_batch_metrics(tmp_path, phase_name="soak", batch_name="batch_01")
+
+    # Command latency fields: producer key names with _elapsed_s_total suffix.
+    assert batch.content_fetch_command_elapsed_s_total == 6095.208
+    assert batch.content_fetch_command_elapsed_s_avg == 46.113
+    assert batch.content_fetch_command_elapsed_s_max == 209.11
+    assert batch.content_fetch_command_elapsed_s_count == 276
+    # Retry sleep fields: producer key names with _elapsed_s_total suffix.
+    assert batch.content_fetch_retry_sleep_elapsed_s_total == 139.334
+    assert batch.content_fetch_retry_queue_sleep_elapsed_s_total == 120.0
+    # source_ready_age_s_max preserved at batch level
+    assert batch.sr_age_max == 290.224
+
+
+def test_summarize_batches_recomputes_cmd_avg_from_total_and_count(tmp_path):
+    """_summarize_batches must recompute avg = total/count, not propagate artifact avg."""
+    wst = {
+        "content_fetch_command_elapsed_s_total": 100.0,
+        "content_fetch_command_elapsed_s_avg": 999.0,  # Wrong artifact avg; should be ignored.
+        "content_fetch_command_elapsed_s_max": 50.0,
+        "content_fetch_command_elapsed_s_count": 4,
+        "content_fetch_retry_sleep_elapsed_s_total": 10.0,
+        "content_fetch_retry_queue_sleep_elapsed_s_total": 5.0,
+        "source_ready_age_s_total": 40.0,
+        "source_ready_age_s_avg": 10.0,
+        "source_ready_age_s_max": 15.0,
+        "startup_prepare_total_elapsed_s_total": 0.0,
+        "setup_elapsed_s_total": 0.0,
+        "extract_elapsed_s_total": 0.0,
+        "add_sources_elapsed_s_total": 0.0,
+        "cleanup_elapsed_s_total": 0.0,
+        "notebook_check_elapsed_s_total": 0.0,
+        "notebook_create_elapsed_s_total": 0.0,
+        "notebook_retire_elapsed_s_total": 0.0,
+        "startup_prepare_cleanup_elapsed_s_total": 0.0,
+        "worker_idle_wait_s_total": 0.0,
+    }
+    data = _make_sweep_summary(wst)
+    ts_dir = tmp_path / "20260521_234443"
+    ts_dir.mkdir()
+    (ts_dir / "sweep_summary.json").write_text(json.dumps(data), encoding="utf-8")
+
+    batch = reducer._extract_batch_metrics(tmp_path, phase_name="soak", batch_name="batch_01")
+    summary = reducer._summarize_batches([batch])
+
+    # Avg is recomputed: 100.0 / 4 = 25.0, NOT the artifact value 999.0.
+    assert summary["content_fetch_command_elapsed_s_avg"] == 25.0
+    # retry totals are aggregated from the correct producer-named fields
+    assert summary["content_fetch_retry_sleep_elapsed_s_total"] == 10.0
+    assert summary["content_fetch_retry_queue_sleep_elapsed_s_total"] == 5.0
+    # source_ready_age_s_max tracked across batches
+    assert summary["source_ready_age_s_max"] == 15.0
+
+
 def test_load_sweep_summary_prefers_valid_json_before_backslash_repair(tmp_path):
     summary_path = tmp_path / "sweep_summary.json"
     summary_path.write_text(

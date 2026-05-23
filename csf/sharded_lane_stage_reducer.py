@@ -73,6 +73,13 @@ class BatchMetrics:
     nlm_below_threshold: int
     ready: int
     content_fetch_total: int
+    # content fetch command latency (from fetch_completed.worker_stage_totals)
+    content_fetch_command_elapsed_s_total: float = 0.0
+    content_fetch_command_elapsed_s_avg: float = 0.0
+    content_fetch_command_elapsed_s_max: float = 0.0
+    content_fetch_command_elapsed_s_count: int = 0
+    content_fetch_retry_sleep_elapsed_s_total: float = 0.0
+    content_fetch_retry_queue_sleep_elapsed_s_total: float = 0.0
     phase_name: str = ""
     batch_name: str = ""
     batch_entries: tuple[BatchEntry, ...] = field(default_factory=tuple)
@@ -126,9 +133,17 @@ class LaneMetrics:
     cleanup_elapsed_s_total: float = 0.0
     worker_idle_wait_s_total: float = 0.0
     source_ready_age_s_avg: float = 0.0
+    source_ready_age_s_max: float = 0.0
     success_count: int = 0
     fail_count: int = 0
     processed_count: int = 0
+    # content fetch command latency aggregates (sum across batches)
+    content_fetch_command_elapsed_s_total: float = 0.0
+    content_fetch_command_elapsed_s_avg: float = 0.0
+    content_fetch_command_elapsed_s_max: float = 0.0
+    content_fetch_command_elapsed_s_count: int = 0
+    content_fetch_retry_sleep_elapsed_s_total: float = 0.0
+    content_fetch_retry_queue_sleep_elapsed_s_total: float = 0.0
     batches: tuple[BatchMetrics, ...] = field(default_factory=tuple)
 
 
@@ -288,6 +303,12 @@ def _extract_batch_metrics(sweep_dir: Path, phase_name: str, batch_name: str) ->
         nlm_below_threshold=nlm_bt or nlm_bt_fallback,
         ready=ready or ready_fallback,
         content_fetch_total=(cf_total or cf_total_fallback) + (nlm_bt or nlm_bt_fallback) + (ready or ready_fallback),
+        content_fetch_command_elapsed_s_total=wst.get("content_fetch_command_elapsed_s_total", 0.0),
+        content_fetch_command_elapsed_s_avg=wst.get("content_fetch_command_elapsed_s_avg", 0.0),
+        content_fetch_command_elapsed_s_max=wst.get("content_fetch_command_elapsed_s_max", 0.0),
+        content_fetch_command_elapsed_s_count=wst.get("content_fetch_command_elapsed_s_count", 0),
+        content_fetch_retry_sleep_elapsed_s_total=wst.get("content_fetch_retry_sleep_elapsed_s_total", 0.0),
+        content_fetch_retry_queue_sleep_elapsed_s_total=wst.get("content_fetch_retry_queue_sleep_elapsed_s_total", 0.0),
     )
 
 
@@ -344,6 +365,13 @@ def _summarize_batches(batches: Iterable[BatchMetrics]) -> dict[str, float | int
     hot_path_vph = round(success_count / elapsed_total * 3600.0, 2) if elapsed_total > 0 else 0.0
     content_fetch_total = command_failed + nlm_below_threshold + ready
     source_ready_age_avg = round(source_ready_age_total / max(content_fetch_total, 1), 3)
+    # content fetch command latency aggregates
+    cmd_total = sum(b.content_fetch_command_elapsed_s_total for b in batch_list)
+    cmd_count = sum(b.content_fetch_command_elapsed_s_count for b in batch_list)
+    cmd_avg = round(cmd_total / cmd_count, 3) if cmd_count > 0 else 0.0
+    cmd_max = max((b.content_fetch_command_elapsed_s_max for b in batch_list), default=0.0)
+    retry_sleep = sum(b.content_fetch_retry_sleep_elapsed_s_total for b in batch_list)
+    retry_queue_sleep = sum(b.content_fetch_retry_queue_sleep_elapsed_s_total for b in batch_list)
     return {
         "aggregate_vph": hot_path_vph,
         "wall_elapsed_s": elapsed_total,
@@ -365,6 +393,13 @@ def _summarize_batches(batches: Iterable[BatchMetrics]) -> dict[str, float | int
         "ready": ready,
         "content_fetch_total": content_fetch_total,
         "source_ready_age_s_max": source_ready_age_max,
+        # content fetch command latency
+        "content_fetch_command_elapsed_s_total": cmd_total,
+        "content_fetch_command_elapsed_s_avg": cmd_avg,
+        "content_fetch_command_elapsed_s_max": cmd_max,
+        "content_fetch_command_elapsed_s_count": cmd_count,
+        "content_fetch_retry_sleep_elapsed_s_total": retry_sleep,
+        "content_fetch_retry_queue_sleep_elapsed_s_total": retry_queue_sleep,
     }
 
 
@@ -402,9 +437,16 @@ def _load_benchmark_run_metrics(run_root: Path, benchmark_summary_path: Path) ->
                         cleanup_elapsed_s_total=float(batch_summary["cleanup_elapsed_s_total"]),
                         worker_idle_wait_s_total=float(batch_summary["worker_idle_wait_s_total"]),
                         source_ready_age_s_avg=float(batch_summary["source_ready_age_s_avg"]),
+                        source_ready_age_s_max=float(batch_summary.get("source_ready_age_s_max", 0.0)),
                 success_count=int(batch_summary["success_count"]),
                 fail_count=int(batch_summary["fail_count"]),
                 processed_count=int(batch_summary["processed_count"]),
+                content_fetch_command_elapsed_s_total=float(batch_summary.get("content_fetch_command_elapsed_s_total", 0.0)),
+                content_fetch_command_elapsed_s_avg=float(batch_summary.get("content_fetch_command_elapsed_s_avg", 0.0)),
+                content_fetch_command_elapsed_s_max=float(batch_summary.get("content_fetch_command_elapsed_s_max", 0.0)),
+                content_fetch_command_elapsed_s_count=int(batch_summary.get("content_fetch_command_elapsed_s_count", 0)),
+                content_fetch_retry_sleep_elapsed_s_total=float(batch_summary.get("content_fetch_retry_sleep_elapsed_s_total", 0.0)),
+                content_fetch_retry_queue_sleep_elapsed_s_total=float(batch_summary.get("content_fetch_retry_queue_sleep_elapsed_s_total", 0.0)),
                 batches=batches,
             ),
         ),
@@ -632,6 +674,7 @@ def _extract_lane_metrics(
     cleanup_elapsed_s_total = 0.0
     worker_idle_wait_s_total = 0.0
     source_ready_age_s_avg = 0.0
+    source_ready_age_s_max = 0.0
     success_count = 0
     fail_count = 0
     processed_count = 0
@@ -706,9 +749,16 @@ def _extract_lane_metrics(
             cleanup_elapsed_s_total=cleanup_elapsed_s_total,
             worker_idle_wait_s_total=worker_idle_wait_s_total,
             source_ready_age_s_avg=source_ready_age_s_avg,
+            source_ready_age_s_max=0.0,
             success_count=success_count,
             fail_count=fail_count,
             processed_count=processed_count,
+            content_fetch_command_elapsed_s_total=0.0,
+            content_fetch_command_elapsed_s_avg=0.0,
+            content_fetch_command_elapsed_s_max=0.0,
+            content_fetch_command_elapsed_s_count=0,
+            content_fetch_retry_sleep_elapsed_s_total=0.0,
+            content_fetch_retry_queue_sleep_elapsed_s_total=0.0,
         )
 
     for lane_dir in sorted(lane_dirs, key=lambda p: (p.parent.name, p.name)):
@@ -725,6 +775,10 @@ def _extract_lane_metrics(
             batch_metrics = _extract_batch_metrics(sweep_dir, phase_name=phase_name, batch_name=batch_dir.name)
             if batch_metrics is None:
                 continue
+
+            # Update max age tracking
+            if batch_metrics.sr_age_max > source_ready_age_s_max:
+                source_ready_age_s_max = batch_metrics.sr_age_max
 
             ts_dirs = sorted(
                 d for d in sweep_dir.iterdir() if d.is_dir() and re.match(r"\d{8}_\d{6}$", d.name)
@@ -847,6 +901,12 @@ def _extract_lane_metrics(
                     nlm_below_threshold=batch_metrics.nlm_below_threshold,
                     ready=batch_metrics.ready,
                     content_fetch_total=batch_metrics.content_fetch_total,
+                    content_fetch_command_elapsed_s_total=batch_metrics.content_fetch_command_elapsed_s_total,
+                    content_fetch_command_elapsed_s_avg=batch_metrics.content_fetch_command_elapsed_s_avg,
+                    content_fetch_command_elapsed_s_max=batch_metrics.content_fetch_command_elapsed_s_max,
+                    content_fetch_command_elapsed_s_count=batch_metrics.content_fetch_command_elapsed_s_count,
+                    content_fetch_retry_sleep_elapsed_s_total=batch_metrics.content_fetch_retry_sleep_elapsed_s_total,
+                    content_fetch_retry_queue_sleep_elapsed_s_total=batch_metrics.content_fetch_retry_queue_sleep_elapsed_s_total,
                     batch_entries=tuple(all_entries),
                     command_completed_entries=tuple(all_command_entries),
                     worker_batches=tuple(all_worker_batches),
@@ -867,9 +927,18 @@ def _extract_lane_metrics(
         cleanup_elapsed_s_total=cleanup_elapsed_s_total,
         worker_idle_wait_s_total=worker_idle_wait_s_total,
         source_ready_age_s_avg=source_ready_age_s_avg,
+        source_ready_age_s_max=source_ready_age_s_max,
         success_count=success_count,
         fail_count=fail_count,
         processed_count=processed_count,
+        content_fetch_command_elapsed_s_total=sum(b.content_fetch_command_elapsed_s_total for b in batches),
+        content_fetch_command_elapsed_s_avg=round(
+            sum(b.content_fetch_command_elapsed_s_total for b in batches) / max(sum(b.content_fetch_command_elapsed_s_count for b in batches), 1), 3
+        ),
+        content_fetch_command_elapsed_s_max=max((b.content_fetch_command_elapsed_s_max for b in batches), default=0.0),
+        content_fetch_command_elapsed_s_count=sum(b.content_fetch_command_elapsed_s_count for b in batches),
+        content_fetch_retry_sleep_elapsed_s_total=sum(b.content_fetch_retry_sleep_elapsed_s_total for b in batches),
+        content_fetch_retry_queue_sleep_elapsed_s_total=sum(b.content_fetch_retry_queue_sleep_elapsed_s_total for b in batches),
         batches=tuple(batches),
     )
 

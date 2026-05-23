@@ -10,14 +10,14 @@ Explain why `pro_free_source_map_v1` reached `5572.04` combined hot-path VPH whi
 
 Known high-water mark:
 
-- Artifact: `P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1/sharded_lane_series_summary.json`
+- Artifact: `P://packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1/sharded_lane_series_summary.json`
 - Shape: Pro + Free, 4 workers per lane, batch size 200, limit 400 per lane, serial reusable pipeline
 - Combined hot-path VPH: `5572.04`
 - Result mix: `796` hot-path successes, `4` failures, `800` processed
 
 Current reproduced leader:
 
-- Artifact: `P:\\\\\\packages/yt-is/.logs/sharded_lane_series/sweep_phase3_2lane_3w_run01/sharded_lane_series_summary.json`
+- Artifact: `P://packages/yt-is/.logs/sharded_lane_series/sweep_phase3_2lane_3w_run01/sharded_lane_series_summary.json`
 - Shape: Pro + Free, 3 workers per lane
 - Combined hot-path VPH: `4123.28`
 - Result mix: `795` hot-path successes, `5` failures, `800` processed
@@ -91,7 +91,7 @@ Record, per run:
 Suggested command skeleton:
 
 ```powershell
-cd P:\\\\\\packages/yt-is
+cd P://packages/yt-is
 $runs = @(
   "pro_free_source_map_v1",
   "pro_free_source_map_v7_rerun",
@@ -100,7 +100,7 @@ $runs = @(
   "optimal_search_2lane_5w_v1"
 )
 foreach ($run in $runs) {
-  $summary = "P:\\\\\\packages/yt-is/.logs/sharded_lane_series/$run/sharded_lane_series_summary.json"
+  $summary = "P://packages/yt-is/.logs/sharded_lane_series/$run/sharded_lane_series_summary.json"
   if (Test-Path $summary) {
     $j = Get-Content -Raw $summary | ConvertFrom-Json
     [pscustomobject]@{
@@ -145,26 +145,26 @@ Run these back to back in the same session, with fresh roots:
 Commands:
 
 ```powershell
-cd P:\\\\\\packages/yt-is
-python P:\\\\\\packages/yt-is/bin/csf-sharded-lane-series `
-  --lane-config P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json `
-  --output-root P:\\\\\\packages/yt-is/.logs/sharded_lane_series/repro_v1_raw_current_run01 `
-  --cohort-json P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1/cohort.json `
+cd P://packages/yt-is
+python P://packages/yt-is/bin/csf-sharded-lane-series `
+  --lane-config P://packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json `
+  --output-root P://packages/yt-is/.logs/sharded_lane_series/repro_v1_raw_current_run01 `
+  --cohort-json P://packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1/cohort.json `
   --limit 400 `
   --batch-size 200 `
   --reusable-pipeline-mode serial
 
-python P:\\\\\\packages/yt-is/bin/csf-sharded-lane-series `
-  --lane-config P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1_frozen_lanes.json `
-  --output-root P:\\\\\\packages/yt-is/.logs/sharded_lane_series/repro_v1_raw_frozen_run01 `
-  --cohort-json P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1/cohort.json `
+python P://packages/yt-is/bin/csf-sharded-lane-series `
+  --lane-config P://packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1_frozen_lanes.json `
+  --output-root P://packages/yt-is/.logs/sharded_lane_series/repro_v1_raw_frozen_run01 `
+  --cohort-json P://packages/yt-is/.logs/sharded_lane_series/pro_free_source_map_v1/cohort.json `
   --limit 400 `
   --batch-size 200 `
   --reusable-pipeline-mode serial
 
-python P:\\\\\\packages/yt-is/bin/csf-sharded-lane-sequence `
-  --lane-config P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json `
-  --run-root P:\\\\\\packages/yt-is/.logs/sharded_lane_series/repro_v1_guarded_current_run01
+python P://packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P://packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json `
+  --run-root P://packages/yt-is/.logs/sharded_lane_series/repro_v1_guarded_current_run01
 ```
 
 Exit criteria:
@@ -227,14 +227,14 @@ Stage reducer over all 7 artifacts (`csf-sharded-lane-stage-reducer`) confirmed:
 Commands:
 
 ```powershell
-cd P:\\\\\\packages/yt-is
-python P:\\\\\\packages/yt-is/bin/csf-sharded-lane-sequence `
-  --lane-config P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_only_lanes.json `
-  --run-root P:\\\\\\packages/yt-is/.logs/sharded_lane_series/repro_v1_pro_only_4w_run01
+cd P://packages/yt-is
+python P://packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P://packages/yt-is/.logs/sharded_lane_series/pro_only_lanes.json `
+  --run-root P://packages/yt-is/.logs/sharded_lane_series/repro_v1_pro_only_4w_run01
 
-python P:\\\\\\packages/yt-is/bin/csf-sharded-lane-sequence `
-  --lane-config P:\\\\\\packages/yt-is/.logs/sharded_lane_series/free_only_lanes.json `
-  --run-root P:\\\\\\packages/yt-is/.logs/sharded_lane_series/repro_v1_free_only_4w_run01
+python P://packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P://packages/yt-is/.logs/sharded_lane_series/free_only_lanes.json `
+  --run-root P://packages/yt-is/.logs/sharded_lane_series/repro_v1_free_only_4w_run01
 ```
 
 Exit criteria:
@@ -259,9 +259,9 @@ Current bake-off note:
 
 Document:
 
-- Update `P:\\\\\\packages/yt-is/docs/operations/test-registry.md`.
-- Update `P:\\\\\\packages/yt-is/docs/operations/sharded-lane-series.md`.
-- If a new run becomes the leader, update `P:\\\\\\packages/yt-is/docs/operations/optimal-throughput-candidate-test-plan.md`.
+- Update `P://packages/yt-is/docs/operations/test-registry.md`.
+- Update `P://packages/yt-is/docs/operations/sharded-lane-series.md`.
+- If a new run becomes the leader, update `P://packages/yt-is/docs/operations/optimal-throughput-candidate-test-plan.md`.
 
 ## Stop Conditions
 
