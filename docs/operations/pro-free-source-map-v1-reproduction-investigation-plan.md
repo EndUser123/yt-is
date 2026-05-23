@@ -25,6 +25,7 @@ Current reproduced leader:
 Negative controls already recorded:
 
 - `pro_free_source_map_v7_rerun`: same cohort, current profile family, `2930.78` VPH
+- `pro_free_source_map_v1_replay_run02`: clean replay on replay-safe lane config and fresh run root, `2109.58` VPH
 - `pro_free_source_map_v1_frozen_retest`: same cohort, frozen historical profile geometry, `2507.94` VPH
 - `optimal_search_2lane_5w_v1`: current two-lane 5-worker shape, `3239.04` VPH
 - `optimal_search_2lane_2w_v1`: floor test, `2815.36` VPH
@@ -36,6 +37,7 @@ The first-round comparison did not reproduce the historical high-water mark:
 
 - Current raw same-cohort rerun with `pro_free_lanes.json` completed at `3222.69` combined hot-path VPH with `793/7`, which is far below `5572.04`.
 - The guarded same-cohort replay on the current profile family completed at `3464.4` combined hot-path VPH with `794/6`, still far below `5572.04`.
+- The fresh replay-safe rerun completed at `2109.58` combined hot-path VPH with `715/85`; the replay now launches cleanly, but it still does not reproduce the historical best.
 - The frozen-profile raw replay could not complete a fair comparison yet because `ytis-free-worker-01` hit NotebookLM auth expiry and force refresh failed.
 - The targeted content probe suggests the gap is not caused by one permanently bad video pair:
   - `juXI9QbzzgM` stays below threshold on both Pro and Free profiles across retries.
