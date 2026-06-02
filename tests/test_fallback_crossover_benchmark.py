@@ -80,7 +80,7 @@ def test_run_policy_honors_benchmark_worker_notebook_prefix(tmp_path, monkeypatc
         return {"results": []}
 
     monkeypatch.setenv("YTIS_BENCHMARK_WORKER_NOTEBOOK_PREFIX", "benchmark-shard-pro")
-    monkeypatch.setattr(mod, "run_worker_count_sweep", fake_run_worker_count_sweep)
+    monkeypatch.setattr(mod, "_load_run_worker_count_sweep", lambda: fake_run_worker_count_sweep)
 
     mod._run_policy(
         policy_name="notebooklm_route_plus_fallback_30s_1w",
@@ -96,6 +96,72 @@ def test_run_policy_honors_benchmark_worker_notebook_prefix(tmp_path, monkeypatc
 
     assert captured["prefix"] == "benchmark-shard-pro"
     assert captured["state_root"] == str(tmp_path / "states")
+
+
+def test_run_policy_reloads_policy_env_before_worker_sweep(tmp_path, monkeypatch):
+    mod = _load_benchmark_module()
+    captured: dict[str, object] = {}
+
+    def fake_run_worker_count_sweep(**_kwargs):
+        from csf.nlm_config import get_nlm_config
+
+        cfg = get_nlm_config()
+        captured["cadence_enabled"] = cfg.reusable_source_age_cadence_enabled
+        captured["soft_threshold"] = cfg.reusable_source_age_cadence_soft_threshold_s
+        captured["hard_threshold"] = cfg.reusable_source_age_cadence_hard_threshold_s
+        return {"results": []}
+
+    monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED", "true")
+    monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S", "151")
+    monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S", "181")
+    monkeypatch.setattr(mod, "_load_run_worker_count_sweep", lambda: fake_run_worker_count_sweep)
+
+    mod._run_policy(
+        policy_name="notebooklm_route_plus_fallback_30s_1w",
+        items=[{"video_id": "vid-a", "source_url": "https://example.invalid", "has_captions": True}],
+        source_url="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        output_root=tmp_path / "out",
+        workers=4,
+        limit=1,
+        python_executable="python.exe",
+        sample_label="shard_pro",
+        worker_state_root_override=tmp_path / "states",
+    )
+
+    assert captured["cadence_enabled"] is True
+    assert captured["soft_threshold"] == 151.0
+    assert captured["hard_threshold"] == 181.0
+
+
+def test_run_policy_hotel_environment_overrides_shared_retry_pool_policy(tmp_path, monkeypatch):
+    mod = _load_benchmark_module()
+    captured: dict[str, str | None] = {}
+
+    def fake_run_worker_count_sweep(**_kwargs):
+        captured["shared_retry_pool_enabled"] = mod.os.environ.get(
+            "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"
+        )
+        captured["run_environment_label"] = mod.os.environ.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL")
+        return {"results": []}
+
+    monkeypatch.setenv("YTIS_NLM_RUN_ENVIRONMENT_LABEL", "hotel_wifi")
+    monkeypatch.setenv("YTIS_RUN_ENVIRONMENT_LABEL", "hotel_wifi")
+    monkeypatch.setattr(mod, "_load_run_worker_count_sweep", lambda: fake_run_worker_count_sweep)
+
+    mod._run_policy(
+        policy_name="notebooklm_route_plus_fallback_30s_1w",
+        items=[{"video_id": "vid-a", "source_url": "https://example.invalid", "has_captions": True}],
+        source_url="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        output_root=tmp_path / "out",
+        workers=4,
+        limit=1,
+        python_executable="python.exe",
+        sample_label="shard_pro",
+        worker_state_root_override=tmp_path / "states",
+    )
+
+    assert captured["run_environment_label"] == "hotel_wifi"
+    assert captured["shared_retry_pool_enabled"] == "true"
 
 
 def test_load_cohort_from_trace_include_ready_collects_ready_events(tmp_path):

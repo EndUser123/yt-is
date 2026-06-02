@@ -71,6 +71,7 @@ _SOURCE_CONTENT_RETRY_MAX_DELAY_S = max(
 _SOURCE_CONTENT_RETRY_BUDGET_S = max(0.0, float(_NLM_CONFIG.source_content_retry_budget_s))
 _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_delay_s))
 _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_budget_s))
+_SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_age_margin_s))
 _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED = bool(_NLM_CONFIG.source_content_shared_retry_pool_enabled)
 _NOT_FOUND_SOURCE_LIST_PROBE_CAP_RAW = os.getenv("YTIS_NLM_NOT_FOUND_SOURCE_LIST_PROBE_CAP", "1").strip()
 try:
@@ -129,10 +130,27 @@ def _describe_nlm_auth_refresh_reason(
     return "cache_miss" if cache_session_age_s is None else "cache_expired"
 
 
+def _should_skip_nlm_auth_check(
+    *,
+    auth_context: _NLMAuthContext,
+    cache_hit: bool,
+    cache_session_age_s: float | None,
+    force_scheduled: bool,
+) -> bool:
+    """Return True when a recent successful auth makes another probe unnecessary."""
+    if force_scheduled or cache_hit or cache_session_age_s is None:
+        return False
+    auth_check_interval_s = max(0.0, float(_NLM_CONFIG.auth_check_interval))
+    return auth_check_interval_s > 0.0 and cache_session_age_s < auth_check_interval_s
+
+
 def _build_content_fetch_attribution_context(auth_context: _NLMAuthContext) -> dict[str, object]:
     """Return stable auth/profile context for source-content fetch diagnostics."""
     cache_hit, _ = nlm_auth_guard.auth_check_cache_hit(auth_context)
     cache_session_age_s = nlm_auth_guard.auth_check_cache_session_age(auth_context)
+    browser_profile_root = os.getenv("YTIS_NLM_BROWSER_PROFILE_ROOT", "").strip() or None
+    browser_profile_directory = os.getenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "").strip() or None
+    worker_state_root = os.getenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", "").strip() or None
     return {
         "notebooklm_profile": auth_context.profile,
         "expected_email": auth_context.expected_email or None,
@@ -143,7 +161,20 @@ def _build_content_fetch_attribution_context(auth_context: _NLMAuthContext) -> d
         "auth_check_cache_ttl_s": nlm_auth_guard.auth_check_cache_ttl_seconds(),
         "auth_check_interval_s": _NLM_CONFIG.auth_check_interval,
         "auth_cooldown_s": _NLM_CONFIG.auth_cooldown,
+        "browser_profile_root": browser_profile_root,
+        "browser_profile_directory": browser_profile_directory,
+        "worker_state_root": worker_state_root,
     }
+
+
+def _build_nlm_auth_recovery_context(auth_context: _NLMAuthContext) -> dict[str, object]:
+    """Return the same stable context used for source-content attribution."""
+    return _build_content_fetch_attribution_context(auth_context)
+
+
+def _build_nlm_auth_event_context(auth_context: _NLMAuthContext) -> dict[str, object]:
+    """Return auth event context for auth checks and refresh logs."""
+    return _build_content_fetch_attribution_context(auth_context)
 
 
 def _derive_worker_id_from_notebooklm_profile(notebooklm_profile: str | None) -> str | None:
@@ -183,6 +214,9 @@ def _build_source_content_command_completed_payload(
         "source_ready_age_s": source_ready_age_s,
         "worker_id": _derive_worker_id_from_notebooklm_profile(notebooklm_profile),
         "notebooklm_profile": notebooklm_profile or None,
+        "browser_profile_root": fetch_attribution_context.get("browser_profile_root"),
+        "browser_profile_directory": fetch_attribution_context.get("browser_profile_directory"),
+        "worker_state_root": fetch_attribution_context.get("worker_state_root"),
         "auth_cache_session_age_s": auth_cache_session_age_s,
         "last_auth_refresh_age_s": auth_cache_session_age_s,
         "returncode": returncode,
@@ -201,11 +235,17 @@ def _log_nlm_auth_runtime_config_once(auth_context) -> None:
         "component": "nlm_batch",
         "notebooklm_profile": auth_context.profile,
         "account": auth_context.expected_email or None,
+        "run_environment_label": (
+            os.environ.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL")
+            or os.environ.get("YTIS_RUN_ENVIRONMENT_LABEL")
+            or None
+        ),
         "env_auth_check_cache_ttl_raw": os.getenv("YTIS_NLM_AUTH_CHECK_CACHE_TTL_SECONDS") or None,
         "resolved_auth_check_cache_ttl_s": nlm_auth_guard.auth_check_cache_ttl_seconds(),
         "resolved_auth_check_interval_s": _NLM_CONFIG.auth_check_interval,
         "resolved_auth_cooldown_s": _NLM_CONFIG.auth_cooldown,
         "resolved_auth_force_refresh_every_checks": _get_nlm_auth_force_refresh_every_checks(),
+        "resolved_source_content_shared_retry_pool_enabled": _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED,
     }
 
     with _NLM_AUTH_RUNTIME_CONFIG_LOCK:
@@ -248,6 +288,15 @@ def _auth_family_for_profile(profile: str):
     return None
 
 
+def _store_nlm_auth_session(auth_context: _NLMAuthContext) -> float:
+    session_established_at = round(time.monotonic(), 3)
+    nlm_auth_guard.auth_check_cache_store(
+        auth_context,
+        session_established_at=session_established_at,
+    )
+    return session_established_at
+
+
 def _refresh_nlm_auth_session(
     auth_context: _NLMAuthContext,
     *,
@@ -273,8 +322,12 @@ def _refresh_nlm_auth_session(
     if login.returncode != 0:
         return False
     if not expected_email:
+        _store_nlm_auth_session(auth_context)
         return True
-    return _extract_account(login.stdout or "", login.stderr or "") == expected_email
+    if _extract_account(login.stdout or "", login.stderr or "") == expected_email:
+        _store_nlm_auth_session(auth_context)
+        return True
+    return False
 
 
 def _refresh_family_nlm_auth_session(
@@ -310,6 +363,7 @@ def _refresh_family_nlm_auth_session(
             backup=False,
             source_session_checker=lambda _profile: True,
         )
+        _store_nlm_auth_session(auth_context)
         outcome = "ok"
         return True
     except (FileNotFoundError, RuntimeError, ValueError):
@@ -412,12 +466,43 @@ def _get_nlm_auth_context() -> _NLMAuthContext:
     )
 
 
+def _worker_auth_uses_cdp() -> bool:
+    value = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def _default_chrome_profile_pids() -> set[int]:
     return nlm_auth_guard.default_chrome_profile_pids()
 
 
-def _stop_chrome_pids(pids: set[int]) -> None:
-    nlm_auth_guard.stop_chrome_pids(pids)
+def _stop_chrome_pids(pids: set[int]) -> set[int]:
+    return nlm_auth_guard.stop_chrome_pids(pids)
+
+
+def _default_profile_blocked_result(
+    auth_context: _NLMAuthContext,
+    *,
+    args: List[str],
+    phase: str,
+    stdout: str = "",
+    stderr: str = "",
+) -> subprocess.CompletedProcess:
+    recovery_context = _build_nlm_auth_recovery_context(auth_context)
+    default_profile_pids = _default_chrome_profile_pids()
+    log_action(
+        "nlm_auth_failed",
+        {
+            "component": "nlm_batch",
+            "status": "default_profile_running",
+            "phase": phase,
+            **recovery_context,
+            "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
+            "default_chrome_profile_pids": sorted(default_profile_pids),
+            "command": ["nlm"] + args,
+        },
+    )
+    message = f"default NotebookLM chrome-profile is already running: {DEFAULT_NLM_CHROME_PROFILE_ROOT}"
+    return subprocess.CompletedProcess(["nlm"] + args, 1, stdout or "", stderr or message)
 
 
 def _reap_default_chrome_profile_for_auth(
@@ -425,14 +510,49 @@ def _reap_default_chrome_profile_for_auth(
     *,
     args: List[str],
     phase: str,
+    allow_reap: bool = True,
 ) -> bool:
-    """Reap a transient default chrome-profile before auth can poison the batch."""
-    return _fail_closed_on_default_chrome_profile(
-        auth_context,
-        args=args,
-        phase=phase,
-        allow_pre_auth_recovery=True,
+    """Record the shared default chrome-profile if it is still present before auth.
+
+    Worker auth is profile-pinned. If another browser session is still using the
+    shared default NotebookLM profile, do not try to reap it and do not fail the
+    worker auth probe on that basis alone.
+    """
+    default_profile_pids = _default_chrome_profile_pids()
+    if not default_profile_pids:
+        return False
+    if not allow_reap:
+        recovery_context = _build_nlm_auth_recovery_context(auth_context)
+        log_action(
+            "nlm_auth_recovered",
+            {
+                "component": "nlm_batch",
+                "status": "default_profile_present_before_auth",
+                "phase": phase,
+                **recovery_context,
+                "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
+                "default_chrome_profile_pids": sorted(default_profile_pids),
+                "command": ["nlm"] + args,
+            },
+        )
+        return False
+    stopped_pids = _stop_chrome_pids(default_profile_pids)
+    if not stopped_pids:
+        return False
+    recovery_context = _build_nlm_auth_recovery_context(auth_context)
+    log_action(
+        "nlm_auth_recovered",
+        {
+            "component": "nlm_batch",
+            "status": "default_profile_present_before_auth",
+            "phase": phase,
+            **recovery_context,
+            "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
+            "default_chrome_profile_pids": sorted(stopped_pids),
+            "command": ["nlm"] + args,
+        },
     )
+    return False
 
 
 def _reap_default_chrome_profile_after_auth_command(
@@ -445,21 +565,23 @@ def _reap_default_chrome_profile_after_auth_command(
     default_profile_pids = _default_chrome_profile_pids()
     if not default_profile_pids:
         return set()
-    _stop_chrome_pids(default_profile_pids)
+    stopped_pids = _stop_chrome_pids(default_profile_pids)
+    if not stopped_pids:
+        return set(default_profile_pids)
+    recovery_context = _build_nlm_auth_recovery_context(auth_context)
     log_action(
         "nlm_auth_recovered",
         {
             "component": "nlm_batch",
             "status": "default_profile_reaped_after_auth_command",
             "phase": phase,
-            "notebooklm_profile": auth_context.profile,
-            "expected_email": auth_context.expected_email or None,
+            **recovery_context,
             "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-            "default_chrome_profile_pids": sorted(default_profile_pids),
+            "default_chrome_profile_pids": sorted(stopped_pids),
             "command": ["nlm"] + args,
         },
     )
-    return set(default_profile_pids)
+    return set(stopped_pids)
 
 
 def _reap_default_chrome_profile_before_command(
@@ -468,29 +590,37 @@ def _reap_default_chrome_profile_before_command(
     args: List[str],
     phase: str,
 ) -> set[int]:
-    """Close a transient default chrome-profile before a non-auth command and continue once."""
+    """Record a present shared default chrome-profile before a non-auth command.
+
+    Worker-profile pinned commands should continue without touching unrelated
+    browser sessions; the presence of the shared default profile is diagnostic,
+    not a hard failure.
+    """
     default_profile_pids = _default_chrome_profile_pids()
     if not default_profile_pids:
         return set()
-    _stop_chrome_pids(default_profile_pids)
+    recovery_context = _build_nlm_auth_recovery_context(auth_context)
     log_action(
         "nlm_auth_recovered",
         {
             "component": "nlm_batch",
-            "status": "default_profile_reaped_before_command",
+            "status": "default_profile_present_before_command",
             "phase": phase,
-            "notebooklm_profile": auth_context.profile,
-            "expected_email": auth_context.expected_email or None,
+            **recovery_context,
             "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
             "default_chrome_profile_pids": sorted(default_profile_pids),
             "command": ["nlm"] + args,
         },
     )
-    return set(default_profile_pids)
+    return set()
 
 
 def _is_cleanup_command(args: List[str]) -> bool:
     return len(args) >= 2 and tuple(args[:2]) in {("source", "delete"), ("notebook", "delete")}
+
+
+def _is_default_chrome_profile_running_error(stderr: str) -> bool:
+    return "default NotebookLM chrome-profile is already running" in (stderr or "")
 
 
 def _fail_closed_on_default_chrome_profile(
@@ -507,7 +637,16 @@ def _fail_closed_on_default_chrome_profile(
     default_profile_pids = _default_chrome_profile_pids()
     if not default_profile_pids:
         return None
-    _stop_chrome_pids(default_profile_pids)
+    stopped_pids = _stop_chrome_pids(default_profile_pids)
+    if not stopped_pids:
+        return _default_profile_blocked_result(
+            auth_context,
+            args=args,
+            phase=phase,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    recovery_context = _build_nlm_auth_recovery_context(auth_context)
     if _is_cleanup_command(args):
         log_action(
             "nlm_auth_recovered",
@@ -515,10 +654,9 @@ def _fail_closed_on_default_chrome_profile(
                 "component": "nlm_batch",
                 "status": "default_profile_reaped_during_cleanup",
                 "phase": phase,
-                "notebooklm_profile": auth_context.profile,
-                "expected_email": auth_context.expected_email or None,
+                **recovery_context,
                 "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-                "default_chrome_profile_pids": sorted(default_profile_pids),
+                "default_chrome_profile_pids": sorted(stopped_pids),
                 "command": ["nlm"] + args,
             },
         )
@@ -530,10 +668,9 @@ def _fail_closed_on_default_chrome_profile(
                 "component": "nlm_batch",
                 "status": "default_profile_reaped_before_auth",
                 "phase": phase,
-                "notebooklm_profile": auth_context.profile,
-                "expected_email": auth_context.expected_email or None,
+                **recovery_context,
                 "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-                "default_chrome_profile_pids": sorted(default_profile_pids),
+                "default_chrome_profile_pids": sorted(stopped_pids),
                 "command": ["nlm"] + args,
             },
         )
@@ -545,10 +682,9 @@ def _fail_closed_on_default_chrome_profile(
                 "component": "nlm_batch",
                 "status": "default_profile_reaped_after_command",
                 "phase": phase,
-                "notebooklm_profile": auth_context.profile,
-                "expected_email": auth_context.expected_email or None,
+                **recovery_context,
                 "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-                "default_chrome_profile_pids": sorted(default_profile_pids),
+                "default_chrome_profile_pids": sorted(stopped_pids),
                 "command_succeeded": command_succeeded,
                 "command": ["nlm"] + args,
             },
@@ -560,10 +696,9 @@ def _fail_closed_on_default_chrome_profile(
             "component": "nlm_batch",
             "status": "default_profile_running",
             "phase": phase,
-            "notebooklm_profile": auth_context.profile,
-            "expected_email": auth_context.expected_email or None,
+            **recovery_context,
             "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-            "default_chrome_profile_pids": sorted(default_profile_pids),
+            "default_chrome_profile_pids": sorted(stopped_pids),
             "command": ["nlm"] + args,
         },
     )
@@ -586,40 +721,21 @@ def _run_guarded_nlm_auth_command(
         res = run_nlm(args, timeout_s=timeout)
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(["nlm"] + args, 1, "", "NLM auth command timed out")
-    default_profile_pids = _reap_default_chrome_profile_after_auth_command(
-        auth_context,
-        args=args,
-        phase=f"{phase}_after",
-    )
+    default_profile_pids = _default_chrome_profile_pids()
     if default_profile_pids:
-        try:
-            res = run_nlm(args, timeout_s=timeout)
-        except subprocess.TimeoutExpired:
-            return subprocess.CompletedProcess(["nlm"] + args, 1, "", "NLM auth command timed out")
-        retry_default_profile_pids = _reap_default_chrome_profile_after_auth_command(
-            auth_context,
-            args=args,
-            phase=f"{phase}_after_retry",
+        recovery_context = _build_nlm_auth_recovery_context(auth_context)
+        log_action(
+            "nlm_auth_recovered",
+            {
+                "component": "nlm_batch",
+                "status": "default_profile_present_after_auth_command",
+                "phase": f"{phase}_after",
+                **recovery_context,
+                "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
+                "default_chrome_profile_pids": sorted(default_profile_pids),
+                "command": ["nlm"] + args,
+            },
         )
-        if retry_default_profile_pids:
-            log_action(
-                "nlm_auth_failed",
-                {
-                    "component": "nlm_batch",
-                    "status": "default_profile_running",
-                    "phase": f"{phase}_after_retry",
-                    "notebooklm_profile": auth_context.profile,
-                    "expected_email": auth_context.expected_email or None,
-                    "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-                    "default_chrome_profile_pids": sorted(retry_default_profile_pids),
-                    "command": ["nlm"] + args,
-                },
-            )
-            message = (
-                f"default NotebookLM chrome-profile is already running: "
-                f"{DEFAULT_NLM_CHROME_PROFILE_ROOT}"
-            )
-            return subprocess.CompletedProcess(["nlm"] + args, 1, res.stdout or "", res.stderr or message)
     return res
 
 
@@ -684,6 +800,13 @@ def _source_count_probe_indicates_dead_notebook(probe_error: dict[str, object] |
     return "API ERROR (CODE 5): NOT_FOUND" in combined or "NOT_FOUND" in combined
 
 
+def _source_count_probe_indicates_auth_failure(res: subprocess.CompletedProcess) -> bool:
+    """Return True when a source-count probe failed because auth was unavailable."""
+    combined = f"{res.stdout or ''}\n{res.stderr or ''}"
+    upper_combined = combined.upper()
+    return "AUTH FAILED" in upper_combined or "AUTHENTICATION ERROR" in upper_combined or "AUTH ERROR" in upper_combined
+
+
 def _should_defer_source_content_fetch(ytdlp_probe: dict[str, object], status: str) -> bool:
     """Return True when a failure should be queued for a second NotebookLM pass."""
     if status not in {"command_failed", _NLM_CONTENT_BELOW_THRESHOLD_STATUS, _LEGACY_NLM_CONTENT_BELOW_THRESHOLD_STATUS}:
@@ -697,7 +820,7 @@ def _source_ready_age_exceeds_cliff(ready_reference_epoch: float, started_at_epo
     if not ready_reference_epoch:
         return False, 0.0
     source_ready_age_s = round(started_at_epoch - ready_reference_epoch, 3)
-    return source_ready_age_s > _SOURCE_AGE_CLIFF_S, source_ready_age_s
+    return source_ready_age_s >= _SOURCE_AGE_CLIFF_S, source_ready_age_s
 
 
 def _load_reusable_notebook_id() -> Optional[str]:
@@ -996,6 +1119,19 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool
     safe_prefixes = tuple(worker_prefix for worker_prefix in _get_worker_notebook_prefixes() if _is_safe_worker_notebook_prefix(worker_prefix))
     res = ingestor._run_cmd(["notebook", "list", "--json"], timeout=30)
     if res.returncode != 0:
+        if _is_default_chrome_profile_running_error(res.stderr or ""):
+            log_action(
+                "nlm_worker_notebook_cleanup_complete",
+                {
+                    "deleted": 0,
+                    "failed": 0,
+                    "status": "list_blocked_default_profile",
+                    "stderr": (res.stderr or "")[:200],
+                    "include_active": include_active,
+                    "reason": "default NotebookLM chrome-profile is still in use; leaving it untouched",
+                },
+            )
+            return (0, 0)
         log_action(
             "nlm_worker_notebook_cleanup_complete",
             {
@@ -1129,6 +1265,7 @@ def _ensure_nlm_auth() -> bool:
         return False
 
     _log_nlm_auth_runtime_config_once(auth_context)
+    auth_event_context = _build_nlm_auth_event_context(auth_context)
     check_count = _next_nlm_auth_check_count()
     force_every = _get_nlm_auth_force_refresh_every_checks()
     force_scheduled = force_every > 0 and check_count % force_every == 0
@@ -1139,6 +1276,7 @@ def _ensure_nlm_auth() -> bool:
             "nlm_auth_checked",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "status": "cached",
                 "notebooklm_profile": auth_context.profile,
                 "account": auth_context.expected_email or None,
@@ -1148,9 +1286,30 @@ def _ensure_nlm_auth() -> bool:
             },
         )
         return True
+    if _should_skip_nlm_auth_check(
+        auth_context=auth_context,
+        cache_hit=cache_hit,
+        cache_session_age_s=cache_session_age_s,
+        force_scheduled=force_scheduled,
+    ):
+        log_action(
+            "nlm_auth_checked",
+            {
+                "component": "nlm_batch",
+                **auth_event_context,
+                "status": "interval_skip",
+                "notebooklm_profile": auth_context.profile,
+                "account": auth_context.expected_email or None,
+                "expected_email": auth_context.expected_email or None,
+                "check_count": check_count,
+                "session_age_s": round(cache_session_age_s, 3) if cache_session_age_s is not None else None,
+                "auth_check_interval_s": _NLM_CONFIG.auth_check_interval,
+            },
+        )
+        return True
     expected_email = auth_context.expected_email.strip().lower()
     family = _auth_family_for_profile(auth_context.profile) if expected_email else None
-    if family is not None:
+    if family is not None and _worker_auth_uses_cdp():
         refresh_reason = _describe_nlm_auth_refresh_reason(
             force_scheduled=force_scheduled,
             cache_hit=cache_hit,
@@ -1161,6 +1320,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_auth_forced_refresh_scheduled",
                 {
                     "component": "nlm_batch",
+                    **auth_event_context,
                     "notebooklm_profile": auth_context.profile,
                     "expected_email": expected_email or None,
                     "check_count": check_count,
@@ -1176,6 +1336,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_login_started",
                 {
                     "component": "nlm_batch",
+                    **auth_event_context,
                     "mode": "family_refresh",
                     "status": "started",
                     "auth_refresh_reason": refresh_reason,
@@ -1200,6 +1361,7 @@ def _ensure_nlm_auth() -> bool:
                     "nlm_login_completed",
                     {
                     "component": "nlm_batch",
+                    **auth_event_context,
                     "mode": "family_refresh",
                     "status": "ok",
                     "elapsed_s": login_elapsed,
@@ -1216,6 +1378,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_auth_refreshed",
                 {
                     "component": "nlm_batch",
+                    **auth_event_context,
                     "status": "ok",
                     "auth_refresh_reason": refresh_reason,
                     "auth_cache_hit": cache_hit,
@@ -1231,6 +1394,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_login_failed",
                 {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "mode": "family_refresh",
                 "status": "failed",
                 "elapsed_s": login_elapsed,
@@ -1247,6 +1411,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_auth_failed",
                 {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "status": "refresh_failed",
                 "auth_refresh_reason": refresh_reason,
                 "auth_cache_hit": cache_hit,
@@ -1262,6 +1427,7 @@ def _ensure_nlm_auth() -> bool:
         auth_context,
         args=["login", "--check", *auth_context.login_profile_args],
         phase="pre_auth",
+        allow_reap=False,
     )
     check = _run_guarded_nlm_auth_command(
         auth_context,
@@ -1276,17 +1442,23 @@ def _ensure_nlm_auth() -> bool:
     check_account = _extract_account(check.stdout or "", check.stderr or "")
     check_matches_expected = check.returncode == 0 and (not expected_email or check_account == expected_email)
     if check_matches_expected and not force_scheduled:
-        nlm_auth_guard.auth_check_cache_store(auth_context)
+        session_established_at = round(time.monotonic(), 3)
+        nlm_auth_guard.auth_check_cache_store(
+            auth_context,
+            session_established_at=session_established_at,
+        )
         log_action(
             "nlm_auth_checked",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "status": "ok",
                 "notebooklm_profile": auth_context.profile,
                 "account": check_account or None,
                 "expected_email": expected_email or None,
                 "check_count": check_count,
-                "session_age_s": None,
+                "session_age_s": 0.0,
+                "session_established_at": session_established_at,
             },
         )
         return True
@@ -1304,6 +1476,7 @@ def _ensure_nlm_auth() -> bool:
             "nlm_auth_failed",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "status": "wrong_account",
                 "auth_refresh_reason": refresh_reason,
                 "auth_cache_hit": cache_hit,
@@ -1327,6 +1500,7 @@ def _ensure_nlm_auth() -> bool:
             "nlm_auth_forced_refresh_scheduled",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "auth_refresh_reason": refresh_reason,
                 "auth_cache_hit": cache_hit,
                 "auth_cache_session_age_s": round(cache_session_age_s, 3) if cache_session_age_s is not None else None,
@@ -1348,6 +1522,7 @@ def _ensure_nlm_auth() -> bool:
             "nlm_auth_failed",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "status": "check_failed",
                 "auth_refresh_reason": refresh_reason,
                 "auth_cache_hit": cache_hit,
@@ -1365,6 +1540,7 @@ def _ensure_nlm_auth() -> bool:
             auth_context,
             args=["login", "--check", *auth_context.login_profile_args],
             phase="pre_auth_locked",
+            allow_reap=False,
         )
         check = _run_guarded_nlm_auth_command(
             auth_context,
@@ -1379,17 +1555,23 @@ def _ensure_nlm_auth() -> bool:
         check_account = _extract_account(check.stdout or "", check.stderr or "")
         check_matches_expected = check.returncode == 0 and (not expected_email or check_account == expected_email)
         if check_matches_expected and not force_scheduled:
-            nlm_auth_guard.auth_check_cache_store(auth_context)
+            session_established_at = round(time.monotonic(), 3)
+            nlm_auth_guard.auth_check_cache_store(
+                auth_context,
+                session_established_at=session_established_at,
+            )
             log_action(
                 "nlm_auth_checked",
                 {
                     "component": "nlm_batch",
+                    **auth_event_context,
                     "status": "ok",
                     "notebooklm_profile": auth_context.profile,
                     "account": check_account or None,
                     "expected_email": expected_email or None,
                     "check_count": check_count,
-                    "session_age_s": None,
+                    "session_age_s": 0.0,
+                    "session_established_at": session_established_at,
                 },
             )
             return True
@@ -1407,6 +1589,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_auth_failed",
                 {
                     "component": "nlm_batch",
+                    **auth_event_context,
                     "status": "wrong_account",
                     "auth_refresh_reason": refresh_reason,
                     "auth_cache_hit": cache_hit,
@@ -1430,6 +1613,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_auth_forced_refresh_scheduled",
                 {
                     "component": "nlm_batch",
+                    **auth_event_context,
                     "auth_refresh_reason": refresh_reason,
                     "auth_cache_hit": cache_hit,
                     "auth_cache_session_age_s": round(cache_session_age_s, 3) if cache_session_age_s is not None else None,
@@ -1444,6 +1628,7 @@ def _ensure_nlm_auth() -> bool:
             "nlm_login_started",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "mode": "force",
                 "status": "started",
                 "auth_refresh_reason": refresh_reason,
@@ -1462,6 +1647,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_login_completed",
                 {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "mode": "force",
                 "status": "ok",
                 "elapsed_s": login_elapsed,
@@ -1477,6 +1663,7 @@ def _ensure_nlm_auth() -> bool:
                 "nlm_auth_refreshed",
                 {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "status": "ok",
                 "auth_refresh_reason": refresh_reason,
                 "auth_cache_hit": cache_hit,
@@ -1491,6 +1678,7 @@ def _ensure_nlm_auth() -> bool:
             "nlm_login_failed",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "mode": "force",
                 "status": "failed",
                 "elapsed_s": login_elapsed,
@@ -1506,6 +1694,7 @@ def _ensure_nlm_auth() -> bool:
             "nlm_auth_failed",
             {
                 "component": "nlm_batch",
+                **auth_event_context,
                 "status": "refresh_failed",
                 "auth_refresh_reason": refresh_reason,
                 "auth_cache_hit": cache_hit,
@@ -1626,6 +1815,7 @@ class NLMBatchIngestor:
         self._last_materialization_wait_elapsed_s: float = 0.0
         self._last_subbatch_elapsed_s: float = 0.0
         self._last_materialization_ready_at_epoch: float = 0.0
+        self._source_age_cadence_notebook_ready_at_epoch: float = 0.0
         self._last_added_source_ids: List[str] = []
         self._last_extract_metrics: dict[str, object] | None = None
         self._current_source_count: int = 0
@@ -1644,15 +1834,20 @@ class NLMBatchIngestor:
             tracker.apply_delay()
             auth_context = _get_nlm_auth_context()
             cmd_args = nlm_auth_guard.add_profile_args(args, auth_context.profile if auth_context.has_profile else None)
-            default_profile_guard = _fail_closed_on_default_chrome_profile(
-                auth_context,
-                args=cmd_args,
-                phase="pre_auth",
-                allow_pre_auth_recovery=True,
-            )
-            if default_profile_guard is not None:
-                tracker.record_failure(is_rate_limit=False)
-                return default_profile_guard
+            default_profile_pids = _default_chrome_profile_pids()
+            if default_profile_pids:
+                log_action(
+                    "nlm_auth_recovered",
+                    {
+                        "component": "nlm_batch",
+                        "status": "default_profile_present_before_command",
+                        "phase": "pre_auth",
+                        **_build_nlm_auth_recovery_context(auth_context),
+                        "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
+                        "default_chrome_profile_pids": sorted(default_profile_pids),
+                        "command": ["nlm"] + cmd_args,
+                    },
+                )
             if not _ensure_nlm_auth():
                 return subprocess.CompletedProcess(["nlm"] + cmd_args, 1, "", "Auth failed")
             default_profile_pids = _reap_default_chrome_profile_before_command(
@@ -1672,18 +1867,21 @@ class NLMBatchIngestor:
                 pre_command_retry_attempted = True
                 continue
             res = run_nlm(cmd_args, timeout_s=timeout)
-            default_profile_guard = _fail_closed_on_default_chrome_profile(
-                auth_context,
-                args=cmd_args,
-                phase="post_command",
-                stdout=res.stdout or "",
-                stderr=res.stderr or "",
-                allow_post_command_recovery=True,
-                command_succeeded=res.returncode == 0,
-            )
-            if default_profile_guard is not None:
-                tracker.record_failure(is_rate_limit=False)
-                return default_profile_guard
+            default_profile_pids = _default_chrome_profile_pids()
+            if default_profile_pids:
+                log_action(
+                    "nlm_auth_recovered",
+                    {
+                        "component": "nlm_batch",
+                        "status": "default_profile_present_after_command",
+                        "phase": "post_command",
+                        **_build_nlm_auth_recovery_context(auth_context),
+                        "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
+                        "default_chrome_profile_pids": sorted(default_profile_pids),
+                        "command_succeeded": res.returncode == 0,
+                        "command": ["nlm"] + cmd_args,
+                    },
+                )
 
             # Check for rate limit indicators — require BOTH a status code AND rate-limit context
             # to avoid false positives from bare 500/502 errors that happen to contain "503"
@@ -1893,6 +2091,11 @@ class NLMBatchIngestor:
         )
         added_count = len(batch_ids) if (res.returncode == 0 or add_recovered) else 0
         count_probe_failed = res.returncode != 0 and (not source_count_before_known or not source_count_after_known)
+        dead_notebook_probe_after_success = (
+            res.returncode == 0
+            and not source_count_after_known
+            and _source_count_probe_indicates_dead_notebook(source_count_after_error)
+        )
         log_action(
             "nlm_batch_subbatch_add_completed",
             {
@@ -1919,6 +2122,43 @@ class NLMBatchIngestor:
                 "completed_at_epoch": time.time(),
             },
         )
+        if dead_notebook_probe_after_success and dead_notebook_recreate_depth == 0:
+            log_action(
+                "nlm_batch_dead_notebook_recovery_scheduled",
+                {
+                    "nb_id": self._nb_id,
+                    "subbatch_index": subbatch_index,
+                    "subbatch_size": len(batch_ids),
+                    "expected_total": expected_total,
+                    "retry_depth": retry_depth,
+                    "reset_depth": reset_depth,
+                    "source_profile": source_profile,
+                    "source_count_before": source_count_before,
+                    "source_count_probe_ok_before": source_count_before_known,
+                    "source_count_after": source_count_after,
+                    "source_count_probe_ok_after": source_count_after_known,
+                    "source_count_probe_error": source_count_after_error,
+                    "failure_reason": "source_count_probe_failed",
+                    "stdout": (res.stdout or "")[:500],
+                    "stderr": (res.stderr or "")[:500],
+                },
+            )
+            print(
+                f"[NLM-Batch]   Sub-batch {subbatch_index} notebook missing; "
+                f"creating a fresh notebook and retrying"
+            )
+            if self._recover_dead_notebook(batch_ids):
+                return self._add_sources_chunk(
+                    batch_ids,
+                    subbatch_index=subbatch_index,
+                    expected_total=expected_total,
+                    retry_depth=0,
+                    reset_depth=0,
+                    dead_notebook_recreate_depth=1,
+                    source_profile=source_profile,
+                )
+            self._last_add_failure_reason = "dead_notebook_recreate_failed"
+            return []
         if res.returncode == 0 or add_recovered:
             wait_started_at = time.monotonic()
             wait_started_at_epoch = time.time()
@@ -1994,6 +2234,7 @@ class NLMBatchIngestor:
                     },
                 )
             self._last_materialization_ready_at_epoch = wait_completed_at_epoch
+            self._source_age_cadence_notebook_ready_at_epoch = wait_completed_at_epoch
             parsed_source_ids = _extract_source_ids_from_add_stdout(res.stdout)
             if len(parsed_source_ids) == len(batch_ids):
                 self._last_added_source_ids = parsed_source_ids
@@ -2276,9 +2517,9 @@ class NLMBatchIngestor:
             projected_oldest_age_s = oldest_age_s + last_subbatch_elapsed_s if epoch is not None else 0.0
             age_guard_decision = "skipped_no_epoch"
             if epoch is not None:
-                if oldest_age_s > _SOURCE_AGE_CLIFF_S:
+                if oldest_age_s >= _SOURCE_AGE_CLIFF_S:
                     age_guard_decision = "rotate_source_age_cliff"
-                elif last_subbatch_elapsed_s > 0.0 and projected_oldest_age_s > _SOURCE_AGE_CLIFF_S:
+                elif last_subbatch_elapsed_s > 0.0 and projected_oldest_age_s >= _SOURCE_AGE_CLIFF_S:
                     age_guard_decision = "rotate_source_age_projected_cliff"
                 else:
                     age_guard_decision = "below_cliff"
@@ -2627,11 +2868,17 @@ class NLMBatchIngestor:
             "content_fetch_command_elapsed_s_total": 0.0,
             "content_fetch_command_elapsed_s_max": 0.0,
             "content_fetch_command_elapsed_s_count": 0,
-            "content_fetch_retry_sleep_elapsed_s_total": 0.0,
-            "content_fetch_retry_queue_sleep_elapsed_s_total": 0.0,
-            "source_list_probe_elapsed_s_total": 0.0,
+                "content_fetch_retry_sleep_elapsed_s_total": 0.0,
+                "content_fetch_retry_queue_sleep_elapsed_s_total": 0.0,
+                "retry_queue_wait_elapsed_s_total": 0.0,
+                "retry_queue_wait_elapsed_s_max": 0.0,
+                "retry_queue_wait_elapsed_s_count": 0,
+                "source_list_probe_elapsed_s_total": 0.0,
             "source_list_probe_elapsed_s_max": 0.0,
             "source_list_probe_count": 0,
+            "source_id_validated_after_not_found_true_count": 0,
+            "source_id_validated_after_not_found_false_count": 0,
+            "source_id_validated_after_not_found_unknown_count": 0,
             "source_content_readiness_probe_elapsed_s_total": 0.0,
             "source_content_readiness_probe_elapsed_s_max": 0.0,
             "source_content_readiness_probe_count": 0,
@@ -2880,6 +3127,8 @@ class NLMBatchIngestor:
             source_list_probe_elapsed_s_total = 0.0
             source_list_probe_elapsed_s_max = 0.0
             source_list_probe_count = 0
+            retry_queue_skipped_reason: str | None = None
+            projected_retry_ready_age_s: float | None = None
             log_action(
                 "nlm_batch_source_content_fetch_started",
                 {
@@ -2962,6 +3211,8 @@ class NLMBatchIngestor:
                         "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                         "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                         "source_list_probe_count": source_list_probe_count,
+                        "retry_queue_skipped_reason": None,
+                        "projected_retry_ready_age_s": None,
                         "source_id_validated_after_not_found": None,
                         "source_list_probe_returncode": -1,
                         "source_list_probe_match_index": None,
@@ -2989,6 +3240,8 @@ class NLMBatchIngestor:
                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                     "source_list_probe_count": source_list_probe_count,
+                    "retry_queue_skipped_reason": None,
+                    "projected_retry_ready_age_s": None,
                     "extraction_outcome": status,
                     "stdout": "",
                     "stderr": "",
@@ -3116,6 +3369,8 @@ class NLMBatchIngestor:
                                 "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                                 "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                                 "source_list_probe_count": source_list_probe_count,
+                                "retry_queue_skipped_reason": None,
+                                "projected_retry_ready_age_s": None,
                                 "youtube_ytdlp_classification": None,
                             }
                         status = _NLM_CONTENT_BELOW_THRESHOLD_STATUS
@@ -3205,6 +3460,12 @@ class NLMBatchIngestor:
                                     break
                         except Exception:
                             pass
+                    if source_id_present is True:
+                        content_fetch_stats["source_id_validated_after_not_found_true_count"] += 1
+                    elif source_id_present is False:
+                        content_fetch_stats["source_id_validated_after_not_found_false_count"] += 1
+                    else:
+                        content_fetch_stats["source_id_validated_after_not_found_unknown_count"] += 1
                     not_found_probe = {
                         "source_list_probe_returncode": list_res.returncode,
                         "source_list_probe_count": 1,
@@ -3222,12 +3483,111 @@ class NLMBatchIngestor:
                 if str(youtube_ytdlp_probe.get("classification") or "").strip() in {"error", "unknown"}:
                     youtube_page_probe = inspect_youtube_watch_page(vid_hint)
                 _record_youtube_probe_elapsed_metrics(youtube_ytdlp_probe, youtube_page_probe)
-            retry_queue_eligible = (
+            retry_queue_deferable = _should_defer_source_content_fetch(youtube_ytdlp_probe, final_status)
+            retry_queue_skipped_reason: str | None = None
+            retry_queue_candidate = (
                 allow_retry_queue
                 and _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S > 0
-                and _should_defer_source_content_fetch(youtube_ytdlp_probe, final_status)
+                and retry_queue_deferable
+            )
+            projected_retry_ready_age_s: float | None = None
+            projected_retry_ready_age_with_margin_s: float | None = None
+            if retry_queue_candidate and ready_reference_epoch:
+                projected_retry_ready_age_s = round(final_ready_age_s + _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S, 3)
+                projected_retry_ready_age_with_margin_s = round(
+                    projected_retry_ready_age_s + _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                    3,
+                )
+            if (
+                retry_queue_candidate
+                and not _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED
+                and projected_retry_ready_age_s is not None
+                and projected_retry_ready_age_s >= _SOURCE_AGE_CLIFF_S
+            ):
+                retry_queue_skipped_reason = "projected_source_age_cliff"
+            elif (
+                retry_queue_candidate
+                and not _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED
+                and projected_retry_ready_age_with_margin_s is not None
+                and _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S > 0.0
+                and projected_retry_ready_age_with_margin_s >= _SOURCE_AGE_CLIFF_S
+            ):
+                retry_queue_skipped_reason = "projected_source_age_cliff_margin"
+            retry_queue_eligible = (
+                retry_queue_candidate
+                and retry_queue_skipped_reason is None
             )
             if retry_queue_eligible:
+                log_action(
+                    "nlm_batch_source_content_fetch_completed",
+                    {
+                        "nb_id": self._nb_id,
+                        "source_id": source_id,
+                        "video_id": vid_hint,
+                        "timeout_s": 30,
+                        "started_at_epoch": started_at_epoch,
+                        "completed_at_epoch": final_completed_at_epoch,
+                        "elapsed_s": round(final_completed_at_epoch - started_at_epoch, 3),
+                        "returncode": int(last_result["returncode"]),
+                        "content_length": int(last_result["content_length"]),
+                        "status": final_status,
+                        "ready_threshold": _NLM_CONTENT_READY_THRESHOLD,
+                        "extraction_outcome": final_status,
+                        "nlm_content_chars": int(last_result["content_length"]),
+                        "usable_text_chars": 0,
+                        "source_ready_age_s": final_ready_age_s,
+                        "materialization_ready_at_epoch": ready_reference_epoch,
+                        "failure_reason": str(last_result["failure_reason"]),
+                        "attempts": int(last_result["attempts"]),
+                        "stdout": str(last_result["stdout"])[:500],
+                        "stderr": str(last_result["stderr"])[:500],
+                        **fetch_attribution_context,
+                        "retry_initial_delay_s": _SOURCE_CONTENT_RETRY_INITIAL_DELAY_S,
+                        "retry_max_delay_s": _SOURCE_CONTENT_RETRY_MAX_DELAY_S,
+                        "retry_budget_s": _SOURCE_CONTENT_RETRY_BUDGET_S,
+                        "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
+                        "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                        "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                        "retry_queue_skipped_reason": None,
+                        "projected_retry_ready_age_s": projected_retry_ready_age_s,
+                        "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                        "queued_for_retry": True,
+                        "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
+                        "pass_name": pass_name,
+                        "youtube_ytdlp_classification": youtube_ytdlp_probe.get("classification"),
+                        "youtube_ytdlp_available": youtube_ytdlp_probe.get("available"),
+                        "youtube_ytdlp_availability": youtube_ytdlp_probe.get("availability"),
+                        "youtube_ytdlp_live_status": youtube_ytdlp_probe.get("live_status"),
+                        "youtube_ytdlp_was_live": youtube_ytdlp_probe.get("was_live"),
+                        "youtube_ytdlp_is_live": youtube_ytdlp_probe.get("is_live"),
+                        "youtube_ytdlp_title": youtube_ytdlp_probe.get("title"),
+                        "youtube_ytdlp_returncode": youtube_ytdlp_probe.get("returncode"),
+                        "youtube_ytdlp_error": youtube_ytdlp_probe.get("error"),
+                        "youtube_ytdlp_elapsed_s": youtube_ytdlp_probe.get("elapsed_s"),
+                        "youtube_page_classification": youtube_page_probe.get("classification"),
+                        "youtube_page_available": youtube_page_probe.get("available"),
+                        "youtube_page_status": youtube_page_probe.get("status"),
+                        "youtube_page_reason": youtube_page_probe.get("reason"),
+                        "youtube_page_subreason": youtube_page_probe.get("subreason"),
+                        "youtube_page_is_live_content": youtube_page_probe.get("is_live_content"),
+                        "youtube_page_title": youtube_page_probe.get("title"),
+                        "youtube_page_http_status": youtube_page_probe.get("http_status"),
+                        "youtube_page_error": youtube_page_probe.get("error"),
+                        "youtube_page_elapsed_s": youtube_page_probe.get("elapsed_s"),
+                        "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
+                        "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
+                        "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                        "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
+                        "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
+                        "source_list_probe_count": source_list_probe_count,
+                        "source_id_validated_after_not_found": not_found_probe.get("source_id_present_in_source_list"),
+                        "source_list_probe_returncode": not_found_probe.get("source_list_probe_returncode", -1),
+                        "source_list_probe_elapsed_s": not_found_probe.get("source_list_probe_elapsed_s", 0.0),
+                        "source_list_probe_match_index": not_found_probe.get("source_list_probe_match_index"),
+                        "source_list_probe_match_title": not_found_probe.get("source_list_probe_match_title"),
+                        "source_list_probe_match_url": not_found_probe.get("source_list_probe_match_url"),
+                    },
+                )
                 log_action(
                     "nlm_batch_source_content_retry_queued",
                     {
@@ -3243,6 +3603,9 @@ class NLMBatchIngestor:
                         "youtube_ytdlp_availability": youtube_ytdlp_probe.get("availability"),
                         "pass_name": pass_name,
                         "source_ready_age_s": final_ready_age_s,
+                        "projected_retry_ready_age_s": projected_retry_ready_age_s,
+                        "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                        "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
                 )
@@ -3266,6 +3629,12 @@ class NLMBatchIngestor:
                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                     "source_list_probe_count": source_list_probe_count,
+                    "retry_queue_queued_at_epoch": final_completed_at_epoch,
+                    "retry_queue_queued_ready_age_s": final_ready_age_s,
+                    "retry_queue_skipped_reason": None,
+                    "projected_retry_ready_age_s": projected_retry_ready_age_s,
+                    "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                    "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                     "extraction_outcome": final_status,
                     "stdout": str(last_result["stdout"])[:500],
                     "stderr": str(last_result["stderr"])[:500],
@@ -3331,6 +3700,10 @@ class NLMBatchIngestor:
                     "retry_budget_s": _SOURCE_CONTENT_RETRY_BUDGET_S,
                     "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
                     "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                    "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                    "retry_queue_skipped_reason": retry_queue_skipped_reason,
+                    "projected_retry_ready_age_s": projected_retry_ready_age_s,
+                    "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
                     "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
                     "pass_name": pass_name,
                     "youtube_ytdlp_classification": youtube_ytdlp_probe.get("classification"),
@@ -3410,6 +3783,10 @@ class NLMBatchIngestor:
                 "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                 "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                 "source_list_probe_count": source_list_probe_count,
+                "retry_queue_skipped_reason": retry_queue_skipped_reason,
+                "projected_retry_ready_age_s": projected_retry_ready_age_s,
+                "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                 "source_id_validated_after_not_found": not_found_probe.get("source_id_present_in_source_list"),
                 "source_list_probe_returncode": not_found_probe.get("source_list_probe_returncode", -1),
                 "source_list_probe_count": not_found_probe.get("source_list_probe_count", 0),
@@ -3462,7 +3839,7 @@ class NLMBatchIngestor:
             return round_results, round_retry_queue, round_outcomes
 
         batch_items: list[tuple[str, str]] = []
-        for i, vid in enumerate(batch_ids):
+        for vid in batch_ids:
             source_id = source_id_by_video_id.get(vid)
             if source_id:
                 batch_items.append((vid, source_id))
@@ -3473,6 +3850,12 @@ class NLMBatchIngestor:
         shared_retry_deferred_count = 0
         shared_retry_recovered_count = 0
         shared_retry_final_failed_count = 0
+        retry_queue_drain_ready_age_s: float | None = None
+        retry_queue_wait_elapsed_s_total = 0.0
+        retry_queue_wait_elapsed_s_max = 0.0
+        retry_queue_wait_elapsed_s_count = 0
+        retry_queue_drain_skipped_count = 0
+        retry_queue_drain_skipped_reason_counts: dict[str, int] = {}
         round_outcomes: dict[str, dict[str, object]] = {}
 
         if mapping_failure_reason:
@@ -3497,6 +3880,7 @@ class NLMBatchIngestor:
                         "shared_retry_queue_count": len(retry_queue),
                         "shared_retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
                         "shared_retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                        "source_content_shared_retry_pool_enabled": _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED,
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
                 )
@@ -3516,6 +3900,7 @@ class NLMBatchIngestor:
                         "shared_retry_queue_count": shared_retry_deferred_count,
                         "shared_retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
                         "shared_retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                        "source_content_shared_retry_pool_enabled": _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED,
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
                 )
@@ -3531,32 +3916,207 @@ class NLMBatchIngestor:
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
                 )
-                if _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S > 0:
+                retry_queue_drain_projected_ready_age_s = (
+                    round(time.time() - ready_reference_epoch + _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S, 3)
+                    if ready_reference_epoch
+                    else None
+                )
+                if (
+                    retry_queue_drain_projected_ready_age_s is not None
+                    and retry_queue_drain_projected_ready_age_s >= _SOURCE_AGE_CLIFF_S
+                ):
+                    retry_queue_drain_ready_age_s = retry_queue_drain_projected_ready_age_s
+                    retry_queue_drain_skipped_reason = "drain_projected_source_age_cliff"
+                    retry_queue_drain_skipped_count = len(retry_queue)
+                    retry_queue_drain_skipped_reason_counts[retry_queue_drain_skipped_reason] = (
+                        retry_queue_drain_skipped_count
+                    )
+                    retry_queue_final_failed_count = retry_queue_drain_skipped_count
+                    with status_lock:
+                        content_fetch_stats["status_counts"]["source_age_cliff"] = (
+                            content_fetch_stats["status_counts"].get("source_age_cliff", 0)
+                            + retry_queue_drain_skipped_count
+                        )
+                        content_fetch_stats["ready_age_s_total"] += (
+                            retry_queue_drain_projected_ready_age_s * retry_queue_drain_skipped_count
+                        )
+                        content_fetch_stats["ready_age_s_max"] = max(
+                            content_fetch_stats["ready_age_s_max"],
+                            retry_queue_drain_projected_ready_age_s,
+                        )
+                    for vid, source_id, _queued_error in retry_queue:
+                        failure_reason = f"Fetch failed for {source_id}: source_age_cliff"
+                        results[vid] = (False, None, failure_reason)
+                        completed_at_epoch = time.time()
+                        retry_outcome = {
+                            "video_id": vid,
+                            "source_id": source_id,
+                            "success": False,
+                            "content": None,
+                            "error": failure_reason,
+                            "failure_reason": failure_reason,
+                            "status": "source_age_cliff",
+                            "queued_for_retry": False,
+                            "attempts": 0,
+                            "returncode": -1,
+                            "content_length": 0,
+                            "nlm_content_chars": 0,
+                            "usable_text_chars": 0,
+                            "extraction_outcome": "source_age_cliff",
+                            "retry_queue_skipped_reason": retry_queue_drain_skipped_reason,
+                            "projected_retry_ready_age_s": retry_queue_drain_projected_ready_age_s,
+                            "projected_retry_ready_age_with_margin_s": None,
+                            "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                        }
+                        round_outcomes[vid] = retry_outcome
+                        log_action(
+                            "nlm_batch_source_content_fetch_completed",
+                            {
+                                "nb_id": self._nb_id,
+                                "source_id": source_id,
+                                "video_id": vid,
+                                "timeout_s": 30,
+                                "started_at_epoch": completed_at_epoch,
+                                "completed_at_epoch": completed_at_epoch,
+                                "elapsed_s": 0.0,
+                                "returncode": -1,
+                                "content_length": 0,
+                                "status": "source_age_cliff",
+                                "ready_threshold": _NLM_CONTENT_READY_THRESHOLD,
+                                "extraction_outcome": "source_age_cliff",
+                                "nlm_content_chars": 0,
+                                "usable_text_chars": 0,
+                                "source_ready_age_s": retry_queue_drain_projected_ready_age_s,
+                                "materialization_ready_at_epoch": ready_reference_epoch,
+                                "failure_reason": failure_reason,
+                                "attempts": 0,
+                                "stdout": "",
+                                "stderr": "",
+                                **fetch_attribution_context,
+                                "retry_initial_delay_s": _SOURCE_CONTENT_RETRY_INITIAL_DELAY_S,
+                                "retry_max_delay_s": _SOURCE_CONTENT_RETRY_MAX_DELAY_S,
+                                "retry_budget_s": _SOURCE_CONTENT_RETRY_BUDGET_S,
+                                "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
+                                "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                                "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                                "retry_queue_skipped_reason": retry_queue_drain_skipped_reason,
+                                "projected_retry_ready_age_s": retry_queue_drain_projected_ready_age_s,
+                                "projected_retry_ready_age_with_margin_s": None,
+                                "queued_for_retry": False,
+                                "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
+                                "pass_name": "retry",
+                                "youtube_ytdlp_classification": None,
+                                "youtube_ytdlp_available": None,
+                                "youtube_ytdlp_availability": None,
+                                "youtube_ytdlp_live_status": None,
+                                "youtube_ytdlp_was_live": None,
+                                "youtube_ytdlp_is_live": None,
+                                "youtube_ytdlp_title": None,
+                                "youtube_ytdlp_returncode": None,
+                                "youtube_ytdlp_error": None,
+                                "youtube_ytdlp_elapsed_s": None,
+                                "youtube_page_classification": None,
+                                "youtube_page_available": None,
+                                "youtube_page_status": None,
+                                "youtube_page_reason": None,
+                                "youtube_page_subreason": None,
+                                "youtube_page_is_live_content": None,
+                                "youtube_page_title": None,
+                                "youtube_page_http_status": None,
+                                "youtube_page_error": None,
+                                "youtube_page_elapsed_s": None,
+                                "content_fetch_command_elapsed_s_total": 0.0,
+                                "content_fetch_command_elapsed_s_max": 0.0,
+                                "content_fetch_command_elapsed_s_count": 0,
+                                "source_list_probe_elapsed_s_total": 0.0,
+                                "source_list_probe_elapsed_s_max": 0.0,
+                                "source_list_probe_count": 0,
+                                "source_id_validated_after_not_found": None,
+                                "source_list_probe_returncode": -1,
+                                "source_list_probe_elapsed_s": 0.0,
+                                "source_list_probe_match_index": None,
+                                "source_list_probe_match_title": None,
+                                "source_list_probe_match_url": None,
+                            },
+                        )
+                    log_action(
+                        "nlm_batch_source_content_retry_queue_window_completed",
+                        {
+                            "nb_id": self._nb_id,
+                            "batch_size": len(batch_ids),
+                            "retry_queue_count": retry_queue_deferred_count,
+                            "recovered_count": 0,
+                            "final_failed_count": retry_queue_final_failed_count,
+                            "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
+                            "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                            "retry_queue_drain_ready_age_s": retry_queue_drain_ready_age_s,
+                            "retry_queue_wait_elapsed_s_total": 0.0,
+                            "retry_queue_wait_elapsed_s_max": 0.0,
+                            "retry_queue_wait_elapsed_s_count": 0,
+                            "retry_queue_drain_skipped_count": retry_queue_drain_skipped_count,
+                            "retry_queue_drain_skipped_reason_counts": dict(
+                                retry_queue_drain_skipped_reason_counts
+                            ),
+                            "materialization_ready_at_epoch": ready_reference_epoch,
+                        },
+                    )
+                    retry_queue = []
+                if retry_queue and _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S > 0:
                     with status_lock:
                         content_fetch_stats["content_fetch_retry_queue_sleep_elapsed_s_total"] += _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S
                     time.sleep(_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S)
-                retry_results, retry_queue, retry_outcomes = _run_fetch_round(
-                    [(vid, source_id) for vid, source_id, _queued_error in retry_queue],
-                    pass_name="retry",
-                    allow_retry_queue=False,
-                )
-                results.update(retry_results)
-                round_outcomes.update(retry_outcomes)
-                retry_queue_recovered_count = sum(1 for ok, _, _ in retry_results.values() if ok)
-                retry_queue_final_failed_count = len(retry_results) - retry_queue_recovered_count
-                log_action(
-                    "nlm_batch_source_content_retry_queue_window_completed",
-                    {
-                        "nb_id": self._nb_id,
-                        "batch_size": len(batch_ids),
-                        "retry_queue_count": retry_queue_deferred_count,
-                        "recovered_count": retry_queue_recovered_count,
-                        "final_failed_count": retry_queue_final_failed_count,
-                        "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
-                        "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
-                        "materialization_ready_at_epoch": ready_reference_epoch,
-                    },
-                )
+                if retry_queue:
+                    retry_queue_drain_started_at_epoch = time.time()
+                    retry_queue_drain_ready_age_s = (
+                        round(retry_queue_drain_started_at_epoch - ready_reference_epoch, 3)
+                        if ready_reference_epoch
+                        else 0.0
+                    )
+                    for vid, _source_id, _queued_error in retry_queue:
+                        queued_at_epoch = round_outcomes.get(vid, {}).get("retry_queue_queued_at_epoch")
+                        if isinstance(queued_at_epoch, (int, float)):
+                            wait_elapsed_s = max(retry_queue_drain_started_at_epoch - float(queued_at_epoch), 0.0)
+                            retry_queue_wait_elapsed_s_total += wait_elapsed_s
+                            retry_queue_wait_elapsed_s_max = max(retry_queue_wait_elapsed_s_max, wait_elapsed_s)
+                            retry_queue_wait_elapsed_s_count += 1
+                    if retry_queue_wait_elapsed_s_count:
+                        with status_lock:
+                            content_fetch_stats["retry_queue_wait_elapsed_s_total"] += retry_queue_wait_elapsed_s_total
+                            content_fetch_stats["retry_queue_wait_elapsed_s_max"] = max(
+                                content_fetch_stats["retry_queue_wait_elapsed_s_max"],
+                                retry_queue_wait_elapsed_s_max,
+                            )
+                            content_fetch_stats["retry_queue_wait_elapsed_s_count"] += retry_queue_wait_elapsed_s_count
+                    retry_results, retry_queue, retry_outcomes = _run_fetch_round(
+                        [(vid, source_id) for vid, source_id, _queued_error in retry_queue],
+                        pass_name="retry",
+                        allow_retry_queue=False,
+                    )
+                    results.update(retry_results)
+                    round_outcomes.update(retry_outcomes)
+                    retry_queue_recovered_count = sum(1 for ok, _, _ in retry_results.values() if ok)
+                    retry_queue_final_failed_count = len(retry_results) - retry_queue_recovered_count
+                    log_action(
+                        "nlm_batch_source_content_retry_queue_window_completed",
+                        {
+                            "nb_id": self._nb_id,
+                            "batch_size": len(batch_ids),
+                            "retry_queue_count": retry_queue_deferred_count,
+                            "recovered_count": retry_queue_recovered_count,
+                            "final_failed_count": retry_queue_final_failed_count,
+                            "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
+                            "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                            "retry_queue_drain_ready_age_s": retry_queue_drain_ready_age_s,
+                            "retry_queue_wait_elapsed_s_total": round(retry_queue_wait_elapsed_s_total, 3),
+                            "retry_queue_wait_elapsed_s_max": round(retry_queue_wait_elapsed_s_max, 3),
+                            "retry_queue_wait_elapsed_s_count": retry_queue_wait_elapsed_s_count,
+                            "retry_queue_drain_skipped_count": retry_queue_drain_skipped_count,
+                            "retry_queue_drain_skipped_reason_counts": dict(
+                                retry_queue_drain_skipped_reason_counts
+                            ),
+                            "materialization_ready_at_epoch": ready_reference_epoch,
+                        },
+                    )
 
         failed_not_found_video_ids = [
             vid
@@ -3565,20 +4125,31 @@ class NLMBatchIngestor:
             and not results[vid][0]
             and _outcome_mentions_not_found(round_outcomes.get(vid, {}))
         ]
-        if len(failed_not_found_video_ids) >= 2 and _allow_dead_notebook_recovery:
+        validated_absent_video_ids = [
+            vid
+            for vid in failed_not_found_video_ids
+            if round_outcomes.get(vid, {}).get("source_id_validated_after_not_found") is False
+        ]
+        recovery_video_ids = validated_absent_video_ids or failed_not_found_video_ids
+        recovery_reason = "not_found_storm"
+        if validated_absent_video_ids:
+            recovery_reason = "not_found_validation_absent"
+        if recovery_video_ids and _allow_dead_notebook_recovery and (
+            validated_absent_video_ids or len(failed_not_found_video_ids) >= 2
+        ):
             log_action(
                 "nlm_batch_source_content_dead_notebook_recovery_scheduled",
                 {
                     "nb_id": self._nb_id,
-                    **_summarize_add_failure_batch_ids(failed_not_found_video_ids),
-                    "failed_video_id_count": len(failed_not_found_video_ids),
-                    "recovery_reason": "not_found_storm",
+                    **_summarize_add_failure_batch_ids(recovery_video_ids),
+                    "failed_video_id_count": len(recovery_video_ids),
+                    "recovery_reason": recovery_reason,
                     "materialization_ready_at_epoch": ready_reference_epoch,
                 },
             )
-            if self._recover_dead_notebook(failed_not_found_video_ids):
+            if self._recover_dead_notebook(recovery_video_ids):
                 recovery_results = self.extract_transcripts(
-                    failed_not_found_video_ids,
+                    recovery_video_ids,
                     _allow_dead_notebook_recovery=False,
                 )
                 recovery_metrics = self.get_last_extract_metrics() or {}
@@ -3620,6 +4191,9 @@ class NLMBatchIngestor:
                     float(recovery_metrics.get("source_list_probe_elapsed_s_max", 0) or 0.0),
                 )
                 content_fetch_stats["source_list_probe_count"] += int(recovery_metrics.get("source_list_probe_count", 0) or 0)
+                content_fetch_stats["source_id_validated_after_not_found_true_count"] += int(recovery_metrics.get("source_id_validated_after_not_found_true_count", 0) or 0)
+                content_fetch_stats["source_id_validated_after_not_found_false_count"] += int(recovery_metrics.get("source_id_validated_after_not_found_false_count", 0) or 0)
+                content_fetch_stats["source_id_validated_after_not_found_unknown_count"] += int(recovery_metrics.get("source_id_validated_after_not_found_unknown_count", 0) or 0)
                 content_fetch_stats["source_content_readiness_probe_elapsed_s_total"] += float(recovery_metrics.get("source_content_readiness_probe_elapsed_s_total", 0) or 0.0)
                 content_fetch_stats["source_content_readiness_probe_elapsed_s_max"] = max(
                     content_fetch_stats["source_content_readiness_probe_elapsed_s_max"],
@@ -3660,6 +4234,13 @@ class NLMBatchIngestor:
                 "shared_retry_final_failed_count": shared_retry_final_failed_count,
                 "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
                 "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+                "retry_queue_drain_ready_age_s": retry_queue_drain_ready_age_s,
+                "retry_queue_wait_elapsed_s_total": round(content_fetch_stats["retry_queue_wait_elapsed_s_total"], 3),
+                "retry_queue_wait_elapsed_s_max": round(content_fetch_stats["retry_queue_wait_elapsed_s_max"], 3),
+                "retry_queue_wait_elapsed_s_count": int(content_fetch_stats["retry_queue_wait_elapsed_s_count"]),
+                "retry_queue_drain_skipped_count": retry_queue_drain_skipped_count,
+                "retry_queue_drain_skipped_reason_counts": dict(retry_queue_drain_skipped_reason_counts),
+                "source_content_shared_retry_pool_enabled": _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED,
                 "source_ready_age_s_total": round(content_fetch_stats["ready_age_s_total"], 3),
                 "source_ready_age_s_max": round(content_fetch_stats["ready_age_s_max"], 3),
                 "source_ready_age_s_avg": round(
@@ -3701,6 +4282,9 @@ class NLMBatchIngestor:
                 "source_list_probe_elapsed_s_total": round(content_fetch_stats["source_list_probe_elapsed_s_total"], 3),
                 "source_list_probe_elapsed_s_max": round(content_fetch_stats["source_list_probe_elapsed_s_max"], 3),
                 "source_list_probe_count": int(content_fetch_stats["source_list_probe_count"]),
+                "source_id_validated_after_not_found_true_count": int(content_fetch_stats["source_id_validated_after_not_found_true_count"]),
+                "source_id_validated_after_not_found_false_count": int(content_fetch_stats["source_id_validated_after_not_found_false_count"]),
+                "source_id_validated_after_not_found_unknown_count": int(content_fetch_stats["source_id_validated_after_not_found_unknown_count"]),
                 "source_content_readiness_probe_elapsed_s_total": round(content_fetch_stats["source_content_readiness_probe_elapsed_s_total"], 3),
                 "source_content_readiness_probe_elapsed_s_max": round(content_fetch_stats["source_content_readiness_probe_elapsed_s_max"], 3),
                 "source_content_readiness_probe_count": int(content_fetch_stats["source_content_readiness_probe_count"]),
@@ -3752,6 +4336,9 @@ class NLMBatchIngestor:
             "source_list_probe_elapsed_s_total": round(content_fetch_stats["source_list_probe_elapsed_s_total"], 3),
             "source_list_probe_elapsed_s_max": round(content_fetch_stats["source_list_probe_elapsed_s_max"], 3),
             "source_list_probe_count": int(content_fetch_stats["source_list_probe_count"]),
+            "source_id_validated_after_not_found_true_count": int(content_fetch_stats["source_id_validated_after_not_found_true_count"]),
+            "source_id_validated_after_not_found_false_count": int(content_fetch_stats["source_id_validated_after_not_found_false_count"]),
+            "source_id_validated_after_not_found_unknown_count": int(content_fetch_stats["source_id_validated_after_not_found_unknown_count"]),
             "source_content_readiness_probe_elapsed_s_total": round(content_fetch_stats["source_content_readiness_probe_elapsed_s_total"], 3),
             "source_content_readiness_probe_elapsed_s_max": round(content_fetch_stats["source_content_readiness_probe_elapsed_s_max"], 3),
             "source_content_readiness_probe_count": int(content_fetch_stats["source_content_readiness_probe_count"]),
@@ -3764,6 +4351,12 @@ class NLMBatchIngestor:
             "shared_retry_final_failed_count": shared_retry_final_failed_count,
             "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
             "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
+            "retry_queue_drain_ready_age_s": retry_queue_drain_ready_age_s,
+            "retry_queue_wait_elapsed_s_total": round(content_fetch_stats["retry_queue_wait_elapsed_s_total"], 3),
+            "retry_queue_wait_elapsed_s_max": round(content_fetch_stats["retry_queue_wait_elapsed_s_max"], 3),
+            "retry_queue_wait_elapsed_s_count": int(content_fetch_stats["retry_queue_wait_elapsed_s_count"]),
+            "retry_queue_drain_skipped_count": retry_queue_drain_skipped_count,
+            "retry_queue_drain_skipped_reason_counts": dict(retry_queue_drain_skipped_reason_counts),
             "materialization_ready_at_epoch": ready_reference_epoch,
         }
 
@@ -3810,6 +4403,39 @@ class NLMBatchIngestor:
             return 0
         res = self._run_cmd(["source", "list", self._nb_id, "--json"])
         if res.returncode != 0:
+            if _source_count_probe_indicates_auth_failure(res) and _ensure_nlm_auth():
+                retry_res = self._run_cmd(["source", "list", self._nb_id, "--json"])
+                res = retry_res
+            elif not _source_count_probe_indicates_dead_notebook(
+                {
+                    "stdout": res.stdout,
+                    "stderr": res.stderr,
+                }
+            ):
+                time.sleep(2.0)
+                retry_res = self._run_cmd(["source", "list", self._nb_id, "--json"])
+                res = retry_res
+            if res.returncode == 0:
+                try:
+                    sources = json.loads(res.stdout)
+                    if isinstance(sources, dict):
+                        sources = sources.get("sources", [])
+                    return len(sources)
+                except Exception as exc:
+                    self._last_source_count_probe_ok = False
+                    auth_context = _get_nlm_auth_context()
+                    self._last_source_count_probe_error = {
+                        "nb_id": self._nb_id,
+                        "returncode": res.returncode,
+                        "notebooklm_profile": auth_context.profile,
+                        "expected_email": auth_context.expected_email or None,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc)[:500],
+                        "stdout": (res.stdout or "")[:500],
+                        "stderr": (res.stderr or "")[:500],
+                    }
+                    log_action("nlm_batch_source_count_probe_failed", self._last_source_count_probe_error)
+                    return 0
             self._last_source_count_probe_ok = False
             auth_context = _get_nlm_auth_context()
             self._last_source_count_probe_error = {
@@ -4114,7 +4740,11 @@ class NLMReusableIngestor:
             return base_window_size
         oldest_epoch = self._ingestor._oldest_source_materialization_epoch
         if oldest_epoch is None:
-            oldest_epoch = self._ingestor._last_materialization_ready_at_epoch or 0.0
+            oldest_epoch = (
+                self._ingestor._source_age_cadence_notebook_ready_at_epoch
+                or self._ingestor._last_materialization_ready_at_epoch
+                or 0.0
+            )
         oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
         selected_window_size = base_window_size
         if oldest_age_s > self._source_age_cadence_hard_threshold_s:
@@ -4149,6 +4779,7 @@ class NLMReusableIngestor:
             "retry_queue_deferred_count",
             "retry_queue_recovered_count",
             "retry_queue_final_failed_count",
+            "retry_queue_drain_skipped_count",
             "shared_retry_deferred_count",
             "shared_retry_recovered_count",
             "shared_retry_final_failed_count",
@@ -4163,9 +4794,14 @@ class NLMReusableIngestor:
             "source_content_readiness_probe_elapsed_s_max",
         ]
 
+        retry_queue_drain_skipped_reason_counts: dict[str, int] = {}
         for metrics in metric_snapshots:
             for key, value in dict(metrics.get("content_fetch_status_counts", {}) or {}).items():
                 status_counts[str(key)] = status_counts.get(str(key), 0) + int(value or 0)
+            for key, value in dict(metrics.get("retry_queue_drain_skipped_reason_counts", {}) or {}).items():
+                retry_queue_drain_skipped_reason_counts[str(key)] = (
+                    retry_queue_drain_skipped_reason_counts.get(str(key), 0) + int(value or 0)
+                )
             for field in sum_fields:
                 merged[field] = float(merged.get(field, 0.0) or 0.0) + float(metrics.get(field, 0.0) or 0.0)
             for field in max_fields:
@@ -4176,6 +4812,7 @@ class NLMReusableIngestor:
 
         fetch_count = sum(status_counts.values())
         merged["content_fetch_status_counts"] = status_counts
+        merged["retry_queue_drain_skipped_reason_counts"] = retry_queue_drain_skipped_reason_counts
         merged["source_ready_age_s_avg"] = (
             float(merged.get("source_ready_age_s_total", 0.0) or 0.0) / fetch_count if fetch_count else 0.0
         )
@@ -4675,7 +5312,11 @@ class NLMReusableIngestor:
                     self._ingestor._nb_id = self._nb_id
                     oldest_epoch = self._ingestor._oldest_source_materialization_epoch
                     if oldest_epoch is None:
-                        oldest_epoch = self._ingestor._last_materialization_ready_at_epoch or 0.0
+                        oldest_epoch = (
+                            self._ingestor._source_age_cadence_notebook_ready_at_epoch
+                            or self._ingestor._last_materialization_ready_at_epoch
+                            or 0.0
+                        )
                     oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
                     log_action(
                         "nlm_batch_reusable_source_age_cadence_window_started",
@@ -4887,6 +5528,10 @@ class NLMReusableIngestor:
                 "retry_queue_deferred_count": int(extract_metrics.get("retry_queue_deferred_count", 0) or 0),
                 "retry_queue_recovered_count": int(extract_metrics.get("retry_queue_recovered_count", 0) or 0),
                 "retry_queue_final_failed_count": int(extract_metrics.get("retry_queue_final_failed_count", 0) or 0),
+                "retry_queue_drain_skipped_count": int(extract_metrics.get("retry_queue_drain_skipped_count", 0) or 0),
+                "retry_queue_drain_skipped_reason_counts": dict(
+                    extract_metrics.get("retry_queue_drain_skipped_reason_counts", {}) or {}
+                ),
                 "shared_retry_deferred_count": int(extract_metrics.get("shared_retry_deferred_count", 0) or 0),
                 "shared_retry_recovered_count": int(extract_metrics.get("shared_retry_recovered_count", 0) or 0),
                 "shared_retry_final_failed_count": int(extract_metrics.get("shared_retry_final_failed_count", 0) or 0),
@@ -4968,6 +5613,10 @@ class NLMReusableIngestor:
             "retry_queue_deferred_count": int(extract_metrics.get("retry_queue_deferred_count", 0) or 0),
             "retry_queue_recovered_count": int(extract_metrics.get("retry_queue_recovered_count", 0) or 0),
             "retry_queue_final_failed_count": int(extract_metrics.get("retry_queue_final_failed_count", 0) or 0),
+            "retry_queue_drain_skipped_count": int(extract_metrics.get("retry_queue_drain_skipped_count", 0) or 0),
+            "retry_queue_drain_skipped_reason_counts": dict(
+                extract_metrics.get("retry_queue_drain_skipped_reason_counts", {}) or {}
+            ),
             "shared_retry_deferred_count": int(extract_metrics.get("shared_retry_deferred_count", 0) or 0),
             "shared_retry_recovered_count": int(extract_metrics.get("shared_retry_recovered_count", 0) or 0),
             "shared_retry_final_failed_count": int(extract_metrics.get("shared_retry_final_failed_count", 0) or 0),

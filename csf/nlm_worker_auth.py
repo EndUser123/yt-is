@@ -406,6 +406,21 @@ def refresh_profile_session(profile: str, *, timeout_s: float = 120.0) -> bool:
     """Ask nlm to renew a profile using its bounded automatic force-login path."""
     profile_root = DEFAULT_PROFILE_ROOT
     snapshot = _snapshot_profile_state(profile_root, profile)
+    use_cdp = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower() not in {"0", "false", "no", "off"}
+    if not use_cdp:
+        if _is_noninteractive_auth():
+            if snapshot is not None:
+                _restore_profile_state(profile_root, profile, snapshot)
+            return False
+        res = run_nlm(["login", "--force", "--profile", profile], timeout_s=timeout_s)
+        expected_email = expected_email_for_profile(profile)
+        success = res.returncode == 0 and (
+            not expected_email or _extract_account(res.stdout or "", res.stderr or "") == expected_email.lower()
+        )
+        if not success and snapshot is not None:
+            _restore_profile_state(profile_root, profile, snapshot)
+        return success
+
     res = _run_nlm_command_fail_closed(["login", "--force", "--profile", profile], timeout_s=timeout_s)
     if res is None:
         if snapshot is not None:
@@ -473,27 +488,17 @@ def _chrome_pids_for_root(browser_root: str | Path) -> set[int]:
     return nlm_auth_guard.chrome_pids_for_root(browser_root)
 
 
-def _stop_chrome_pids(pids: set[int]) -> None:
-    nlm_auth_guard.stop_chrome_pids(pids)
+def _stop_chrome_pids(pids: set[int]) -> set[int]:
+    return nlm_auth_guard.stop_chrome_pids(pids)
 
 
 def _stop_chrome_for_root(browser_root: str) -> None:
     if os.name != "nt" or not browser_root:
         return
-    ps = (
-        "$matches = Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | "
-        f"Where-Object {{ $_.CommandLine -like '*{browser_root}*' }}; "
-        "$matches | ForEach-Object { "
-        "$p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; "
-        "if ($p) { [void]$p.CloseMainWindow() } "
-        "}; "
-        "Start-Sleep -Seconds 3; "
-        "$matches | ForEach-Object { "
-        "$p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; "
-        "if ($p -and -not $p.HasExited) { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } "
-        "}"
-    )
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=30, check=False)
+    pids = nlm_auth_guard.chrome_pids_for_root(browser_root)
+    if not pids:
+        return
+    nlm_auth_guard.stop_chrome_pids(pids)
 
 
 def _mark_browser_profile_clean(browser_root: str, profile_directory: str) -> None:
@@ -578,6 +583,10 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
     """Refresh worker-01 through its dedicated browser root when configured."""
     profile_root = DEFAULT_PROFILE_ROOT
     snapshot = _snapshot_profile_state(profile_root, family.source_profile)
+    use_cdp = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower() not in {"0", "false", "no", "off"}
+    if not use_cdp or not family.cdp_browser_root or family.cdp_port <= 0:
+        return refresh_profile_session(family.source_profile, timeout_s=timeout_s)
+
     default_profile_pids_before: set[int] = set()
     if _is_noninteractive_auth():
         default_profile_pids_before = _chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
@@ -585,9 +594,6 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
             if snapshot is not None:
                 _restore_profile_state(profile_root, family.source_profile, snapshot)
             return False
-    use_cdp = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower() not in {"0", "false", "no", "off"}
-    if not use_cdp or not family.cdp_browser_root or family.cdp_port <= 0:
-        return refresh_profile_session(family.source_profile, timeout_s=timeout_s)
 
     if not _wait_for_cdp(family.cdp_port, timeout_s=1.0):
         if not _launch_cdp_browser(family, profile_root, snapshot):
@@ -643,6 +649,23 @@ def _source_session_ok(
     return profile_session_matches_expected(family.source_profile, family.expected_email)
 
 
+def _source_profile_recovery_error(
+    family: AuthFamily,
+    *,
+    stage: str,
+    detail: str,
+) -> RuntimeError:
+    return RuntimeError(
+        f"{family.source_profile} auth recovery failed: {stage}; {detail}; expected {family.expected_email}"
+    )
+
+
+def _default_profile_guard_blocks_recovery() -> bool:
+    if not _is_noninteractive_auth():
+        return False
+    return bool(_chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT))
+
+
 def _ensure_source_profile_ready(
     profile_root: Path,
     family: AuthFamily,
@@ -657,26 +680,56 @@ def _ensure_source_profile_ready(
         profile_error = exc
 
     if profile_error is not None:
-        if not _refresh_with_callable(family, refresher):
-            raise RuntimeError(
-                f"{family.source_profile} is not mapped to expected account {family.expected_email}; "
-                "automatic dedicated-profile refresh did not recover it"
+        if _default_profile_guard_blocks_recovery():
+            raise _source_profile_recovery_error(
+                family,
+                stage="metadata validation failed",
+                detail=f"{profile_error}; default profile guard blocked recovery",
             ) from profile_error
-        _validate_source_profile(profile_root, family)
+        if not _refresh_with_callable(family, refresher):
+            raise _source_profile_recovery_error(
+                family,
+                stage="metadata validation failed",
+                detail=f"{profile_error}; dedicated-profile refresh attempt failed",
+            ) from profile_error
+        try:
+            _validate_source_profile(profile_root, family)
+        except (FileNotFoundError, ValueError) as exc:
+            raise _source_profile_recovery_error(
+                family,
+                stage="post-refresh metadata validation failed",
+                detail=f"{exc}; dedicated-profile refresh completed but the profile still did not match",
+            ) from exc
 
     if _source_session_ok(family, checker):
         return
 
-    if not _refresh_with_callable(family, refresher):
-        raise RuntimeError(
-            f"{family.source_profile} auth is expired, invalid, or mapped to the wrong account; "
-            f"expected {family.expected_email}"
+    if _default_profile_guard_blocks_recovery():
+        raise _source_profile_recovery_error(
+            family,
+            stage="live session check failed",
+            detail="default profile guard blocked recovery before a refresh could be attempted",
         )
-    _validate_source_profile(profile_root, family)
+
+    if not _refresh_with_callable(family, refresher):
+        raise _source_profile_recovery_error(
+            family,
+            stage="live session check failed",
+            detail="live session check failed; dedicated-profile refresh attempt failed",
+        )
+    try:
+        _validate_source_profile(profile_root, family)
+    except (FileNotFoundError, ValueError) as exc:
+        raise _source_profile_recovery_error(
+            family,
+            stage="post-refresh metadata validation failed",
+            detail=f"{exc}; dedicated-profile refresh completed but the profile still did not match",
+        ) from exc
     if not _source_session_ok(family, checker):
-        raise RuntimeError(
-            f"{family.source_profile} auth refresh completed but the live account still does not match "
-            f"expected {family.expected_email}"
+        raise _source_profile_recovery_error(
+            family,
+            stage="post-refresh live session check failed",
+            detail="dedicated-profile refresh completed but the live session still did not match",
         )
 
 

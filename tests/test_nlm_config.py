@@ -35,6 +35,7 @@ class TestSharedNlmConfig:
         assert cfg.source_content_retry_budget_s == 30.0
         assert cfg.source_content_retry_queue_delay_s == 30.0
         assert cfg.source_content_retry_queue_budget_s == 30.0
+        assert cfg.source_content_retry_queue_age_margin_s == 0.0
         assert cfg.source_content_shared_retry_pool_enabled is False
         assert cfg.transcript_expensive_fallback_enabled is True
         assert cfg.whisper_on_notebooklm_add_failed is True
@@ -46,6 +47,17 @@ class TestSharedNlmConfig:
         assert cfg.reusable_source_age_cadence_hard_threshold_s == 190.0
         assert cfg.reusable_source_age_cadence_min_window_size == 5
         assert transcript.get_nlm_config() is cfg
+
+    def test_hotel_environment_defaults_shared_retry_pool_on(self, monkeypatch):
+        """Hotel-scoped runs should default the shared retry pool on unless overridden."""
+        monkeypatch.setenv("YTIS_NLM_RUN_ENVIRONMENT_LABEL", "hotel_wifi")
+        monkeypatch.delenv("YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", raising=False)
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.source_content_shared_retry_pool_enabled is True
+        finally:
+            nlm_config.reset_nlm_config()
 
     def test_reusable_active_window_size_follows_env(self, monkeypatch):
         """Reusable workers should get their active window size from shared config."""
@@ -80,6 +92,16 @@ class TestSharedNlmConfig:
             assert cfg.reusable_source_age_cadence_soft_threshold_s == 155.0
             assert cfg.reusable_source_age_cadence_hard_threshold_s == 185.0
             assert cfg.reusable_source_age_cadence_min_window_size == 7
+        finally:
+            nlm_config.reset_nlm_config()
+
+    def test_source_content_retry_queue_age_margin_follows_env(self, monkeypatch):
+        """Retry queue age-margin experiments should be named in shared config."""
+        monkeypatch.setenv("YTIS_NLM_SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S", "12.5")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.source_content_retry_queue_age_margin_s == 12.5
         finally:
             nlm_config.reset_nlm_config()
 
@@ -128,6 +150,7 @@ class TestSharedNlmConfig:
             source_content_retry_budget_s=30.0,
             source_content_retry_queue_delay_s=30.0,
             source_content_retry_queue_budget_s=30.0,
+            source_content_retry_queue_age_margin_s=3.0,
             source_content_shared_retry_pool_enabled=False,
             transcript_expensive_fallback_enabled=True,
             whisper_on_notebooklm_add_failed=True,

@@ -21,6 +21,8 @@ CSF_SOURCE_SCRIPT = REPO_ROOT / "bin" / "csf-source"
 DEFAULT_WORKER_COUNTS = (1, 2, 3, 4, 5, 6, 7, 8)
 DEFAULT_LIMIT = 1200
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / ".logs" / "worker_count_trials"
+DEFAULT_WORKER_NOTEBOOK_CLEANUP_RETRIES = 1
+DEFAULT_WORKER_NOTEBOOK_CLEANUP_RETRY_DELAY_S = 2.0
 
 
 @dataclass(slots=True)
@@ -134,6 +136,58 @@ class TrialArtifact:
         return bool(self.fetch_completed.get("timeout_hit", False))
 
     @property
+    def active_window_size(self) -> int:
+        return int(self.fetch_completed.get("active_window_size", 0) or 0)
+
+    @property
+    def active_window_enabled(self) -> bool:
+        return bool(self.fetch_completed.get("active_window_enabled", False))
+
+    @property
+    def extract_window_size(self) -> int:
+        return int(self.fetch_completed.get("extract_window_size", 0) or 0)
+
+    @property
+    def extract_window_enabled(self) -> bool:
+        return bool(self.fetch_completed.get("extract_window_enabled", False))
+
+    @property
+    def source_age_cadence_enabled(self) -> bool:
+        return bool(self.fetch_completed.get("source_age_cadence_enabled", False))
+
+    @property
+    def source_age_cadence_soft_threshold_s(self) -> float:
+        return float(self.fetch_completed.get("source_age_cadence_soft_threshold_s", 0) or 0.0)
+
+    @property
+    def source_age_cadence_hard_threshold_s(self) -> float:
+        return float(self.fetch_completed.get("source_age_cadence_hard_threshold_s", 0) or 0.0)
+
+    @property
+    def source_age_cadence_min_window_size(self) -> int:
+        return int(self.fetch_completed.get("source_age_cadence_min_window_size", 0) or 0)
+
+    @property
+    def window_mode(self) -> str:
+        return str(self.fetch_completed.get("window_mode", "") or "")
+
+    @property
+    def window_size(self) -> int:
+        return int(self.fetch_completed.get("window_size", 0) or 0)
+
+    @property
+    def active_window_count(self) -> int:
+        return int(self.fetch_completed.get("active_window_count", 0) or 0)
+
+    @property
+    def extract_window_count(self) -> int:
+        return int(self.fetch_completed.get("extract_window_count", 0) or 0)
+
+    @property
+    def window_count(self) -> int:
+        return int(self.fetch_completed.get("window_count", 0) or 0)
+
+    @property
     def content_fetch_status_counts(self) -> dict[str, int]:
         totals = self.fetch_completed.get("worker_stage_totals", {}) or {}
         counts = totals.get("content_fetch_status_counts_total", {})
@@ -191,6 +245,24 @@ class TrialArtifact:
         if value is None:
             value = self.fetch_completed.get("content_fetch_retry_queue_sleep_elapsed_s_total", 0)
         return float(value or 0.0)
+
+    @property
+    def retry_queue_drain_skipped_count(self) -> float:
+        totals = self.fetch_completed.get("worker_stage_totals", {}) or {}
+        value = totals.get("retry_queue_drain_skipped_count")
+        if value is None:
+            value = self.fetch_completed.get("retry_queue_drain_skipped_count", 0)
+        return float(value or 0.0)
+
+    @property
+    def retry_queue_drain_skipped_reason_counts(self) -> dict[str, int]:
+        totals = self.fetch_completed.get("worker_stage_totals", {}) or {}
+        value = totals.get("retry_queue_drain_skipped_reason_counts")
+        if value is None:
+            value = self.fetch_completed.get("retry_queue_drain_skipped_reason_counts", {})
+        if not isinstance(value, dict):
+            return {}
+        return {str(reason): int(count or 0) for reason, count in value.items()}
 
     @property
     def source_list_probe_elapsed_s_total(self) -> float:
@@ -391,6 +463,19 @@ class TrialArtifact:
                 "worker_idle_wait_s": round(self.worker_idle_wait_s, 3),
                 "materialization_started": self.materialization_started,
                 "timeout_hit": self.timeout_hit,
+                "active_window_size": self.active_window_size,
+                "active_window_enabled": self.active_window_enabled,
+                "extract_window_size": self.extract_window_size,
+                "extract_window_enabled": self.extract_window_enabled,
+                "source_age_cadence_enabled": self.source_age_cadence_enabled,
+                "source_age_cadence_soft_threshold_s": self.source_age_cadence_soft_threshold_s,
+                "source_age_cadence_hard_threshold_s": self.source_age_cadence_hard_threshold_s,
+                "source_age_cadence_min_window_size": self.source_age_cadence_min_window_size,
+                "window_mode": self.window_mode,
+                "window_size": self.window_size,
+                "active_window_count": self.active_window_count,
+                "extract_window_count": self.extract_window_count,
+                "window_count": self.window_count,
                 "source_ready_age_s_total": round(self.source_ready_age_s_total, 3),
                 "source_ready_age_s_max": round(self.source_ready_age_s_max, 3),
                 "source_ready_age_s_avg": round(self.source_ready_age_s_avg, 3),
@@ -400,6 +485,8 @@ class TrialArtifact:
                 "content_fetch_command_elapsed_s_avg": round(self.content_fetch_command_elapsed_s_avg, 3),
                 "content_fetch_retry_sleep_elapsed_s_total": round(self.content_fetch_retry_sleep_elapsed_s_total, 3),
                 "content_fetch_retry_queue_sleep_elapsed_s_total": round(self.content_fetch_retry_queue_sleep_elapsed_s_total, 3),
+                "retry_queue_drain_skipped_count": round(self.retry_queue_drain_skipped_count, 3),
+                "retry_queue_drain_skipped_reason_counts": self.retry_queue_drain_skipped_reason_counts,
                 "source_list_probe_elapsed_s_total": round(self.source_list_probe_elapsed_s_total, 3),
                 "source_list_probe_elapsed_s_max": round(self.source_list_probe_elapsed_s_max, 3),
                 "source_list_probe_count": self.source_list_probe_count,
@@ -490,6 +577,22 @@ def _synthesize_fetch_completed_from_worker_summaries(stdout_text: str, *, elaps
 
     worker_stage_totals: dict[str, Any] = {}
     max_totals: dict[str, float] = {}
+    runtime_flag_keys = (
+        "active_window_size",
+        "active_window_enabled",
+        "extract_window_size",
+        "extract_window_enabled",
+        "source_age_cadence_enabled",
+        "source_age_cadence_soft_threshold_s",
+        "source_age_cadence_hard_threshold_s",
+        "source_age_cadence_min_window_size",
+        "window_mode",
+        "window_size",
+        "active_window_count",
+        "extract_window_count",
+        "window_count",
+    )
+    runtime_flags: dict[str, Any] = {}
     content_fetch_counts: Counter[str] = Counter()
     success_count = 0
     fail_count = 0
@@ -530,6 +633,9 @@ def _synthesize_fetch_completed_from_worker_summaries(stdout_text: str, *, elaps
                     worker_stage_totals.get("startup_prepare_total_elapsed_s_total", 0.0) or 0.0
                 ) + float(value)
                 continue
+            if key in runtime_flag_keys and key not in runtime_flags and value is not None:
+                runtime_flags[key] = value
+                continue
             if isinstance(value, (int, float)):
                 if key.endswith("_max"):
                     max_totals[key] = max(max_totals.get(key, 0.0), float(value))
@@ -548,9 +654,31 @@ def _synthesize_fetch_completed_from_worker_summaries(stdout_text: str, *, elaps
         "processed_count": processed_count,
         "elapsed_s": elapsed_s,
         "worker_stage_totals": worker_stage_totals,
+        **runtime_flags,
         "materialization_started": False,
         "timeout_hit": False,
     }
+
+
+def _cleanup_worker_notebooks_preflight(
+    *,
+    retries: int = DEFAULT_WORKER_NOTEBOOK_CLEANUP_RETRIES,
+    retry_delay_s: float = DEFAULT_WORKER_NOTEBOOK_CLEANUP_RETRY_DELAY_S,
+) -> tuple[int, int]:
+    last_deleted = 0
+    last_failed = 0
+    for attempt in range(retries + 1):
+        deleted, failed = cleanup_stale_worker_notebooks(delete=True)
+        last_deleted = deleted
+        last_failed = failed
+        if not failed:
+            return deleted, failed
+        if attempt < retries:
+            print(
+                f"[trial] preflight worker notebook cleanup attempt={attempt + 1} failed deleted={deleted} failed={failed}; retrying in {retry_delay_s:.1f}s"
+            )
+            time.sleep(retry_delay_s)
+    return last_deleted, last_failed
 
 
 def _run_fetch_trial(
@@ -566,10 +694,10 @@ def _run_fetch_trial(
     log_dir = run_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    deleted, failed = cleanup_stale_worker_notebooks(delete=True)
+    deleted, failed = _cleanup_worker_notebooks_preflight()
     if failed:
-        raise RuntimeError(
-            f"worker notebook preflight cleanup failed before workers={workers}: deleted={deleted} failed={failed}"
+        print(
+            f"[trial] preflight worker notebook cleanup continuing despite failure deleted={deleted} failed={failed}"
         )
     if deleted:
         print(f"[trial] preflight worker notebook cleanup deleted={deleted} failed={failed}")
@@ -613,10 +741,8 @@ def _run_fetch_trial(
         post_deleted, post_failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
         if post_failed:
             print(f"[trial] post-run worker notebook cleanup deleted={post_deleted} failed={post_failed}")
-            raise RuntimeError(
-                f"worker notebook post-run cleanup failed after workers={workers}: "
-                f"deleted={post_deleted} failed={post_failed}"
-            )
+            # Post-run cleanup is best-effort hygiene. Keep the benchmark data
+            # even if auth has expired or cleanup is temporarily unavailable.
 
     stdout_path.write_text(stdout_text, encoding="utf-8")
     stderr_path.write_text(stderr_text, encoding="utf-8")

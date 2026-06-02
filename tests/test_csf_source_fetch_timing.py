@@ -15,15 +15,20 @@ from unittest import mock
 import pytest
 
 
-def _load_csf_source_module():
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_csf_source_module(*, stub_ensure_auth: bool = False):
     """Load the extensionless bin/csf-source script as a module."""
-    path = Path(os.path.expandvars(r"$CLAUDE_PLUGIN_ROOT/bin\csf-source"))
+    path = _REPO_ROOT / "bin" / "csf-source"
     loader = SourceFileLoader("csf_source_timing_test", str(path))
     spec = spec_from_loader(loader.name, loader)
     if spec is None or spec.loader is None:
         raise RuntimeError("Could not load csf-source")
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
+    if stub_ensure_auth:
+        module._ensure_nlm_auth = lambda: True
     return module
 
 
@@ -198,6 +203,33 @@ def test_ensure_nlm_auth_reaps_default_profile_before_check_and_continues(monkey
     assert stop_calls == [{12345}]
 
 
+def test_ensure_nlm_auth_reaps_default_profile_after_check_and_continues(monkeypatch):
+    """A transient default chrome-profile after auth check should be reaped and logged, not abort the run."""
+    mod = _load_csf_source_module()
+    calls: list[list[str]] = []
+    stop_calls: list[set[int]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+        return types.SimpleNamespace(returncode=0, stdout="Account: troup.hominidae@gmail.com\n", stderr="")
+
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free1-worker-01")
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(mod, "_default_nlm_chrome_profile_pids", mock.Mock(side_effect=[set(), {12345}]))
+    monkeypatch.setattr(mod, "_stop_chrome_pids", lambda pids: stop_calls.append(set(pids)))
+    monkeypatch.setattr(mod.nlm_auth_guard, "run_nlm", fake_run)
+
+    with mock.patch.object(mod, "log_action") as mock_log:
+        assert mod._ensure_nlm_auth() is True
+
+    assert calls == [
+        ["login", "--check", "--profile", "ytis-free1-worker-01"],
+    ]
+    assert stop_calls == [{12345}]
+    log_names = [call.args[0] for call in mock_log.call_args_list]
+    assert "nlm_auth_recovered" in log_names
+
+
 def test_cmd_fetch_logs_terminal_failure_when_auth_guard_aborts():
     """cmd_fetch should still emit a terminal fetch record when auth aborts before dispatch."""
     mod = _load_csf_source_module()
@@ -258,7 +290,7 @@ def test_cmd_fetch_logs_terminal_failure_when_auth_guard_aborts():
 
 def test_cmd_fetch_logs_fetch_start_and_first_download_started_industrial():
     """cmd_fetch logs a run-start marker and a first-download marker for industrial backlogs."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     pending_entries = [
         {
             "video_id": f"vid{i:03d}",
@@ -278,22 +310,23 @@ def test_cmd_fetch_logs_fetch_start_and_first_download_started_industrial():
             with mock.patch.object(mod, "is_channel_blocked", return_value=False):
                 with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
                     with mock.patch.object(mod, "has_cached_transcript", return_value=False):
-                        with mock.patch.object(mod.subprocess, "run") as mock_run:
-                            mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
-                            with mock.patch.object(
-                                mod,
-                                "process_industrial_batch_reusable",
-                                return_value={entry["video_id"]: (True, "transcript", None) for entry in pending_entries},
-                            ):
-                                with mock.patch.object(mod, "close_reusable_ingestor"):
-                                    with mock.patch.object(mod, "set_cached_transcript"):
-                                        with mock.patch.object(mod, "mark_complete"):
-                                            with mock.patch.object(mod, "log_action") as mock_log:
-                                                mod.cmd_fetch(
-                                                    source_filter="https://www.youtube.com/@example",
-                                                    dry_run=False,
-                                                    workers=1,
-                                                )
+                        with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                            with mock.patch.object(mod.subprocess, "run") as mock_run:
+                                mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+                                with mock.patch.object(
+                                    mod,
+                                    "process_industrial_batch_reusable",
+                                    return_value={entry["video_id"]: (True, "transcript", None) for entry in pending_entries},
+                                ):
+                                    with mock.patch.object(mod, "close_reusable_ingestor"):
+                                        with mock.patch.object(mod, "set_cached_transcript"):
+                                            with mock.patch.object(mod, "mark_complete"):
+                                                with mock.patch.object(mod, "log_action") as mock_log:
+                                                    mod.cmd_fetch(
+                                                        source_filter="https://www.youtube.com/@example",
+                                                        dry_run=False,
+                                                        workers=1,
+                                                    )
 
     log_names = [call.args[0] for call in mock_log.call_args_list]
     assert log_names[0] == "fetch_invoked"
@@ -314,7 +347,7 @@ def test_cmd_fetch_logs_fetch_start_and_first_download_started_industrial():
 
 def test_cmd_fetch_emits_elapsed_scan_status_heartbeat():
     """Long scans should emit a time-based scan status heartbeat, not only channel checkpoints."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [
         ("https://www.youtube.com/@chan1", "pl-1"),
         ("https://www.youtube.com/@chan2", "pl-2"),
@@ -466,7 +499,7 @@ def test_cmd_check_all_emits_elapsed_scan_status_heartbeat():
 
 def test_cmd_fetch_limit_caps_selected_pending_items():
     """cmd_fetch should stop after the requested pending-item limit and log it."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [("https://www.youtube.com/@example", "pl-1")]
     pending_entries = [
         {
@@ -511,17 +544,18 @@ def test_cmd_fetch_limit_caps_selected_pending_items():
             with mock.patch.object(mod, "is_channel_blocked", return_value=False):
                 with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
                     with mock.patch.object(mod, "has_cached_transcript", return_value=False):
-                        with mock.patch.object(mod.subprocess, "run") as mock_run:
-                            mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
-                            with mock.patch.object(mod, "process_industrial_batch_reusable") as mock_process:
-                                mock_process.return_value = {
-                                    f"vid{i:03d}": (True, "transcript", None) for i in range(100)
-                                }
-                                with mock.patch.object(mod, "close_reusable_ingestor"):
-                                    with mock.patch.object(mod, "set_cached_transcript"):
-                                        with mock.patch.object(mod, "mark_complete"):
-                                            with mock.patch.object(mod, "log_action") as mock_log:
-                                                mod.cmd_fetch(dry_run=False, workers=1, max_items=100)
+                        with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                            with mock.patch.object(mod.subprocess, "run") as mock_run:
+                                mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+                                with mock.patch.object(mod, "process_industrial_batch_reusable") as mock_process:
+                                    mock_process.return_value = {
+                                        f"vid{i:03d}": (True, "transcript", None) for i in range(100)
+                                    }
+                                    with mock.patch.object(mod, "close_reusable_ingestor"):
+                                        with mock.patch.object(mod, "set_cached_transcript"):
+                                            with mock.patch.object(mod, "mark_complete"):
+                                                with mock.patch.object(mod, "log_action") as mock_log:
+                                                    mod.cmd_fetch(dry_run=False, workers=1, max_items=100)
 
     invoked = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_invoked")
     completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_completed")
@@ -536,7 +570,7 @@ def test_cmd_fetch_limit_caps_selected_pending_items():
 
 def test_cmd_fetch_logs_cached_sample_and_hit_rate():
     """cmd_fetch should expose the cached backlog sample and hit rate."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     pending_entries = [
         {
             "video_id": "vid-a",
@@ -603,7 +637,7 @@ def test_cmd_fetch_logs_cached_sample_and_hit_rate():
 
 def test_cmd_fetch_merges_worker_source_profile_totals():
     """cmd_fetch should retain worker-level source profile totals for investigation."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
 
     totals = mod._empty_source_profile_totals()
     mod._merge_source_profile_totals(
@@ -677,7 +711,7 @@ def test_cmd_fetch_merges_worker_source_profile_totals():
 
 def test_cmd_fetch_skips_active_negative_cache_before_routing():
     """cmd_fetch should skip active negative-cache videos before routing them again."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     pending_entries = [
         {
             "video_id": "vid-good",
@@ -732,7 +766,7 @@ def test_cmd_fetch_skips_active_negative_cache_before_routing():
 
 def test_cmd_fetch_uses_transcript_fallback_env_names():
     """cmd_fetch should prefer the new transcript-fallback env names and keep aliases working."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     pending_entries = [
         {
             "video_id": f"vid{i:03d}",
@@ -760,22 +794,23 @@ def test_cmd_fetch_uses_transcript_fallback_env_names():
                 with mock.patch.object(mod, "is_channel_blocked", return_value=False):
                     with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
                         with mock.patch.object(mod, "has_cached_transcript", return_value=False):
-                            with mock.patch.object(mod.subprocess, "run") as mock_run:
-                                mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
-                                with mock.patch.object(
-                                    mod,
-                                    "process_industrial_batch_reusable",
-                                    return_value={entry["video_id"]: (True, "transcript", None) for entry in pending_entries},
-                                ):
-                                    with mock.patch.object(mod, "close_reusable_ingestor"):
-                                        with mock.patch.object(mod, "set_cached_transcript"):
-                                            with mock.patch.object(mod, "mark_complete"):
-                                                with mock.patch.object(mod, "log_action") as mock_log:
-                                                    mod.cmd_fetch(
-                                                        source_filter="https://www.youtube.com/@example",
-                                                        dry_run=False,
-                                                        workers=4,
-                                                    )
+                            with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                                with mock.patch.object(mod.subprocess, "run") as mock_run:
+                                    mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+                                    with mock.patch.object(
+                                        mod,
+                                        "process_industrial_batch_reusable",
+                                        return_value={entry["video_id"]: (True, "transcript", None) for entry in pending_entries},
+                                    ):
+                                        with mock.patch.object(mod, "close_reusable_ingestor"):
+                                            with mock.patch.object(mod, "set_cached_transcript"):
+                                                with mock.patch.object(mod, "mark_complete"):
+                                                    with mock.patch.object(mod, "log_action") as mock_log:
+                                                        mod.cmd_fetch(
+                                                            source_filter="https://www.youtube.com/@example",
+                                                            dry_run=False,
+                                                            workers=4,
+                                                        )
 
     fetch_invoked = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_invoked")
     assert fetch_invoked["transcript_fallback_workers"] == 3
@@ -784,7 +819,7 @@ def test_cmd_fetch_uses_transcript_fallback_env_names():
 
 def test_cmd_fetch_defaults_transcript_fallback_workers_to_requested_workers():
     """cmd_fetch should default transcript fallback concurrency to the requested worker count."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     pending_entries = [
         {
             "video_id": "vid000",
@@ -829,7 +864,7 @@ def test_cmd_fetch_defaults_transcript_fallback_workers_to_requested_workers():
 
 def test_cmd_fetch_logs_preflight_scan_progress_before_downloads():
     """cmd_fetch logs the preflight channel scan before the first download marker."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [(f"https://www.youtube.com/@chan{i:02d}", "pl-1") for i in range(30)]
     pending_entries = [
         {
@@ -873,18 +908,19 @@ def test_cmd_fetch_logs_preflight_scan_progress_before_downloads():
         with mock.patch.object(mod, "is_channel_blocked", return_value=False):
             with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
                 with mock.patch.object(mod, "has_cached_transcript", return_value=False):
-                    with mock.patch.object(mod.subprocess, "run") as mock_run:
-                        mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
-                        with mock.patch.object(
-                            mod,
-                            "process_industrial_batch_reusable",
-                            return_value={entry["video_id"]: (True, "transcript", None) for entry in pending_entries},
-                        ):
-                            with mock.patch.object(mod, "close_reusable_ingestor"):
-                                with mock.patch.object(mod, "set_cached_transcript"):
-                                    with mock.patch.object(mod, "mark_complete"):
-                                        with mock.patch.object(mod, "log_action") as mock_log:
-                                            mod.cmd_fetch(dry_run=False, workers=4)
+                    with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                        with mock.patch.object(mod.subprocess, "run") as mock_run:
+                            mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+                            with mock.patch.object(
+                                mod,
+                                "process_industrial_batch_reusable",
+                                return_value={entry["video_id"]: (True, "transcript", None) for entry in pending_entries},
+                            ):
+                                with mock.patch.object(mod, "close_reusable_ingestor"):
+                                    with mock.patch.object(mod, "set_cached_transcript"):
+                                        with mock.patch.object(mod, "mark_complete"):
+                                            with mock.patch.object(mod, "log_action") as mock_log:
+                                                mod.cmd_fetch(dry_run=False, workers=4)
 
     log_names = [call.args[0] for call in mock_log.call_args_list]
     assert log_names[0] == "fetch_invoked"
@@ -901,7 +937,7 @@ def test_cmd_fetch_logs_preflight_scan_progress_before_downloads():
 
 def test_cmd_fetch_starts_industrial_batch_before_scan_completes_when_buffer_is_full():
     """Industrial fetch should begin once the first batch is full, without waiting for the scan to finish."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [
         ("https://www.youtube.com/@chan1", "pl-1"),
         ("https://www.youtube.com/@chan2", "pl-2"),
@@ -946,20 +982,21 @@ def test_cmd_fetch_starts_industrial_batch_before_scan_completes_when_buffer_is_
 
     with mock.patch.object(mod, "_get_batch_status_storage", return_value=FakeStorage(channel_rows)):
         with mock.patch.object(mod, "is_channel_blocked", return_value=False):
-            with mock.patch.object(mod, "get_entries_for_source_details", side_effect=[first_channel_pending, second_channel_pending]):
-                with mock.patch.object(mod, "has_cached_transcript", return_value=False):
-                    with mock.patch.object(mod.subprocess, "run") as mock_run:
-                        mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
-                        with mock.patch.object(
-                            mod,
-                            "process_industrial_batch_reusable",
-                            return_value={vid: (True, "transcript", None) for vid in [f"vid{i:03d}" for i in range(300)]},
-                        ):
-                            with mock.patch.object(mod, "close_reusable_ingestor"):
-                                with mock.patch.object(mod, "set_cached_transcript"):
-                                    with mock.patch.object(mod, "mark_complete"):
-                                        with mock.patch.object(mod, "log_action") as mock_log:
-                                            mod.cmd_fetch(dry_run=False, workers=4)
+                with mock.patch.object(mod, "get_entries_for_source_details", side_effect=[first_channel_pending, second_channel_pending]):
+                    with mock.patch.object(mod, "has_cached_transcript", return_value=False):
+                        with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                            with mock.patch.object(mod.subprocess, "run") as mock_run:
+                                mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+                                with mock.patch.object(
+                                    mod,
+                                    "process_industrial_batch_reusable",
+                                    return_value={vid: (True, "transcript", None) for vid in [f"vid{i:03d}" for i in range(300)]},
+                                ):
+                                    with mock.patch.object(mod, "close_reusable_ingestor"):
+                                        with mock.patch.object(mod, "set_cached_transcript"):
+                                            with mock.patch.object(mod, "mark_complete"):
+                                                with mock.patch.object(mod, "log_action") as mock_log:
+                                                    mod.cmd_fetch(dry_run=False, workers=4)
 
     log_names = [call.args[0] for call in mock_log.call_args_list]
     assert "fetch_worker_dispatch_state" in log_names
@@ -991,7 +1028,7 @@ def test_load_worker_summary_falls_back_when_result_file_missing():
     """Worker summary parsing should fall back to stdout when the result file is missing."""
     mod = _load_csf_source_module()
     summary = mod._load_worker_summary(
-        Path(r"$CLAUDE_PLUGIN_ROOT/tests\missing-worker-result.json"),
+        _REPO_ROOT / "tests" / "missing-worker-result.json",
         '{"worker_id":"worker-02","succeeded":7,"failed":2,"status":"ok"}',
     )
 
@@ -1066,7 +1103,7 @@ def test_build_worker_health_warning_includes_key_context():
 
 def test_cmd_fetch_skips_blocked_channels_in_preflight_scan():
     """Blocked channels should be excluded before get_entries_for_source runs."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     tracked_rows = [
         ("https://www.youtube.com/@blocked", "pl-blocked"),
         ("https://www.youtube.com/@active", "pl-active"),
@@ -1148,7 +1185,7 @@ def test_cmd_fetch_skips_blocked_channels_in_preflight_scan():
 
 def test_cmd_fetch_routes_non_captioned_items_to_notebooklm_first():
     """Non-captioned items should stay on the NotebookLM lane before fallback."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [("https://www.youtube.com/@active", "pl-1")]
     pending_entries = [
         {
@@ -1207,11 +1244,12 @@ def test_cmd_fetch_routes_non_captioned_items_to_notebooklm_first():
                                 for i in range(200)
                             }
                             with mock.patch.object(mod, "process_industrial_batch_reusable", return_value=notebooklm_results) as mock_process:
-                                with mock.patch.object(mod, "close_reusable_ingestor"):
-                                    with mock.patch.object(mod, "set_cached_transcript"):
-                                        with mock.patch.object(mod, "mark_complete"):
-                                            with mock.patch.object(mod, "log_action") as mock_log:
-                                                mod.cmd_fetch(dry_run=False, workers=1)
+                                with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                                    with mock.patch.object(mod, "close_reusable_ingestor"):
+                                        with mock.patch.object(mod, "set_cached_transcript"):
+                                            with mock.patch.object(mod, "mark_complete"):
+                                                with mock.patch.object(mod, "log_action") as mock_log:
+                                                    mod.cmd_fetch(dry_run=False, workers=1)
 
     log_names = [call.args[0] for call in mock_log.call_args_list]
     assert "fetch_completed" in log_names
@@ -1221,7 +1259,7 @@ def test_cmd_fetch_routes_non_captioned_items_to_notebooklm_first():
 
 def test_cmd_fetch_routes_non_captioned_items_to_transcript_fallback_when_enabled():
     """The opt-in routing toggle should bypass NotebookLM for no-caption items."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [("https://www.youtube.com/@active", "pl-1")]
     pending_entries = [
         {
@@ -1290,11 +1328,12 @@ def test_cmd_fetch_routes_non_captioned_items_to_transcript_fallback_when_enable
                             mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
                             with mock.patch("csf.transcript.fetch_transcript_chain", return_value=transcript_result) as mock_fetch:
                                 with mock.patch.object(mod, "process_industrial_batch_reusable") as mock_process:
-                                    with mock.patch.object(mod, "close_reusable_ingestor"):
-                                        with mock.patch.object(mod, "set_cached_transcript"):
-                                            with mock.patch.object(mod, "mark_complete"):
-                                                with mock.patch.object(mod, "log_action") as mock_log:
-                                                    mod.cmd_fetch(dry_run=False, workers=1)
+                                    with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                                        with mock.patch.object(mod, "close_reusable_ingestor"):
+                                            with mock.patch.object(mod, "set_cached_transcript"):
+                                                with mock.patch.object(mod, "mark_complete"):
+                                                    with mock.patch.object(mod, "log_action") as mock_log:
+                                                        mod.cmd_fetch(dry_run=False, workers=1)
 
     log_names = [call.args[0] for call in mock_log.call_args_list]
     assert "fetch_completed" in log_names
@@ -1306,7 +1345,7 @@ def test_cmd_fetch_routes_non_captioned_items_to_transcript_fallback_when_enable
 
 def test_cmd_fetch_routes_live_items_to_transcript_fallback_first():
     """Live items should bypass NotebookLM and go to transcript fallback."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [("https://www.youtube.com/@active", "pl-1")]
     pending_entries = [
         {
@@ -1373,11 +1412,12 @@ def test_cmd_fetch_routes_live_items_to_transcript_fallback_first():
                             )
                             with mock.patch("csf.transcript.fetch_transcript_chain", return_value=transcript_result) as mock_fetch:
                                 with mock.patch.object(mod, "process_industrial_batch_reusable") as mock_process:
-                                    with mock.patch.object(mod, "close_reusable_ingestor"):
-                                        with mock.patch.object(mod, "set_cached_transcript"):
-                                            with mock.patch.object(mod, "mark_complete"):
-                                                with mock.patch.object(mod, "log_action") as mock_log:
-                                                    mod.cmd_fetch(dry_run=False, workers=1)
+                                    with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                                        with mock.patch.object(mod, "close_reusable_ingestor"):
+                                            with mock.patch.object(mod, "set_cached_transcript"):
+                                                with mock.patch.object(mod, "mark_complete"):
+                                                    with mock.patch.object(mod, "log_action") as mock_log:
+                                                        mod.cmd_fetch(dry_run=False, workers=1)
 
     log_names = [call.args[0] for call in mock_log.call_args_list]
     assert "fetch_completed" in log_names
@@ -1388,7 +1428,7 @@ def test_cmd_fetch_routes_live_items_to_transcript_fallback_first():
 
 def test_cmd_fetch_logs_worker_prewarm_summary_before_dispatch(tmp_path):
     """Industrial fetch should log the worker cleanup/prewarm summary before dispatch."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     channel_rows = [("https://www.youtube.com/@chan1", "pl-1")]
     pending_entries = [
         {
@@ -1472,7 +1512,7 @@ def test_cmd_fetch_logs_worker_prewarm_summary_before_dispatch(tmp_path):
         with mock.patch.object(mod, "is_channel_blocked", return_value=False):
             with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
                 with mock.patch.object(mod, "has_cached_transcript", return_value=False):
-                    with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(3, 1)):
+                    with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(3, 0)):
                         with mock.patch.object(mod.subprocess, "run", side_effect=mock_run):
                             with mock.patch.object(mod, "close_reusable_ingestor"):
                                 with mock.patch.object(mod, "set_cached_transcript"):
@@ -1487,13 +1527,13 @@ def test_cmd_fetch_logs_worker_prewarm_summary_before_dispatch(tmp_path):
     assert summary["workers_active"] == 2
     assert summary["prewarm_expected"] == 2
     assert summary["cleanup_deleted"] == 3
-    assert summary["cleanup_failed"] == 1
+    assert summary["cleanup_failed"] == 0
     worker_finished = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_worker_finished")
     assert worker_finished["summary"]["succeeded"] == 200
     assert worker_finished["summary"]["failed"] == 0
     completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_completed")
     assert completed["worker_cleanup_deleted"] == 3
-    assert completed["worker_cleanup_failed"] == 1
+    assert completed["worker_cleanup_failed"] == 0
     assert completed["success_count"] == 800
     assert completed["fail_count"] == 0
     assert completed["processed_count"] == 800
@@ -1504,7 +1544,7 @@ def test_cmd_fetch_logs_worker_prewarm_summary_before_dispatch(tmp_path):
 
 def test_cmd_fetch_logs_fetch_start_and_first_download_started_surgical():
     """cmd_fetch logs a run-start marker and a first-download marker for surgical runs."""
-    mod = _load_csf_source_module()
+    mod = _load_csf_source_module(stub_ensure_auth=True)
     pending_entries = [
         {
             "video_id": "vid01",

@@ -13,6 +13,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -292,12 +293,6 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
     for path, lineno, event in _iter_jsonl_events(lane_output_root):
         action = str(event.get("action") or "")
         data = event.get("data") if isinstance(event.get("data"), dict) else {}
-        status = str(data.get("status") or "")
-        if action == "nlm_auth_failed" and status == "default_profile_running":
-            findings.append(
-                f"{path.relative_to(lane_output_root)}:{lineno}: default_profile_running "
-                f"profile={data.get('notebooklm_profile') or '<unknown>'}"
-            )
         if action == "nlm_batch_subbatch_add_failed" and data.get("failure_reason") in {"source_add_failed", "source_count_probe_failed"}:
             findings.append(
                 f"{path.relative_to(lane_output_root)}:{lineno}: {data.get('failure_reason')} "
@@ -321,7 +316,15 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
 def _lane_processed_count_reason(*, lane: LaneConfig, expected_processed_count: int, aggregate: dict[str, Any]) -> str | None:
     """Return a partial-run reason when a lane finishes cleanly but misses the requested limit."""
     processed_count_total = int(aggregate.get("processed_count_total") or 0)
-    if processed_count_total != expected_processed_count:
+    shared_retry_processed_count_total = int(float(aggregate.get("shared_retry_processed_count_total") or 0.0))
+    primary_processed_count_total = max(processed_count_total - shared_retry_processed_count_total, 0)
+    if primary_processed_count_total != expected_processed_count:
+        if shared_retry_processed_count_total:
+            return (
+                f"lane {lane.lane} incomplete benchmark: processed_count_total={primary_processed_count_total} "
+                f"expected={expected_processed_count} (raw_processed_count_total={processed_count_total} "
+                f"shared_retry_processed_count_total={shared_retry_processed_count_total})"
+            )
         return (
             f"lane {lane.lane} incomplete benchmark: processed_count_total={processed_count_total} "
             f"expected={expected_processed_count}"
@@ -374,6 +377,7 @@ def _lane_env(
     *,
     lane_output_root: Path,
     worker_state_root: Path,
+    run_environment_label: str | None = None,
 ) -> dict[str, str]:
     # Defense-in-depth: strip vars that would contaminate per-run auth behavior.
     # The current run01/run02/run03 auth-regression diagnosis is still evidence-gated,
@@ -407,6 +411,15 @@ def _lane_env(
         env.pop("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILES", None)
     if reusable_pipeline_mode:
         env["YTIS_REUSABLE_PIPELINE_MODE"] = reusable_pipeline_mode
+    if run_environment_label:
+        env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] = run_environment_label
+        env["YTIS_RUN_ENVIRONMENT_LABEL"] = run_environment_label
+        if run_environment_label == "hotel_wifi":
+            env["YTIS_NLM_WORKER_AUTH_USE_CDP"] = "0"
+    else:
+        env.pop("YTIS_NLM_RUN_ENVIRONMENT_LABEL", None)
+        env.pop("YTIS_RUN_ENVIRONMENT_LABEL", None)
+        env.pop("YTIS_NLM_WORKER_AUTH_USE_CDP", None)
     env["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
     return env
 
@@ -640,6 +653,154 @@ def _lane_worker_counts(lanes: Iterable[LaneConfig]) -> dict[str, int]:
     return {lane.lane: lane.workers for lane in lanes}
 
 
+def _combine_lane_stage_totals(lane_reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Merge per-lane aggregate stage totals into a combined diagnostic view."""
+
+    def _float(value: Any) -> float:
+        try:
+            return float(value or 0.0)
+        except Exception:
+            return 0.0
+
+    def _int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except Exception:
+            return 0
+
+    def _merge_counts(target: Counter[str], value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        for key, count in value.items():
+            target[str(key)] += _int(count)
+
+    totals = {
+        "row_count": 0,
+        "success_count_total": 0,
+        "fail_count_total": 0,
+        "skip_count_total": 0,
+        "processed_count_total": 0,
+        "hot_path_success_count_total": 0,
+        "transcript_fallback_success_count_total": 0,
+        "elapsed_s_total": 0.0,
+        "process_elapsed_s_total": 0.0,
+        "startup_prepare_total_elapsed_s_total": 0.0,
+        "setup_elapsed_s_total": 0.0,
+        "add_elapsed_s_total": 0.0,
+        "extract_elapsed_s_total": 0.0,
+        "content_fetch_command_elapsed_s_total": 0.0,
+        "content_fetch_command_elapsed_s_max": 0.0,
+        "content_fetch_command_elapsed_s_count": 0,
+        "readiness_elapsed_s_total": 0.0,
+        "cleanup_elapsed_s_total": 0.0,
+        "worker_idle_wait_s_total": 0.0,
+        "source_ready_age_s_total": 0.0,
+        "source_ready_age_s_max": 0.0,
+        "source_list_probe_elapsed_s_total": 0.0,
+        "source_list_probe_elapsed_s_max": 0.0,
+        "source_list_probe_count": 0,
+        "source_id_validated_after_not_found_true_count": 0,
+        "source_id_validated_after_not_found_false_count": 0,
+        "source_id_validated_after_not_found_unknown_count": 0,
+        "content_fetch_retry_sleep_elapsed_s_total": 0.0,
+        "content_fetch_retry_queue_sleep_elapsed_s_total": 0.0,
+        "retry_queue_drain_skipped_count_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_max": 0.0,
+        "source_content_readiness_probe_count": 0,
+        "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
+        "shared_retry_deferred_count_total": 0.0,
+        "shared_retry_recovered_count_total": 0.0,
+        "shared_retry_final_failed_count_total": 0.0,
+        "shared_retry_processed_count_total": 0.0,
+        "youtube_ytdlp_elapsed_s_total": 0.0,
+        "youtube_ytdlp_elapsed_s_max": 0.0,
+        "youtube_ytdlp_elapsed_s_count_total": 0,
+        "youtube_page_elapsed_s_total": 0.0,
+        "youtube_page_elapsed_s_max": 0.0,
+        "youtube_page_elapsed_s_count_total": 0,
+    }
+    content_fetch_status_counts: Counter[str] = Counter()
+    retry_queue_drain_skipped_reason_counts: Counter[str] = Counter()
+
+    for report in lane_reports:
+        aggregate = report.get("aggregate") if isinstance(report.get("aggregate"), dict) else {}
+        if not aggregate:
+            continue
+        totals["row_count"] += _int(aggregate.get("row_count"))
+        totals["success_count_total"] += _int(aggregate.get("success_count_total"))
+        totals["fail_count_total"] += _int(aggregate.get("fail_count_total"))
+        totals["skip_count_total"] += _int(aggregate.get("skip_count_total"))
+        totals["processed_count_total"] += _int(aggregate.get("processed_count_total"))
+        totals["hot_path_success_count_total"] += _int(aggregate.get("hot_path_success_count_total"))
+        totals["transcript_fallback_success_count_total"] += _int(aggregate.get("transcript_fallback_success_count_total"))
+        totals["elapsed_s_total"] += _float(aggregate.get("elapsed_s_total"))
+        totals["process_elapsed_s_total"] += _float(aggregate.get("process_elapsed_s_total"))
+        totals["startup_prepare_total_elapsed_s_total"] += _float(aggregate.get("startup_prepare_total_elapsed_s_total"))
+        totals["setup_elapsed_s_total"] += _float(aggregate.get("setup_elapsed_s_total"))
+        totals["add_elapsed_s_total"] += _float(aggregate.get("add_elapsed_s_total"))
+        totals["extract_elapsed_s_total"] += _float(aggregate.get("extract_elapsed_s_total"))
+        totals["content_fetch_command_elapsed_s_total"] += _float(aggregate.get("content_fetch_command_elapsed_s_total"))
+        totals["content_fetch_command_elapsed_s_max"] = max(
+            totals["content_fetch_command_elapsed_s_max"],
+            _float(aggregate.get("content_fetch_command_elapsed_s_max")),
+        )
+        totals["content_fetch_command_elapsed_s_count"] += _int(aggregate.get("content_fetch_command_elapsed_s_count"))
+        totals["readiness_elapsed_s_total"] += _float(aggregate.get("readiness_elapsed_s_total"))
+        totals["cleanup_elapsed_s_total"] += _float(aggregate.get("cleanup_elapsed_s_total"))
+        totals["worker_idle_wait_s_total"] += _float(aggregate.get("worker_idle_wait_s_total"))
+        totals["source_ready_age_s_total"] += _float(aggregate.get("source_ready_age_s_total"))
+        totals["source_ready_age_s_max"] = max(totals["source_ready_age_s_max"], _float(aggregate.get("source_ready_age_s_max")))
+        totals["source_list_probe_elapsed_s_total"] += _float(aggregate.get("source_list_probe_elapsed_s_total"))
+        totals["source_list_probe_elapsed_s_max"] = max(
+            totals["source_list_probe_elapsed_s_max"],
+            _float(aggregate.get("source_list_probe_elapsed_s_max")),
+        )
+        totals["source_list_probe_count"] += _int(aggregate.get("source_list_probe_count"))
+        totals["source_id_validated_after_not_found_true_count"] += _int(aggregate.get("source_id_validated_after_not_found_true_count"))
+        totals["source_id_validated_after_not_found_false_count"] += _int(aggregate.get("source_id_validated_after_not_found_false_count"))
+        totals["source_id_validated_after_not_found_unknown_count"] += _int(aggregate.get("source_id_validated_after_not_found_unknown_count"))
+        totals["content_fetch_retry_sleep_elapsed_s_total"] += _float(aggregate.get("content_fetch_retry_sleep_elapsed_s_total"))
+        totals["content_fetch_retry_queue_sleep_elapsed_s_total"] += _float(aggregate.get("content_fetch_retry_queue_sleep_elapsed_s_total"))
+        totals["retry_queue_drain_skipped_count_total"] += _float(aggregate.get("retry_queue_drain_skipped_count_total"))
+        _merge_counts(
+            retry_queue_drain_skipped_reason_counts,
+            aggregate.get("retry_queue_drain_skipped_reason_counts_total"),
+        )
+        totals["source_content_readiness_probe_elapsed_s_total"] += _float(aggregate.get("source_content_readiness_probe_elapsed_s_total"))
+        totals["source_content_readiness_probe_elapsed_s_max"] = max(
+            totals["source_content_readiness_probe_elapsed_s_max"],
+            _float(aggregate.get("source_content_readiness_probe_elapsed_s_max")),
+        )
+        totals["source_content_readiness_probe_count"] += _int(aggregate.get("source_content_readiness_probe_count"))
+        totals["source_content_readiness_probe_sleep_elapsed_s_total"] += _float(aggregate.get("source_content_readiness_probe_sleep_elapsed_s_total"))
+        totals["shared_retry_deferred_count_total"] += _float(aggregate.get("shared_retry_deferred_count_total"))
+        totals["shared_retry_recovered_count_total"] += _float(aggregate.get("shared_retry_recovered_count_total"))
+        totals["shared_retry_final_failed_count_total"] += _float(aggregate.get("shared_retry_final_failed_count_total"))
+        totals["shared_retry_processed_count_total"] += _float(aggregate.get("shared_retry_processed_count_total"))
+        totals["youtube_ytdlp_elapsed_s_total"] += _float(aggregate.get("youtube_ytdlp_elapsed_s_total"))
+        totals["youtube_ytdlp_elapsed_s_max"] = max(totals["youtube_ytdlp_elapsed_s_max"], _float(aggregate.get("youtube_ytdlp_elapsed_s_max")))
+        totals["youtube_ytdlp_elapsed_s_count_total"] += _int(aggregate.get("youtube_ytdlp_elapsed_s_count_total"))
+        totals["youtube_page_elapsed_s_total"] += _float(aggregate.get("youtube_page_elapsed_s_total"))
+        totals["youtube_page_elapsed_s_max"] = max(totals["youtube_page_elapsed_s_max"], _float(aggregate.get("youtube_page_elapsed_s_max")))
+        totals["youtube_page_elapsed_s_count_total"] += _int(aggregate.get("youtube_page_elapsed_s_count_total"))
+        _merge_counts(content_fetch_status_counts, aggregate.get("content_fetch_status_counts_total"))
+
+    total_status_count = sum(content_fetch_status_counts.values())
+    source_ready_age_s_avg = round(totals["source_ready_age_s_total"] / max(total_status_count, 1), 3)
+    youtube_ytdlp_elapsed_s_avg = round(totals["youtube_ytdlp_elapsed_s_total"] / max(totals["youtube_ytdlp_elapsed_s_count_total"], 1), 3)
+    youtube_page_elapsed_s_avg = round(totals["youtube_page_elapsed_s_total"] / max(totals["youtube_page_elapsed_s_count_total"], 1), 3)
+
+    return {
+        **totals,
+        "content_fetch_status_counts_total": dict(content_fetch_status_counts),
+        "retry_queue_drain_skipped_reason_counts_total": dict(retry_queue_drain_skipped_reason_counts),
+        "source_ready_age_s_avg": source_ready_age_s_avg,
+        "youtube_ytdlp_elapsed_s_avg": youtube_ytdlp_elapsed_s_avg,
+        "youtube_page_elapsed_s_avg": youtube_page_elapsed_s_avg,
+    }
+
+
 def compute_combined_hot_path_vph(lane_reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
     """Compute combined sharded throughput using concurrent wall-clock span."""
     reports = list(lane_reports)
@@ -658,6 +819,18 @@ def compute_combined_hot_path_vph(lane_reports: Iterable[dict[str, Any]]) -> dic
     fallback_success = sum(int(report.get("transcript_fallback_success_count_total") or 0) for report in reports)
     fail_count = sum(int(report.get("fail_count_total") or 0) for report in reports)
     processed_count = sum(int(report.get("processed_count_total") or 0) for report in reports)
+    stage_totals = _combine_lane_stage_totals(reports)
+    top_level_stage_totals = {
+        key: value
+        for key, value in stage_totals.items()
+        if key
+        not in {
+            "hot_path_success_count_total",
+            "transcript_fallback_success_count_total",
+            "fail_count_total",
+            "processed_count_total",
+        }
+    }
     return {
         "lane_count": len(reports),
         "started_at": round(started_at, 3),
@@ -668,6 +841,8 @@ def compute_combined_hot_path_vph(lane_reports: Iterable[dict[str, Any]]) -> dic
         "transcript_fallback_success_count_total": fallback_success,
         "fail_count_total": fail_count,
         "processed_count_total": processed_count,
+        **top_level_stage_totals,
+        "aggregate": stage_totals,
         "hot_path_videos_per_hour": round(hot_path_success / throughput_elapsed_s * 3600.0, 2) if throughput_elapsed_s > 0 else 0.0,
         "transcript_fallback_videos_per_hour": round(fallback_success / throughput_elapsed_s * 3600.0, 2) if throughput_elapsed_s > 0 else 0.0,
         "processed_per_hour": round(processed_count / throughput_elapsed_s * 3600.0, 2) if throughput_elapsed_s > 0 else 0.0,
@@ -704,6 +879,7 @@ def run_sharded_lane_series(
     python_executable: str | None = None,
     reusable_pipeline_mode: str = DEFAULT_REUSABLE_PIPELINE_MODE,
     preserve_worker_state_root: bool = False,
+    run_environment_label: str | None = None,
 ) -> dict[str, Any]:
     """Run all NotebookLM lanes concurrently and aggregate hot-path VPH."""
     lane_configs = _validate_lanes(lanes)
@@ -740,6 +916,7 @@ def run_sharded_lane_series(
                         lane_output_root=output_root / lane.lane,
                         preserve_worker_state_root=preserve_worker_state_root,
                     ),
+                    run_environment_label=run_environment_label,
                 ),
             ): lane
             for lane in lane_configs
@@ -798,6 +975,7 @@ def run_sharded_lane_series(
         "limit": limit,
         "batch_size": batch_size,
         "reusable_pipeline_mode": reusable_pipeline_mode,
+        "run_environment_label": run_environment_label,
         "worker_shape_signature": _worker_shape_signature(lane_configs),
         "lane_worker_counts": _lane_worker_counts(lane_configs),
         "lanes": [
@@ -837,6 +1015,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--python-executable", default=None)
     parser.add_argument("--reusable-pipeline-mode", default=DEFAULT_REUSABLE_PIPELINE_MODE)
     parser.add_argument(
+        "--run-environment-label",
+        default=None,
+        help="Optional comparable-environment label, e.g. home_300mb or hotel_wifi.",
+    )
+    parser.add_argument(
         "--preserve-worker-state-root",
         action="store_true",
         help="Reuse the worker_state_root from lane config instead of the fresh per-run worker_states directory.",
@@ -861,6 +1044,7 @@ def main(argv: list[str] | None = None) -> int:
         python_executable=args.python_executable,
         reusable_pipeline_mode=args.reusable_pipeline_mode,
         preserve_worker_state_root=args.preserve_worker_state_root,
+        run_environment_label=args.run_environment_label,
     )
     combined = report["combined"]
     print(

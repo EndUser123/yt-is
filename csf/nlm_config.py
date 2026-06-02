@@ -41,12 +41,16 @@ class NLMConfig:
     nlm_browser_start_timeout_ms: int = 30000
     nlm_preflight_url_timeout_ms: int = 60000
     nlm_preflight_ui_timeout_ms: int = 15000
+    selenium_profile_retention_count: int = 8
+    selenium_profile_retention_max_age_days: int = 7
+    selenium_profile_lease_stale_after_s: int = 900
     source_content_retry_attempts: int = 4
     source_content_retry_initial_delay_s: float = 1.0
     source_content_retry_max_delay_s: float = 8.0
     source_content_retry_budget_s: float = 30.0
     source_content_retry_queue_delay_s: float = 30.0
     source_content_retry_queue_budget_s: float = 30.0
+    source_content_retry_queue_age_margin_s: float = 0.0
     source_content_shared_retry_pool_enabled: bool = False
     transcript_expensive_fallback_enabled: bool = True
     whisper_on_notebooklm_add_failed: bool = True
@@ -64,6 +68,17 @@ def get_nlm_config() -> NLMConfig:
     global _nlm_config
     with _nlm_config_lock:
         if _nlm_config is None:
+            run_environment_label = (
+                os.environ.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL")
+                or os.environ.get("YTIS_RUN_ENVIRONMENT_LABEL")
+                or ""
+            ).strip().lower()
+            shared_retry_pool_env = os.environ.get("YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED")
+            shared_retry_pool_enabled = (
+                shared_retry_pool_env.strip().lower() in {"1", "true", "yes", "on"}
+                if shared_retry_pool_env is not None
+                else run_environment_label == "hotel_wifi"
+            )
             _nlm_config = NLMConfig(
                 notebook_batch_size=int(os.environ.get("YTIS_NLM_BATCH_SIZE", "50")),
                 notebook_source_cap=int(os.environ.get("YTIS_NLM_SOURCE_CAP", "50")),
@@ -124,6 +139,18 @@ def get_nlm_config() -> NLMConfig:
                 nlm_preflight_ui_timeout_ms=int(
                     os.environ.get("YTIS_NLM_PREFLIGHT_UI_TIMEOUT_MS", "15000")
                 ),
+                selenium_profile_retention_count=max(
+                    0,
+                    int(os.environ.get("YTIS_SELENIUM_PROFILE_RETENTION_COUNT", "8")),
+                ),
+                selenium_profile_retention_max_age_days=max(
+                    0,
+                    int(os.environ.get("YTIS_SELENIUM_PROFILE_RETENTION_MAX_AGE_DAYS", "7")),
+                ),
+                selenium_profile_lease_stale_after_s=max(
+                    60,
+                    int(os.environ.get("YTIS_SELENIUM_PROFILE_LEASE_STALE_AFTER_S", "900")),
+                ),
                 source_content_retry_attempts=int(
                     os.environ.get("YTIS_NLM_SOURCE_CONTENT_RETRY_ATTEMPTS", "4")
                 ),
@@ -142,12 +169,10 @@ def get_nlm_config() -> NLMConfig:
                 source_content_retry_queue_budget_s=float(
                     os.environ.get("YTIS_NLM_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", "30.0")
                 ),
-                source_content_shared_retry_pool_enabled=(
-                    os.environ.get("YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", "false")
-                    .strip()
-                    .lower()
-                    in {"1", "true", "yes", "on"}
+                source_content_retry_queue_age_margin_s=float(
+                    os.environ.get("YTIS_NLM_SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S", "0.0")
                 ),
+                source_content_shared_retry_pool_enabled=shared_retry_pool_enabled,
                 transcript_expensive_fallback_enabled=(
                     os.environ.get("YTIS_TRANSCRIPT_EXPENSIVE_FALLBACK_ENABLED", "true")
                     .strip()

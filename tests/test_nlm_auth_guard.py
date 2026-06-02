@@ -141,10 +141,13 @@ def test_browser_health_gate_passes_when_environment_is_clean(monkeypatch):
     assert report["sample_count"] == 2
 
 
-def test_browser_health_gate_marks_recovered_clean_after_default_profile_cleanup(monkeypatch):
+def test_browser_health_gate_marks_recovered_clean_after_owned_profile_cleanup(monkeypatch):
     reaped: list[set[int]] = []
     monkeypatch.setattr(nlm_auth_guard, "chrome_pids_for_root", lambda root: {12345})
-    monkeypatch.setattr(nlm_auth_guard, "stop_chrome_pids", lambda pids: reaped.append(set(pids)))
+    def fake_stop(pids):
+        reaped.append(set(pids))
+        return set(pids)
+    monkeypatch.setattr(nlm_auth_guard, "stop_chrome_pids", fake_stop)
     monkeypatch.setattr(
         nlm_auth_guard,
         "_sample_browser_health",
@@ -164,6 +167,80 @@ def test_browser_health_gate_marks_recovered_clean_after_default_profile_cleanup
     assert report["default_profile_reaped_count"] == 1
     assert report["default_profile_remaining_count"] == 0
     assert reaped == [{12345}]
+
+
+def test_stop_chrome_pids_refuses_unowned_default_profile(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "_collect_chrome_process_records",
+        lambda: [
+            {
+                "pid": 12345,
+                "cmdline": r"chrome.exe --user-data-dir=C:\Users\brsth\.notebooklm-mcp-cli\chrome-profile",
+                "rss_bytes": 100,
+            }
+        ],
+    )
+    monkeypatch.setattr(nlm_auth_guard.subprocess, "run", lambda *args, **kwargs: calls.append(args))
+
+    stopped = nlm_auth_guard.stop_chrome_pids({12345})
+
+    assert stopped == set()
+    assert calls == []
+
+
+def test_stop_chrome_pids_allows_default_notebooklm_session(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "_collect_chrome_process_records",
+        lambda: [
+            {
+                "pid": 12345,
+                "cmdline": (
+                    r"chrome.exe --remote-debugging-port=9222 --user-data-dir=C:\Users\brsth\.notebooklm-mcp-cli\chrome-profile "
+                    r"https://notebooklm.google.com"
+                ),
+                "rss_bytes": 100,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        nlm_auth_guard.subprocess,
+        "run",
+        lambda *args, **kwargs: calls.append(args) or subprocess.CompletedProcess(args[0], 0, "", ""),
+    )
+
+    stopped = nlm_auth_guard.stop_chrome_pids({12345})
+
+    assert stopped == {12345}
+    assert calls
+
+
+def test_stop_chrome_pids_allows_ytis_browser_root(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "_collect_chrome_process_records",
+        lambda: [
+            {
+                "pid": 12345,
+                "cmdline": r"chrome.exe --user-data-dir=P:\\.data\yt-is\browser\notebooklm-pro",
+                "rss_bytes": 100,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        nlm_auth_guard.subprocess,
+        "run",
+        lambda *args, **kwargs: calls.append(args) or subprocess.CompletedProcess(args[0], 0, "", ""),
+    )
+
+    stopped = nlm_auth_guard.stop_chrome_pids({12345})
+
+    assert stopped == {12345}
+    assert calls
 
 
 def test_browser_health_gate_keeps_unrelated_chrome_soft_when_under_budget(monkeypatch):
@@ -273,3 +350,21 @@ def test_run_nlm_uses_profile_from_env_override(monkeypatch):
 
     assert result.returncode == 0
     assert calls == [[nlm_auth_guard.get_nlm_executable(), "notebook", "list", "--profile", "worker-02"]]
+
+
+def test_auth_check_cache_store_defaults_session_established_at_when_omitted(monkeypatch):
+    """A cache store without an explicit session timestamp should still retain age evidence."""
+    times = iter([100.0, 103.5, 103.5])
+    monkeypatch.setattr(nlm_auth_guard.time, "monotonic", lambda: next(times))
+
+    context = nlm_auth_guard.NLMAuthContext(
+        profile="worker-03",
+        login_profile_args=["--profile", "worker-03"],
+        requires_profile=True,
+        expected_email="worker03@example.com",
+    )
+
+    nlm_auth_guard.auth_check_cache_store(context)
+
+    assert nlm_auth_guard.auth_check_cache_hit(context) == (True, 100.0)
+    assert nlm_auth_guard.auth_check_cache_session_age(context) == 3.5

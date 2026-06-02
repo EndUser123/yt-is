@@ -69,6 +69,44 @@ def _write_result_file(result_path: Path | None, data: dict[str, object]) -> Non
     tmp_path.replace(result_path)
 
 
+def _build_reusable_runtime_flags_payload(metrics: dict[str, object] | None = None) -> dict[str, object]:
+    cfg = get_nlm_config()
+    metrics = metrics or {}
+    return {
+        "active_window_size": int(metrics.get("active_window_size", cfg.reusable_active_window_size) or cfg.reusable_active_window_size),
+        "active_window_enabled": bool(metrics.get("active_window_enabled", False)),
+        "extract_window_size": int(metrics.get("extract_window_size", cfg.reusable_extract_window_size) or cfg.reusable_extract_window_size),
+        "extract_window_enabled": bool(metrics.get("extract_window_enabled", False)),
+        "source_age_cadence_enabled": bool(metrics.get("source_age_cadence_enabled", cfg.reusable_source_age_cadence_enabled)),
+        "source_age_cadence_soft_threshold_s": float(
+            metrics.get(
+                "source_age_cadence_soft_threshold_s",
+                cfg.reusable_source_age_cadence_soft_threshold_s,
+            )
+            or cfg.reusable_source_age_cadence_soft_threshold_s
+        ),
+        "source_age_cadence_hard_threshold_s": float(
+            metrics.get(
+                "source_age_cadence_hard_threshold_s",
+                cfg.reusable_source_age_cadence_hard_threshold_s,
+            )
+            or cfg.reusable_source_age_cadence_hard_threshold_s
+        ),
+        "source_age_cadence_min_window_size": int(
+            metrics.get(
+                "source_age_cadence_min_window_size",
+                cfg.reusable_source_age_cadence_min_window_size,
+            )
+            or cfg.reusable_source_age_cadence_min_window_size
+        ),
+        "window_mode": str(metrics.get("window_mode", "") or ""),
+        "window_size": int(metrics.get("window_size", 0) or 0),
+        "active_window_count": int(metrics.get("active_window_count", 0) or 0),
+        "extract_window_count": int(metrics.get("extract_window_count", 0) or 0),
+        "window_count": int(metrics.get("window_count", 0) or 0),
+    }
+
+
 def _empty_source_profile_totals() -> dict[str, object]:
     return {
         "total": 0,
@@ -237,9 +275,11 @@ def main(argv: list[str] | None = None) -> int:
         "state_path": args.state_path,
         "notebook_title": args.notebook_title,
     }
+    worker_result.update(_build_reusable_runtime_flags_payload())
 
     worker_source_profile = _empty_source_profile_totals()
     worker_subbatch_metrics: list[dict[str, object]] = []
+    reusable_process_metrics: dict[str, object] = {}
     try:
         prewarm_started = time.monotonic()
         cleanup_info = {
@@ -757,6 +797,7 @@ def main(argv: list[str] | None = None) -> int:
                     source_profile,
                     metrics,
                 )
+                reusable_process_metrics = dict(metrics)
             else:
                 results = process_industrial_batch_reusable(video_ids)
                 batch_succeeded = 0
@@ -800,11 +841,14 @@ def main(argv: list[str] | None = None) -> int:
                     source_profile,
                     metrics,
                 )
-            log_action(
-                "worker_completed",
-                {
-                    "worker_id": args.worker_id,
-                    "batch_count": len(batches),
+                reusable_process_metrics = dict(metrics)
+        reusable_runtime_flags = _build_reusable_runtime_flags_payload(reusable_process_metrics)
+        worker_result.update(reusable_runtime_flags)
+        log_action(
+            "worker_completed",
+            {
+                "worker_id": args.worker_id,
+                "batch_count": len(batches),
                     "video_count": total_video_count,
                     "succeeded": total_succeeded,
                     "failed": total_failed,
@@ -845,6 +889,7 @@ def main(argv: list[str] | None = None) -> int:
                 "source_ready_age_s_total": worker_result["source_ready_age_s_total"],
                 "source_ready_age_s_max": worker_result["source_ready_age_s_max"],
                 "source_ready_age_s_avg": worker_result["source_ready_age_s_avg"],
+                **reusable_runtime_flags,
                     "youtube_ytdlp_elapsed_s_total": worker_result["youtube_ytdlp_elapsed_s_total"],
                     "youtube_ytdlp_elapsed_s_max": worker_result["youtube_ytdlp_elapsed_s_max"],
                     "youtube_ytdlp_elapsed_s_count": worker_result["youtube_ytdlp_elapsed_s_count"],
@@ -924,6 +969,7 @@ def main(argv: list[str] | None = None) -> int:
                 "source_ready_age_s_total": worker_result["source_ready_age_s_total"],
                 "source_ready_age_s_max": worker_result["source_ready_age_s_max"],
                 "source_ready_age_s_avg": worker_result["source_ready_age_s_avg"],
+                **reusable_runtime_flags,
                 "youtube_ytdlp_elapsed_s_total": worker_result["youtube_ytdlp_elapsed_s_total"],
                 "youtube_ytdlp_elapsed_s_max": worker_result["youtube_ytdlp_elapsed_s_max"],
                 "youtube_ytdlp_elapsed_s_count": worker_result["youtube_ytdlp_elapsed_s_count"],

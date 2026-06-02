@@ -44,7 +44,7 @@ def test_build_breadth_series_plan_includes_phase_names_and_workers():
     assert [tier["cohort_shape"] for tier in plan["phase_a"]["tiers"]] == ["trace", "mixed", "captioned"]
 
 
-def test_aggregate_summary_includes_extract_elapsed_from_worker_stage_totals():
+def test_aggregate_summary_includes_worker_stage_totals_propagation():
     summary = {
         "batches": [
             {
@@ -73,6 +73,22 @@ def test_aggregate_summary_includes_extract_elapsed_from_worker_stage_totals():
                                         "startup_prepare_total_elapsed_s_total": 3.0,
                                         "setup_elapsed_s_total": 4.0,
                                         "extract_elapsed_s_total": 8.0,
+                                        "content_fetch_command_elapsed_s_total": 9.0,
+                                        "content_fetch_command_elapsed_s_max": 5.0,
+                                        "content_fetch_command_elapsed_s_count": 2,
+                                        "source_list_probe_elapsed_s_total": 7.0,
+                                        "source_list_probe_elapsed_s_max": 4.0,
+                                        "source_list_probe_count": 1,
+                                        "content_fetch_retry_sleep_elapsed_s_total": 1.5,
+                                        "content_fetch_retry_queue_sleep_elapsed_s_total": 0.5,
+                                        "retry_queue_drain_skipped_count": 2,
+                                        "retry_queue_drain_skipped_reason_counts": {
+                                            "drain_projected_source_age_cliff": 2,
+                                        },
+                                        "source_content_readiness_probe_elapsed_s_total": 3.5,
+                                        "source_content_readiness_probe_elapsed_s_max": 2.5,
+                                        "source_content_readiness_probe_count": 1,
+                                        "source_content_readiness_probe_sleep_elapsed_s_total": 0.25,
                                     }
                                 },
                             }
@@ -88,6 +104,20 @@ def test_aggregate_summary_includes_extract_elapsed_from_worker_stage_totals():
     assert aggregate["startup_prepare_total_elapsed_s_total"] == 3.0
     assert aggregate["setup_elapsed_s_total"] == 4.0
     assert aggregate["extract_elapsed_s_total"] == 8.0
+    assert aggregate["content_fetch_command_elapsed_s_total"] == 9.0
+    assert aggregate["content_fetch_command_elapsed_s_max"] == 5.0
+    assert aggregate["content_fetch_command_elapsed_s_count"] == 2
+    assert aggregate["source_list_probe_elapsed_s_total"] == 7.0
+    assert aggregate["source_list_probe_elapsed_s_max"] == 4.0
+    assert aggregate["source_list_probe_count"] == 1
+    assert aggregate["content_fetch_retry_sleep_elapsed_s_total"] == 1.5
+    assert aggregate["content_fetch_retry_queue_sleep_elapsed_s_total"] == 0.5
+    assert aggregate["retry_queue_drain_skipped_count_total"] == 2.0
+    assert aggregate["retry_queue_drain_skipped_reason_counts_total"] == {"drain_projected_source_age_cliff": 2}
+    assert aggregate["source_content_readiness_probe_elapsed_s_total"] == 3.5
+    assert aggregate["source_content_readiness_probe_elapsed_s_max"] == 2.5
+    assert aggregate["source_content_readiness_probe_count"] == 1
+    assert aggregate["source_content_readiness_probe_sleep_elapsed_s_total"] == 0.25
     assert aggregate["add_elapsed_s_total"] == 12.0
     assert aggregate["content_fetch_status_counts_total"] == {"ready": 10}
 

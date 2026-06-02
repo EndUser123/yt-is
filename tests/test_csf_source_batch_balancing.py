@@ -53,3 +53,22 @@ def test_drain_balanced_pending_batches_keeps_single_worker_contiguous():
         ("vid003", "src"),
     ]]
     assert len(pending_buffer) == 0
+
+
+def test_drain_balanced_pending_batches_rotates_worker_assignment():
+    mod = _load_csf_source_module()
+    batch_queue = [[f"vid{i:03d}"] for i in range(3)]
+
+    groups = mod._take_industrial_dispatch_groups(
+        batch_queue,
+        worker_slots=3,
+        batches_per_worker=1,
+        rotate_by=1,
+    )
+
+    assert groups == [
+        [["vid001"]],
+        [["vid002"]],
+        [["vid000"]],
+    ]
+    assert batch_queue == []

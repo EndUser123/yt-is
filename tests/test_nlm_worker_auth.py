@@ -245,7 +245,7 @@ def test_profile_session_is_valid_fails_closed_when_default_chrome_profile_is_ru
     stop_calls = []
 
     with mock.patch("csf.nlm_worker_auth._default_chrome_profile_pids", return_value={12345}):
-        with mock.patch("csf.nlm_worker_auth._stop_chrome_pids", side_effect=lambda pids: stop_calls.append(set(pids))):
+        with mock.patch("csf.nlm_worker_auth._stop_chrome_pids", side_effect=lambda pids: stop_calls.append(set(pids)) or set(pids)):
             with mock.patch("csf.nlm_worker_auth.run_nlm") as mock_run:
                 mock_run.side_effect = AssertionError("default chrome-profile should fail closed before nlm runs")
                 assert nlm_worker_auth.profile_session_is_valid("ytis-free1-worker-01") is False
@@ -258,7 +258,7 @@ def test_refresh_profile_session_stops_default_chrome_profile_after_force_login(
     stop_calls = []
 
     with mock.patch("csf.nlm_worker_auth._default_chrome_profile_pids", side_effect=[set(), {67890}]):
-        with mock.patch("csf.nlm_worker_auth._stop_chrome_pids", side_effect=lambda pids: stop_calls.append(set(pids))):
+        with mock.patch("csf.nlm_worker_auth._stop_chrome_pids", side_effect=lambda pids: stop_calls.append(set(pids)) or set(pids)):
             with mock.patch(
                 "csf.nlm_worker_auth.run_nlm",
                 return_value=subprocess.CompletedProcess(["login", "--force", "--profile", "ytis-free1-worker-01"], 0, "Account: troup.hominidae@gmail.com\n", ""),
@@ -266,6 +266,42 @@ def test_refresh_profile_session_stops_default_chrome_profile_after_force_login(
                 assert nlm_worker_auth.refresh_profile_session("ytis-free1-worker-01") is False
 
     assert stop_calls == [{67890}]
+
+
+def test_refresh_profile_session_fails_closed_without_cdp_in_noninteractive_mode(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "fresh-free")
+    monkeypatch.setenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "0")
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    called = []
+
+    with mock.patch("csf.nlm_worker_auth.run_nlm") as mock_run:
+        mock_run.side_effect = AssertionError("noninteractive no-CDP auth must fail closed before nlm runs")
+        assert nlm_worker_auth.refresh_profile_session("ytis-free1-worker-01") is False
+
+    assert called == []
+    mock_run.assert_not_called()
+
+
+def test_refresh_profile_session_can_force_login_without_cdp_when_interactive(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "fresh-free")
+    monkeypatch.setenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "0")
+    monkeypatch.delenv("YTIS_NLM_AUTH_NONINTERACTIVE", raising=False)
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_run_nlm_command_fail_closed", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("fail-closed path should be bypassed")))
+
+    with mock.patch("csf.nlm_worker_auth.run_nlm") as mock_run:
+        mock_run.return_value = subprocess.CompletedProcess(
+            ["login", "--force", "--profile", "ytis-free1-worker-01"],
+            0,
+            "Account: troup.hominidae@gmail.com\n",
+            "",
+        )
+        assert nlm_worker_auth.refresh_profile_session("ytis-free1-worker-01") is True
+
+    mock_run.assert_called_once_with(["login", "--force", "--profile", "ytis-free1-worker-01"], timeout_s=120.0)
 
 
 def test_sync_worker_profiles_rejects_wrong_source_account(tmp_path):
@@ -287,7 +323,10 @@ def test_sync_worker_profiles_rejects_wrong_source_account(tmp_path):
             source_session_refresher=lambda profile: False,
         )
     except RuntimeError as exc:
-        assert "expected account a.hominidae@gmail.com" in str(exc)
+        message = str(exc)
+        assert "metadata validation failed" in message
+        assert "dedicated-profile refresh attempt failed" in message
+        assert "expected a.hominidae@gmail.com" in message
     else:
         raise AssertionError("wrong account should be rejected before syncing")
 
@@ -384,7 +423,10 @@ def test_sync_worker_profiles_rejects_expired_source_session_before_copy(tmp_pat
             source_session_refresher=lambda profile: False,
         )
     except RuntimeError as exc:
-        assert "ytis-free1-worker-01" in str(exc)
+        message = str(exc)
+        assert "live session check failed" in message
+        assert "dedicated-profile refresh attempt failed" in message
+        assert "ytis-free1-worker-01" in message
     else:
         raise AssertionError("expired source session should be rejected before syncing")
 
@@ -427,6 +469,94 @@ def test_sync_worker_profiles_auto_refreshes_source_profile_before_copy(tmp_path
     assert (root / "ytis-free1-worker-02" / "cookies.json").read_text(encoding="utf-8") == json.dumps(
         [{"name": "renewed-free"}]
     )
+
+
+def test_sync_worker_profiles_reports_post_refresh_live_session_failure(tmp_path):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "renewed-free")
+    _write_profile(root, "ytis-free1-worker-02", "troup.hominidae@gmail.com", "stale-free")
+    family = (
+        nlm_worker_auth.AuthFamily(
+            "ytis-free1-worker-01",
+            ("ytis-free1-worker-02",),
+            "troup.hominidae@gmail.com",
+        ),
+    )
+
+    try:
+        nlm_worker_auth.sync_worker_profiles(
+            root,
+            family,
+            source_session_checker=lambda profile: False,
+            source_session_refresher=lambda profile: True,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "post-refresh live session check failed" in message
+        assert "dedicated-profile refresh completed" in message
+    else:
+        raise AssertionError("post-refresh live session failure should be rejected")
+
+
+def test_sync_worker_profiles_reports_post_refresh_metadata_validation_failure(tmp_path):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-free1-worker-01", "a.hominidae@gmail.com", "wrong-free")
+    _write_profile(root, "ytis-free1-worker-02", "troup.hominidae@gmail.com", "stale-free")
+    family = (
+        nlm_worker_auth.AuthFamily(
+            "ytis-free1-worker-01",
+            ("ytis-free1-worker-02",),
+            "troup.hominidae@gmail.com",
+        ),
+    )
+
+    try:
+        nlm_worker_auth.sync_worker_profiles(
+            root,
+            family,
+            source_session_checker=lambda profile: True,
+            source_session_refresher=lambda profile: True,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "post-refresh metadata validation failed" in message
+        assert "dedicated-profile refresh completed" in message
+    else:
+        raise AssertionError("post-refresh metadata validation failure should be rejected")
+
+
+def test_sync_worker_profiles_reports_default_profile_guard_blocked_recovery(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "expired-free")
+    _write_profile(root, "ytis-free1-worker-02", "troup.hominidae@gmail.com", "still-current")
+    family = (
+        nlm_worker_auth.AuthFamily(
+            "ytis-free1-worker-01",
+            ("ytis-free1-worker-02",),
+            "troup.hominidae@gmail.com",
+        ),
+    )
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: {12345})
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "refresh_source_profile",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("refresh should not be attempted")),
+    )
+
+    try:
+        nlm_worker_auth.sync_worker_profiles(
+            root,
+            family,
+            source_session_checker=lambda profile: False,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "default profile guard blocked recovery" in message
+        assert "ytis-free1-worker-01" in message
+    else:
+        raise AssertionError("default-profile guard should block recovery")
 
 
 def test_sync_worker_profiles_uses_real_nlm_process_for_force_recovery(tmp_path, monkeypatch):
@@ -486,7 +616,7 @@ def test_worker_auth_cli_sync_uses_real_nlm_process_for_force_recovery(tmp_path)
     _write_profile(root, "ytis-free2-worker-04", "brsthomson@hotmail.com", "stale-free2")
 
     env = os.environ.copy()
-    env["PYTHONPATH"] = "P:\\\\\\\packages\\yt-is"
+    env["PYTHONPATH"] = r"P:\packages\yt-is"
     env["YTIS_NLM_CLI"] = str(bin_dir / ("nlm.cmd" if os.name == "nt" else "nlm"))
     env["YTIS_FAKE_NLM_PROFILE_ROOT"] = str(root)
     env["YTIS_NLM_WORKER_AUTH_USE_CDP"] = "0"
@@ -558,7 +688,7 @@ def test_worker_auth_cli_snapshot_and_restore_round_trip(tmp_path):
     valid_marker.write_text(json.dumps(nlm_worker_auth.iter_worker_profiles()), encoding="utf-8")
     _write_fake_nlm_executable(bin_dir, log_path, valid_marker)
     env = os.environ.copy()
-    env["PYTHONPATH"] = "P:\\\\\\\packages\\yt-is"
+    env["PYTHONPATH"] = r"P:\packages\yt-is"
     env["YTIS_NLM_CLI"] = str(bin_dir / ("nlm.cmd" if os.name == "nt" else "nlm"))
     env["YTIS_FAKE_NLM_PROFILE_ROOT"] = str(root)
 
@@ -895,5 +1025,38 @@ def test_refresh_source_profile_reuses_existing_cdp_browser_across_refreshes(tmp
     assert nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1) is True
     assert len(popen_calls) == 1
     assert len(stop_calls) == 1
+
+
+def test_refresh_source_profile_uses_family_browser_profile_directory_for_free_lane(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "fresh-free")
+    popen_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    cdp_states = iter([False, True])
+
+    monkeypatch.delenv("YTIS_NLM_BROWSER_VISIBLE", raising=False)
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: None)
+    monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
+    monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: next(cdp_states))
+    monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "run_nlm",
+        lambda cmd, timeout_s=1, env=None: subprocess.CompletedProcess(cmd, 0, "Account: troup.hominidae@gmail.com\n", ""),
+    )
+
+    def fake_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", fake_popen)
+
+    assert nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[1], timeout_s=1) is True
+    assert popen_calls
+    args, kwargs = popen_calls[0]
+    chrome_args = list(args[0])
+    assert f"--user-data-dir={nlm_worker_auth.DEFAULT_FAMILIES[1].cdp_browser_root}" in chrome_args
+    assert "--profile-directory=Default" in chrome_args
+    assert kwargs.get("startupinfo") is not None
 
 

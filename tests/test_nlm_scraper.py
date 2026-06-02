@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-# import time  # noqa: F401
+import os
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -987,6 +988,131 @@ class TestSeleniumProfileIsolation:
             "selenium_profile_selected",
             mock.ANY,
         )
+
+    def test_prune_selenium_profile_sessions_keeps_active_and_recent_roots(self, scraper, tmp_path, monkeypatch):
+        """Retention should prune only stale timestamped session clones, not active or named roots."""
+        from dataclasses import replace
+
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        browser_root = tmp_path / "yt-is" / "selenium-profiles" / "chrome"
+        browser_root.mkdir(parents=True, exist_ok=True)
+        active_root = browser_root / "401_4_dddddddd"
+        recent_root = browser_root / "300_3_cccccccc"
+        stale_root_1 = browser_root / "100_1_aaaaaaaa"
+        stale_root_2 = browser_root / "200_2_bbbbbbbb"
+        named_root = browser_root / "notebooklm"
+
+        replacement = replace(
+            scraper.browser_cfg,
+            selenium_profile_retention_count=1,
+            selenium_profile_retention_max_age_days=0,
+        )
+        local_scraper = scraper.__class__(headless=True, browser_cfg=replacement)
+
+        class FakeChild:
+            def __init__(self, path, mtime):
+                self._path = path
+                self._mtime = mtime
+
+            @property
+            def name(self):
+                return self._path.name
+
+            def is_dir(self):
+                return True
+
+            def stat(self):
+                return mock.MagicMock(st_mtime=self._mtime)
+
+            def __str__(self):
+                return str(self._path)
+
+        fake_children = [
+            FakeChild(active_root, 4_000.0),
+            FakeChild(recent_root, 3_000.0),
+            FakeChild(stale_root_1, 2_000.0),
+            FakeChild(stale_root_2, 1_000.0),
+            FakeChild(named_root, 500.0),
+        ]
+
+        with mock.patch.object(
+            local_scraper,
+            "_selenium_profile_session_is_active",
+            side_effect=lambda path: str(path) == str(active_root),
+        ):
+            with mock.patch.object(browser_root.__class__, "iterdir", return_value=fake_children):
+                with mock.patch("csf.nlm_scraper.shutil.rmtree") as mock_rmtree:
+                    with mock.patch("csf.nlm_scraper.log_action") as mock_log:
+                        pruned, failed, skipped_active, skipped_recent = local_scraper._prune_selenium_profile_sessions("chrome")
+
+        assert (pruned, failed, skipped_active, skipped_recent) == (2, 0, 1, 0)
+        assert mock_rmtree.call_count == 2
+        deleted_paths = {call.args[0] for call in mock_rmtree.call_args_list}
+        assert str(stale_root_1) in {str(path) for path in deleted_paths}
+        assert str(stale_root_2) in {str(path) for path in deleted_paths}
+        mock_log.assert_called_with(
+            "selenium_profile_sessions_pruned",
+            {
+                "browser": "chrome",
+                "profile_root": str(browser_root),
+                "pruned": 2,
+                "failed": 0,
+                "skipped_active": 1,
+                "skipped_recent": 0,
+                "retention_count": 1,
+                "retention_max_age_days": 0,
+            },
+        )
+
+    def test_close_removes_current_selenium_profile_session_root(self, scraper, tmp_path):
+        """close() should remove the current Selenium session root after quitting the browser."""
+        profile_root = tmp_path / "yt-is" / "selenium-profiles" / "chrome" / "999_9_abcdef12"
+        profile_root.mkdir(parents=True, exist_ok=True)
+        (profile_root / "marker.txt").write_text("live", encoding="utf-8")
+        scraper._driver = mock.MagicMock()
+        scraper._selected_browser_profile_root = str(profile_root)
+
+        with mock.patch.object(scraper, "_prune_ephemeral_browser_cache") as mock_cache_prune:
+            with mock.patch.object(scraper, "_cleanup_staging_on_close") as mock_staging_cleanup:
+                scraper.close()
+
+        assert not profile_root.exists()
+        mock_cache_prune.assert_called_once()
+        mock_staging_cleanup.assert_called_once()
+
+    def test_session_lease_marks_live_session_as_active(self, scraper, tmp_path, monkeypatch):
+        """A written lease file should make the current session look active to the pruner."""
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        profile_root = tmp_path / "yt-is" / "selenium-profiles" / "chrome" / "999_9_abcdef12"
+        profile_root.mkdir(parents=True, exist_ok=True)
+
+        scraper._selected_browser_profile_root = str(profile_root)
+        scraper._write_selenium_profile_session_lease(profile_root, "chrome")
+
+        lease_path = profile_root / ".yt-is-session-lease.json"
+        assert lease_path.is_file()
+        assert scraper._selenium_profile_session_is_active(profile_root) is True
+
+    def test_session_lease_becomes_stale_when_heartbeat_is_old(self, scraper, tmp_path, monkeypatch):
+        """A lease should stop protecting a session once its heartbeat is too old."""
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        profile_root = tmp_path / "yt-is" / "selenium-profiles" / "chrome" / "999_9_abcdef12"
+        profile_root.mkdir(parents=True, exist_ok=True)
+
+        scraper._selected_browser_profile_root = str(profile_root)
+        scraper._write_selenium_profile_session_lease(profile_root, "chrome")
+
+        lease_path = profile_root / ".yt-is-session-lease.json"
+        payload = json.loads(lease_path.read_text(encoding="utf-8"))
+        payload["pid"] = 999999
+        payload["last_heartbeat_epoch"] = time.time() - 3600
+        lease_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with mock.patch("psutil.process_iter", return_value=[]):
+            assert scraper._selenium_profile_session_is_active(profile_root) is False
 
 
 class TestBackNavPageStateGuard:

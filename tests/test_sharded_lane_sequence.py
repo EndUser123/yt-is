@@ -91,6 +91,8 @@ def test_main_runs_doctor_smoke_evidence_soak_in_order(tmp_path, monkeypatch):
         phase = "smoke" if output_root == smoke_output_root else "soak"
         calls.append(phase)
         assert trace_root == DEFAULT_TRACE_ROOT
+        assert kwargs["preserve_worker_state_root"] is False
+        assert kwargs["run_environment_label"] == "hotel_wifi"
         if phase == "smoke":
             assert limit == 5
             assert batch_size == 2
@@ -133,6 +135,8 @@ def test_main_runs_doctor_smoke_evidence_soak_in_order(tmp_path, monkeypatch):
         "5",
         "--smoke-batch-size",
         "2",
+        "--run-environment-label",
+        "hotel_wifi",
     ]) 
 
     assert result == 0
@@ -146,6 +150,7 @@ def test_main_runs_doctor_smoke_evidence_soak_in_order(tmp_path, monkeypatch):
     assert persisted["post_run_hygiene"]["status"] == "clean"
     assert persisted["pre_run_browser_health"]["status"] == "clean"
     assert persisted["pre_run_browser_health_path"] == str(run_root / "browser_health.json")
+    assert persisted["run_environment_label"] == "hotel_wifi"
 
 
 def test_main_stops_before_soak_when_evidence_fails(tmp_path, monkeypatch):
@@ -175,6 +180,7 @@ def test_main_stops_before_soak_when_evidence_fails(tmp_path, monkeypatch):
     def fake_run_sharded_lane_series(*, output_root, **kwargs):
         calls.append("smoke")
         assert output_root == smoke_output_root
+        assert kwargs["preserve_worker_state_root"] is False
         return {
             "report_version": 1,
             "status": "ok",
@@ -243,6 +249,7 @@ def test_main_rewrites_run_root_summary_on_invalidated_soak(tmp_path, monkeypatc
     def fake_run_sharded_lane_series(*, output_root, **kwargs):
         phase = "smoke" if output_root == smoke_output_root else "soak"
         calls.append(phase)
+        assert kwargs["preserve_worker_state_root"] is False
         report_path = output_root / "sharded_lane_series_summary.json"
         return {
             "report_version": 1,
@@ -441,6 +448,7 @@ def test_main_continues_when_browser_health_is_degraded(tmp_path, monkeypatch):
     def fake_run_sharded_lane_series(*, output_root, **kwargs):
         phase = "smoke" if output_root == smoke_output_root else "soak"
         calls.append(phase)
+        assert kwargs["preserve_worker_state_root"] is False
         return {
             "report_version": 1,
             "status": "ok",
@@ -483,3 +491,59 @@ def test_main_continues_when_browser_health_is_degraded(tmp_path, monkeypatch):
 
     assert result == 0
     assert calls == ["doctor", "browser_health", "smoke", "evidence", "soak"]
+
+
+def test_main_forwards_preserve_worker_state_root_flag(tmp_path, monkeypatch):
+    calls: list[bool] = []
+    run_root = tmp_path / "run"
+    smoke_output_root = tmp_path / "run" / "smoke"
+    soak_output_root = tmp_path / "run" / "soak"
+
+    monkeypatch.setattr(mod, "doctor_lane_setup", lambda *args, **kwargs: _lanes(tmp_path))
+    monkeypatch.setattr(mod, "browser_health_gate", lambda *args, **kwargs: _clean_browser_health_report())
+    monkeypatch.setattr(
+        mod,
+        "_check_post_run_default_profile_hygiene",
+        lambda: {
+            "status": "clean",
+            "detected_count": 0,
+            "reaped_count": 0,
+            "remaining_count": 0,
+            "detected_pids": [],
+            "reaped_pids": [],
+            "remaining_pids": [],
+        },
+    )
+
+    def fake_run_sharded_lane_series(*, output_root, **kwargs):
+        calls.append(bool(kwargs["preserve_worker_state_root"]))
+        assert output_root in {smoke_output_root, soak_output_root}
+        return {
+            "report_version": 1,
+            "status": "ok",
+            "report_path": str(output_root / "sharded_lane_series_summary.json"),
+            "combined": {
+                "hot_path_videos_per_hour": 0.0,
+                "hot_path_success_count_total": 0,
+                "fail_count_total": 0,
+                "wall_elapsed_s": 0.0,
+            },
+        }
+
+    monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run_sharded_lane_series)
+    monkeypatch.setattr(
+        mod,
+        "inspect_run_root",
+        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None: EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ()),
+    )
+
+    result = mod.main([
+        "--lane-config",
+        str(_lane_config(tmp_path)),
+        "--run-root",
+        str(run_root),
+        "--preserve-worker-state-root",
+    ])
+
+    assert result == 0
+    assert calls == [True, True]

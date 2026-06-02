@@ -1,0 +1,145 @@
+# Sharded Lane Artifact Audit
+
+_Generated: audit_sharded_lane_runs.py — 1 runs audited_
+
+_Run root: `P:\packages\yt-is\.logs\sharded_lane_series`_
+
+
+## Table 1 — Sorted by Combined VPH (Descending)
+
+| Run | Environment | Geometry | Status | Throughput Valid | Contract | Limit | Combined VPH | Success/Fail/Processed | Fail Rate | Pro VPH | Free VPH | source_age_cliff | command_failed | worker_idle_wait_s | Pre-Run Health | Post-Run Hygiene |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | hotel_wifi | 3+3 | ok | true | new (includes worker_cleanup) | 400 | 2031.09 | 715/85/800 | 10.62% | 1024.63 | 1142.89 | 70 | 91 | 1384.634 | clean | clean |
+
+## Table 2 — Grouped by Metric Contract
+
+
+### new (includes worker_cleanup)
+
+| Run | Combined VPH | Fail Rate | source_age_cliff | command_failed | worker_idle_wait_s | source_ready_age_s_max (Pro) | source_ready_age_s_max (Free) | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | 2031.09 | 10.62% | 70 | 91 | 1384.634 | 368.757 | 310.380 | throughput_valid=true |
+
+
+## Table 3 — Contract Normalization Check
+
+This table recomputes combined VPH from the reducer-compatible formula: `combined.hot_path_success_count_total / elapsed_s * 3600`. Current artifacts use `combined.throughput_elapsed_s` when present. Older artifacts usually lack that field, so they can only be recomputed as wall-equivalent from `combined.finished_at-started_at`.
+
+| Run | Contract | Original VPH | Recomputed VPH | Delta | Denominator (s) | Denominator Source | Confidence | Absent Fields |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | new (includes worker_cleanup) | 2031.09 | 2031.09 | +0.00 | 1267.302 | combined.throughput_elapsed_s | current-contract exact | — |
+
+**Normalization result**: the old high-VPH artifacts do not collapse under the reducer-compatible wall recomputation; their recomputed VPH values match the published values. What remains unproven for old artifacts is whether the newer parent Chrome reap / worker cleanup boundary would add time outside the recorded wall span. The metric-contract difference alone is therefore not enough to explain the drop from the historical ceiling to current runs.
+
+## Table 4 — Sorted by max(source_ready_age_s_max) Descending
+
+| Run | Pro max (s) | Free max (s) | Combined max (s) | source_age_cliff | command_failed | Combined VPH | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | 368.757 | 310.380 | 368.757 | 70 | 91 | 2031.09 | cliff=70; cmd_failed=91 |
+
+## Table 5 — Failure Mode Table (source_age_cliff desc, then command_failed desc)
+
+
+### Sorted by source_age_cliff descending
+
+| Run | source_age_cliff | command_failed | Combined Fail Count | Combined VPH | Fail Rate | cliff% of combined fails |
+| --- | --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | 70 | 91 | 85 | 2031.09 | 10.62% | 82.4% |
+
+### Sorted by command_failed descending
+
+| Run | command_failed | source_age_cliff | Combined Fail Count | Combined VPH | Notes |
+| --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | 91 | 70 | 85 | 2031.09 | cliff=70 |
+
+## Table 6 — Retry Queue Window (drain_ready_age desc, then sleep total desc)
+
+| Run | Retry Windows | Local Deferred/Recovered/Final Failed | Drain Skips | Drain Skip Reasons | Shared Deferred/Recovered/Final Failed | Primary Queued | Projected Skip Reasons | Max Projected Retry Age | Max Projected+Margin Age | Max Retry Age Margin | Retry Pass Statuses | Drain Ready Age Max | Retry Wait Max/Count | Queue Sleep Total | Combined VPH | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | 57 | 248/0/248 | absent | absent | 0/0/0 | 248 | projected_source_age_cliff=70 | 366.963 | absent | absent | command_failed=134, nlm_content_below_threshold=1, source_age_cliff=109 | absent | absent/absent | 1170.000 | 2031.09 | windows=57; drain_ready_age=absent |
+
+## Table 7 — Content-Fetch Command Latency (total desc, then avg desc)
+
+| Run | Environment | Geometry | Command Total(s) | Command Count | Command Avg(s) | Pro Command Total(s) | Free Command Total(s) | Combined VPH |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hotel_wifi_3plus3_baseline_run01_current | hotel_wifi | 3+3 | 17806.943 | 1321 | 13.480 | 10157.639 | 7649.304 | 2031.09 |
+
+## Notes on Absent vs Zero Fields
+
+| Field | Meaning when absent |
+|---|---|
+| source_age_cliff | Field did not exist in this artifact format. Do NOT treat as zero. |
+| command_failed | Field did not exist in this artifact format. Do NOT treat as zero. |
+| throughput_valid | Field did not exist in older artifacts. Do not infer pass/fail. |
+| run_environment_label | Field did not exist in older artifacts. Keep absent-label artifacts out of same-universe comparisons unless another authority source establishes their environment. |
+| worker_shape_signature | Field not written by older tooling. Geometry derived from runs[*].workers instead. |
+| setup_elapsed_s_total | Not present in old-format artifacts (pre-worker_cleanup instrumentation). |
+| extract_elapsed_s_total | Not present in old-format artifacts. |
+| startup_prepare_total_elapsed_s_total | Not present in old-format artifacts. |
+| content_fetch_status_counts_total | Older artifacts may omit this; only reports failures from content-fetch phase, not all failures. |
+| content_fetch_command_elapsed_s_* | Content-fetch command timing fields. Absence means the artifact predates command-latency instrumentation. |
+| retry_queue_* / shared_retry_* | Batch-local nlm_batch_extract_completed fields; older artifacts may omit them before retry-window instrumentation landed. Drain-skip fields are only present after the actual-drain projected-cliff guard was added. |
+
+**Critical distinction**: `content_fetch_status_counts_total` (source_age_cliff, command_failed) is a
+bucket of failures from the content-fetch stage only. `combined.fail_count_total` is the final benchmark
+fail count across all phases. These are NOT interchangeable. Report both separately.
+
+**Do not infer**: Do not set source_age_cliff=0 or command_failed=0 simply because the field is absent.
+An absent field means the artifact was written before that instrumentation existed, not that no such events occurred.
+
+## Per-Lane Detail
+
+
+### hotel_wifi_3plus3_baseline_run01_current
+
+- status: `ok`, throughput_valid: `true`, contract: `combined_hot_path_videos_per_hour_excludes_whisper_and_parent_chrome_reap_includes_worker_cleanup`
+- environment: `hotel_wifi`, geometry: `3+3`, limit: `400`, batch_size: `200`, policy: `notebooklm_route_plus_fallback_30s_1w`
+- source_url: `https://www.youtube.com/channel/UCYTISFALLBACKBMK`
+- pre_run_browser_health: `clean`, post_run_hygiene: `clean`
+- parse_mode: `strict`, parse_error: `none`
+
+  **Pro lane** (3 workers):
+  - VPH: 1024.63, success/fail/processed: 338/62/400
+  - source_ready_age_s_max: 368.757, avg: 78.426
+  - worker_idle_wait_s_total: 681.416
+  - add_elapsed_s_total: 506.134
+  - cleanup_elapsed_s_total: 62.536
+  - setup_elapsed_s_total: 599.704
+  - extract_elapsed_s_total: 2204.286
+  - content_fetch_command_elapsed_s_total/count: 10157.639 / 646
+  - source_age_cliff: `49` (absent = field not in artifact)
+  - command_failed: `48` (absent = field not in artifact)
+  - content_fetch_status_counts_total: {command_failed=48, ready=338, source_age_cliff=49}
+  - retry_queue_window_count: 27
+  - retry_queue_deferred/recovered/final_failed: 104/0/104
+  - shared_retry_deferred_count/recovered_count/final_failed_count: 0/0/0
+  - retry_queue_primary_queued_count: 104
+  - retry_queue_skipped_reason_counts: {projected_source_age_cliff=48}
+  - projected_retry_ready_age_s_max: 366.963
+  - retry_pass_status_counts: {command_failed=52, source_age_cliff=50}
+  - retry_queue_drain_ready_age_s_max: absent
+  - content_fetch_retry_queue_sleep_elapsed_s_total: 570.000
+  - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000
+
+  **Free lane** (3 workers):
+  - VPH: 1142.89, success/fail/processed: 377/23/400
+  - source_ready_age_s_max: 310.380, avg: 45.863
+  - worker_idle_wait_s_total: 703.218
+  - add_elapsed_s_total: 484.300
+  - cleanup_elapsed_s_total: 41.326
+  - setup_elapsed_s_total: 509.492
+  - extract_elapsed_s_total: 2001.842
+  - content_fetch_command_elapsed_s_total/count: 7649.304 / 675
+  - source_age_cliff: `21` (absent = field not in artifact)
+  - command_failed: `43` (absent = field not in artifact)
+  - content_fetch_status_counts_total: {command_failed=43, nlm_content_below_threshold=1, ready=377, source_age_cliff=21}
+  - retry_queue_window_count: 30
+  - retry_queue_deferred/recovered/final_failed: 144/0/144
+  - shared_retry_deferred_count/recovered_count/final_failed_count: 0/0/0
+  - retry_queue_primary_queued_count: 144
+  - retry_queue_skipped_reason_counts: {projected_source_age_cliff=22}
+  - projected_retry_ready_age_s_max: 237.665
+  - retry_pass_status_counts: {command_failed=82, nlm_content_below_threshold=1, source_age_cliff=59}
+  - retry_queue_drain_ready_age_s_max: absent
+  - content_fetch_retry_queue_sleep_elapsed_s_total: 600.000
+  - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000

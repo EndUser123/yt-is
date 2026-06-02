@@ -290,10 +290,39 @@ def _sample_browser_health(allowed_browser_roots: Iterable[str | Path]) -> dict[
     }
 
 
-def stop_chrome_pids(pids: set[int]) -> None:
+def _ytis_owned_chrome_pids(pids: set[int]) -> set[int]:
     if os.name != "nt" or not pids:
-        return
-    pid_list = ",".join(str(pid) for pid in sorted(pids))
+        return set()
+    owned_roots = [
+        _normalize_path_for_matching(r"P:\.data\yt-is\browser"),
+    ]
+    default_profile_root = _normalize_path_for_matching(DEFAULT_NLM_CHROME_PROFILE_ROOT)
+    records_by_pid = {
+        int(record.get("pid") or 0): str(record.get("cmdline") or "")
+        for record in _collect_chrome_process_records()
+    }
+    owned: set[int] = set()
+    for pid in pids:
+        cmdline = records_by_pid.get(int(pid), "")
+        normalized_cmdline = _normalize_cmdline_path(cmdline)
+        if any(root in normalized_cmdline for root in owned_roots):
+            owned.add(int(pid))
+            continue
+        if (
+            default_profile_root in normalized_cmdline
+            and "https://notebooklm.google.com" in normalized_cmdline.lower()
+        ):
+            owned.add(int(pid))
+    return owned
+
+
+def stop_chrome_pids(pids: set[int]) -> set[int]:
+    if os.name != "nt" or not pids:
+        return set()
+    owned_pids = _ytis_owned_chrome_pids(pids)
+    if not owned_pids:
+        return set()
+    pid_list = ",".join(str(pid) for pid in sorted(owned_pids))
     ps = (
         "$pids = @("
         + pid_list
@@ -309,6 +338,7 @@ def stop_chrome_pids(pids: set[int]) -> None:
         + "}"
     )
     subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=20, check=False)
+    return owned_pids
 
 
 def default_chrome_profile_pids() -> set[int]:
@@ -321,8 +351,7 @@ def reap_default_chrome_profile() -> set[int]:
     pids = default_chrome_profile_pids()
     if not pids:
         return set()
-    stop_chrome_pids(pids)
-    return pids
+    return stop_chrome_pids(pids)
 
 
 def browser_health_gate(
@@ -349,8 +378,7 @@ def browser_health_gate(
     initial_default_profile_pids = sorted(chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT))
     initial_default_profile_reaped_pids: list[int] = []
     if initial_default_profile_pids:
-        stop_chrome_pids(set(initial_default_profile_pids))
-        initial_default_profile_reaped_pids = list(initial_default_profile_pids)
+        initial_default_profile_reaped_pids = sorted(stop_chrome_pids(set(initial_default_profile_pids)) or set())
 
     detected_default_profile_pids: set[int] = set(initial_default_profile_pids)
     reaped_default_profile_pids: set[int] = set(initial_default_profile_reaped_pids)
@@ -373,8 +401,7 @@ def browser_health_gate(
         default_profile_pids = {int(pid) for pid in sample["default_profile_pids"]}
         if default_profile_pids:
             detected_default_profile_pids.update(default_profile_pids)
-            reaped_default_profile_pids.update(default_profile_pids)
-            stop_chrome_pids(default_profile_pids)
+            reaped_default_profile_pids.update(stop_chrome_pids(default_profile_pids) or set())
         for process in sample["unexpected_processes"]:
             pid = int(process.get("pid") or 0)
             if pid:
@@ -495,8 +522,11 @@ def auth_check_cache_hit(context: NLMAuthContext, *, ttl_s: float | None = None)
 
 
 def auth_check_cache_store(context: NLMAuthContext, *, session_established_at: float | None = None) -> None:
+    now = time.monotonic()
+    if session_established_at is None:
+        session_established_at = now
     with _AUTH_CHECK_CACHE_LOCK:
-        _AUTH_CHECK_CACHE[auth_check_cache_key(context)] = (time.monotonic(), session_established_at)
+        _AUTH_CHECK_CACHE[auth_check_cache_key(context)] = (now, session_established_at)
 
 
 def auth_check_cache_session_age(context: NLMAuthContext) -> float | None:

@@ -197,6 +197,7 @@ def _merge_counts(target: Counter[str], value: Any) -> None:
 def _aggregate_summary(summary: dict[str, Any], policy_name: str) -> dict[str, Any]:
     rows = _load_summary_rows(summary, policy_name)
     content_fetch_status_counts: Counter[str] = Counter()
+    retry_queue_drain_skipped_reason_counts: Counter[str] = Counter()
     totals = {
         "row_count": len(rows),
         "success_count_total": 0,
@@ -211,11 +212,27 @@ def _aggregate_summary(summary: dict[str, Any], policy_name: str) -> dict[str, A
         "setup_elapsed_s_total": 0.0,
         "add_elapsed_s_total": 0.0,
         "extract_elapsed_s_total": 0.0,
+        "content_fetch_command_elapsed_s_total": 0.0,
+        "content_fetch_command_elapsed_s_max": 0.0,
+        "content_fetch_command_elapsed_s_count": 0,
         "readiness_elapsed_s_total": 0.0,
         "cleanup_elapsed_s_total": 0.0,
         "worker_idle_wait_s_total": 0.0,
         "source_ready_age_s_total": 0.0,
         "source_ready_age_s_max": 0.0,
+        "source_list_probe_elapsed_s_total": 0.0,
+        "source_list_probe_elapsed_s_max": 0.0,
+        "source_list_probe_count": 0,
+        "source_id_validated_after_not_found_true_count": 0,
+        "source_id_validated_after_not_found_false_count": 0,
+        "source_id_validated_after_not_found_unknown_count": 0,
+        "content_fetch_retry_sleep_elapsed_s_total": 0.0,
+        "content_fetch_retry_queue_sleep_elapsed_s_total": 0.0,
+        "retry_queue_drain_skipped_count_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_max": 0.0,
+        "source_content_readiness_probe_count": 0,
+        "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
         "shared_retry_deferred_count_total": 0.0,
         "shared_retry_recovered_count_total": 0.0,
         "shared_retry_final_failed_count_total": 0.0,
@@ -251,11 +268,83 @@ def _aggregate_summary(summary: dict[str, Any], policy_name: str) -> dict[str, A
             or row.get("extract_elapsed_s_total")
             or row.get("extract_elapsed_s")
         )
+        totals["content_fetch_command_elapsed_s_total"] += _float_value(
+            worker_stage_totals.get("content_fetch_command_elapsed_s_total")
+            or row.get("content_fetch_command_elapsed_s_total")
+        )
+        totals["content_fetch_command_elapsed_s_max"] = max(
+            totals["content_fetch_command_elapsed_s_max"],
+            _float_value(worker_stage_totals.get("content_fetch_command_elapsed_s_max") or row.get("content_fetch_command_elapsed_s_max")),
+        )
+        totals["content_fetch_command_elapsed_s_count"] += _int_value(
+            worker_stage_totals.get("content_fetch_command_elapsed_s_count")
+            or row.get("content_fetch_command_elapsed_s_count")
+        )
         totals["readiness_elapsed_s_total"] += _float_value(row.get("readiness_elapsed_s"))
         totals["cleanup_elapsed_s_total"] += _float_value(row.get("cleanup_elapsed_s"))
         totals["worker_idle_wait_s_total"] += _float_value(row.get("worker_idle_wait_s"))
         totals["source_ready_age_s_total"] += _float_value(row.get("source_ready_age_s_total"))
         totals["source_ready_age_s_max"] = max(totals["source_ready_age_s_max"], _float_value(row.get("source_ready_age_s_max")))
+        totals["source_list_probe_elapsed_s_total"] += _float_value(
+            worker_stage_totals.get("source_list_probe_elapsed_s_total")
+            or row.get("source_list_probe_elapsed_s_total")
+        )
+        totals["source_list_probe_elapsed_s_max"] = max(
+            totals["source_list_probe_elapsed_s_max"],
+            _float_value(worker_stage_totals.get("source_list_probe_elapsed_s_max") or row.get("source_list_probe_elapsed_s_max")),
+        )
+        totals["source_list_probe_count"] += _int_value(
+            worker_stage_totals.get("source_list_probe_count")
+            or row.get("source_list_probe_count")
+        )
+        totals["source_id_validated_after_not_found_true_count"] += _int_value(
+            worker_stage_totals.get("source_id_validated_after_not_found_true_count")
+            or row.get("source_id_validated_after_not_found_true_count")
+        )
+        totals["source_id_validated_after_not_found_false_count"] += _int_value(
+            worker_stage_totals.get("source_id_validated_after_not_found_false_count")
+            or row.get("source_id_validated_after_not_found_false_count")
+        )
+        totals["source_id_validated_after_not_found_unknown_count"] += _int_value(
+            worker_stage_totals.get("source_id_validated_after_not_found_unknown_count")
+            or row.get("source_id_validated_after_not_found_unknown_count")
+        )
+        totals["content_fetch_retry_sleep_elapsed_s_total"] += _float_value(
+            worker_stage_totals.get("content_fetch_retry_sleep_elapsed_s_total")
+            or row.get("content_fetch_retry_sleep_elapsed_s_total")
+        )
+        totals["content_fetch_retry_queue_sleep_elapsed_s_total"] += _float_value(
+            worker_stage_totals.get("content_fetch_retry_queue_sleep_elapsed_s_total")
+            or row.get("content_fetch_retry_queue_sleep_elapsed_s_total")
+        )
+        totals["retry_queue_drain_skipped_count_total"] += _float_value(
+            worker_stage_totals.get("retry_queue_drain_skipped_count")
+            or row.get("retry_queue_drain_skipped_count")
+        )
+        _merge_counts(
+            retry_queue_drain_skipped_reason_counts,
+            worker_stage_totals.get("retry_queue_drain_skipped_reason_counts")
+            or row.get("retry_queue_drain_skipped_reason_counts"),
+        )
+        totals["source_content_readiness_probe_elapsed_s_total"] += _float_value(
+            worker_stage_totals.get("source_content_readiness_probe_elapsed_s_total")
+            or row.get("source_content_readiness_probe_elapsed_s_total")
+        )
+        totals["source_content_readiness_probe_elapsed_s_max"] = max(
+            totals["source_content_readiness_probe_elapsed_s_max"],
+            _float_value(
+                worker_stage_totals.get("source_content_readiness_probe_elapsed_s_max")
+                or row.get("source_content_readiness_probe_elapsed_s_max")
+            ),
+        )
+        totals["source_content_readiness_probe_count"] += _int_value(
+            worker_stage_totals.get("source_content_readiness_probe_count")
+            or row.get("source_content_readiness_probe_count")
+        )
+        totals["source_content_readiness_probe_sleep_elapsed_s_total"] += _float_value(
+            worker_stage_totals.get("source_content_readiness_probe_sleep_elapsed_s_total")
+            or row.get("source_content_readiness_probe_sleep_elapsed_s_total")
+        )
         totals["shared_retry_deferred_count_total"] += _float_value(row.get("shared_retry_deferred_count"))
         totals["shared_retry_recovered_count_total"] += _float_value(row.get("shared_retry_recovered_count"))
         totals["shared_retry_final_failed_count_total"] += _float_value(row.get("shared_retry_final_failed_count"))
@@ -280,6 +369,7 @@ def _aggregate_summary(summary: dict[str, Any], policy_name: str) -> dict[str, A
     return {
         **totals,
         "content_fetch_status_counts_total": dict(content_fetch_status_counts),
+        "retry_queue_drain_skipped_reason_counts_total": dict(retry_queue_drain_skipped_reason_counts),
         "videos_per_hour": hot_path_videos_per_hour,
         "hot_path_videos_per_hour": hot_path_videos_per_hour,
         "transcript_fallback_videos_per_hour": transcript_fallback_videos_per_hour,

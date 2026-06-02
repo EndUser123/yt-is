@@ -25,12 +25,25 @@ def test_load_fetch_completed_event_from_jsonl(tmp_path):
                             "fail_count": 2,
                             "skip_count": 1,
                             "processed_count": 13,
-                            "elapsed_s": 26.0,
-                            "transcript_fallback_success_count": 3,
-                            "worker_stage_totals": {
-                                "startup_prepare_total_elapsed_s_total": 1.25,
-                                "setup_elapsed_s_total": 2.25,
-                                "add_sources_elapsed_s_total": 3.0,
+                        "elapsed_s": 26.0,
+                        "transcript_fallback_success_count": 3,
+                        "active_window_size": 20,
+                        "active_window_enabled": False,
+                        "extract_window_size": 30,
+                        "extract_window_enabled": False,
+                        "source_age_cadence_enabled": True,
+                        "source_age_cadence_soft_threshold_s": 160.0,
+                        "source_age_cadence_hard_threshold_s": 190.0,
+                        "source_age_cadence_min_window_size": 5,
+                        "window_mode": "source_age_cadence",
+                        "window_size": 6,
+                        "active_window_count": 3,
+                        "extract_window_count": 3,
+                        "window_count": 3,
+                        "worker_stage_totals": {
+                            "startup_prepare_total_elapsed_s_total": 1.25,
+                            "setup_elapsed_s_total": 2.25,
+                            "add_sources_elapsed_s_total": 3.0,
                                 "content_fetch_status_counts_total": {"ready": 2, "nlm_content_below_threshold": 1},
                                 "content_fetch_command_elapsed_s_total": 7.5,
                                 "content_fetch_command_elapsed_s_max": 4.0,
@@ -69,6 +82,19 @@ def test_load_fetch_completed_event_from_jsonl(tmp_path):
     assert payload["skip_count"] == 1
     assert payload["processed_count"] == 13
     assert payload["transcript_fallback_success_count"] == 3
+    assert payload["active_window_size"] == 20
+    assert payload["active_window_enabled"] is False
+    assert payload["extract_window_size"] == 30
+    assert payload["extract_window_enabled"] is False
+    assert payload["source_age_cadence_enabled"] is True
+    assert payload["source_age_cadence_soft_threshold_s"] == 160.0
+    assert payload["source_age_cadence_hard_threshold_s"] == 190.0
+    assert payload["source_age_cadence_min_window_size"] == 5
+    assert payload["window_mode"] == "source_age_cadence"
+    assert payload["window_size"] == 6
+    assert payload["active_window_count"] == 3
+    assert payload["extract_window_count"] == 3
+    assert payload["window_count"] == 3
     assert payload["worker_stage_totals"]["startup_prepare_total_elapsed_s_total"] == 1.25
     assert payload["worker_stage_totals"]["setup_elapsed_s_total"] == 2.25
     assert payload["worker_stage_totals"]["add_sources_elapsed_s_total"] == 3.0
@@ -154,6 +180,10 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
                             "content_fetch_command_elapsed_s_count": 2,
                             "content_fetch_retry_sleep_elapsed_s_total": 0.5,
                             "content_fetch_retry_queue_sleep_elapsed_s_total": 0.75,
+                            "retry_queue_drain_skipped_count": 2,
+                            "retry_queue_drain_skipped_reason_counts": {
+                                "drain_projected_source_age_cliff": 2,
+                            },
                             "source_list_probe_elapsed_s_total": 0.25,
                             "source_list_probe_elapsed_s_max": 0.25,
                             "source_list_probe_count": 1,
@@ -183,7 +213,7 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
     monkeypatch.setattr(
         worker_count_sweep,
         "cleanup_stale_worker_notebooks",
-        lambda *, delete=False: cleanup_calls.append(delete) or (0, 0),
+        lambda *, delete=False, include_active=False: cleanup_calls.append(delete) or (0, 0),
     )
     monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
     summary = worker_count_sweep._run_fetch_trial(
@@ -214,7 +244,7 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
     assert summary.worker_idle_wait_s == 3.0
     assert summary.fetch_completed["worker_stage_totals"]["startup_prepare_total_elapsed_s_total"] == 1.5
     assert summary.fetch_completed["worker_stage_totals"]["setup_elapsed_s_total"] == 3.5
-    assert cleanup_calls == [True]
+    assert cleanup_calls == [True, True, True]
     assert summary.sample_label == "mixed_lane"
     assert summary.source_filter == "https://www.youtube.com/channel/UCYTISFALLBACKBMK"
     assert summary.materialization_started is True
@@ -229,6 +259,8 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
     assert summary.content_fetch_command_elapsed_s_avg == 2.625
     assert summary.content_fetch_retry_sleep_elapsed_s_total == 0.5
     assert summary.content_fetch_retry_queue_sleep_elapsed_s_total == 0.75
+    assert summary.retry_queue_drain_skipped_count == 2.0
+    assert summary.retry_queue_drain_skipped_reason_counts == {"drain_projected_source_age_cliff": 2}
     assert summary.source_list_probe_count == 1
     assert summary.source_content_readiness_probe_count == 1
     assert summary.youtube_ytdlp_elapsed_s_total == 2.5
@@ -262,6 +294,19 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
                         "video_count": 50,
                         "succeeded": 49,
                         "failed": 1,
+                        "active_window_size": 20,
+                        "active_window_enabled": True,
+                        "extract_window_size": 30,
+                        "extract_window_enabled": False,
+                        "source_age_cadence_enabled": True,
+                        "source_age_cadence_soft_threshold_s": 160.0,
+                        "source_age_cadence_hard_threshold_s": 190.0,
+                        "source_age_cadence_min_window_size": 5,
+                        "window_mode": "source_age_cadence",
+                        "window_size": 6,
+                        "active_window_count": 1,
+                        "extract_window_count": 1,
+                        "window_count": 1,
                         "content_fetch_status_counts_total": {"ready": 49, "command_failed": 1},
                         "content_fetch_command_elapsed_s_total": 4.0,
                         "content_fetch_command_elapsed_s_max": 2.0,
@@ -290,6 +335,19 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
                         "video_count": 50,
                         "succeeded": 50,
                         "failed": 0,
+                        "active_window_size": 20,
+                        "active_window_enabled": True,
+                        "extract_window_size": 30,
+                        "extract_window_enabled": False,
+                        "source_age_cadence_enabled": True,
+                        "source_age_cadence_soft_threshold_s": 160.0,
+                        "source_age_cadence_hard_threshold_s": 190.0,
+                        "source_age_cadence_min_window_size": 5,
+                        "window_mode": "source_age_cadence",
+                        "window_size": 6,
+                        "active_window_count": 1,
+                        "extract_window_count": 1,
+                        "window_count": 1,
                         "content_fetch_status_counts_total": {"ready": 50},
                         "startup_prepare_total_elapsed_s": 1.0,
                         "setup_elapsed_s_total": 2.0,
@@ -306,7 +364,7 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
     monkeypatch.setattr(
         worker_count_sweep,
         "cleanup_stale_worker_notebooks",
-        lambda *, delete=False: cleanup_calls.append(delete) or (0, 0),
+        lambda *, delete=False, include_active=False: cleanup_calls.append(delete) or (0, 0),
     )
     monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
     summary = worker_count_sweep._run_fetch_trial(
@@ -323,33 +381,197 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
     assert summary.processed_count == 100
     assert summary.fetch_completed["terminal_source"] == "stdout_worker_summaries"
     assert summary.content_fetch_status_counts == {"ready": 99, "command_failed": 1}
+    assert summary.fetch_completed["active_window_size"] == 20
+    assert summary.fetch_completed["extract_window_size"] == 30
+    assert summary.fetch_completed["source_age_cadence_enabled"] is True
+    assert summary.fetch_completed["source_age_cadence_soft_threshold_s"] == 160.0
+    assert summary.fetch_completed["source_age_cadence_hard_threshold_s"] == 190.0
+    assert summary.fetch_completed["source_age_cadence_min_window_size"] == 5
+    assert summary.fetch_completed["window_mode"] == "source_age_cadence"
+    assert summary.fetch_completed["window_size"] == 6
+    assert summary.fetch_completed["window_count"] == 1
     assert summary.content_fetch_command_elapsed_s_total == 4.0
     assert summary.source_list_probe_count == 1
     assert summary.add_elapsed_s == 7.0
     assert summary.readiness_elapsed_s == 9.0
     assert summary.cleanup_elapsed_s == 2.5
-    assert cleanup_calls == [True]
+    assert cleanup_calls == [True, True, True]
     assert summary.fetch_completed["worker_stage_totals"]["startup_prepare_total_elapsed_s_total"] == 3.0
     assert summary.fetch_completed["worker_stage_totals"]["setup_elapsed_s_total"] == 5.0
 
 
-def test_run_fetch_trial_stops_when_worker_notebook_cleanup_fails(tmp_path, monkeypatch):
+def test_run_fetch_trial_continues_when_worker_notebook_cleanup_fails(tmp_path, monkeypatch):
+    cleanup_calls: list[bool] = []
+
+    def fake_run(command, capture_output, text, cwd, env, check, timeout=None):
+        log_dir = Path(env["INTELLIGENCE_STREAM_LOG_DIR"])
+        log_dir.mkdir(parents=True, exist_ok=True)
+        trace = log_dir / "fake-terminal.jsonl"
+        trace.write_text(
+            json.dumps(
+                {
+                    "action": "fetch_completed",
+                    "data": {
+                        "success_count": 2,
+                        "fail_count": 0,
+                        "skip_count": 0,
+                        "processed_count": 2,
+                        "elapsed_s": 4.0,
+                        "worker_stage_totals": {
+                            "add_sources_elapsed_s_total": 1.0,
+                            "materialization_wait_elapsed_s_total": 1.0,
+                            "cleanup_elapsed_s_total": 0.5,
+                            "content_fetch_status_counts_total": {"ready": 2},
+                        },
+                        "materialization_started": True,
+                        "timeout_hit": False,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return mock.Mock(returncode=0, stdout="done\n", stderr="")
+
     monkeypatch.setattr(
         worker_count_sweep,
         "cleanup_stale_worker_notebooks",
-        lambda *, delete=False: (0, 1),
+        lambda *, delete=False, include_active=False: cleanup_calls.append(delete) or (0, 1),
+    )
+    monkeypatch.setattr(worker_count_sweep.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
+
+    summary = worker_count_sweep._run_fetch_trial(
+        workers=2,
+        limit=37,
+        sample_label="mixed_lane",
+        output_dir=tmp_path,
+        source_filter="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        python_executable="python.exe",
     )
 
-    try:
-        worker_count_sweep._run_fetch_trial(
-            workers=2,
-            limit=37,
-            sample_label="mixed_lane",
-            output_dir=tmp_path,
-            source_filter="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
-            python_executable="python.exe",
+    assert cleanup_calls == [True, True, True]
+    assert summary.returncode == 0
+    assert summary.success_count == 2
+    assert summary.processed_count == 2
+    assert summary.videos_per_hour == 2057.14
+
+
+def test_run_fetch_trial_retries_transient_worker_notebook_cleanup_failure(tmp_path, monkeypatch):
+    cleanup_calls: list[tuple[bool, bool]] = []
+    cleanup_results = iter([(0, 1), (0, 0)])
+
+    def fake_cleanup(*, delete=False, include_active=False):
+        cleanup_calls.append((delete, include_active))
+        if include_active:
+            return (0, 0)
+        return next(cleanup_results)
+
+    def fake_run(command, capture_output, text, cwd, env, check, timeout=None):
+        log_dir = Path(env["INTELLIGENCE_STREAM_LOG_DIR"])
+        log_dir.mkdir(parents=True, exist_ok=True)
+        trace = log_dir / "fake-terminal.jsonl"
+        trace.write_text(
+            json.dumps(
+                {
+                    "action": "fetch_completed",
+                    "data": {
+                        "success_count": 2,
+                        "fail_count": 0,
+                        "skip_count": 0,
+                        "processed_count": 2,
+                        "elapsed_s": 4.0,
+                        "worker_stage_totals": {
+                            "add_sources_elapsed_s_total": 1.0,
+                            "materialization_wait_elapsed_s_total": 1.0,
+                            "cleanup_elapsed_s_total": 0.5,
+                            "content_fetch_status_counts_total": {"ready": 2},
+                        },
+                        "materialization_started": True,
+                        "timeout_hit": False,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
         )
-    except RuntimeError as exc:
-        assert "worker notebook preflight cleanup failed" in str(exc)
-    else:
-        raise AssertionError("cleanup failure should stop the worker-count trial")
+        return mock.Mock(returncode=0, stdout="done\n", stderr="")
+
+    monkeypatch.setattr(worker_count_sweep, "cleanup_stale_worker_notebooks", fake_cleanup)
+    monkeypatch.setattr(worker_count_sweep.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
+
+    summary = worker_count_sweep._run_fetch_trial(
+        workers=2,
+        limit=37,
+        sample_label="mixed_lane",
+        output_dir=tmp_path,
+        source_filter="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        python_executable="python.exe",
+    )
+
+    assert cleanup_calls == [(True, False), (True, False), (True, True)]
+    assert summary.returncode == 0
+    assert summary.success_count == 2
+    assert summary.processed_count == 2
+    assert summary.videos_per_hour == 2057.14
+    assert Path(summary.stdout_path).read_text(encoding="utf-8") == "done\n"
+
+
+def test_run_fetch_trial_keeps_result_when_post_run_cleanup_fails(tmp_path, monkeypatch):
+    cleanup_calls: list[tuple[bool, bool]] = []
+
+    def fake_cleanup(*, delete=False, include_active=False):
+        cleanup_calls.append((delete, include_active))
+        if include_active:
+            return (0, 1)
+        return (0, 0)
+
+    def fake_run(command, capture_output, text, cwd, env, check, timeout=None):
+        log_dir = Path(env["INTELLIGENCE_STREAM_LOG_DIR"])
+        log_dir.mkdir(parents=True, exist_ok=True)
+        trace = log_dir / "fake-terminal.jsonl"
+        trace.write_text(
+            json.dumps(
+                {
+                    "action": "fetch_completed",
+                    "data": {
+                        "success_count": 2,
+                        "fail_count": 0,
+                        "skip_count": 0,
+                        "processed_count": 2,
+                        "elapsed_s": 4.0,
+                        "worker_stage_totals": {
+                            "add_sources_elapsed_s_total": 1.0,
+                            "materialization_wait_elapsed_s_total": 1.0,
+                            "cleanup_elapsed_s_total": 0.5,
+                            "content_fetch_status_counts_total": {"ready": 2},
+                        },
+                        "materialization_started": True,
+                        "timeout_hit": False,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return mock.Mock(returncode=0, stdout="done\n", stderr="")
+
+    monkeypatch.setattr(worker_count_sweep, "cleanup_stale_worker_notebooks", fake_cleanup)
+    monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
+
+    summary = worker_count_sweep._run_fetch_trial(
+        workers=2,
+        limit=37,
+        sample_label="mixed_lane",
+        output_dir=tmp_path,
+        source_filter="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        python_executable="python.exe",
+    )
+
+    assert cleanup_calls == [(True, False), (True, True)]
+    assert summary.returncode == 0
+    assert summary.success_count == 2
+    assert summary.processed_count == 2
+    assert summary.videos_per_hour == 2057.14
+    assert Path(summary.stdout_path).read_text(encoding="utf-8") == "done\n"

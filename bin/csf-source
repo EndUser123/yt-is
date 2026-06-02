@@ -65,6 +65,7 @@ from csf import nlm_auth_guard
 from csf.csf_logging import log_user_message, log_action
 from csf.nlm_batch import DEFAULT_NOTEBOOKLM_BATCH_SIZE
 from csf.cache import has_cached_transcript, set_cached_transcript
+from csf.nlm_config import get_nlm_config
 from csf.playlist_imports import (
     finish_playlist_import_run,
     get_playlist_import_db_path,
@@ -134,8 +135,14 @@ def _take_industrial_dispatch_groups(
     batch_queue: list[list[str]],
     worker_slots: int,
     batches_per_worker: int = 4,
+    *,
+    rotate_by: int = 0,
 ) -> list[list[list[str]]]:
-    """Take up to a bounded bundle of batches per available worker slot."""
+    """Take up to a bounded bundle of batches per available worker slot.
+
+    `rotate_by` shifts which worker slot receives the first batch so repeated
+    dispatch waves do not keep mapping the same modulo slice to the same slot.
+    """
     if worker_slots < 1:
         raise ValueError("worker_slots must be >= 1")
     if batches_per_worker < 1:
@@ -151,6 +158,10 @@ def _take_industrial_dispatch_groups(
             if len(group) >= batches_per_worker:
                 continue
             group.append(batch_queue.pop(0))
+    if dispatch_count > 1 and rotate_by:
+        offset = rotate_by % dispatch_count
+        if offset:
+            groups = groups[offset:] + groups[:offset]
     return [group for group in groups if group]
 
 
@@ -292,6 +303,7 @@ def _build_fetch_completed_payload(
     max_items: int | None = None,
     worker_stage_totals: dict[str, float] | None = None,
     worker_source_profile_totals: dict[str, object] | None = None,
+    reusable_runtime_flags: dict[str, object] | None = None,
     notebooklm_pending_count: int = 0,
     transcript_fallback_queued_count: int = 0,
     terminal_reason_counts: dict[str, int] | None = None,
@@ -300,6 +312,7 @@ def _build_fetch_completed_payload(
     route_no_captions_to_fallback: bool = False,
     failure_reason: str | None = None,
 ) -> dict[str, object]:
+    cfg = get_nlm_config()
     return {
         "source_filter": source_filter,
         "strategy": strategy,
@@ -328,6 +341,13 @@ def _build_fetch_completed_payload(
         "worker_cleanup_failed": worker_cleanup_failed,
         "worker_stage_totals": worker_stage_totals or {},
         "worker_source_profile_totals": worker_source_profile_totals or {},
+        "active_window_size": cfg.reusable_active_window_size,
+        "extract_window_size": cfg.reusable_extract_window_size,
+        "source_age_cadence_enabled": cfg.reusable_source_age_cadence_enabled,
+        "source_age_cadence_soft_threshold_s": cfg.reusable_source_age_cadence_soft_threshold_s,
+        "source_age_cadence_hard_threshold_s": cfg.reusable_source_age_cadence_hard_threshold_s,
+        "source_age_cadence_min_window_size": cfg.reusable_source_age_cadence_min_window_size,
+        **(reusable_runtime_flags or {}),
         "route_no_captions_to_fallback": route_no_captions_to_fallback,
         "success_count": success_count,
         "fail_count": fail_count,
@@ -436,8 +456,16 @@ def _ensure_nlm_auth() -> bool:
         print("[source] FATAL: NLM auth check timed out.", file=sys.stderr)
         sys.exit(1)
     if _stop_default_nlm_chrome_profile("auth_check_after"):
-        print("[source] FATAL: NLM auth check opened the default chrome-profile.", file=sys.stderr)
-        sys.exit(1)
+        log_action(
+            "nlm_auth_recovered",
+            {
+                "component": "source",
+                "status": "default_profile_reaped_after_auth_check",
+                "notebooklm_profile": profile,
+                "expected_email": expected_email or None,
+                "check_count": check_count,
+            },
+        )
     account = _extract_nlm_account(login_check.stdout or "", login_check.stderr or "")
     if login_check.returncode == 0 and (not expected_email or account == expected_email) and not force_scheduled:
         return True
@@ -598,6 +626,7 @@ def _log_fetch_completed(
     max_items: int | None = None,
     worker_stage_totals: dict[str, float] | None = None,
     worker_source_profile_totals: dict[str, object] | None = None,
+    reusable_runtime_flags: dict[str, object] | None = None,
     notebooklm_pending_count: int = 0,
     transcript_fallback_queued_count: int = 0,
     terminal_reason_counts: dict[str, int] | None = None,
@@ -632,6 +661,7 @@ def _log_fetch_completed(
             worker_cleanup_failed=worker_cleanup_failed,
             worker_stage_totals=worker_stage_totals,
             worker_source_profile_totals=worker_source_profile_totals,
+            reusable_runtime_flags=reusable_runtime_flags,
             route_no_captions_to_fallback=route_no_captions_to_fallback,
             notebooklm_pending_count=notebooklm_pending_count,
             transcript_fallback_queued_count=transcript_fallback_queued_count,
@@ -1923,6 +1953,7 @@ def cmd_fetch(
     max_items_reached = False
     industrial_scraper = None
     industrial_batches_processed = 0
+    industrial_dispatch_cycle = 0
     industrial_batch_queue: list[list[str]] = []
     industrial_worker_executor: ThreadPoolExecutor | None = None
     industrial_worker_futures: set = set()
@@ -1977,6 +2008,22 @@ def cmd_fetch(
     source_ready_age_s_total = 0.0
     source_ready_age_s_max = 0.0
     source_ready_age_s_avg = 0.0
+    runtime_flag_keys = (
+        "active_window_size",
+        "active_window_enabled",
+        "extract_window_size",
+        "extract_window_enabled",
+        "source_age_cadence_enabled",
+        "source_age_cadence_soft_threshold_s",
+        "source_age_cadence_hard_threshold_s",
+        "source_age_cadence_min_window_size",
+        "window_mode",
+        "window_size",
+        "active_window_count",
+        "extract_window_count",
+        "window_count",
+    )
+    reusable_runtime_flags: dict[str, object] = {}
     youtube_ytdlp_elapsed_s_total = 0.0
     youtube_ytdlp_elapsed_s_max = 0.0
     youtube_ytdlp_elapsed_s_count = 0
@@ -2227,6 +2274,11 @@ def cmd_fetch(
         nonlocal source_content_readiness_probe_count
         nonlocal source_content_readiness_probe_sleep_elapsed_s_total
         nonlocal industrial_source_profile_totals
+        nonlocal reusable_runtime_flags
+        for key in runtime_flag_keys:
+            value = summary.get(key)
+            if value is not None:
+                reusable_runtime_flags[key] = value
         startup_retire_elapsed_s_total += float(summary.get("startup_retire_elapsed_s", 0) or 0.0)
         startup_notebook_check_elapsed_s_total += float(summary.get("startup_notebook_check_elapsed_s", 0) or 0.0)
         startup_notebook_create_elapsed_s_total += float(summary.get("startup_notebook_create_elapsed_s", 0) or 0.0)
@@ -2336,7 +2388,14 @@ def cmd_fetch(
         batch_queue: list[list[str]],
         worker_slots: int,
         batches_per_worker: int,
+        *,
+        rotate_by: int = 0,
     ) -> list[list[list[str]]]:
+        """Take up to a bounded bundle of batches per available worker slot.
+
+        `rotate_by` shifts which worker slot receives the first batch so repeated
+        dispatch waves do not keep mapping the same modulo slice to the same slot.
+        """
         if worker_slots < 1:
             raise ValueError("worker_slots must be >= 1")
         if batches_per_worker < 1:
@@ -2352,6 +2411,10 @@ def cmd_fetch(
                 if len(group) >= batches_per_worker:
                     continue
                 group.append(batch_queue.pop(0))
+        if dispatch_count > 1 and rotate_by:
+            offset = rotate_by % dispatch_count
+            if offset:
+                groups = groups[offset:] + groups[:offset]
         return [group for group in groups if group]
 
     def _run_industrial_worker(worker_id: int, worker_batches: list[list[str]]) -> tuple[int, dict[str, object], str, str]:
@@ -2435,7 +2498,8 @@ def cmd_fetch(
 
     def _service_industrial_workers(wait_for_completion: bool = False) -> None:
         nonlocal industrial_batch_queue, industrial_worker_executor, industrial_worker_futures
-        nonlocal industrial_worker_slots_in_use, industrial_batches_processed, success_count, fail_count
+        nonlocal industrial_worker_slots_in_use, industrial_batches_processed, industrial_dispatch_cycle
+        nonlocal success_count, fail_count
         nonlocal industrial_first_worker_finished_at, industrial_last_worker_finished_at
         nonlocal industrial_completion_stall_alert_logged, industrial_oversized_dispatch_alert_logged
 
@@ -2525,6 +2589,7 @@ def cmd_fetch(
             industrial_batch_queue,
             available_slots,
             industrial_batches_per_worker,
+            rotate_by=industrial_dispatch_cycle,
         )
         if not worker_groups:
             return
@@ -2560,6 +2625,7 @@ def cmd_fetch(
             )
             industrial_worker_futures.add(future)
             industrial_worker_slots_in_use[future] = slot_id
+        industrial_dispatch_cycle += 1
 
     def _process_industrial_batch(batch_items: list[tuple[str, str]]) -> None:
         nonlocal industrial_batches_processed, success_count, fail_count, transcript_fallback_queue, transcript_fallback_processed_count

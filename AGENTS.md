@@ -72,6 +72,7 @@ Extract YouTube transcripts using NotebookLM's batch notebook workflow.
 - Before commands: `nlm login --check`
 - If expired: `nlm login --force` (no user prompt)
 - Before any benchmark trial: clear stale worker notebooks through the existing worker-notebook cleanup path, then let the worker process prewarm its notebook before timed batches start.
+- Browser/process cleanup must be scoped to yt-is-owned runtime state only. Do not kill Chrome, Edge, or other browser processes by executable name. Only stop processes that can be tied to the active yt-is run by an explicit PID recorded by the harness or by a command line rooted under a configured yt-is browser profile such as `P:\.data\yt-is\browser\notebooklm-pro`, `P:\.data\yt-is\browser\notebooklm-free`, or another lane `browser_profile_root` from the active lane config. If ownership is ambiguous, leave the browser running and inspect the run logs/profile roots first.
 
 **Key files:**
 - `csf/transcript.py` — `_fetch_via_notebooklm_batch()` with auth recovery

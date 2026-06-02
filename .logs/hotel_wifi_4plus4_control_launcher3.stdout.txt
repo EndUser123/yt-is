@@ -1,0 +1,9 @@
+[sequence] doctor=ok lanes=a_hominidae_pro,troup_hominidae_free run_root=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current
+[sequence] browser_health=clean detected_default=0 unexpected=0 summary=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current\browser_health.json
+[sequence] smoke root=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current\smoke
+[sequence] smoke summary=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current\smoke\sharded_lane_series_summary.json
+[sequence] evidence=ok summary=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current\smoke\sharded_lane_series_summary.json
+[sequence] soak root=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current\soak
+[sequence] summary=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current\sharded_lane_series_summary.json
+[sequence] soak summary=P:\packages\yt-is\.logs\sharded_lane_series\hotel_wifi_4plus4_control_run03_current\soak\sharded_lane_series_summary.json
+[sequence] status=ok

@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from csf.sharded_lane_series import (
     DEFAULT_POLICY,
     LaneConfig,
+    _lane_env,
     compute_combined_hot_path_vph,
     load_lane_configs,
     preflight_lane_auth_profiles,
@@ -214,6 +217,82 @@ def test_compute_combined_hot_path_vph_prefers_throughput_elapsed_over_wall_cloc
     assert combined["wall_elapsed_s"] == 420.0
     assert combined["throughput_elapsed_s"] == 390.0
     assert combined["hot_path_videos_per_hour"] == 5483.08
+
+
+def test_compute_combined_hot_path_vph_propagates_stage_totals_from_lane_aggregates():
+    lanes = [
+        {
+            "lane": "pro",
+            "hot_path_success_count_total": 10,
+            "started_at": 100.0,
+            "finished_at": 210.0,
+            "wall_elapsed_s": 110.0,
+            "aggregate": {
+                "content_fetch_command_elapsed_s_total": 7.5,
+                "content_fetch_command_elapsed_s_max": 4.0,
+                "content_fetch_command_elapsed_s_count": 2,
+                "source_list_probe_elapsed_s_total": 1.25,
+                "source_list_probe_elapsed_s_max": 0.75,
+                "source_list_probe_count": 1,
+                "content_fetch_retry_sleep_elapsed_s_total": 0.5,
+                "content_fetch_retry_queue_sleep_elapsed_s_total": 0.25,
+                "retry_queue_drain_skipped_count_total": 2.0,
+                "retry_queue_drain_skipped_reason_counts_total": {
+                    "drain_projected_source_age_cliff": 2,
+                },
+                "source_content_readiness_probe_elapsed_s_total": 2.0,
+                "source_content_readiness_probe_elapsed_s_max": 1.5,
+                "source_content_readiness_probe_count": 1,
+                "source_content_readiness_probe_sleep_elapsed_s_total": 0.1,
+            },
+        },
+        {
+            "lane": "free",
+            "hot_path_success_count_total": 20,
+            "started_at": 120.0,
+            "finished_at": 240.0,
+            "wall_elapsed_s": 120.0,
+            "aggregate": {
+                "content_fetch_command_elapsed_s_total": 9.0,
+                "content_fetch_command_elapsed_s_max": 5.5,
+                "content_fetch_command_elapsed_s_count": 3,
+                "source_list_probe_elapsed_s_total": 2.25,
+                "source_list_probe_elapsed_s_max": 1.5,
+                "source_list_probe_count": 2,
+                "content_fetch_retry_sleep_elapsed_s_total": 0.75,
+                "content_fetch_retry_queue_sleep_elapsed_s_total": 0.5,
+                "retry_queue_drain_skipped_count_total": 3.0,
+                "retry_queue_drain_skipped_reason_counts_total": {
+                    "drain_projected_source_age_cliff": 1,
+                    "drain_other": 2,
+                },
+                "source_content_readiness_probe_elapsed_s_total": 4.0,
+                "source_content_readiness_probe_elapsed_s_max": 2.0,
+                "source_content_readiness_probe_count": 2,
+                "source_content_readiness_probe_sleep_elapsed_s_total": 0.2,
+            },
+        },
+    ]
+
+    combined = compute_combined_hot_path_vph(lanes)
+
+    assert combined["content_fetch_command_elapsed_s_total"] == 16.5
+    assert combined["content_fetch_command_elapsed_s_max"] == 5.5
+    assert combined["content_fetch_command_elapsed_s_count"] == 5
+    assert combined["source_list_probe_elapsed_s_total"] == 3.5
+    assert combined["source_list_probe_elapsed_s_max"] == 1.5
+    assert combined["source_list_probe_count"] == 3
+    assert combined["content_fetch_retry_sleep_elapsed_s_total"] == 1.25
+    assert combined["content_fetch_retry_queue_sleep_elapsed_s_total"] == 0.75
+    assert combined["retry_queue_drain_skipped_count_total"] == 5.0
+    assert combined["retry_queue_drain_skipped_reason_counts_total"] == {
+        "drain_other": 2,
+        "drain_projected_source_age_cliff": 3,
+    }
+    assert combined["source_content_readiness_probe_elapsed_s_total"] == 6.0
+    assert combined["source_content_readiness_probe_elapsed_s_max"] == 2.0
+    assert combined["source_content_readiness_probe_count"] == 3
+    assert combined["source_content_readiness_probe_sleep_elapsed_s_total"] == pytest.approx(0.3)
 
 
 def test_preflight_lane_auth_profiles_refreshes_expired_profile_before_run(monkeypatch):
@@ -483,6 +562,8 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
                         "YTIS_NLM_BROWSER_PROFILE_DIRECTORY",
                         "YTIS_BATCH_STATUS_DB_PATH",
                         "YTIS_REUSABLE_PIPELINE_MODE",
+                        "YTIS_NLM_RUN_ENVIRONMENT_LABEL",
+                        "YTIS_RUN_ENVIRONMENT_LABEL",
                         "YTIS_NLM_AUTH_NONINTERACTIVE",
                     )
                 },
@@ -540,6 +621,7 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
         batch_size=200,
         manifest_json=Path("P:\\\\\\packages/yt-is/tests/fixtures/shared_benchmark_manifest.json"),
         reusable_pipeline_mode="serial",
+        run_environment_label="hotel_wifi",
     )
 
     assert [call["lane"] for call in calls] == ["pro", "free"]
@@ -562,10 +644,15 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
     assert calls[1]["env"]["YTIS_NLM_BROWSER_PROFILE_DIRECTORY"] == "Profile 1"
     assert calls[1]["env"]["YTIS_BATCH_STATUS_DB_PATH"].endswith("out\\free\\batch_status.sqlite")
     assert calls[1]["env"]["YTIS_NLM_AUTH_NONINTERACTIVE"] == "1"
+    assert calls[0]["env"]["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
+    assert calls[0]["env"]["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
+    assert calls[1]["env"]["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
+    assert calls[1]["env"]["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert report["report_version"] == 1
     assert report["metric_contract"] == "combined_hot_path_videos_per_hour_excludes_whisper_and_parent_chrome_reap_includes_worker_cleanup"
     assert report["worker_shape_signature"] == "4+4"
     assert report["lane_worker_counts"] == {"pro": 4, "free": 4}
+    assert report["run_environment_label"] == "hotel_wifi"
     assert report["throughput_valid"] is True
     assert report["combined"]["hot_path_success_count_total"] == 594
     assert report["combined"]["hot_path_videos_per_hour"] == 5091.43
@@ -573,6 +660,33 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
     assert report["lanes"][0]["worker_state_root"].endswith("out\\pro\\worker_states")
     assert report["lanes"][0]["configured_worker_state_root"].endswith("pro\\worker_states")
     assert Path(report["report_path"]).exists()
+    persisted = json.loads(Path(report["report_path"]).read_text(encoding="utf-8"))
+    assert persisted["run_environment_label"] == "hotel_wifi"
+
+
+def test_lane_env_exports_run_environment_label(tmp_path):
+    lane = LaneConfig(
+        lane="pro",
+        account_class="pro",
+        workers=4,
+        notebooklm_profile_prefix="ytis-pro-worker",
+        notebooklm_profiles=("alt", "ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04"),
+        browser_profile_root=Path("P:\\\\.data/yt-is/browser/notebooklm-pro"),
+        browser_profile_directory="Profile 2",
+        worker_state_root=tmp_path / "pro" / "worker_states",
+        notebook_prefix="benchmark-shard-pro",
+    )
+    env = _lane_env(
+        {},
+        lane,
+        "serial",
+        lane_output_root=tmp_path / "lane",
+        worker_state_root=tmp_path / "state",
+        run_environment_label="hotel_wifi",
+    )
+    assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
+    assert env["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
+    assert env["YTIS_NLM_WORKER_AUTH_USE_CDP"] == "0"
 
 
 def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_path, monkeypatch):
@@ -716,6 +830,62 @@ def test_run_sharded_lane_series_marks_partial_lane_reports_as_partial(tmp_path,
     assert report["completed_lane_count"] == 2
     assert report["successful_lane_count"] == 1
     assert report["combined"]["hot_path_success_count_total"] == 594
+    assert Path(report["report_path"]).exists()
+
+
+def test_run_sharded_lane_series_ignores_shared_retry_attempts_in_partial_check(tmp_path, monkeypatch):
+    import csf.sharded_lane_series as mod
+
+    def fake_run_lane(*, lane, **kwargs):
+        return {
+            "status": "ok",
+            "lane": lane.lane,
+            "account_class": lane.account_class,
+            "started_at": 100.0,
+            "finished_at": 150.0,
+            "wall_elapsed_s": 50.0,
+            "hot_path_success_count_total": 50,
+            "fail_count_total": 0,
+            "transcript_fallback_success_count_total": 0,
+            "processed_count_total": 53,
+            "shared_retry_processed_count_total": 3.0,
+            "hot_path_videos_per_hour": 3600.0,
+        }
+
+    monkeypatch.setattr(mod, "_run_lane", fake_run_lane)
+
+    report = run_sharded_lane_series(
+        lanes=(
+            LaneConfig(
+                lane="free",
+                account_class="free",
+                workers=3,
+                notebooklm_profile_prefix="ytis-free1-worker",
+                notebooklm_profiles=("default", "ytis-free1-worker-02", "ytis-free1-worker-03"),
+                browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
+                browser_profile_directory="Profile 1",
+                worker_state_root=tmp_path / "free" / "worker_states",
+                notebook_prefix="benchmark-shard-free",
+            ),
+        ),
+        trace_root=tmp_path / "trace",
+        output_root=tmp_path / "out",
+        cohort_json=tmp_path / "out" / "cohort.json",
+        source_url="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        policy="notebooklm_route_plus_fallback_30s_1w",
+        limit=50,
+        batch_size=25,
+        manifest_json=Path("P:\\\\\\packages/yt-is/tests/fixtures/shared_benchmark_manifest.json"),
+        reusable_pipeline_mode="serial",
+    )
+
+    assert report["status"] == "ok"
+    assert report["throughput_valid"] is True
+    assert report["partial_lane_count"] == 0
+    assert report["runs"][0]["status"] == "ok"
+    assert report["runs"][0].get("partial_reason") is None
+    assert report["runs"][0]["processed_count_total"] == 53
+    assert report["runs"][0]["shared_retry_processed_count_total"] == 3.0
     assert Path(report["report_path"]).exists()
 
 
@@ -1137,9 +1307,34 @@ def test_run_lane_rejects_default_profile_contaminated_logs(tmp_path, monkeypatc
             env={},
         )
     except RuntimeError as exc:
-        assert "default_profile_running" in str(exc)
+        assert "missing benchmark summary" in str(exc)
     else:
-        raise AssertionError("default-profile contamination should invalidate the lane")
+        raise AssertionError("lane should still fail when it cannot produce a benchmark summary")
+
+
+def test_find_invalid_lane_artifacts_ignores_default_profile_running(tmp_path):
+    import csf.sharded_lane_series as mod
+
+    lane_root = tmp_path / "lane"
+    log_dir = lane_root / "batch_01" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "term.jsonl").write_text(
+        json.dumps(
+            {
+                "action": "nlm_auth_failed",
+                "data": {
+                    "status": "default_profile_running",
+                    "notebooklm_profile": "ytis-free1-worker-01",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    findings = mod._find_invalid_lane_artifacts(lane_root)
+
+    assert findings == []
 
 
 def test_find_invalid_lane_artifacts_flags_zero_growth_terminal(tmp_path):

@@ -1,0 +1,468 @@
+# Stage Reducer Output
+
+## fresh_state_3plus3_extract_schema_control_run07_current
+
+- status: ok, hygiene: clean
+- combined VPH: 3291.38, wall: 813.8s
+
+### Lane: a_hominidae_pro
+- aggregate VPH: 2256.45
+- aggregate wall: 813.8s
+- aggregate startup prepare: 181.7s
+- aggregate startup notebook check: 0.0s
+- aggregate startup notebook create: 0.0s
+- aggregate startup notebook retire: 0.0s
+- aggregate startup prepare cleanup: 0.0s
+- aggregate setup: 734.1s
+- aggregate setup excluding add: 35.0s
+- aggregate add: 699.1s
+- aggregate cleanup: 161.4s
+- aggregate idle wait: 43.5s
+- aggregate sr_age_avg: 18.5s
+- success/fail/processed: 398/2/400
+
+| Phase | Batch | Timestamp | Workers | elapsed(s) | setup(s) | setup_excl_add(s) | extract(s) | add(s) | cleanup(s) | sr_age(s) | command_failed | ready | **Lane Bottleneck** |
+|-------|-------|-----------|---------|------------|----------|-------------------|------------|--------|------------|----------|----------------|-------|----------------|
+| smoke | batch_01 | 20260523_164746 | 3 | 549.0 | 507.6 | 115.3 | 651.4 | 392.3 | 35.8 | 48.7 | 6 | 196 | stage-sum-suggested:extract [extract=42% of aggregate stage sum, command_failed=11 (1%), recovered-unknown] |
+| smoke | batch_02 | 20260523_165742 | 3 | 562.2 | 399.5 | 21.1 | 529.2 | 378.4 | 50.3 | 29.4 | 4 | 199 | stage-sum-suggested:extract [extract=42% of aggregate stage sum, command_failed=11 (1%), recovered-unknown] |
+| soak | batch_01 | 20260523_170802 | 3 | 345.4 | 319.9 | 18.0 | 295.1 | 301.9 | 60.0 | 38.0 | 0 | 199 | stage-sum-suggested:extract [extract=42% of aggregate stage sum, command_failed=11 (1%), recovered-unknown] |
+| soak | batch_02 | 20260523_171457 | 3 | 289.6 | 414.2 | 17.0 | 132.7 | 397.2 | 101.4 | 16.3 | 1 | 199 | stage-sum-suggested:extract [extract=42% of aggregate stage sum, command_failed=11 (1%), recovered-unknown] |
+
+| Worker | Worker Batch Count | Succeeded | Failed |
+|--------|-------|-----------|--------|
+| worker-01 | 1 | 50 | 0 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 49 | 1 |
+| worker-01 | 1 | 50 | 0 |
+| worker-02 | 1 | 49 | 1 |
+| worker-03 | 1 | 50 | 0 |
+| worker-01 | 1 | 50 | 0 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 49 | 1 |
+| worker-01 | 1 | 49 | 1 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 50 | 0 |
+
+### Command Attribution
+
+- command completions: 677
+- failures: 82 (12.1%)
+
+| Worker | Profile | Commands | Ready | Failed | Source-Age-Cliff | Command-Failed | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Failure Rate |
+|--------|---------|----------|-------|--------|------------------|----------------|------------|------------------|-------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 208 | 199 | 9 | 0 | 9 | 5.80 | 5.93 | 2.75 | 4.3% |
+| worker-02 | ytis-pro-worker-02 | 232 | 199 | 33 | 0 | 33 | 8.71 | 7.66 | 15.05 | 14.2% |
+| worker-03 | ytis-pro-worker-03 | 237 | 197 | 40 | 0 | 25 | 6.80 | 6.51 | 8.21 | 16.9% |
+
+| Last Auth Refresh Age | Commands | Failed | Failure Rate |
+|-----------------------|----------|--------|--------------|
+| 5-19s | 668 | 82 | 12.3% |
+| 20-59s | 9 | 0 | 0.0% |
+
+- skew comparison: worker-profile spread 12.6pp vs auth-refresh spread 12.3pp; worker balance is the stronger signal
+
+### Fetch Recovery Attribution
+
+| Worker | Profile | Pass | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |
+|--------|---------|------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|
+| worker-01 | ytis-pro-worker-01 | primary | 344 | ready:344 | 1.00 | 20.7 | 100.9 | absent | absent | absent | 0 | none | 2667.60 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-01 | ytis-pro-worker-01 | retry | 5 | command_failed:1, ready:1, source_age_cliff:3 | 1.00 | 163.7 | 202.7 | absent | absent | absent | 0 | none | 20.69 | 0 | 0.00 | 1.80 | 0 | 0 |
+| worker-02 | ytis-pro-worker-02 | primary | 249 | ready:249 | 1.00 | 19.7 | 63.6 | absent | absent | absent | 0 | none | 1717.32 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-02 | ytis-pro-worker-02 | retry | 6 | command_failed:6 | 1.83 | 172.8 | 207.0 | absent | absent | absent | 0 | none | 394.58 | 0 | 0.00 | 11.88 | 0 | 0 |
+| worker-03 | ytis-pro-worker-03 | primary | 198 | ready:198 | 1.00 | 18.4 | 71.3 | absent | absent | absent | 0 | none | 1288.25 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-03 | ytis-pro-worker-03 | retry | 6 | command_failed:4, nlm_content_below_threshold:2 | 3.00 | 125.2 | 133.1 | absent | absent | absent | 0 | none | 164.25 | 0 | 0.00 | 12.88 | 0 | 0 |
+
+### Default Profile Recovery
+
+| Worker | Profile | Before Cmd | After Cmd | Before Auth | After Auth | During Cleanup | Total |
+|--------|---------|------------|-----------|-------------|------------|-----------------|-------|
+| worker-01 | ytis-pro-worker-01 | 1 | 4 | 8 | 0 | 1 | 14 |
+| worker-02 | ytis-pro-worker-02 | 5 | 1 | 10 | 0 | 0 | 16 |
+| worker-03 | ytis-pro-worker-03 | 4 | 21 | 15 | 0 | 1 | 41 |
+
+### Batch Attribution
+
+#### smoke / batch_01 / 20260523_164746
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 50 | 0 | 0.0% | 7.02 | 7.02 | 0.00 | 19.9 | 36.3 | 1.00 | 1 | ready:50 | 5-19s:50 |
+| worker-02 | ytis-pro-worker-02 | 60 | 10 | 16.7% | 11.29 | 11.59 | 9.76 | 27.7 | 143.9 | 1.20 | 4 | command_failed:10, ready:50 | 20-59s:2, 5-19s:58 |
+| worker-03 | ytis-pro-worker-03 | 81 | 32 | 39.5% | 6.96 | 5.58 | 9.07 | 34.1 | 127.9 | 1.49 | 4 | command_failed:25, nlm_content_below_threshold:7, ready:49 | 20-59s:4, 5-19s:77 |
+
+#### smoke / batch_02 / 20260523_165742
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 51 | 1 | 2.0% | 11.39 | 11.53 | 4.25 | 23.5 | 133.9 | 1.00 | 1 | command_failed:1, ready:50 | 5-19s:51 |
+| worker-02 | ytis-pro-worker-02 | 72 | 23 | 31.9% | 7.32 | 2.61 | 17.35 | 23.5 | 107.4 | 1.38 | 4 | command_failed:23, ready:49 | 20-59s:3, 5-19s:69 |
+| worker-03 | ytis-pro-worker-03 | 49 | 0 | 0.0% | 13.34 | 13.34 | 0.00 | 29.8 | 71.3 | 1.00 | 1 | ready:49 | 5-19s:49 |
+
+#### soak / batch_01 / 20260523_170802
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 50 | 0 | 0.0% | 2.65 | 2.65 | 0.00 | 14.4 | 19.9 | 1.00 | 1 | ready:50 | 5-19s:50 |
+| worker-02 | ytis-pro-worker-02 | 50 | 0 | 0.0% | 13.01 | 13.01 | 0.00 | 38.0 | 63.6 | 1.00 | 1 | ready:50 | 5-19s:50 |
+| worker-03 | ytis-pro-worker-03 | 57 | 8 | 14.0% | 3.68 | 3.49 | 4.81 | 19.4 | 96.8 | 1.21 | 4 | nlm_content_below_threshold:8, ready:49 | 5-19s:57 |
+
+#### soak / batch_02 / 20260523_171457
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 57 | 8 | 14.0% | 2.48 | 2.46 | 2.56 | 15.4 | 72.7 | 1.21 | 4 | command_failed:8, ready:49 | 5-19s:57 |
+| worker-02 | ytis-pro-worker-02 | 50 | 0 | 0.0% | 3.30 | 3.30 | 0.00 | 12.8 | 22.7 | 1.00 | 1 | ready:50 | 5-19s:50 |
+| worker-03 | ytis-pro-worker-03 | 50 | 0 | 0.0% | 3.68 | 3.68 | 0.00 | 16.3 | 24.7 | 1.00 | 1 | ready:50 | 5-19s:50 |
+
+### Retry Queue Window
+
+- windows: 19
+- deferred/recovered/final failed: 17/1/16
+- delay/budget: 30.0s / 30.0s
+- drain ready age max: absent
+- retry queue wait max/count: absent/absent
+- retry queue sleep elapsed total: 210.0s
+
+### Lane: troup_hominidae_free
+- aggregate VPH: 2118.97
+- aggregate wall: 799.1s
+- aggregate startup prepare: 127.2s
+- aggregate startup notebook check: 0.0s
+- aggregate startup notebook create: 0.0s
+- aggregate startup notebook retire: 0.0s
+- aggregate startup prepare cleanup: 0.0s
+- aggregate setup: 621.6s
+- aggregate setup excluding add: 31.2s
+- aggregate add: 590.3s
+- aggregate cleanup: 167.4s
+- aggregate idle wait: 43.3s
+- aggregate sr_age_avg: 19.4s
+- success/fail/processed: 346/54/400
+
+| Phase | Batch | Timestamp | Workers | elapsed(s) | setup(s) | setup_excl_add(s) | extract(s) | add(s) | cleanup(s) | sr_age(s) | command_failed | ready | **Lane Bottleneck** |
+|-------|-------|-----------|---------|------------|----------|-------------------|------------|--------|------------|----------|----------------|-------|----------------|
+| smoke | batch_01 | 20260523_164746 | 3 | 451.7 | 300.6 | 17.9 | 606.3 | 282.7 | 56.8 | 40.5 | 6 | 198 | stage-sum-suggested:extract [extract=50% of aggregate stage sum, command_failed=13 (2%), recovered-unknown] |
+| smoke | batch_02 | 20260523_165630 | 3 | 461.4 | 397.1 | 17.3 | 620.6 | 379.9 | 48.1 | 20.5 | 4 | 198 | stage-sum-suggested:extract [extract=50% of aggregate stage sum, command_failed=13 (2%), recovered-unknown] |
+| soak | batch_01 | 20260523_170802 | 3 | 253.4 | 315.5 | 16.3 | 330.8 | 299.2 | 112.1 | 30.1 | 1 | 148 | stage-sum-suggested:extract [extract=50% of aggregate stage sum, command_failed=13 (2%), recovered-unknown] |
+| soak | batch_02 | 20260523_171438 | 3 | 334.4 | 306.1 | 14.9 | 358.4 | 291.1 | 55.2 | 24.5 | 2 | 198 | stage-sum-suggested:extract [extract=50% of aggregate stage sum, command_failed=13 (2%), recovered-unknown] |
+
+| Worker | Worker Batch Count | Succeeded | Failed |
+|--------|-------|-----------|--------|
+| worker-01 | 1 | 49 | 1 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 49 | 1 |
+| worker-01 | 1 | 49 | 1 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 49 | 1 |
+| worker-01 | 1 | 50 | 0 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 48 | 2 |
+| worker-01 | 1 | 49 | 1 |
+| worker-02 | 1 | 49 | 1 |
+| worker-03 | 1 | 50 | 0 |
+
+### Command Attribution
+
+- command completions: 690
+- failures: 99 (14.3%)
+
+| Worker | Profile | Commands | Ready | Failed | Source-Age-Cliff | Command-Failed | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Failure Rate |
+|--------|---------|----------|-------|--------|------------------|----------------|------------|------------------|-------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 211 | 197 | 14 | 0 | 14 | 10.06 | 9.73 | 14.62 | 6.6% |
+| worker-02 | ytis-free1-worker-02 | 223 | 199 | 24 | 0 | 24 | 6.00 | 5.37 | 11.29 | 10.8% |
+| worker-03 | ytis-free1-worker-03 | 256 | 195 | 61 | 0 | 45 | 8.87 | 9.38 | 7.23 | 23.8% |
+
+| Last Auth Refresh Age | Commands | Failed | Failure Rate |
+|-----------------------|----------|--------|--------------|
+| 0-4s | 2 | 0 | 0.0% |
+| 5-19s | 683 | 99 | 14.5% |
+| 20-59s | 5 | 0 | 0.0% |
+
+- skew comparison: worker-profile spread 17.2pp vs auth-refresh spread 14.5pp; worker balance is the stronger signal
+
+### Fetch Recovery Attribution
+
+| Worker | Profile | Pass | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |
+|--------|---------|------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|
+| worker-01 | ytis-free1-worker-01 | primary | 196 | ready:196 | 1.00 | 18.1 | 62.5 | absent | absent | absent | 0 | none | 1895.62 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-01 | ytis-free1-worker-01 | retry | 4 | command_failed:3, ready:1 | 1.25 | 162.5 | 212.5 | absent | absent | absent | 0 | none | 111.18 | 0 | 0.00 | 5.70 | 0 | 0 |
+| worker-02 | ytis-free1-worker-02 | primary | 298 | ready:298 | 1.00 | 16.0 | 48.7 | absent | absent | absent | 0 | none | 2309.52 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-02 | ytis-free1-worker-02 | retry | 4 | command_failed:3, ready:1 | 3.00 | 130.7 | 188.2 | absent | absent | absent | 0 | none | 143.21 | 0 | 0.00 | 6.90 | 0 | 0 |
+| worker-03 | ytis-free1-worker-03 | primary | 246 | ready:246 | 1.00 | 20.3 | 63.0 | absent | absent | absent | 0 | none | 2270.30 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-03 | ytis-free1-worker-03 | retry | 9 | command_failed:7, nlm_content_below_threshold:2 | 3.22 | 153.0 | 180.7 | absent | absent | absent | 0 | none | 245.15 | 0 | 0.00 | 18.74 | 0 | 0 |
+
+### Default Profile Recovery
+
+| Worker | Profile | Before Cmd | After Cmd | Before Auth | After Auth | During Cleanup | Total |
+|--------|---------|------------|-----------|-------------|------------|-----------------|-------|
+| worker-01 | ytis-free1-worker-01 | 0 | 2 | 0 | 0 | 2 | 4 |
+| worker-02 | ytis-free1-worker-02 | 3 | 11 | 3 | 0 | 0 | 17 |
+| worker-03 | ytis-free1-worker-03 | 2 | 3 | 2 | 0 | 0 | 7 |
+
+### Batch Attribution
+
+#### smoke / batch_01 / 20260523_164746
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 55 | 6 | 10.9% | 16.73 | 17.94 | 6.84 | 34.0 | 210.8 | 1.13 | 4 | command_failed:6, ready:49 | 5-19s:55 |
+| worker-02 | ytis-free1-worker-02 | 50 | 0 | 0.0% | 3.77 | 3.77 | 0.00 | 14.6 | 22.4 | 1.00 | 1 | ready:50 | 5-19s:50 |
+| worker-03 | ytis-free1-worker-03 | 85 | 37 | 43.5% | 9.58 | 10.09 | 8.92 | 55.7 | 155.9 | 1.54 | 4 | command_failed:29, nlm_content_below_threshold:8, ready:48 | 20-59s:5, 5-19s:80 |
+
+#### smoke / batch_02 / 20260523_165630
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 54 | 5 | 9.3% | 8.67 | 8.36 | 11.74 | 20.4 | 119.3 | 1.11 | 4 | command_failed:5, ready:49 | 5-19s:54 |
+| worker-02 | ytis-free1-worker-02 | 65 | 15 | 23.1% | 5.51 | 3.62 | 11.78 | 24.2 | 110.8 | 1.32 | 4 | command_failed:15, ready:50 | 0-4s:2, 5-19s:63 |
+| worker-03 | ytis-free1-worker-03 | 57 | 8 | 14.0% | 3.28 | 2.72 | 6.68 | 20.7 | 108.3 | 1.21 | 4 | command_failed:8, ready:49 | 5-19s:57 |
+
+#### soak / batch_01 / 20260523_170802
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 50 | 0 | 0.0% | 2.66 | 2.66 | 0.00 | 11.0 | 16.8 | 1.00 | 1 | ready:50 | 5-19s:50 |
+| worker-02 | ytis-free1-worker-02 | 51 | 1 | 2.0% | 12.47 | 11.18 | 77.05 | 26.7 | 132.7 | 1.00 | 1 | command_failed:1, ready:50 | 5-19s:51 |
+| worker-03 | ytis-free1-worker-03 | 64 | 16 | 25.0% | 11.16 | 13.68 | 3.60 | 42.7 | 150.0 | 1.38 | 4 | command_failed:8, nlm_content_below_threshold:8, ready:48 | 5-19s:64 |
+
+#### soak / batch_02 / 20260523_171438
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 52 | 3 | 5.8% | 11.56 | 10.12 | 34.95 | 24.3 | 129.5 | 1.00 | 1 | command_failed:3, ready:49 | 5-19s:52 |
+| worker-02 | ytis-free1-worker-02 | 57 | 8 | 14.0% | 2.75 | 2.85 | 2.15 | 18.0 | 89.7 | 1.21 | 4 | command_failed:8, ready:49 | 5-19s:57 |
+| worker-03 | ytis-free1-worker-03 | 50 | 0 | 0.0% | 11.10 | 11.10 | 0.00 | 15.9 | 27.5 | 1.00 | 1 | ready:50 | 5-19s:50 |
+
+### Retry Queue Window
+
+- windows: 17
+- deferred/recovered/final failed: 17/2/15
+- delay/budget: 30.0s / 30.0s
+- drain ready age max: absent
+- retry queue wait max/count: absent/absent
+- retry queue sleep elapsed total: 270.0s
+
+## fresh_state_3plus3_free_browser_default_run01_current
+
+- status: ok, hygiene: clean
+- combined VPH: 2752.18, wall: 949.6s
+
+### Lane: a_hominidae_pro
+- aggregate VPH: 2088.79
+- aggregate wall: 808.6s
+- aggregate startup prepare: 162.3s
+- aggregate startup notebook check: 0.0s
+- aggregate startup notebook create: 0.0s
+- aggregate startup notebook retire: 0.0s
+- aggregate startup prepare cleanup: 0.0s
+- aggregate setup: 668.3s
+- aggregate setup excluding add: 113.9s
+- aggregate add: 554.4s
+- aggregate cleanup: 102.5s
+- aggregate idle wait: 131.5s
+- aggregate sr_age_avg: 19.7s
+- success/fail/processed: 398/2/400
+
+| Phase | Batch | Timestamp | Workers | elapsed(s) | setup(s) | setup_excl_add(s) | extract(s) | add(s) | cleanup(s) | sr_age(s) | command_failed | ready | **Lane Bottleneck** |
+|-------|-------|-----------|---------|------------|----------|-------------------|------------|--------|------------|----------|----------------|-------|----------------|
+| smoke | batch_01 | 20260524_152817 | 3 | 92.3 | 43.2 | 4.7 | 14.6 | 38.5 | 6.2 | 9.5 | 0 | 25 | stage-sum-suggested:extract [extract=37% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+| smoke | batch_02 | 20260524_153010 | 3 | 94.2 | 45.9 | 45.9 | 12.7 | 0.0 | 8.1 | 9.4 | 0 | 25 | stage-sum-suggested:extract [extract=37% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+| soak | batch_01 | 20260524_153202 | 3 | 363.6 | 336.5 | 16.7 | 362.3 | 319.8 | 54.1 | 30.9 | 0 | 199 | stage-sum-suggested:extract [extract=37% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+| soak | batch_02 | 20260524_153913 | 3 | 322.4 | 331.8 | 97.2 | 240.6 | 234.6 | 48.4 | 23.2 | 1 | 199 | stage-sum-suggested:extract [extract=37% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+
+| Worker | Worker Batch Count | Succeeded | Failed |
+|--------|-------|-----------|--------|
+| worker-01 | 1 | 25 | 0 |
+| worker-01 | 1 | 25 | 0 |
+| worker-01 | 1 | 50 | 0 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 49 | 1 |
+| worker-01 | 1 | 49 | 1 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 50 | 0 |
+
+### Command Attribution
+
+- command completions: 363
+- failures: 17 (4.7%)
+
+| Worker | Profile | Commands | Ready | Failed | Source-Age-Cliff | Command-Failed | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Failure Rate |
+|--------|---------|----------|-------|--------|------------------|----------------|------------|------------------|-------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 157 | 149 | 8 | 0 | 8 | 5.55 | 5.71 | 2.56 | 5.1% |
+| worker-02 | ytis-pro-worker-02 | 99 | 98 | 1 | 0 | 1 | 4.03 | 3.88 | 18.83 | 1.0% |
+| worker-03 | ytis-pro-worker-03 | 107 | 99 | 8 | 0 | 0 | 9.82 | 10.37 | 3.05 | 7.5% |
+
+| Last Auth Refresh Age | Commands | Failed | Failure Rate |
+|-----------------------|----------|--------|--------------|
+| 5-19s | 313 | 17 | 5.4% |
+| 20-59s | 50 | 0 | 0.0% |
+
+- skew comparison: worker-profile spread 6.5pp vs auth-refresh spread 5.4pp; worker balance is the stronger signal
+
+### Fetch Recovery Attribution
+
+| Worker | Profile | Pass | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |
+|--------|---------|------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|
+| worker-01 | ytis-pro-worker-01 | primary | 199 | ready:199 | 1.00 | 16.3 | 52.4 | absent | absent | absent | 0 | none | 1074.95 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-01 | ytis-pro-worker-01 | retry | 1 | command_failed:1 | 4.00 | 75.9 | 75.9 | absent | absent | absent | 0 | none | 11.51 | 0 | 0.00 | 1.86 | 0 | 0 |
+| worker-02 | ytis-pro-worker-02 | primary | 149 | ready:149 | 1.00 | 15.1 | 27.3 | absent | absent | absent | 0 | none | 942.34 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-02 | ytis-pro-worker-02 | retry | 1 | ready:1 | 1.00 | 77.4 | 77.4 | absent | absent | absent | 0 | none | 3.38 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-03 | ytis-pro-worker-03 | primary | 99 | ready:99 | 1.00 | 25.7 | 57.4 | absent | absent | absent | 0 | none | 1026.41 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-03 | ytis-pro-worker-03 | retry | 1 | nlm_content_below_threshold:1 | 4.00 | 160.0 | 160.0 | absent | absent | absent | 0 | none | 17.46 | 0 | 0.00 | 1.87 | 0 | 0 |
+
+### Default Profile Recovery
+
+| Worker | Profile | Before Cmd | After Cmd | Before Auth | After Auth | During Cleanup | Total |
+|--------|---------|------------|-----------|-------------|------------|-----------------|-------|
+| worker-01 | ytis-pro-worker-01 | 1 | 1 | 2 | 0 | 0 | 4 |
+| worker-02 | ytis-pro-worker-02 | 0 | 10 | 2 | 0 | 0 | 12 |
+| worker-03 | ytis-pro-worker-03 | 1 | 4 | 0 | 0 | 0 | 5 |
+
+### Batch Attribution
+
+#### smoke / batch_01 / 20260524_152817
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 25 | 0 | 0.0% | 4.10 | 4.10 | 0.00 | 9.5 | 14.7 | 1.00 | 1 | ready:25 | 5-19s:25 |
+
+#### smoke / batch_02 / 20260524_153010
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 25 | 0 | 0.0% | 3.37 | 3.37 | 0.00 | 9.4 | 13.5 | 1.00 | 1 | ready:25 | 5-19s:25 |
+
+#### soak / batch_01 / 20260524_153202
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 50 | 0 | 0.0% | 10.81 | 10.81 | 0.00 | 30.8 | 52.4 | 1.00 | 1 | ready:50 | 20-59s:50 |
+| worker-02 | ytis-pro-worker-02 | 49 | 0 | 0.0% | 3.15 | 3.15 | 0.00 | 12.8 | 18.5 | 1.00 | 1 | ready:49 | 5-19s:49 |
+| worker-03 | ytis-pro-worker-03 | 57 | 8 | 14.0% | 11.66 | 13.07 | 3.05 | 38.3 | 156.0 | 1.21 | 4 | nlm_content_below_threshold:8, ready:49 | 5-19s:57 |
+
+#### soak / batch_02 / 20260524_153913
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-pro-worker-01 | 57 | 8 | 14.0% | 2.54 | 2.53 | 2.56 | 15.1 | 74.2 | 1.21 | 4 | command_failed:8, ready:49 | 5-19s:57 |
+| worker-02 | ytis-pro-worker-02 | 50 | 1 | 2.0% | 4.89 | 4.60 | 18.83 | 16.5 | 77.4 | 1.00 | 1 | command_failed:1, ready:49 | 5-19s:50 |
+| worker-03 | ytis-pro-worker-03 | 50 | 0 | 0.0% | 7.72 | 7.72 | 0.00 | 23.2 | 36.3 | 1.00 | 1 | ready:50 | 5-19s:50 |
+
+### Retry Queue Window
+
+- windows: 10
+- deferred/recovered/final failed: 3/1/2
+- delay/budget: 30.0s / 30.0s
+- drain ready age max: absent
+- retry queue wait max/count: absent/absent
+- retry queue sleep elapsed total: 90.0s
+
+### Lane: troup_hominidae_free
+- aggregate VPH: 1631.47
+- aggregate wall: 949.6s
+- aggregate startup prepare: 128.7s
+- aggregate startup notebook check: 0.0s
+- aggregate startup notebook create: 0.0s
+- aggregate startup notebook retire: 0.0s
+- aggregate startup prepare cleanup: 0.0s
+- aggregate setup: 628.5s
+- aggregate setup excluding add: 106.0s
+- aggregate add: 522.4s
+- aggregate cleanup: 211.1s
+- aggregate idle wait: 201.3s
+- aggregate sr_age_avg: 66.7s
+- success/fail/processed: 328/72/400
+
+| Phase | Batch | Timestamp | Workers | elapsed(s) | setup(s) | setup_excl_add(s) | extract(s) | add(s) | cleanup(s) | sr_age(s) | command_failed | ready | **Lane Bottleneck** |
+|-------|-------|-----------|---------|------------|----------|-------------------|------------|--------|------------|----------|----------------|-------|----------------|
+| smoke | batch_01 | 20260524_152817 | 3 | 88.1 | 43.1 | 3.8 | 11.7 | 39.3 | 11.3 | 12.1 | 0 | 25 | stage-sum-suggested:extract [extract=54% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+| smoke | batch_02 | 20260524_153816 | 3 | 113.5 | 50.1 | 4.2 | 9.6 | 45.9 | 6.3 | 7.6 | 0 | 25 | stage-sum-suggested:extract [extract=54% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+| soak | batch_01 | 20260524_153202 | 3 | 324.2 | 304.3 | 15.4 | 470.8 | 288.9 | 42.6 | 35.9 | 0 | 199 | stage-sum-suggested:extract [extract=54% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+| soak | batch_02 | 20260524_153817 | 3 | 399.6 | 324.2 | 90.6 | 805.8 | 233.6 | 168.5 | 237.3 | 1 | 129 | stage-sum-suggested:extract [extract=54% of aggregate stage sum, command_failed=1 (0%), recovered-unknown] |
+
+| Worker | Worker Batch Count | Succeeded | Failed |
+|--------|-------|-----------|--------|
+| worker-01 | 1 | 25 | 0 |
+| worker-01 | 1 | 25 | 0 |
+| worker-01 | 1 | 50 | 0 |
+| worker-02 | 1 | 50 | 0 |
+| worker-03 | 1 | 49 | 1 |
+| worker-01 | 1 | 10 | 40 |
+| worker-02 | 1 | 20 | 30 |
+| worker-03 | 1 | 49 | 1 |
+
+### Command Attribution
+
+- command completions: 339
+- failures: 61 (18.0%)
+
+| Worker | Profile | Commands | Ready | Failed | Source-Age-Cliff | Command-Failed | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Failure Rate |
+|--------|---------|----------|-------|--------|------------------|----------------|------------|------------------|-------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 136 | 110 | 26 | 0 | 26 | 26.56 | 7.93 | 105.36 | 19.1% |
+| worker-02 | ytis-free1-worker-02 | 91 | 70 | 21 | 0 | 21 | 28.58 | 3.46 | 112.32 | 23.1% |
+| worker-03 | ytis-free1-worker-03 | 112 | 98 | 14 | 0 | 8 | 6.11 | 6.06 | 6.45 | 12.5% |
+
+| Last Auth Refresh Age | Commands | Failed | Failure Rate |
+|-----------------------|----------|--------|--------------|
+| 5-19s | 339 | 61 | 18.0% |
+
+- skew comparison: worker-profile spread 10.6pp vs auth-refresh spread 0.0pp; worker balance is the stronger signal
+
+### Fetch Recovery Attribution
+
+| Worker | Profile | Pass | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |
+|--------|---------|------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|
+| worker-01 | ytis-free1-worker-01 | primary | 131 | ready:109, source_age_cliff:22 | 0.83 | 52.5 | 247.0 | absent | absent | absent | 0 | none | 865.98 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-01 | ytis-free1-worker-01 | retry | 19 | ready:1, source_age_cliff:18 | 0.05 | 343.7 | 353.6 | absent | absent | absent | 0 | none | 6.41 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-02 | ytis-free1-worker-02 | primary | 135 | ready:119, source_age_cliff:16 | 0.88 | 48.1 | 237.3 | absent | absent | absent | 0 | none | 985.13 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-02 | ytis-free1-worker-02 | retry | 14 | source_age_cliff:14 | 0.00 | 350.7 | 350.7 | absent | absent | absent | 0 | none | 0.00 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-03 | ytis-free1-worker-03 | primary | 148 | ready:148 | 1.00 | 14.1 | 28.2 | absent | absent | absent | 0 | none | 807.69 | 0 | 0.00 | 0.00 | 0 | 0 |
+| worker-03 | ytis-free1-worker-03 | retry | 2 | command_failed:1, nlm_content_below_threshold:1 | 4.00 | 132.9 | 178.1 | absent | absent | absent | 0 | none | 18.70 | 0 | 0.00 | 3.74 | 0 | 0 |
+
+### Default Profile Recovery
+
+| Worker | Profile | Before Cmd | After Cmd | Before Auth | After Auth | During Cleanup | Total |
+|--------|---------|------------|-----------|-------------|------------|-----------------|-------|
+| worker-01 | ytis-free1-worker-01 | 2 | 0 | 2 | 0 | 1 | 5 |
+| worker-02 | ytis-free1-worker-02 | 0 | 1 | 2 | 0 | 0 | 3 |
+| worker-03 | ytis-free1-worker-03 | 0 | 10 | 9 | 0 | 0 | 19 |
+
+### Batch Attribution
+
+#### smoke / batch_01 / 20260524_152817
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 25 | 0 | 0.0% | 3.00 | 3.00 | 0.00 | 12.1 | 15.8 | 1.00 | 1 | ready:25 | 5-19s:25 |
+
+#### smoke / batch_02 / 20260524_153816
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 25 | 0 | 0.0% | 2.45 | 2.45 | 0.00 | 7.6 | 10.5 | 1.00 | 1 | ready:25 | 5-19s:25 |
+
+#### soak / batch_01 / 20260524_153202
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 51 | 1 | 2.0% | 15.36 | 13.56 | 105.79 | 21.1 | 166.7 | 1.00 | 1 | command_failed:1, ready:50 | 5-19s:51 |
+| worker-02 | ytis-free1-worker-02 | 50 | 0 | 0.0% | 2.73 | 2.73 | 0.00 | 13.7 | 19.3 | 1.00 | 1 | ready:50 | 5-19s:50 |
+| worker-03 | ytis-free1-worker-03 | 55 | 6 | 10.9% | 9.00 | 8.86 | 10.21 | 25.8 | 176.4 | 1.13 | 4 | nlm_content_below_threshold:6, ready:49 | 5-19s:55 |
+
+#### soak / batch_02 / 20260524_153817
+
+| Worker | Profile | Commands | Failed | Failure Rate | Avg Cmd(s) | Avg Ready Cmd(s) | Avg Failed Cmd(s) | Avg SR Age(s) | Max SR Age(s) | Avg Attempt | Max Attempt | Status Distribution | Auth Buckets |
+|--------|---------|----------|--------|--------------|------------|------------------|-------------------|---------------|---------------|-------------|-------------|---------------------|--------------|
+| worker-01 | ytis-free1-worker-01 | 35 | 25 | 71.4% | 76.91 | 5.84 | 105.35 | 38.6 | 187.1 | 1.20 | 2 | command_failed:25, ready:10 | 5-19s:35 |
+| worker-02 | ytis-free1-worker-02 | 41 | 21 | 51.2% | 60.10 | 5.28 | 112.32 | 29.1 | 177.2 | 1.17 | 2 | command_failed:21, ready:20 | 5-19s:41 |
+| worker-03 | ytis-free1-worker-03 | 57 | 8 | 14.0% | 3.32 | 3.27 | 3.63 | 19.5 | 86.0 | 1.21 | 4 | command_failed:8, ready:49 | 5-19s:57 |
+
+### Retry Queue Window
+
+- windows: 10
+- deferred/recovered/final failed: 35/1/34
+- delay/budget: 30.0s / 30.0s
+- drain ready age max: absent
+- retry queue wait max/count: absent/absent
+- retry queue sleep elapsed total: 150.0s
+

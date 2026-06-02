@@ -21,6 +21,7 @@ import json
 import subprocess
 import shutil
 import uuid
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
@@ -80,6 +81,8 @@ class NLMIndustrialScraper:
         "yt-is\\selenium-profiles",
         "yt-is/selenium-profiles",
     )
+    SELENIUM_SESSION_DIR_RE = re.compile(r"^\d+_\d+_[0-9a-f]{8}$", re.IGNORECASE)
+    SELENIUM_SESSION_LEASE_NAME = ".yt-is-session-lease.json"
 
     def __init__(
         self,
@@ -129,6 +132,211 @@ class NLMIndustrialScraper:
     def _selenium_profile_session_root(self, browser: str) -> Path:
         """Return a per-run Selenium profile root for a specific browser."""
         return self._selenium_profile_root(browser) / self._profile_session_id
+
+    def _selenium_profile_session_lease_path(self, session_root: Path) -> Path:
+        return session_root / self.SELENIUM_SESSION_LEASE_NAME
+
+    def _write_selenium_profile_session_lease(self, session_root: Path, browser: str) -> None:
+        """Write a small lease marker so pruning can recognize the live session."""
+        try:
+            session_root.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "browser": browser,
+                "profile_session_id": self._profile_session_id,
+                "pid": os.getpid(),
+                "started_at_epoch": time.time(),
+            }
+            self._selenium_profile_session_lease_path(session_root).write_text(
+                json.dumps(payload, sort_keys=True),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def _read_selenium_profile_session_lease(self, session_root: Path) -> dict:
+        """Best-effort read of the session lease marker."""
+        lease_path = self._selenium_profile_session_lease_path(session_root)
+        try:
+            if not lease_path.is_file():
+                return {}
+            data = json.loads(lease_path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _touch_selenium_profile_session_lease(self, session_root: Path) -> None:
+        """Refresh the heartbeat timestamp for a live session lease."""
+        lease = self._read_selenium_profile_session_lease(session_root)
+        if not lease:
+            return
+        try:
+            lease["last_heartbeat_epoch"] = time.time()
+            self._selenium_profile_session_lease_path(session_root).write_text(
+                json.dumps(lease, sort_keys=True),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    @classmethod
+    def _is_timestamped_selenium_session_dir(cls, path: Path) -> bool:
+        """Return True for the per-run Selenium session directory naming scheme."""
+        return bool(path and cls.SELENIUM_SESSION_DIR_RE.match(path.name or ""))
+
+    @staticmethod
+    def _normalize_path_for_match(path: Path) -> str:
+        return str(path).replace("\\", "/").lower()
+
+    @staticmethod
+    def _process_cmdline_text(proc) -> str:
+        try:
+            cmdline = proc.cmdline() or []
+        except Exception:
+            cmdline = []
+        try:
+            return " ".join(str(part) for part in cmdline).replace("\\", "/").lower()
+        except Exception:
+            return ""
+
+    def _selenium_profile_session_is_active(self, session_root: Path) -> bool:
+        """Return True when a live browser process still points at this session root."""
+        lease = self._read_selenium_profile_session_lease(session_root)
+        stale_after_s = max(
+            60,
+            int(getattr(self.browser_cfg, "selenium_profile_lease_stale_after_s", 900) or 900),
+        )
+        try:
+            heartbeat = float(lease.get("last_heartbeat_epoch") or lease.get("started_at_epoch") or 0.0)
+            if heartbeat and (time.time() - heartbeat) <= stale_after_s:
+                return True
+        except Exception:
+            pass
+        try:
+            if int(lease.get("pid", -1)) == os.getpid():
+                return True
+        except Exception:
+            pass
+        needle = self._normalize_path_for_match(session_root)
+        if not needle:
+            return False
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            if self._proc_name(proc) not in self.SELENIUM_PROCESS_NAMES:
+                continue
+            if needle in self._process_cmdline_text(proc):
+                return True
+        return False
+
+    def _prune_selenium_profile_sessions(
+        self,
+        browser: str,
+        *,
+        preserve_session_ids: set[str] | None = None,
+    ) -> tuple[int, int, int, int]:
+        """Prune stale Selenium session clones under the browser-specific root.
+
+        Returns:
+            (pruned_count, failed_count, skipped_active_count, skipped_recent_count)
+        """
+        preserve_session_ids = preserve_session_ids or set()
+        profile_root = self._selenium_profile_root(browser)
+        if not profile_root.exists():
+            return (0, 0, 0, 0)
+        if "yt-is/selenium-profiles/" not in self._normalize_path_for_match(profile_root):
+            log_action(
+                "selenium_profile_session_prune_skipped",
+                {
+                    "browser": browser,
+                    "profile_root": str(profile_root),
+                    "reason": "outside_selenium_profile_root",
+                },
+            )
+            return (0, 0, 0, 0)
+
+        keep_count = max(0, int(getattr(self.browser_cfg, "selenium_profile_retention_count", 8) or 0))
+        max_age_days = max(
+            0,
+            int(getattr(self.browser_cfg, "selenium_profile_retention_max_age_days", 7) or 0),
+        )
+        age_cutoff = time.time() - (max_age_days * 86400) if max_age_days > 0 else None
+
+        candidates: list[tuple[float, Path]] = []
+        skipped_active = 0
+        for child in profile_root.iterdir():
+            if not child.is_dir():
+                continue
+            if not self._is_timestamped_selenium_session_dir(child):
+                continue
+            if child.name in preserve_session_ids:
+                continue
+            if self._selenium_profile_session_is_active(child):
+                skipped_active += 1
+                continue
+            try:
+                mtime = child.stat().st_mtime
+            except Exception:
+                mtime = 0.0
+            candidates.append((mtime, child))
+
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        keep_paths = {path for _, path in candidates[:keep_count]} if keep_count > 0 else set()
+
+        pruned = 0
+        failed = 0
+        skipped_recent = 0
+        for mtime, path in candidates:
+            if path in keep_paths:
+                continue
+            if age_cutoff is not None and mtime >= age_cutoff:
+                skipped_recent += 1
+                continue
+            try:
+                shutil.rmtree(path)
+                pruned += 1
+            except Exception:
+                failed += 1
+
+        log_action(
+            "selenium_profile_sessions_pruned",
+            {
+                "browser": browser,
+                "profile_root": str(profile_root),
+                "pruned": pruned,
+                "failed": failed,
+                "skipped_active": skipped_active,
+                "skipped_recent": skipped_recent,
+                "retention_count": keep_count,
+                "retention_max_age_days": max_age_days,
+            },
+        )
+        return (pruned, failed, skipped_active, skipped_recent)
+
+    def _cleanup_current_selenium_profile_session(self) -> tuple[int, int]:
+        """Best-effort remove the current Selenium session root after browser shutdown."""
+        profile_root = Path(self._selected_browser_profile_root) if self._selected_browser_profile_root else None
+        if profile_root is None or not profile_root.exists():
+            return (0, 0)
+        normalized_root = self._normalize_path_for_match(profile_root)
+        if "yt-is/selenium-profiles/" not in normalized_root:
+            return (0, 0)
+        try:
+            shutil.rmtree(profile_root)
+            log_action(
+                "selenium_profile_session_removed",
+                {
+                    "profile_root": str(profile_root),
+                    "profile_session_id": self._profile_session_id,
+                },
+            )
+            return (1, 0)
+        except Exception:
+            log_action(
+                "selenium_profile_session_remove_failed",
+                {
+                    "profile_root": str(profile_root),
+                    "profile_session_id": self._profile_session_id,
+                },
+            )
+            return (0, 1)
 
     def _selenium_profile_is_persistent(self) -> bool:
         """Return True when the Selenium profile should be reused across runs."""
@@ -210,6 +418,8 @@ class NLMIndustrialScraper:
 
     def _browser_auth_ready(self, notebook_id: str) -> bool:
         """Return True when the browser session looks signed into NotebookLM."""
+        if self._selected_browser_profile_root:
+            self._touch_selenium_profile_session_lease(Path(self._selected_browser_profile_root))
         snapshot = self._browser_auth_probe_text()
         current_url = ""
         title = ""
@@ -468,6 +678,8 @@ class NLMIndustrialScraper:
         self._selected_browser_profile_root = str(chrome_profile_base)
         self._selected_browser_profile_directory = profile_name
         self._selected_browser_seeded_from = str(chrome_source_base)
+        self._write_selenium_profile_session_lease(chrome_profile_base, "chrome")
+        self._prune_selenium_profile_sessions("chrome", preserve_session_ids={self._profile_session_id})
         log_action(
             "selenium_profile_selected",
             {
@@ -520,6 +732,8 @@ class NLMIndustrialScraper:
                 if profiles:
                     profile_path = profiles[0]
                     seeded = self._seed_browser_profile_if_needed(Path(profile_path), firefox_profile_root)
+                    self._write_selenium_profile_session_lease(firefox_profile_root, "firefox")
+                    self._prune_selenium_profile_sessions("firefox", preserve_session_ids={self._profile_session_id})
                     log_action(
                         "selenium_profile_selected",
                         {
@@ -538,6 +752,8 @@ class NLMIndustrialScraper:
                     )
                 else:
                     firefox_profile_root.mkdir(parents=True, exist_ok=True)
+                    self._write_selenium_profile_session_lease(firefox_profile_root, "firefox")
+                    self._prune_selenium_profile_sessions("firefox", preserve_session_ids={self._profile_session_id})
                     log_action(
                         "selenium_profile_selected",
                         {
@@ -785,6 +1001,8 @@ class NLMIndustrialScraper:
 
     def _open_notebook_and_prepare_sources(self, notebook_id: str, expected_count: int) -> Optional[int]:
         """Open a notebook URL and wait for its Sources DOM to become ready."""
+        if self._selected_browser_profile_root:
+            self._touch_selenium_profile_session_lease(Path(self._selected_browser_profile_root))
         url = f"https://notebooklm.google.com/notebook/{notebook_id}"
         print(f"[Industrial] Opening {url}...")
         self._driver.get(url)
@@ -1639,6 +1857,8 @@ class NLMIndustrialScraper:
             dict mapping video_id -> (success, transcript_text, error)
         """
         batch_started_at = time.monotonic()
+        if self._selected_browser_profile_root:
+            self._touch_selenium_profile_session_lease(Path(self._selected_browser_profile_root))
         if not self._ensure_staging_notebook():
             return {vid: (False, None, "staging notebook unavailable") for vid in video_ids}
 
@@ -1747,6 +1967,8 @@ class NLMIndustrialScraper:
         if not self._staging_nb_id:
             return {vid: (False, None, "no staging notebook") for vid in vid_to_src}
 
+        if self._selected_browser_profile_root:
+            self._touch_selenium_profile_session_lease(Path(self._selected_browser_profile_root))
         dom_ready = self._open_notebook_and_prepare_sources(self._staging_nb_id, len(vid_to_src))
         if dom_ready == -1:
             return {vid: (False, None, "browser auth unavailable") for vid in vid_to_src}
@@ -2280,6 +2502,7 @@ class NLMIndustrialScraper:
             self._driver.quit()
             self._driver = None
         self._prune_ephemeral_browser_cache()
+        self._cleanup_current_selenium_profile_session()
         self._cleanup_staging_on_close()
         self._staging_nb_id = None
         self._source_count = 0

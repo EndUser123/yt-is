@@ -40,6 +40,7 @@ def _write_sequence_summary(
     soak_report: dict[str, Any] | None = None,
     pre_run_browser_health: dict[str, Any] | None = None,
     post_run_hygiene: dict[str, Any] | None = None,
+    run_environment_label: str | None = None,
 ) -> Path:
     summary_path = run_root / SUMMARY_NAME
     summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +54,7 @@ def _write_sequence_summary(
         summary["pre_run_browser_health_path"] = str(run_root / BROWSER_HEALTH_NAME)
     if post_run_hygiene is not None:
         summary["post_run_hygiene"] = dict(post_run_hygiene)
+    summary["run_environment_label"] = run_environment_label
     _write_json_atomic(summary_path, summary)
     return summary_path
 
@@ -103,6 +105,8 @@ def _run_phase(
     manifest_json: Path,
     python_executable: str | None,
     reusable_pipeline_mode: str,
+    preserve_worker_state_root: bool,
+    run_environment_label: str | None,
 ) -> dict[str, Any]:
     _print_sequence_header(phase, root=output_root)
     return run_sharded_lane_series(
@@ -117,6 +121,8 @@ def _run_phase(
         manifest_json=manifest_json,
         python_executable=python_executable,
         reusable_pipeline_mode=reusable_pipeline_mode,
+        preserve_worker_state_root=preserve_worker_state_root,
+        run_environment_label=run_environment_label,
     )
 
 
@@ -142,6 +148,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--python-executable", default=None)
     parser.add_argument("--reusable-pipeline-mode", default=DEFAULT_REUSABLE_PIPELINE_MODE)
     parser.add_argument(
+        "--run-environment-label",
+        default=None,
+        help="Optional comparable-environment label, e.g. home_300mb or hotel_wifi.",
+    )
+    parser.add_argument(
         "--browser-health-window-s",
         type=float,
         default=30.0,
@@ -157,6 +168,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-forced-refresh-marker",
         action="store_true",
         help="Require nlm_auth_forced_refresh_scheduled in the smoke evidence check.",
+    )
+    parser.add_argument(
+        "--preserve-worker-state-root",
+        action="store_true",
+        help="Reuse each lane's configured worker_state_root instead of the fresh per-run worker_states directory.",
     )
     parser.add_argument(
         "--expected-worker-shape",
@@ -225,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         manifest_json=args.manifest_json,
         python_executable=args.python_executable,
         reusable_pipeline_mode=args.reusable_pipeline_mode,
+        preserve_worker_state_root=args.preserve_worker_state_root,
+        run_environment_label=args.run_environment_label,
     )
     print(f"[sequence] smoke summary={smoke_report['report_path']}")
 
@@ -251,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
         manifest_json=args.manifest_json,
         python_executable=args.python_executable,
         reusable_pipeline_mode=args.reusable_pipeline_mode,
+        preserve_worker_state_root=args.preserve_worker_state_root,
+        run_environment_label=args.run_environment_label,
     )
     post_run_hygiene = _check_post_run_default_profile_hygiene()
     if post_run_hygiene["status"] != "clean":
@@ -264,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
         soak_report=soak_report,
         pre_run_browser_health=browser_health,
         post_run_hygiene=post_run_hygiene,
+        run_environment_label=args.run_environment_label,
     )
     print(f"[sequence] summary={sequence_report_path}")
     print(f"[sequence] soak summary={soak_report['report_path']}")

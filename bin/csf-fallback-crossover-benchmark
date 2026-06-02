@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import sqlite3
@@ -25,7 +26,7 @@ from csf.batch_status import (
     set_status_batch,
 )
 from csf.cache import clear_all_storages, delete_cached_transcripts
-from csf.worker_count_sweep import run_worker_count_sweep
+from csf import nlm_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -94,6 +95,15 @@ POLICY_ENV: dict[str, dict[str, str]] = {
         "YTIS_TRANSCRIPT_FALLBACK_MIN_START_INTERVAL_S": "2.5",
     },
 }
+
+
+def _load_run_worker_count_sweep():
+    """Reload the shared NotebookLM modules after policy env is applied."""
+    nlm_batch = importlib.import_module("csf.nlm_batch")
+    worker_count_sweep = importlib.import_module("csf.worker_count_sweep")
+    importlib.reload(nlm_batch)
+    importlib.reload(worker_count_sweep)
+    return worker_count_sweep.run_worker_count_sweep
 
 
 def _parse_policy_list(value: str) -> list[str]:
@@ -365,12 +375,24 @@ def _run_policy(
     previous_env: dict[str, str | None] = {}
     policy_root = output_root / policy_name
     worker_state_root = worker_state_root_override or (policy_root / "worker_states")
+    run_environment_label = (
+        os.environ.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL")
+        or os.environ.get("YTIS_RUN_ENVIRONMENT_LABEL")
+        or ""
+    ).strip().lower()
     if not preserve_worker_state_root:
         shutil.rmtree(worker_state_root, ignore_errors=True)
     try:
         for key, value in POLICY_ENV[policy_name].items():
             previous_env[key] = os.environ.get(key)
             os.environ[key] = value
+        shared_retry_override = (
+            "true" if run_environment_label == "hotel_wifi" else None
+        )
+        if shared_retry_override is not None:
+            shared_retry_key = "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"
+            previous_env[shared_retry_key] = os.environ.get(shared_retry_key)
+            os.environ[shared_retry_key] = shared_retry_override
         for key, value in {
             "YTIS_INDUSTRIAL_WORKER_STATE_ROOT": str(worker_state_root),
             "YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX": os.environ.get(
@@ -380,6 +402,8 @@ def _run_policy(
         }.items():
             previous_env[key] = os.environ.get(key)
             os.environ[key] = value
+        nlm_config.reset_nlm_config()
+        run_worker_count_sweep = _load_run_worker_count_sweep()
         sweep_summary = run_worker_count_sweep(
             worker_counts=[workers],
             limit=limit,
