@@ -103,7 +103,6 @@
 - drain ready age max: absent
 - retry queue wait max/count: 0.0s / 0
 - retry queue sleep elapsed total: 0.0s
-
 ### Lane: troup_hominidae_free
 - aggregate VPH: 0.00
 - aggregate wall: 0.0s

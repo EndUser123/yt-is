@@ -84,4 +84,3 @@ Expected: PASS.
 git add tests/test_sharded_lane_series.py csf/sharded_lane_series.py docs/superpowers/plans/2026-06-03-lane-process-cadence-env-manifest.md
 git commit -m "feat: record lane cadence env in process snapshot"
 ```
-

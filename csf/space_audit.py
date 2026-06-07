@@ -126,4 +126,3 @@ def build_space_audit(
         "browser_roots": [row.as_dict() for row in scan_browser_roots(browser_root)],
         "run_roots": [row.as_dict() for row in scan_run_roots(sharded_lane_root, docs_paths)],
     }
-
