@@ -17,7 +17,7 @@
  *   npm install ws
  */
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -228,13 +228,32 @@ function getChromeProfileDir() {
   return dir;
 }
 
-function launchChrome() {
-  // Kill any existing Chrome processes using this profile to avoid stale CDP sessions
-  try {
-    require('child_process').execSync('taskkill /F /IM chrome.exe', { stdio: 'ignore' });
-  } catch {}
+function killChromeProcessesForProfile(profileDir) {
+  const profile = String(profileDir || '').trim();
+  if (!profile) return;
 
+  // Only stop Chrome instances that are explicitly bound to the NotebookLM
+  // profile used by this automation. Never terminate Chrome by executable name
+  // alone, because that can hit unrelated user windows.
+  const psScript = `
+$profile = @'
+${profile}
+'@.Trim();
+$matches = Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" |
+  Where-Object { $_.CommandLine -and $_.CommandLine -like "*$profile*" };
+foreach ($proc in $matches) {
+  try { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+}
+`.trim();
+
+  spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript], {
+    stdio: 'ignore',
+  });
+}
+
+function launchChrome() {
   const profileDir = getChromeProfileDir();
+  killChromeProcessesForProfile(profileDir);
   const args = [
     `--remote-debugging-port=${CDP_PORT}`,
     '--no-first-run',

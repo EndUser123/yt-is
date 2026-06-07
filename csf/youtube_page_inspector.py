@@ -239,12 +239,31 @@ def inspect_youtube_watch_page_via_ytdlp(video_id: str, *, timeout_s: float = _Y
             "elapsed_s": round(time.perf_counter() - started_at_perf, 3),
         }
 
-    proc = subprocess.run(
-        [ytdlp, "-J", "--skip-download", "--no-playlist", url],
-        capture_output=True,
-        text=True,
-        timeout=timeout_s,
-    )
+    try:
+        proc = subprocess.run(
+            [ytdlp, "-J", "--skip-download", "--no-playlist", url],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "video_id": video_id,
+            "url": url,
+            "available": False,
+            "classification": "error",
+            "availability": None,
+            "live_status": None,
+            "was_live": None,
+            "is_live": None,
+            "title": None,
+            "stdout": "",
+            "stderr": f"yt-dlp timed out after {timeout_s}s",
+            "returncode": None,
+            "checked_at_epoch": started_at_epoch,
+            "elapsed_s": round(time.perf_counter() - started_at_perf, 3),
+            "error": "yt-dlp timed out",
+        }
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
     if proc.returncode == 0:

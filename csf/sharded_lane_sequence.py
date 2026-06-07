@@ -179,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Require the smoke evidence check to match the expected lane shape, e.g. 4+4 or 3+3.",
     )
+    parser.add_argument(
+        "--allow-partial-smoke",
+        action="store_true",
+        help="Allow a diagnostic smoke summary with status=partial to proceed to soak.",
+    )
     return parser
 
 
@@ -250,11 +255,17 @@ def main(argv: list[str] | None = None) -> int:
         smoke_output_root,
         require_forced_refresh_marker=args.require_forced_refresh_marker,
         expected_worker_shape_signature=args.expected_worker_shape,
+        allow_partial_status=args.allow_partial_smoke,
     )
     if not evidence.ok:
         for reason in evidence.reasons:
             print(f"[sequence] ERROR: {reason}")
         return 1
+    if args.allow_partial_smoke and smoke_report.get("status") == "partial":
+        print(
+            "[sequence] WARN: allowing partial smoke to proceed to soak because "
+            f"--allow-partial-smoke was set; summary={evidence.summary_path}"
+        )
     print(f"[sequence] evidence=ok summary={evidence.summary_path}")
 
     soak_report = _run_phase(

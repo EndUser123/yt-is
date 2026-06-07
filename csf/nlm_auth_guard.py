@@ -25,6 +25,8 @@ _AUTH_CHECK_CACHE_LOCK = threading.Lock()
 # Maps (profile_lower, email_lower) -> (checked_at, session_established_at)
 # session_established_at is None until first successful login after the checked_at time
 _AUTH_CHECK_CACHE: dict[tuple[str, str], tuple[float, float | None]] = {}
+_DEFAULT_CHROME_PROFILE_PIDS_CACHE_LOCK = threading.Lock()
+_DEFAULT_CHROME_PROFILE_PIDS_CACHE: tuple[float, set[int]] | None = None
 
 
 @dataclass(frozen=True)
@@ -316,6 +318,12 @@ def _ytis_owned_chrome_pids(pids: set[int]) -> set[int]:
     return owned
 
 
+def _clear_default_chrome_profile_pids_cache() -> None:
+    with _DEFAULT_CHROME_PROFILE_PIDS_CACHE_LOCK:
+        global _DEFAULT_CHROME_PROFILE_PIDS_CACHE
+        _DEFAULT_CHROME_PROFILE_PIDS_CACHE = None
+
+
 def stop_chrome_pids(pids: set[int]) -> set[int]:
     if os.name != "nt" or not pids:
         return set()
@@ -344,14 +352,32 @@ def stop_chrome_pids(pids: set[int]) -> set[int]:
 def default_chrome_profile_pids() -> set[int]:
     if not is_nlm_auth_noninteractive():
         return set()
-    return chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
+    ttl_raw = os.getenv("YTIS_NLM_CHROME_PID_CACHE_TTL_S", "0.5").strip()
+    try:
+        ttl_s = max(0.0, float(ttl_raw)) if ttl_raw else 0.5
+    except ValueError:
+        ttl_s = 0.5
+    now = time.monotonic()
+    with _DEFAULT_CHROME_PROFILE_PIDS_CACHE_LOCK:
+        global _DEFAULT_CHROME_PROFILE_PIDS_CACHE
+        cached = _DEFAULT_CHROME_PROFILE_PIDS_CACHE
+        if cached is not None and ttl_s > 0.0:
+            cached_at, cached_pids = cached
+            if now - cached_at <= ttl_s and all(psutil.pid_exists(pid) for pid in cached_pids):
+                return set(cached_pids)
+        pids = chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
+        _DEFAULT_CHROME_PROFILE_PIDS_CACHE = (now, set(pids))
+        return pids
 
 
 def reap_default_chrome_profile() -> set[int]:
     pids = default_chrome_profile_pids()
     if not pids:
         return set()
-    return stop_chrome_pids(pids)
+    stopped = stop_chrome_pids(pids)
+    if stopped:
+        _clear_default_chrome_profile_pids_cache()
+    return stopped
 
 
 def browser_health_gate(

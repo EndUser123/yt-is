@@ -1,0 +1,51 @@
+#!/usr/bin/env python
+"""Report artifact cleanup candidates without deleting anything by default."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from csf.space_audit import build_space_audit
+
+
+def _format_rows(rows: list[dict[str, object]], title: str) -> str:
+    lines = [title]
+    if not rows:
+        lines.append("  (none)")
+        return "\n".join(lines)
+    for row in rows:
+        lines.append(
+            f"  {row['status']:<8} {row['size_gb']:>6} GB  {row['kind']:<12} {row['path']}  - {row['reason']}"
+        )
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
+    args = parser.parse_args(argv)
+
+    report = build_space_audit()
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+
+    print(_format_rows(report["browser_roots"], "Browser roots"))
+    print()
+    print(_format_rows(report["run_roots"], "Run roots"))
+    print()
+    print("Policy:")
+    print("  - keep the active browser roots and current run roots")
+    print("  - prune only roots already promoted into docs or otherwise obsolete")
+    print("  - do not delete anything unless the summary is recorded elsewhere")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

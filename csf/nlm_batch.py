@@ -98,6 +98,38 @@ def _summarize_add_failure_batch_ids(batch_ids: List[str]) -> dict[str, object]:
     }
 
 
+def _parse_notebook_create_output(stdout: str) -> str:
+    """Extract the notebook id from `nlm notebook create` output."""
+    text = (stdout or "").strip()
+    if not text:
+        return ""
+
+    try:
+        payload = json.loads(text)
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("notebook_id", "id", "notebookId"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                return value
+        nested = payload.get("data")
+        if isinstance(nested, dict):
+            for key in ("notebook_id", "id", "notebookId"):
+                value = str(nested.get(key) or "").strip()
+                if value:
+                    return value
+
+    for line in text.splitlines():
+        if "ID:" in line:
+            value = line.split("ID:", 1)[1].strip()
+            if value:
+                return value
+
+    return text
+
+
 def _get_nlm_auth_force_refresh_every_checks() -> int:
     raw = os.getenv("YTIS_NLM_AUTH_FORCE_REFRESH_EVERY_CHECKS", "").strip()
     if not raw:
@@ -807,12 +839,25 @@ def _source_count_probe_indicates_auth_failure(res: subprocess.CompletedProcess)
     return "AUTH FAILED" in upper_combined or "AUTHENTICATION ERROR" in upper_combined or "AUTH ERROR" in upper_combined
 
 
+def _classify_source_content_retry_queue(
+    ytdlp_probe: dict[str, object],
+    status: str,
+) -> tuple[bool, str]:
+    """Return whether a failure should be queued and why."""
+    if status not in {"command_failed", _NLM_CONTENT_BELOW_THRESHOLD_STATUS, _LEGACY_NLM_CONTENT_BELOW_THRESHOLD_STATUS}:
+        return False, "status_not_retryable"
+    classification = str(ytdlp_probe.get("classification") or "").strip().lower()
+    if classification == "ok":
+        return True, "ytdlp_ok"
+    if classification:
+        return False, f"ytdlp_{classification}"
+    return False, "ytdlp_absent"
+
+
 def _should_defer_source_content_fetch(ytdlp_probe: dict[str, object], status: str) -> bool:
     """Return True when a failure should be queued for a second NotebookLM pass."""
-    if status not in {"command_failed", _NLM_CONTENT_BELOW_THRESHOLD_STATUS, _LEGACY_NLM_CONTENT_BELOW_THRESHOLD_STATUS}:
-        return False
-    classification = str(ytdlp_probe.get("classification") or "").strip().lower()
-    return classification == "ok"
+    should_defer, _ = _classify_source_content_retry_queue(ytdlp_probe, status)
+    return should_defer
 
 
 def _source_ready_age_exceeds_cliff(ready_reference_epoch: float, started_at_epoch: float) -> tuple[bool, float]:
@@ -829,7 +874,7 @@ def _load_reusable_notebook_id() -> Optional[str]:
         if not state_path.exists():
             return None
         data = json.loads(state_path.read_text(encoding="utf-8"))
-        nb_id = (data.get("nb_id") or "").strip()
+        nb_id = _parse_notebook_create_output(str(data.get("nb_id") or ""))
         return nb_id or None
     except Exception:
         return None
@@ -838,11 +883,12 @@ def _load_reusable_notebook_id() -> Optional[str]:
 def _save_reusable_notebook_id(nb_id: str) -> None:
     try:
         state_path = _get_owner_notebook_state_path()
+        sanitized_nb_id = _parse_notebook_create_output(nb_id)
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(
             json.dumps(
                 {
-                    "nb_id": nb_id,
+                    "nb_id": sanitized_nb_id,
                     "title": _get_owner_notebook_title(),
                     "run_id": _get_worker_run_id() or None,
                     "updated_at": time.time(),
@@ -2023,10 +2069,14 @@ class NLMBatchIngestor:
         *,
         subbatch_index: int,
         expected_total: int,
+        attempt: int = 1,
         retry_depth: int = 0,
         reset_depth: int = 0,
         dead_notebook_recreate_depth: int = 0,
         source_profile: Optional[dict[str, object]] = None,
+        source_count_before: int | None = None,
+        source_count_probe_ok_before: bool | None = None,
+        source_count_probe_error_before: dict[str, object] | None = None,
     ) -> List[str]:
         """Add one chunk with bounded retry/reset recovery on add failures.
 
@@ -2040,6 +2090,7 @@ class NLMBatchIngestor:
 
         chunk_started_at = time.monotonic()
         chunk_started_at_epoch = time.time()
+        notebooklm_profile = _get_notebooklm_profile()
         self._last_add_failure_reason = None
         self._last_add_returncode = None
         self._last_add_cmd_elapsed_s = 0.0
@@ -2047,12 +2098,20 @@ class NLMBatchIngestor:
         if source_profile is None:
             source_profile = summarize_video_ids(batch_ids)
         # Log source count before add — this is the diagnostic key for capacity correlation
-        source_count_before = self._get_current_source_count()
-        source_count_before_known = bool(self._last_source_count_probe_ok)
-        source_count_before_error = self._last_source_count_probe_error
+        if source_count_before is None:
+            source_count_before = self._get_current_source_count()
+            source_count_before_known = bool(self._last_source_count_probe_ok)
+            source_count_before_error = self._last_source_count_probe_error
+        else:
+            source_count_before_known = bool(
+                self._last_source_count_probe_ok if source_count_probe_ok_before is None else source_count_probe_ok_before
+            )
+            source_count_before_error = (
+                self._last_source_count_probe_error if source_count_probe_error_before is None else source_count_probe_error_before
+            )
         print(
             f"[NLM-Batch]   Adding sub-batch {subbatch_index} "
-            f"({len(batch_ids)} sources, retry_depth={retry_depth}, "
+            f"({len(batch_ids)} sources, attempt={attempt}, retry_depth={retry_depth}, "
             f"reset_depth={reset_depth}, nb_sources_before={source_count_before})..."
         )
         log_action(
@@ -2062,10 +2121,12 @@ class NLMBatchIngestor:
                 "subbatch_index": subbatch_index,
                 "subbatch_size": len(batch_ids),
                 "expected_total": expected_total,
+                "attempt": attempt,
                 "retry_depth": retry_depth,
                 "reset_depth": reset_depth,
                 "dead_notebook_recreate_depth": dead_notebook_recreate_depth,
                 "source_profile": source_profile,
+                "notebooklm_profile": notebooklm_profile,
                 "source_count_before": source_count_before,
                 "source_count_probe_ok_before": source_count_before_known,
                 "started_at_epoch": chunk_started_at_epoch,
@@ -2103,6 +2164,7 @@ class NLMBatchIngestor:
                 "subbatch_index": subbatch_index,
                 "subbatch_size": len(batch_ids),
                 "expected_total": expected_total,
+                "attempt": attempt,
                 "retry_depth": retry_depth,
                 "reset_depth": reset_depth,
                 "dead_notebook_recreate_depth": dead_notebook_recreate_depth,
@@ -2111,6 +2173,7 @@ class NLMBatchIngestor:
                 "recovered": add_recovered,
                 "elapsed_s": add_cmd_elapsed_s,
                 "source_profile": source_profile,
+                "notebooklm_profile": notebooklm_profile,
                 "source_count_before": source_count_before,
                 "source_count_probe_ok_before": source_count_before_known,
                 "source_count_after": source_count_after,
@@ -2130,9 +2193,11 @@ class NLMBatchIngestor:
                     "subbatch_index": subbatch_index,
                     "subbatch_size": len(batch_ids),
                     "expected_total": expected_total,
+                    "attempt": attempt,
                     "retry_depth": retry_depth,
                     "reset_depth": reset_depth,
                     "source_profile": source_profile,
+                    "notebooklm_profile": notebooklm_profile,
                     "source_count_before": source_count_before,
                     "source_count_probe_ok_before": source_count_before_known,
                     "source_count_after": source_count_after,
@@ -2152,6 +2217,7 @@ class NLMBatchIngestor:
                     batch_ids,
                     subbatch_index=subbatch_index,
                     expected_total=expected_total,
+                    attempt=attempt + 1,
                     retry_depth=0,
                     reset_depth=0,
                     dead_notebook_recreate_depth=1,
@@ -2168,9 +2234,11 @@ class NLMBatchIngestor:
                     "nb_id": self._nb_id,
                     "subbatch_index": subbatch_index,
                     "expected_total": expected_total,
+                    "attempt": attempt,
                     "retry_depth": retry_depth,
                     "reset_depth": reset_depth,
                     "source_profile": source_profile,
+                    "notebooklm_profile": notebooklm_profile,
                     "source_count_before_wait": source_count_after,
                     "timeout_s": DEFAULT_NOTEBOOKLM_SOURCE_MATERIALIZATION_TIMEOUT_S,
                     "started_at_epoch": wait_started_at_epoch,
@@ -2195,9 +2263,11 @@ class NLMBatchIngestor:
                         "nb_id": self._nb_id,
                         "subbatch_index": subbatch_index,
                         "expected_total": expected_total,
+                        "attempt": attempt,
                         "retry_depth": retry_depth,
                         "reset_depth": reset_depth,
                         "source_profile": source_profile,
+                        "notebooklm_profile": notebooklm_profile,
                         "failure_reason": "materialization_wait_failed",
                         "elapsed_s": wait_elapsed_s,
                         "source_count_after_wait": self._get_current_source_count(),
@@ -2221,9 +2291,11 @@ class NLMBatchIngestor:
                         "nb_id": self._nb_id,
                         "subbatch_index": subbatch_index,
                         "expected_total": expected_total,
+                        "attempt": attempt,
                         "retry_depth": retry_depth,
                         "reset_depth": reset_depth,
                         "source_profile": source_profile,
+                        "notebooklm_profile": notebooklm_profile,
                         "elapsed_s": wait_elapsed_s,
                         "source_count_after_wait": self._get_current_source_count(),
                         "source_count_before_wait": source_count_after,
@@ -2248,9 +2320,11 @@ class NLMBatchIngestor:
                         "subbatch_size": len(batch_ids),
                         "parsed_source_id_count": len(parsed_source_ids),
                         "expected_source_id_count": len(batch_ids),
+                        "attempt": attempt,
                         "retry_depth": retry_depth,
                         "reset_depth": reset_depth,
                         "source_profile": source_profile,
+                        "notebooklm_profile": notebooklm_profile,
                     },
                 )
             for vid in batch_ids:
@@ -2329,6 +2403,7 @@ class NLMBatchIngestor:
                     "subbatch_index": subbatch_index,
                     "subbatch_size": len(batch_ids),
                     "expected_total": expected_total,
+                    "attempt": attempt,
                     "retry_depth": retry_depth,
                     "next_retry_depth": retry_depth + 1,
                     "reset_depth": reset_depth,
@@ -2336,6 +2411,7 @@ class NLMBatchIngestor:
                     "retry_delay_s": retry_delay_s,
                     "returncode": res.returncode,
                     "source_profile": source_profile,
+                    "notebooklm_profile": notebooklm_profile,
                     "source_count_before": source_count_before,
                     "source_count_probe_ok_before": source_count_before_known,
                     "source_count_after": source_count_after,
@@ -2354,6 +2430,7 @@ class NLMBatchIngestor:
                 batch_ids,
                 subbatch_index=subbatch_index,
                 expected_total=expected_total,
+                attempt=attempt + 1,
                 retry_depth=retry_depth + 1,
                 reset_depth=reset_depth,
                 dead_notebook_recreate_depth=dead_notebook_recreate_depth,
@@ -2368,6 +2445,7 @@ class NLMBatchIngestor:
                     "subbatch_index": subbatch_index,
                     "subbatch_size": len(batch_ids),
                     "expected_total": expected_total,
+                    "attempt": attempt,
                     "retry_depth": retry_depth,
                     "reset_depth": reset_depth,
                     "next_reset_depth": reset_depth + 1,
@@ -2375,6 +2453,7 @@ class NLMBatchIngestor:
                     "retry_delay_s": reset_delay_s,
                     "returncode": res.returncode,
                     "source_profile": source_profile,
+                    "notebooklm_profile": notebooklm_profile,
                     "source_count_before": source_count_before,
                     "source_count_probe_ok_before": source_count_before_known,
                     "source_count_after": source_count_after,
@@ -2395,6 +2474,7 @@ class NLMBatchIngestor:
                 batch_ids,
                 subbatch_index=subbatch_index,
                 expected_total=expected_total,
+                attempt=attempt + 1,
                 retry_depth=0,
                 reset_depth=reset_depth + 1,
                 dead_notebook_recreate_depth=dead_notebook_recreate_depth,
@@ -2415,11 +2495,13 @@ class NLMBatchIngestor:
                     "subbatch_index": subbatch_index,
                     "subbatch_size": len(batch_ids),
                     "expected_total": expected_total,
+                    "attempt": attempt,
                     "retry_depth": retry_depth,
                     "reset_depth": reset_depth,
                     "returncode": res.returncode,
                     "elapsed_s": add_cmd_elapsed_s,
                     "source_profile": source_profile,
+                    "notebooklm_profile": notebooklm_profile,
                     "source_count_before": source_count_before,
                     "source_count_probe_ok_before": source_count_before_known,
                     "source_count_after": source_count_after,
@@ -2442,11 +2524,13 @@ class NLMBatchIngestor:
                     "subbatch_index": subbatch_index,
                     "subbatch_size": len(batch_ids),
                     "expected_total": expected_total,
+                    "attempt": attempt,
                     "retry_depth": retry_depth,
                     "reset_depth": reset_depth,
                     "returncode": res.returncode,
                     "elapsed_s": add_cmd_elapsed_s,
                     "source_profile": source_profile,
+                    "notebooklm_profile": notebooklm_profile,
                     "source_count_before": source_count_before,
                     "source_count_probe_ok_before": source_count_before_known,
                     "source_count_after": source_count_after,
@@ -2467,10 +2551,12 @@ class NLMBatchIngestor:
                 "subbatch_index": subbatch_index,
                 "subbatch_size": len(batch_ids),
                 "expected_total": expected_total,
+                "attempt": attempt,
                 "retry_depth": retry_depth,
                 "returncode": res.returncode,
                 "elapsed_s": add_cmd_elapsed_s,
                 "source_profile": source_profile,
+                "notebooklm_profile": notebooklm_profile,
                 "source_count_before": source_count_before,
                 "source_count_probe_ok_before": source_count_before_known,
                 "source_count_after": source_count_after,
@@ -2613,6 +2699,9 @@ class NLMBatchIngestor:
                     subbatch_index=subbatch_index,
                     expected_total=next_index + len(subbatch),
                     source_profile=source_profile,
+                    source_count_before=source_count_before,
+                    source_count_probe_ok_before=bool(self._last_source_count_probe_ok),
+                    source_count_probe_error_before=self._last_source_count_probe_error,
                 )
             except NotebookSourceMaterializationTimeout:
                 self._last_subbatch_metrics.append(
@@ -2723,14 +2812,7 @@ class NLMBatchIngestor:
         )
         res = self._run_cmd(["notebook", "create", nb_name])
 
-        parsed_nb_id = ""
-        if res.returncode == 0:
-            for line in (res.stdout or "").split("\n"):
-                if "ID:" in line:
-                    parsed_nb_id = line.split("ID:")[1].strip()
-                    break
-            if not parsed_nb_id:
-                parsed_nb_id = (res.stdout or "").strip()
+        parsed_nb_id = _parse_notebook_create_output(res.stdout or "") if res.returncode == 0 else ""
         if parsed_nb_id:
             self._nb_id = parsed_nb_id
             log_action(
@@ -2764,12 +2846,15 @@ class NLMBatchIngestor:
         self,
         batch_ids: List[str],
         *,
+        batch_index: int | None = None,
         _allow_dead_notebook_recovery: bool = True,
     ) -> Dict[str, Tuple[bool, Optional[str], Optional[str]]]:
         """Extract using high-speed 'source content' method."""
         start = time.time()
         ready_reference_epoch = float(getattr(self, "_last_materialization_ready_at_epoch", 0.0) or 0.0)
         fetch_attribution_context = _build_content_fetch_attribution_context(_get_nlm_auth_context())
+        if batch_index is not None:
+            fetch_attribution_context["batch_index"] = batch_index
         # 1. Get Source List
         res = self._run_cmd(["source", "list", self._nb_id, "--json"])
         if res.returncode != 0: return {vid: (False, None, "List failed") for vid in batch_ids}
@@ -3127,6 +3212,7 @@ class NLMBatchIngestor:
             source_list_probe_elapsed_s_total = 0.0
             source_list_probe_elapsed_s_max = 0.0
             source_list_probe_count = 0
+            retry_queue_gate_reason = "status_not_retryable"
             retry_queue_skipped_reason: str | None = None
             projected_retry_ready_age_s: float | None = None
             log_action(
@@ -3211,6 +3297,7 @@ class NLMBatchIngestor:
                         "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                         "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                         "source_list_probe_count": source_list_probe_count,
+                        "retry_queue_gate_reason": "source_age_cliff",
                         "retry_queue_skipped_reason": None,
                         "projected_retry_ready_age_s": None,
                         "source_id_validated_after_not_found": None,
@@ -3240,6 +3327,8 @@ class NLMBatchIngestor:
                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                     "source_list_probe_count": source_list_probe_count,
+                    "queued_for_retry": False,
+                    "retry_queue_gate_reason": "source_age_cliff",
                     "retry_queue_skipped_reason": None,
                     "projected_retry_ready_age_s": None,
                     "extraction_outcome": status,
@@ -3483,7 +3572,10 @@ class NLMBatchIngestor:
                 if str(youtube_ytdlp_probe.get("classification") or "").strip() in {"error", "unknown"}:
                     youtube_page_probe = inspect_youtube_watch_page(vid_hint)
                 _record_youtube_probe_elapsed_metrics(youtube_ytdlp_probe, youtube_page_probe)
-            retry_queue_deferable = _should_defer_source_content_fetch(youtube_ytdlp_probe, final_status)
+            retry_queue_deferable, retry_queue_gate_reason = _classify_source_content_retry_queue(
+                youtube_ytdlp_probe,
+                final_status,
+            )
             retry_queue_skipped_reason: str | None = None
             retry_queue_candidate = (
                 allow_retry_queue
@@ -3548,6 +3640,7 @@ class NLMBatchIngestor:
                         "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
                         "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
                         "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                        "retry_queue_gate_reason": retry_queue_gate_reason,
                         "retry_queue_skipped_reason": None,
                         "projected_retry_ready_age_s": projected_retry_ready_age_s,
                         "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
@@ -3606,6 +3699,7 @@ class NLMBatchIngestor:
                         "projected_retry_ready_age_s": projected_retry_ready_age_s,
                         "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
                         "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                        "retry_queue_gate_reason": retry_queue_gate_reason,
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
                 )
@@ -3632,6 +3726,7 @@ class NLMBatchIngestor:
                     "retry_queue_queued_at_epoch": final_completed_at_epoch,
                     "retry_queue_queued_ready_age_s": final_ready_age_s,
                     "retry_queue_skipped_reason": None,
+                    "retry_queue_gate_reason": retry_queue_gate_reason,
                     "projected_retry_ready_age_s": projected_retry_ready_age_s,
                     "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
                     "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
@@ -3701,6 +3796,8 @@ class NLMBatchIngestor:
                     "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
                     "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
                     "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
+                    "queued_for_retry": False,
+                    "retry_queue_gate_reason": retry_queue_gate_reason,
                     "retry_queue_skipped_reason": retry_queue_skipped_reason,
                     "projected_retry_ready_age_s": projected_retry_ready_age_s,
                     "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
@@ -3783,6 +3880,8 @@ class NLMBatchIngestor:
                 "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                 "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                 "source_list_probe_count": source_list_probe_count,
+                "queued_for_retry": False,
+                "retry_queue_gate_reason": retry_queue_gate_reason,
                 "retry_queue_skipped_reason": retry_queue_skipped_reason,
                 "projected_retry_ready_age_s": projected_retry_ready_age_s,
                 "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
@@ -4150,6 +4249,7 @@ class NLMBatchIngestor:
             if self._recover_dead_notebook(recovery_video_ids):
                 recovery_results = self.extract_transcripts(
                     recovery_video_ids,
+                    batch_index=batch_index,
                     _allow_dead_notebook_recovery=False,
                 )
                 recovery_metrics = self.get_last_extract_metrics() or {}
@@ -4406,12 +4506,11 @@ class NLMBatchIngestor:
             if _source_count_probe_indicates_auth_failure(res) and _ensure_nlm_auth():
                 retry_res = self._run_cmd(["source", "list", self._nb_id, "--json"])
                 res = retry_res
-            elif not _source_count_probe_indicates_dead_notebook(
-                {
-                    "stdout": res.stdout,
-                    "stderr": res.stderr,
-                }
-            ):
+            else:
+                # Allow one short retry even for NOT_FOUND so a fresh notebook
+                # or a briefly inconsistent source index does not get treated as
+                # terminal on the first probe. If the retry still returns
+                # NOT_FOUND, the caller will still classify it as dead.
                 time.sleep(2.0)
                 retry_res = self._run_cmd(["source", "list", self._nb_id, "--json"])
                 res = retry_res
@@ -4581,13 +4680,7 @@ class NLMBatchIngestor:
         )
         try:
             res = self._run_cmd(["notebook", "create", nb_name], timeout=60)
-            nb_id = ""
-            for line in res.stdout.split("\n"):
-                if "ID:" in line:
-                    nb_id = line.split("ID:")[1].strip()
-                    break
-            if not nb_id:
-                nb_id = res.stdout.strip()
+            nb_id = _parse_notebook_create_output(res.stdout or "") if res.returncode == 0 else ""
             if not nb_id:
                 log_action(
                     "nlm_batch_size_sweep_failed",
@@ -4702,6 +4795,7 @@ class NLMReusableIngestor:
                 else cfg.reusable_source_age_cadence_min_window_size
             ),
         )
+        self._last_source_age_cadence_window_elapsed_s = 0.0
         self._batches_since_cleanup = 0
         log_action(
             "nlm_batch_reusable_state_loaded",
@@ -4746,13 +4840,15 @@ class NLMReusableIngestor:
                 or 0.0
             )
         oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
+        last_window_elapsed_s = float(getattr(self, "_last_source_age_cadence_window_elapsed_s", 0.0) or 0.0)
+        projected_oldest_age_s = oldest_age_s + last_window_elapsed_s if oldest_age_s and last_window_elapsed_s > 0.0 else oldest_age_s
         selected_window_size = base_window_size
-        if oldest_age_s > self._source_age_cadence_hard_threshold_s:
+        if projected_oldest_age_s > self._source_age_cadence_hard_threshold_s:
             selected_window_size = max(
                 self._source_age_cadence_min_window_size,
                 base_window_size // 4,
             )
-        elif oldest_age_s > self._source_age_cadence_soft_threshold_s:
+        elif projected_oldest_age_s > self._source_age_cadence_soft_threshold_s:
             selected_window_size = max(self._source_age_cadence_min_window_size, base_window_size // 2)
         return max(1, min(selected_window_size, remaining_count))
 
@@ -4830,7 +4926,7 @@ class NLMReusableIngestor:
         return merged
 
     def _mark_sources_cleared(self) -> None:
-        """Reset source-age state after the reusable notebook has been cleared."""
+        """Reset source materialization state after the reusable notebook has been cleared."""
         self._ingestor._oldest_source_materialization_epoch = None
         self._ingestor._last_materialization_ready_at_epoch = 0.0
         self._ingestor._video_ready_epoch_by_id = {}
@@ -5238,6 +5334,7 @@ class NLMReusableIngestor:
                         old_nb_id = self._nb_id
                         self._nb_id = self._ingestor._nb_id
                         _save_reusable_notebook_id(self._nb_id)
+                        self._last_source_age_cadence_window_elapsed_s = 0.0
                         log_action(
                             "nlm_batch_reusable_state_recovered",
                             {
@@ -5253,7 +5350,10 @@ class NLMReusableIngestor:
                         else list(window_video_ids)
                     )
                     window_extract_started_at = time.monotonic()
-                    window_results = self._ingestor.extract_transcripts(added_video_ids)
+                    window_results = self._ingestor.extract_transcripts(
+                        added_video_ids,
+                        batch_index=window_index,
+                    )
                     window_extract_elapsed_s = round(time.monotonic() - window_extract_started_at, 3)
                     window_metrics = self._ingestor.get_last_extract_metrics() or {}
                     if window_metrics:
@@ -5318,6 +5418,10 @@ class NLMReusableIngestor:
                             or 0.0
                         )
                     oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
+                    last_window_elapsed_s = float(getattr(self, "_last_source_age_cadence_window_elapsed_s", 0.0) or 0.0)
+                    projected_oldest_age_s = (
+                        oldest_age_s + last_window_elapsed_s if oldest_age_s and last_window_elapsed_s > 0.0 else oldest_age_s
+                    )
                     log_action(
                         "nlm_batch_reusable_source_age_cadence_window_started",
                         {
@@ -5328,6 +5432,8 @@ class NLMReusableIngestor:
                             "selected_window_size": cadence_window_size,
                             "remaining_count": len(remaining_video_ids),
                             "oldest_source_age_s": round(oldest_age_s, 3),
+                            "last_source_age_cadence_window_elapsed_s": round(last_window_elapsed_s, 3),
+                            "projected_oldest_source_age_s": round(projected_oldest_age_s, 3),
                             "source_age_cadence_enabled": source_age_cadence_enabled,
                             "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                             "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
@@ -5362,7 +5468,10 @@ class NLMReusableIngestor:
                         else list(window_video_ids)
                     )
                     window_extract_started_at = time.monotonic()
-                    window_results = self._ingestor.extract_transcripts(added_video_ids)
+                    window_results = self._ingestor.extract_transcripts(
+                        added_video_ids,
+                        batch_index=cadence_window_index,
+                    )
                     window_extract_elapsed_s = round(time.monotonic() - window_extract_started_at, 3)
                     window_metrics = self._ingestor.get_last_extract_metrics() or {}
                     if window_metrics:
@@ -5372,6 +5481,8 @@ class NLMReusableIngestor:
                             if vid not in window_results:
                                 window_results[vid] = (False, None, "Source add failed")
                     results.update(window_results)
+                    window_total_elapsed_s = round(time.monotonic() - window_started_at, 3)
+                    self._last_source_age_cadence_window_elapsed_s = window_total_elapsed_s
                     log_action(
                         "nlm_batch_reusable_source_age_cadence_window_completed",
                         {
@@ -5387,7 +5498,8 @@ class NLMReusableIngestor:
                             "add_sources_elapsed_s": window_add_elapsed_s,
                             "extract_elapsed_s": window_extract_elapsed_s,
                             "cleanup_elapsed_s": 0.0,
-                            "total_elapsed_s": round(time.monotonic() - window_started_at, 3),
+                            "total_elapsed_s": window_total_elapsed_s,
+                            "last_source_age_cadence_window_elapsed_s": last_window_elapsed_s,
                             "content_fetch_status_counts": dict(window_metrics.get("content_fetch_status_counts", {}) or {}),
                             "source_ready_age_s_max": float(window_metrics.get("source_ready_age_s_max", 0) or 0.0),
                             "window_mode": window_mode,

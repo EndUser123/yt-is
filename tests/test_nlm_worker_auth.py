@@ -304,6 +304,23 @@ def test_refresh_profile_session_can_force_login_without_cdp_when_interactive(tm
     mock_run.assert_called_once_with(["login", "--force", "--profile", "ytis-free1-worker-01"], timeout_s=120.0)
 
 
+def test_refresh_source_profile_falls_back_when_cdp_browser_cannot_start(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "fresh-free")
+    family = nlm_worker_auth.DEFAULT_FAMILIES[1]
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1")
+
+    with mock.patch("csf.nlm_worker_auth._snapshot_profile_state", return_value=None):
+        with mock.patch("csf.nlm_worker_auth._wait_for_cdp", return_value=False):
+            with mock.patch("csf.nlm_worker_auth._launch_cdp_browser", return_value=False) as mock_launch:
+                with mock.patch("csf.nlm_worker_auth.refresh_profile_session", return_value=True) as mock_refresh:
+                    assert nlm_worker_auth.refresh_source_profile(family) is True
+
+    mock_launch.assert_called_once()
+    mock_refresh.assert_called_once_with(family.source_profile, timeout_s=120.0)
+
+
 def test_sync_worker_profiles_rejects_wrong_source_account(tmp_path):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-pro-worker-01", "troup.hominidae@gmail.com", "wrong")

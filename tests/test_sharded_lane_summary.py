@@ -126,3 +126,50 @@ def test_format_sharded_lane_summary_includes_requested_fields(tmp_path):
     assert "success=795" in line
     assert "fail=5" in line
     assert "processed=800" in line
+
+
+def test_load_sharded_lane_summary_surfaces_partial_reason(tmp_path):
+    run_root = tmp_path / "hotel_wifi_3plus3_shared_retry_canary_run23_current"
+    run_root.mkdir()
+    summary_path = run_root / "sharded_lane_series_summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "status": "partial",
+                "combined": {
+                    "hot_path_videos_per_hour": 648.1,
+                    "wall_elapsed_s": 2027.476,
+                    "hot_path_success_count_total": 365,
+                    "fail_count_total": 553,
+                    "processed_count_total": 918,
+                    "lane_count": 2,
+                },
+                "runs": [
+                    {
+                        "status": "partial",
+                        "partial_reason": "lane a_hominidae_pro incomplete benchmark: processed_count_total=375 expected=400",
+                        "expected_processed_count_total": 400,
+                        "aggregate": {
+                            "processed_count_total": 447,
+                        },
+                    },
+                    {
+                        "status": "partial",
+                        "partial_reason": "lane troup_hominidae_free incomplete benchmark: processed_count_total=384 expected=400",
+                        "expected_processed_count_total": 400,
+                        "aggregate": {
+                            "processed_count_total": 471,
+                        },
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = sharded_lane_summary.load_sharded_lane_summary(run_root)
+
+    assert summary.partial_reason == "lane a_hominidae_pro incomplete benchmark: processed_count_total=375 expected=400"
+    assert summary.expected_processed_count_total == 400
+    assert "partial_reason=lane a_hominidae_pro incomplete benchmark: processed_count_total=375 expected=400" in sharded_lane_summary.format_sharded_lane_summary(summary)
+    assert "expected_processed=400" in sharded_lane_summary.format_sharded_lane_summary(summary)

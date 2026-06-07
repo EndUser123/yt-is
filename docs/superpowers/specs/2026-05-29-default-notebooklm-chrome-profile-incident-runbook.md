@@ -60,20 +60,20 @@ Record the incident in `browser_health.json` or the equivalent gate artifact wit
 
 ### 2. Reap if clearly safe
 
-Reap the default profile automatically when the process is clearly the NotebookLM session and not a generic Chrome instance.
+Reap the default profile automatically only when the process is clearly the shared NotebookLM session and not a generic Chrome instance.
 
 Criteria:
 - the command line matches the default NotebookLM user-data-dir for the shared `chrome-profile`
-- and the command line or browser session identifies NotebookLM explicitly, such as the NotebookLM origin or equivalent NotebookLM-owned session marker used by the gate
+- and the command line or browser session carries a NotebookLM-owned identity marker, such as the NotebookLM origin, the NotebookLM account marker, or the equivalent gate-owned session discriminator
 - and the process is not part of an allowed lane browser root
 
 If reaping succeeds and the default profile is gone, mark the health state as recovered-clean and continue the run.
 
 ### 3. Retry observation once
 
-If the default profile is still present after the first reap attempt, keep sampling through the configured settle window and reap again only if the same safe predicate still holds.
+If the default profile is still present after the first reap attempt, keep sampling through the configured settle window and, on each sample, reap again only if the same safe predicate still holds.
 
-This avoids racing against short-lived shutdown behavior while keeping the decision ownership-aware and profile-specific.
+This avoids racing against short-lived shutdown behavior while keeping the decision ownership-aware and profile-specific. The settle window is not a blind sleep; it is repeated observation with the same ownership check.
 
 ### 4. Fail closed when persistent
 
@@ -129,6 +129,7 @@ The runbook should be supported by tests that prove:
 - the gate records recovered-clean only when the default profile is gone
 - the gate remains failure-closed if the default profile persists after the settle window
 - the gate keeps sampling through the settle window rather than relying on a single resample
+- the gate re-applies the same safe predicate on each settle-window sample instead of broadening the kill criteria
 
 ## Review Checklist
 

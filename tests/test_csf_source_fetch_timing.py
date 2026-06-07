@@ -1426,6 +1426,119 @@ def test_cmd_fetch_routes_live_items_to_transcript_fallback_first():
     assert all(call.kwargs.get("skip_notebooklm") is True for call in mock_fetch.call_args_list)
 
 
+def test_cmd_fetch_continues_when_preflight_worker_cleanup_fails():
+    """Industrial fetch should warn on preflight cleanup failure and still run."""
+    mod = _load_csf_source_module(stub_ensure_auth=True)
+    channel_rows = [("https://www.youtube.com/@chan1", "pl-1")]
+    pending_entries = [
+        {
+            "video_id": f"vid{i:03d}",
+            "status": "pending",
+            "has_captions": True,
+            "privacy_status": "public",
+            "upload_status": "uploaded",
+            "is_live_content": False,
+            "unavailable_reason": None,
+            "source": "https://www.youtube.com/@chan1",
+        }
+        for i in range(200)
+    ]
+
+    class FakeCursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConn:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def execute(self, *_args, **_kwargs):
+            return FakeCursor(self._rows)
+
+        def close(self):
+            return None
+
+    class FakeStorage:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def _get_conn(self):
+            return FakeConn(self._rows)
+
+    cleanup_results = [(0, 1), (0, 0), (0, 0)]
+    cleanup_calls: list[tuple[bool, bool]] = []
+    run_calls: list[list[str]] = []
+
+    def fake_cleanup(*, delete=False, include_active=False):
+        cleanup_calls.append((delete, include_active))
+        return cleanup_results.pop(0) if cleanup_results else (0, 0)
+
+    def mock_run(cmd, **_kwargs):
+        if isinstance(cmd, list):
+            run_calls.append(cmd)
+        if isinstance(cmd, list) and "dev.worker_pool.worker_main" in cmd:
+            result_path = Path(cmd[cmd.index("--result-path") + 1])
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "worker_id": "worker-01",
+                        "input": "batches.json",
+                        "batch_count": 1,
+                        "video_count": 200,
+                        "succeeded": 200,
+                        "failed": 0,
+                        "startup_retire_elapsed_s": 0.25,
+                        "startup_notebook_check_elapsed_s": 0.5,
+                        "startup_notebook_create_elapsed_s": 1.25,
+                        "startup_prepare_cleanup_elapsed_s": 0.75,
+                        "startup_prepare_total_elapsed_s": 2.75,
+                        "setup_elapsed_s_total": 12.5,
+                        "notebook_check_elapsed_s_total": 0.5,
+                        "notebook_create_elapsed_s_total": 1.25,
+                        "notebook_retire_elapsed_s_total": 0.25,
+                        "add_sources_elapsed_s_total": 4.75,
+                        "extract_elapsed_s_total": 7.0,
+                        "cleanup_elapsed_s_total": 1.5,
+                        "batch_elapsed_s_total": 25.75,
+                        "status": "ok",
+                        "returncode": 0,
+                        "state_path": "P:\\\\\\.data/yt-is/industrial-worker-states/worker-01.json",
+                        "notebook_title": "yt-is-worker-01",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return mock.MagicMock(
+                returncode=0,
+                stdout='worker start\n{"worker_id":"worker-01","phase":"cleanup"}\nnot-json-final-line\n',
+                stderr="",
+            )
+        return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+    with mock.patch.object(mod, "_get_batch_status_storage", return_value=FakeStorage(channel_rows)):
+        with mock.patch.object(mod, "is_channel_blocked", return_value=False):
+            with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
+                with mock.patch.object(mod, "has_cached_transcript", return_value=False):
+                    with mock.patch.object(mod, "cleanup_stale_worker_notebooks", side_effect=fake_cleanup):
+                        with mock.patch.object(mod.subprocess, "run", side_effect=mock_run):
+                            with mock.patch.object(mod, "close_reusable_ingestor"):
+                                with mock.patch.object(mod, "set_cached_transcript"):
+                                    with mock.patch.object(mod, "mark_complete"):
+                                        with mock.patch.object(mod, "log_action") as mock_log:
+                                            mod.cmd_fetch(dry_run=False, workers=2)
+
+    log_names = [call.args[0] for call in mock_log.call_args_list]
+    assert "fetch_worker_prewarm_summary" in log_names
+    summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_worker_prewarm_summary")
+    assert summary["cleanup_deleted"] == 0
+    assert summary["cleanup_failed"] == 1
+    assert cleanup_calls[0] == (True, True)
+    assert any("dev.worker_pool.worker_main" in cmd for cmd in run_calls)
+
+
 def test_cmd_fetch_logs_worker_prewarm_summary_before_dispatch(tmp_path):
     """Industrial fetch should log the worker cleanup/prewarm summary before dispatch."""
     mod = _load_csf_source_module(stub_ensure_auth=True)

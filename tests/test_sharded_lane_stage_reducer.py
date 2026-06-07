@@ -185,11 +185,13 @@ def test_format_run_includes_command_level_worker_and_auth_attribution(tmp_path)
                 "browser_profile_root": r"P:\.data\yt-is\browser\notebooklm-pro",
                 "browser_profile_directory": "Profile",
                 "worker_state_root": r"P:\logs\sharded_lane_series\run01\worker_states",
+                "batch_index": 2,
                 "status": "command_failed",
                 "pass_name": "primary",
                 "attempts": 1,
                 "source_ready_age_s": 45.5,
                 "projected_retry_ready_age_s": 205.5,
+                "retry_queue_gate_reason": "ytdlp_ok",
                 "retry_queue_skipped_reason": "projected_source_age_cliff",
                 "content_fetch_command_elapsed_s_total": 2.5,
                 "source_list_probe_count": 1,
@@ -328,7 +330,7 @@ def test_format_run_includes_command_level_worker_and_auth_attribution(tmp_path)
     assert "- browser profile roots: P:\\.data\\yt-is\\browser\\notebooklm-pro" in rendered
     assert "- browser profile directories: Profile" in rendered
     assert "- worker state roots: P:\\logs\\sharded_lane_series\\run01\\worker_states" in rendered
-    assert "| worker-01 | ytis-pro-worker-01 | primary | 1 | command_failed:1 | 1.00 | 45.5 | 45.5 | 205.5 | absent | absent | 0 | projected_source_age_cliff:1 | 2.50 | 1 | 0.70 | 1.20 | 1 | 0 |" in rendered
+    assert "| worker-01 | ytis-pro-worker-01 | primary | 2 | 1 | command_failed:1 | 1.00 | 45.5 | 45.5 | 205.5 | absent | absent | 0 | ytdlp_ok:1 | projected_source_age_cliff:1 | 2.50 | 1 | 0.70 | 1.20 | 1 | 0 |" in rendered
     assert rendered.count("Retry Queue Window") == 1
     assert "- windows: 1" in rendered
     assert "- deferred/recovered/final failed: 1/0/1" in rendered
@@ -475,6 +477,7 @@ def test_parse_worker_fetch_completed_entries_includes_recovery_context(tmp_path
             "browser_profile_root": r"P:\.data\yt-is\browser\notebooklm-free",
             "browser_profile_directory": "Default",
             "worker_state_root": r"P:\logs\sharded_lane_series\run01\worker_states",
+            "batch_index": 7,
             "pass_name": "primary",
             "status": "command_failed",
             "attempts": 1,
@@ -499,9 +502,11 @@ def test_parse_worker_fetch_completed_entries_includes_recovery_context(tmp_path
     assert entry.browser_profile_root == r"P:\.data\yt-is\browser\notebooklm-free"
     assert entry.browser_profile_directory == "Default"
     assert entry.worker_state_root == r"P:\logs\sharded_lane_series\run01\worker_states"
+    assert entry.batch_index == 7
     assert entry.pass_name == "primary"
     assert entry.status == "command_failed"
     assert entry.attempts == 1
+    assert entry.retry_queue_gate_reason == "ytdlp_ok"
     assert entry.source_ready_age_s == 45.5
     assert entry.projected_retry_ready_age_s == 205.5
     assert entry.retry_queue_skipped_reason == "projected_source_age_cliff"
@@ -656,6 +661,7 @@ def test_format_run_aggregates_fetch_recovery_rows_by_worker_profile_and_pass(tm
                             "projected_retry_ready_age_s": 205.5,
                             "projected_retry_ready_age_with_margin_s": 208.5,
                             "retry_queue_age_margin_s": 3.0,
+                            "retry_queue_gate_reason": "ytdlp_ok",
                             "queued_for_retry": True,
                             "retry_queue_skipped_reason": "projected_source_age_cliff",
                             "content_fetch_command_elapsed_s_total": 2.5,
@@ -678,11 +684,13 @@ def test_format_run_aggregates_fetch_recovery_rows_by_worker_profile_and_pass(tm
                             "browser_profile_directory": "Profile",
                             "worker_state_root": r"P:\logs\sharded_lane_series\run01\worker_states",
                             "source_content_shared_retry_pool_enabled": True,
+                            "batch_index": 1,
                             "status": "ready",
                             "pass_name": "primary",
                             "attempts": 0,
                             "source_ready_age_s": 46.0,
                             "projected_retry_ready_age_s": 150.0,
+                            "retry_queue_gate_reason": "ytdlp_ok",
                             "retry_queue_skipped_reason": "",
                             "content_fetch_command_elapsed_s_total": 1.0,
                             "source_list_probe_count": 0,
@@ -704,6 +712,7 @@ def test_format_run_aggregates_fetch_recovery_rows_by_worker_profile_and_pass(tm
                             "browser_profile_directory": "Profile",
                             "worker_state_root": r"P:\logs\sharded_lane_series\run01\worker_states",
                             "source_content_shared_retry_pool_enabled": True,
+                            "batch_index": 4,
                             "status": "source_age_cliff",
                             "pass_name": "retry",
                             "attempts": 0,
@@ -711,6 +720,7 @@ def test_format_run_aggregates_fetch_recovery_rows_by_worker_profile_and_pass(tm
                             "projected_retry_ready_age_s": 280.0,
                             "projected_retry_ready_age_with_margin_s": 283.0,
                             "retry_queue_age_margin_s": 3.0,
+                            "retry_queue_gate_reason": "ytdlp_ok",
                             "retry_queue_skipped_reason": "",
                             "content_fetch_command_elapsed_s_total": 0.0,
                             "source_list_probe_count": 0,
@@ -728,10 +738,41 @@ def test_format_run_aggregates_fetch_recovery_rows_by_worker_profile_and_pass(tm
 
     assert "Fetch Recovery Attribution" in rendered
     assert "Retry Queued" in rendered
+    assert "Retry Gate Reasons" in rendered
     assert "Max Projected+Margin Age(s)" in rendered
     assert "Max Retry Age Margin(s)" in rendered
-    assert "| worker-01 | ytis-pro-worker-01 | primary | 2 | command_failed:1, ready:1 | 0.50 | 45.8 | 46.0 | 205.5 | 208.5 | 3.0 | 1 | projected_source_age_cliff:1 | 3.50 | 1 | 0.70 | 1.20 | 1 | 1 |" in rendered
-    assert "| worker-01 | ytis-pro-worker-01 | retry | 1 | source_age_cliff:1 | 0.00 | 250.0 | 250.0 | absent | absent | absent | 0 | none | 0.00 | 0 | 0.00 | 0.00 | 0 | 0 |" in rendered
+    assert "| worker-01 | ytis-pro-worker-01 | primary | 1 | 1 | command_failed:1, ready:1 | 0.50 | 45.8 | 46.0 | 205.5 | 208.5 | 3.0 | 1 | ytdlp_ok:1 | projected_source_age_cliff:1 | 3.50 | 1 | 0.70 | 1.20 | 1 | 1 |" in rendered
+    assert "| worker-01 | ytis-pro-worker-01 | retry | 4 | 1 | source_age_cliff:1 | 0.00 | 250.0 | 250.0 | absent | absent | absent | 0 | ytdlp_ok:1 | none | 0.00 | 0 | 0.00 | 0.00 | 0 | 0 |" in rendered
+
+
+def test_parse_worker_fetch_completed_entries_infers_retry_gate_reason_when_absent(tmp_path):
+    log_path = tmp_path / "term_000001.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-05-12T18:21:30Z",
+                "trace_id": "term_000001",
+                "action": "nlm_batch_source_content_fetch_completed",
+                "data": {
+                    "worker_id": "worker-01",
+                    "notebooklm_profile": "ytis-pro-worker-01",
+                    "batch_index": 3,
+                    "status": "command_failed",
+                    "pass_name": "primary",
+                    "queued_for_retry": True,
+                    "retry_queue_skipped_reason": "projected_source_age_cliff",
+                    "attempts": 1,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    entries = reducer._parse_worker_fetch_completed_entries(log_path)
+
+    assert len(entries) == 1
+    assert entries[0].retry_queue_gate_reason == "ytdlp_ok"
+    assert entries[0].batch_index == 3
 
 
 def test_format_run_notes_when_command_attribution_is_unavailable(tmp_path):
@@ -934,9 +975,72 @@ def test_format_run_keeps_latest_worker_window_per_profile(tmp_path):
 
     rendered = reducer.format_run(reducer.load_run_metrics(run_root))
 
-    assert rendered.count("| worker-01 | ytis-pro-worker-01 |") == 2
+    assert rendered.count("| worker-01 | ytis-pro-worker-01 |") == 3
     assert "- command completions: 1" in rendered
     assert "ready:1" in rendered
+
+
+def test_format_run_renders_stage_balance_from_worker_batch_metrics(tmp_path):
+    run_root = tmp_path / "run" / "soak"
+    sweep_dir = run_root / "a_hominidae_pro" / "batch_01" / "notebooklm_route_plus_fallback_30s_1w" / "20260512_000000"
+    (sweep_dir / "workers_01" / "logs").mkdir(parents=True)
+    (run_root / reducer.SUMMARY_NAME).write_text(
+        json.dumps(
+            {
+                "combined": {"hot_path_videos_per_hour": 100.0, "wall_elapsed_s": 10.0},
+                "runs": [
+                    {
+                        "lane": "a_hominidae_pro",
+                        "aggregate": {"hot_path_videos_per_hour": 100.0},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (sweep_dir / "sweep_summary.json").write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "workers": 2,
+                        "elapsed_s": 10.0,
+                        "success_count": 3,
+                        "fail_count": 1,
+                        "content_fetch_status_counts": {"ready": 3, "command_failed": 1},
+                        "fetch_completed": {"worker_stage_totals": {}},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (sweep_dir / "workers_01" / "logs" / "term_000001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"timestamp":"1970-01-01T00:01:35+00:00","trace_id":"term_000001","action":"worker_batch_metrics","data":{"worker_id":"worker-01","batch_index":1,"batch_count":1,"batch_size":2,"succeeded":2,"failed":0,"elapsed_s":10.0,"setup_mode":"reuse","notebook_reused":true,"setup_elapsed_s":1.0,"notebook_check_elapsed_s":0.1,"notebook_create_elapsed_s":0.0,"notebook_retire_elapsed_s":0.0,"add_sources_elapsed_s":2.0,"add_cmd_elapsed_s":1.5,"materialization_wait_elapsed_s":0.5,"extract_elapsed_s":3.0,"cleanup_elapsed_s":1.0,"batch_elapsed_s":10.0,"source_ready_age_s_total":20.0,"source_ready_age_s_max":12.0,"source_ready_age_s_avg":10.0,"content_fetch_status_counts":{"ready":2},"notebooklm_profile":"ytis-pro-worker-01","started_at_epoch":100.0,"completed_at_epoch":110.0}}',
+                '{"timestamp":"1970-01-01T00:01:42+00:00","trace_id":"term_000001","action":"nlm_source_content_command_completed","data":{"worker_id":"worker-01","notebooklm_profile":"ytis-pro-worker-01","video_id":"alpha","attempt":1,"status":"ready","last_auth_refresh_age_s":12.3,"source_ready_age_s":10.0,"returncode":0}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (sweep_dir / "workers_02" / "logs").mkdir(parents=True)
+    (sweep_dir / "workers_02" / "logs" / "term_000001.jsonl").write_text(
+        "\n".join(
+            [
+                '{"timestamp":"1970-01-01T00:01:37+00:00","trace_id":"term_000001","action":"worker_batch_metrics","data":{"worker_id":"worker-02","batch_index":1,"batch_count":1,"batch_size":2,"succeeded":1,"failed":1,"elapsed_s":14.0,"setup_mode":"reuse","notebook_reused":true,"setup_elapsed_s":2.0,"notebook_check_elapsed_s":0.2,"notebook_create_elapsed_s":0.0,"notebook_retire_elapsed_s":0.0,"add_sources_elapsed_s":3.0,"add_cmd_elapsed_s":2.5,"materialization_wait_elapsed_s":0.8,"extract_elapsed_s":7.0,"cleanup_elapsed_s":1.2,"batch_elapsed_s":14.0,"source_ready_age_s_total":40.0,"source_ready_age_s_max":25.0,"source_ready_age_s_avg":20.0,"content_fetch_status_counts":{"ready":1,"command_failed":1},"notebooklm_profile":"ytis-pro-worker-02","started_at_epoch":101.0,"completed_at_epoch":115.0}}',
+                '{"timestamp":"1970-01-01T00:01:43+00:00","trace_id":"term_000001","action":"nlm_source_content_command_completed","data":{"worker_id":"worker-02","notebooklm_profile":"ytis-pro-worker-02","video_id":"beta","attempt":1,"status":"command_failed","last_auth_refresh_age_s":42.0,"source_ready_age_s":25.0,"returncode":1}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rendered = reducer.format_run(reducer.load_run_metrics(run_root))
+
+    assert "### Stage Balance" in rendered
+    assert "| worker-01 | ytis-pro-worker-01 | 1 | 2 | 0 | 10.00 | 1.00 | 2.00 | 3.00 | 3.00 | 1.00 | 10.0 | 12.0 |" in rendered
+    assert "| worker-02 | ytis-pro-worker-02 | 1 | 1 | 1 | 14.00 | 2.00 | 3.00 | 7.00 | 7.00 | 1.20 | 20.0 | 25.0 |" in rendered
+    assert "- stage balance skew: extract spread 4.0s; per-batch spread 4.0s; dominant worker worker-02/ytis-pro-worker-02 at 7.0s/1 batches vs worker-01/ytis-pro-worker-01 at 3.0s/1 batches; per-batch dominant worker worker-02/ytis-pro-worker-02 at 7.0s vs worker-01/ytis-pro-worker-01 at 3.0s" in rendered
 
 
 def test_load_run_metrics_supports_benchmark_summary_only_root(tmp_path):
@@ -1008,6 +1112,80 @@ def test_load_run_metrics_supports_benchmark_summary_only_root(tmp_path):
     assert lane.fail_count == 2
     assert lane.processed_count == 200
     assert len(lane.batches) == 2
+
+
+def test_load_run_metrics_includes_direct_lane_dirs_even_with_smoke_root(tmp_path):
+    run_root = tmp_path / "run"
+    (run_root / "smoke").mkdir(parents=True)
+    (run_root / "smoke" / "cohort.a_hominidae_pro.json").write_text("[]", encoding="utf-8")
+    (run_root / "smoke" / "cohort.troup_hominidae_free.json").write_text("[]", encoding="utf-8")
+    for lane_name, vph in (("a_hominidae_pro", 111.0), ("troup_hominidae_free", 222.0)):
+        (run_root / lane_name).mkdir()
+    (run_root / reducer.SUMMARY_NAME).write_text(
+        json.dumps(
+            {
+                "status": "partial",
+                "combined": {"hot_path_videos_per_hour": 333.0, "wall_elapsed_s": 10.0},
+                "runs": [
+                    {
+                        "lane": "a_hominidae_pro",
+                        "aggregate": {"hot_path_videos_per_hour": 111.0, "processed_count_total": 1},
+                    },
+                    {
+                        "lane": "troup_hominidae_free",
+                        "aggregate": {"hot_path_videos_per_hour": 222.0, "processed_count_total": 1},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run = reducer.load_run_metrics(run_root)
+
+    assert [lane.lane_name for lane in run.lanes] == ["a_hominidae_pro", "troup_hominidae_free"]
+    assert [lane.aggregate_vph for lane in run.lanes] == [111.0, 222.0]
+
+
+def test_format_run_renders_lane_partial_reason_from_summary(tmp_path):
+    run_root = tmp_path / "run"
+    (run_root / "smoke" / "a_hominidae_pro").mkdir(parents=True)
+    (run_root / reducer.SUMMARY_NAME).write_text(
+        json.dumps(
+            {
+                "status": "partial",
+                "combined": {
+                    "hot_path_videos_per_hour": 648.1,
+                    "wall_elapsed_s": 2027.476,
+                    "hot_path_success_count_total": 365,
+                    "fail_count_total": 553,
+                    "processed_count_total": 918,
+                },
+                "runs": [
+                    {
+                        "lane": "a_hominidae_pro",
+                        "status": "partial",
+                        "partial_reason": "lane a_hominidae_pro incomplete benchmark: processed_count_total=375 expected=400",
+                        "expected_processed_count_total": 400,
+                        "aggregate": {
+                            "hot_path_videos_per_hour": 430.95,
+                            "wall_elapsed_s": 2027.476,
+                            "hot_path_success_count_total": 184,
+                            "fail_count_total": 263,
+                            "processed_count_total": 447,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rendered = reducer.format_run(reducer.load_run_metrics(run_root))
+
+    assert "- expected processed: 400" in rendered
+    assert "- lane status: partial" in rendered
+    assert "- lane partial reason: lane a_hominidae_pro incomplete benchmark: processed_count_total=375 expected=400" in rendered
 
 
 def test_bottleneck_label_does_not_claim_tail_timing_from_worker_counts_only():

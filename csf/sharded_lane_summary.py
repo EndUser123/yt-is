@@ -33,6 +33,8 @@ class ShardedLaneRunSummary:
     fail_count_total: int = 0
     processed_count_total: int = 0
     lane_count: int = 0
+    partial_reason: str = ""
+    expected_processed_count_total: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -53,6 +55,8 @@ class ShardedLaneRunSummary:
             "fail_count_total": self.fail_count_total,
             "processed_count_total": self.processed_count_total,
             "lane_count": self.lane_count,
+            "partial_reason": self.partial_reason,
+            "expected_processed_count_total": self.expected_processed_count_total,
         }
 
 
@@ -107,6 +111,26 @@ def _summed_run_totals(payload: dict[str, Any]) -> dict[str, float]:
     return totals
 
 
+def _lane_partial_reason(payload: dict[str, Any]) -> tuple[str, int | None]:
+    runs = payload.get("runs")
+    if not isinstance(runs, list):
+        return ("", None)
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        partial_reason = str(run.get("partial_reason") or "")
+        expected_processed_raw = run.get("expected_processed_count_total")
+        expected_processed_total: int | None = None
+        if expected_processed_raw is not None:
+            try:
+                expected_processed_total = int(expected_processed_raw)
+            except (TypeError, ValueError):
+                expected_processed_total = None
+        if partial_reason or expected_processed_total is not None:
+            return (partial_reason, expected_processed_total)
+    return ("", None)
+
+
 def load_sharded_lane_summary(path: Path) -> ShardedLaneRunSummary:
     path = Path(path)
     if path.is_dir():
@@ -122,6 +146,7 @@ def load_sharded_lane_summary(path: Path) -> ShardedLaneRunSummary:
     combined = payload.get("combined") if isinstance(payload.get("combined"), dict) else {}
     post_run_hygiene = payload.get("post_run_hygiene") if isinstance(payload.get("post_run_hygiene"), dict) else {}
     run_totals = _summed_run_totals(payload)
+    partial_reason, expected_processed_count_total = _lane_partial_reason(payload)
     processed_total = _int_value(combined.get("processed_count_total"))
     if processed_total <= 0:
         processed_total = _int_value(run_totals["processed_count_total"])
@@ -149,6 +174,8 @@ def load_sharded_lane_summary(path: Path) -> ShardedLaneRunSummary:
         fail_count_total=_int_value(combined.get("fail_count_total")),
         processed_count_total=processed_total,
         lane_count=_int_value(combined.get("lane_count")),
+        partial_reason=partial_reason,
+        expected_processed_count_total=expected_processed_count_total,
     )
 
 
@@ -168,7 +195,9 @@ def format_sharded_lane_summary(summary: ShardedLaneRunSummary) -> str:
         f"success={summary.success_count_total} "
         f"fail={summary.fail_count_total} "
         f"processed={summary.processed_count_total} "
-        f"lanes={summary.lane_count}"
+        f"lanes={summary.lane_count} "
+        f"partial_reason={summary.partial_reason or 'n/a'} "
+        f"expected_processed={summary.expected_processed_count_total if summary.expected_processed_count_total is not None else 'n/a'}"
     )
 
 

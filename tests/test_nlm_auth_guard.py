@@ -299,6 +299,101 @@ def test_browser_health_gate_marks_unrelated_chrome_degraded_when_over_budget(mo
     assert not report["issues"]
 
 
+def test_default_chrome_profile_pids_uses_short_cache_ttl(monkeypatch):
+    calls: list[Path] = []
+    times = iter([100.0, 100.2, 100.8])
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setenv("YTIS_NLM_CHROME_PID_CACHE_TTL_S", "0.5")
+    monkeypatch.setattr(nlm_auth_guard.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "chrome_pids_for_root",
+        lambda root: calls.append(Path(root)) or {111},
+    )
+    monkeypatch.setattr(nlm_auth_guard, "_DEFAULT_CHROME_PROFILE_PIDS_CACHE", None)
+
+    first = nlm_auth_guard.default_chrome_profile_pids()
+    second = nlm_auth_guard.default_chrome_profile_pids()
+    third = nlm_auth_guard.default_chrome_profile_pids()
+
+    assert first == {111}
+    assert second == {111}
+    assert third == {111}
+    assert calls == [nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT, nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT]
+
+
+def test_default_chrome_profile_pids_can_disable_cache(monkeypatch):
+    calls: list[Path] = []
+    times = iter([200.0, 200.1, 200.2])
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setenv("YTIS_NLM_CHROME_PID_CACHE_TTL_S", "0")
+    monkeypatch.setattr(nlm_auth_guard.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "chrome_pids_for_root",
+        lambda root: calls.append(Path(root)) or {222},
+    )
+    monkeypatch.setattr(nlm_auth_guard, "_DEFAULT_CHROME_PROFILE_PIDS_CACHE", None)
+
+    assert nlm_auth_guard.default_chrome_profile_pids() == {222}
+    assert nlm_auth_guard.default_chrome_profile_pids() == {222}
+
+    assert calls == [nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT, nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT]
+
+
+def test_reap_default_chrome_profile_clears_cached_pids(monkeypatch):
+    calls: list[Path] = []
+    times = iter([300.0, 300.1, 300.2])
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setenv("YTIS_NLM_CHROME_PID_CACHE_TTL_S", "30")
+    monkeypatch.setattr(nlm_auth_guard.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "chrome_pids_for_root",
+        lambda root: calls.append(Path(root)) or {333},
+    )
+    monkeypatch.setattr(nlm_auth_guard, "stop_chrome_pids", lambda pids: set(pids))
+    monkeypatch.setattr(nlm_auth_guard, "_DEFAULT_CHROME_PROFILE_PIDS_CACHE", None)
+
+    assert nlm_auth_guard.default_chrome_profile_pids() == {333}
+    assert nlm_auth_guard.reap_default_chrome_profile() == {333}
+    assert nlm_auth_guard.default_chrome_profile_pids() == {333}
+
+    assert calls == [
+        nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT,
+        nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT,
+        nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT,
+    ]
+
+
+def test_default_chrome_profile_pids_refreshes_cached_dead_pids(monkeypatch):
+    calls: list[Path] = []
+    times = iter([400.0, 400.1, 400.2])
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setenv("YTIS_NLM_CHROME_PID_CACHE_TTL_S", "30")
+    monkeypatch.setattr(nlm_auth_guard.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "chrome_pids_for_root",
+        lambda root: calls.append(Path(root)) or {444},
+    )
+    monkeypatch.setattr(
+        nlm_auth_guard.psutil,
+        "pid_exists",
+        lambda pid: False if pid == 444 else True,
+    )
+    monkeypatch.setattr(nlm_auth_guard, "_DEFAULT_CHROME_PROFILE_PIDS_CACHE", None)
+
+    assert nlm_auth_guard.default_chrome_profile_pids() == {444}
+    assert nlm_auth_guard.default_chrome_profile_pids() == {444}
+
+    assert calls == [nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT, nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT]
+
+
 def test_run_nlm_pins_profile_automatically(monkeypatch):
     calls: list[list[str]] = []
 

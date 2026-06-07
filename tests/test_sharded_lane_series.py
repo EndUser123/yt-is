@@ -191,6 +191,42 @@ def test_load_lane_configs_accepts_explicit_expected_email(tmp_path):
     assert lane.expected_email == "future.account@example.com"
 
 
+def test_load_lane_configs_accepts_lane_env_overrides(tmp_path):
+    config_path = tmp_path / "lanes.json"
+    config_path.write_text(
+        json.dumps(
+            [
+                {
+                    "lane": "future",
+                    "account_class": "future",
+                    "workers": 1,
+                    "notebooklm_profile_prefix": "ytis-future-worker",
+                    "notebooklm_profiles": ["ytis-future-worker-01"],
+                    "env": {
+                        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+                        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "155",
+                        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "185",
+                        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "7",
+                    },
+                    "browser_profile_root": "P:\\\\\\.data/yt-is/browser/notebooklm-future",
+                    "worker_state_root": "P:\\\\\\.logs/shards/future/worker_states",
+                    "notebook_prefix": "benchmark-shard-future",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    (lane,) = load_lane_configs(config_path)
+
+    assert lane.env == {
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "155",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "185",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "7",
+    }
+
+
 def test_compute_combined_hot_path_vph_prefers_throughput_elapsed_over_wall_clock():
     lanes = [
         {
@@ -659,6 +695,12 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
     assert report["report_version"] == 1
     assert report["lanes"][0]["worker_state_root"].endswith("out\\pro\\worker_states")
     assert report["lanes"][0]["configured_worker_state_root"].endswith("pro\\worker_states")
+    assert report["lanes"][0]["env"] == {
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+    }
     assert Path(report["report_path"]).exists()
     persisted = json.loads(Path(report["report_path"]).read_text(encoding="utf-8"))
     assert persisted["run_environment_label"] == "hotel_wifi"
@@ -675,6 +717,12 @@ def test_lane_env_exports_run_environment_label(tmp_path):
         browser_profile_directory="Profile 2",
         worker_state_root=tmp_path / "pro" / "worker_states",
         notebook_prefix="benchmark-shard-pro",
+        env={
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+        },
     )
     env = _lane_env(
         {},
@@ -684,6 +732,10 @@ def test_lane_env_exports_run_environment_label(tmp_path):
         worker_state_root=tmp_path / "state",
         run_environment_label="hotel_wifi",
     )
+    assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED"] == "1"
+    assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S"] == "160"
+    assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S"] == "190"
+    assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE"] == "5"
     assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_NLM_WORKER_AUTH_USE_CDP"] == "0"
@@ -745,6 +797,12 @@ def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_p
                 browser_profile_directory="Profile 2",
                 worker_state_root=tmp_path / "pro" / "worker_states",
                 notebook_prefix="benchmark-shard-pro",
+                env={
+                    "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+                    "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
+                    "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
+                    "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+                },
             ),
         ),
         trace_root=tmp_path / "trace",
@@ -1100,6 +1158,15 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
     assert snapshot["pid"] == 4321
     assert snapshot["returncode"] == 0
     assert snapshot["status"] == "completed"
+    assert snapshot["env_snapshot"] == {
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+        "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
+        "YTIS_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
+        "YTIS_NLM_WORKER_AUTH_USE_CDP": "0",
+    }
 
 
 def test_run_lane_rejects_partial_processed_count(tmp_path, monkeypatch):
@@ -1204,12 +1271,137 @@ def test_run_lane_rejects_partial_processed_count(tmp_path, monkeypatch):
         manifest_json=Path("P:\\\\\\packages/yt-is/tests/fixtures/shared_benchmark_manifest.json"),
         python_executable=None,
         reusable_pipeline_mode="serial",
-        env={},
+        env={
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+            "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
+            "YTIS_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
+            "YTIS_NLM_WORKER_AUTH_USE_CDP": "0",
+        },
     )
 
     assert report["status"] == "partial"
     assert report["processed_count_total"] == 300
     assert report["partial_reason"] == "lane free incomplete benchmark: processed_count_total=300 expected=400"
+
+
+def test_run_lane_accepts_shared_retry_processed_count_overrun(tmp_path, monkeypatch):
+    import csf.sharded_lane_series as mod
+
+    lane = LaneConfig(
+        lane="free",
+        account_class="free",
+        workers=1,
+        notebooklm_profile_prefix="ytis-free1-worker",
+        notebooklm_profiles=("ytis-free1-worker-01",),
+        browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
+        worker_state_root=tmp_path / "free" / "worker_states",
+        notebook_prefix="benchmark-shard-free",
+    )
+    calls: list[str] = []
+    lane_root = tmp_path / "out" / "free"
+    lane_root.mkdir(parents=True, exist_ok=True)
+
+    def fake_build_command(**kwargs):
+        return ["fake-benchmark"]
+
+    def fake_popen(cmd, **kwargs):
+        calls.append("popen")
+        kwargs["stdout"].write("")
+        kwargs["stderr"].write("")
+        kwargs["stdout"].flush()
+        kwargs["stderr"].flush()
+        (lane_root / "benchmark_summary.json").write_text(
+            json.dumps(
+                {
+                    "batches": [
+                        {
+                            "policies": [
+                                {
+                                    "policy": DEFAULT_POLICY,
+                                    "results": [
+                                        {
+                                            "success_count": 50,
+                                            "fail_count": 0,
+                                            "skip_count": 0,
+                                            "processed_count": 53,
+                                            "hot_path_success_count": 50,
+                                            "transcript_fallback_success_count": 0,
+                                            "elapsed_s": 100.0,
+                                            "process_elapsed_s": 100.0,
+                                            "startup_prepare_total_elapsed_s": 0.0,
+                                            "setup_elapsed_s": 0.0,
+                                            "add_elapsed_s": 0.0,
+                                            "extract_elapsed_s": 0.0,
+                                            "readiness_elapsed_s": 0.0,
+                                            "cleanup_elapsed_s": 0.0,
+                                            "worker_idle_wait_s": 0.0,
+                                            "source_ready_age_s_total": 0.0,
+                                            "source_ready_age_s_max": 0.0,
+                                            "shared_retry_deferred_count": 0,
+                                            "shared_retry_recovered_count": 3,
+                                            "shared_retry_final_failed_count": 0,
+                                            "shared_retry_processed_count": 3,
+                                            "youtube_ytdlp_elapsed_s_total": 0.0,
+                                            "youtube_ytdlp_elapsed_s_max": 0.0,
+                                            "youtube_ytdlp_elapsed_s_count": 0,
+                                            "youtube_page_elapsed_s_total": 0.0,
+                                            "youtube_page_elapsed_s_max": 0.0,
+                                            "youtube_page_elapsed_s_count": 0,
+                                            "content_fetch_status_counts": {"ready": 50},
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class FakePopen:
+            pid = 4321
+            returncode = 0
+
+            def wait(self):
+                calls.append("wait")
+                return 0
+
+        return FakePopen()
+
+    monkeypatch.setattr(mod, "build_fallback_benchmark_command", fake_build_command)
+    monkeypatch.setattr(mod, "_stop_default_chrome_profile_if_running", lambda stage: False)
+    monkeypatch.setattr(mod, "_find_invalid_lane_artifacts", lambda lane_root: [])
+    monkeypatch.setattr(mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(mod.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run should not be used")))
+
+    report = mod._run_lane(
+        lane=lane,
+        trace_root=tmp_path / "trace",
+        output_root=tmp_path / "out",
+        cohort_json=tmp_path / "out" / "cohort.json",
+        source_url="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        policy=DEFAULT_POLICY,
+        limit=50,
+        batch_size=25,
+        manifest_json=Path("P:\\\\\\packages/yt-is/tests/fixtures/shared_benchmark_manifest.json"),
+        python_executable=None,
+        reusable_pipeline_mode="serial",
+        env={
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+            "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
+            "YTIS_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
+            "YTIS_NLM_WORKER_AUTH_USE_CDP": "0",
+        },
+    )
+
+    assert report["status"] == "ok"
+    assert report["processed_count_total"] == 53
+    assert report["shared_retry_processed_count_total"] == 3
+    assert report["partial_reason"] is None
 
 
 def test_run_lane_rejects_default_profile_contaminated_logs(tmp_path, monkeypatch):

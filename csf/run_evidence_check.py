@@ -70,6 +70,7 @@ def inspect_run_root(
     *,
     require_forced_refresh_marker: bool = False,
     expected_worker_shape_signature: str | None = None,
+    allow_partial_status: bool = False,
 ) -> EvidenceCheckResult:
     run_root = Path(run_root)
     summary_path = run_root / REQUIRED_SUMMARY_NAME
@@ -93,7 +94,9 @@ def inspect_run_root(
                     f"summary report_version is {report_version!r}; expected {EXPECTED_REPORT_VERSION}: {summary_path}"
                 )
             summary_status = str(summary.get("status") or "ok")
-            if summary_status != "ok":
+            if summary_status == "partial" and allow_partial_status:
+                pass
+            elif summary_status != "ok":
                 reasons.append(f"summary status is {summary_status}: {summary_path}")
             if expected_worker_shape_signature is not None:
                 actual_worker_shape_signature = str(summary.get("worker_shape_signature") or "").strip()
@@ -137,6 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Require summary.worker_shape_signature to match the expected lane shape, e.g. 4+4 or 3+3.",
     )
+    parser.add_argument(
+        "--allow-partial-status",
+        action="store_true",
+        help="Accept summary.status=partial as evidence for diagnostic reruns.",
+    )
     return parser
 
 
@@ -147,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         args.run_root,
         require_forced_refresh_marker=args.require_forced_refresh_marker,
         expected_worker_shape_signature=args.expected_worker_shape,
+        allow_partial_status=args.allow_partial_status,
     )
     if result.ok:
         print(f"[evidence] ok summary={result.summary_path}")

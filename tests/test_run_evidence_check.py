@@ -91,6 +91,24 @@ def test_run_evidence_check_rejects_invalidated_summary_status(tmp_path):
     assert result == 1
 
 
+def test_run_evidence_check_accepts_partial_summary_when_allowed(tmp_path):
+    run_root = tmp_path / "run"
+    logs = run_root / "logs"
+    logs.mkdir(parents=True)
+    (run_root / "sharded_lane_series_summary.json").write_text(
+        json.dumps({"report_version": 1, "status": "partial", "combined": {"hot_path_success_count_total": 1}}),
+        encoding="utf-8",
+    )
+    (logs / "term.jsonl").write_text(
+        json.dumps({"action": "nlm_auth_checked", "data": {"status": "ok"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_evidence_check.main(["--run-root", str(run_root), "--allow-partial-status"])
+
+    assert result == 0
+
+
 def test_run_evidence_check_requires_forced_refresh_marker_when_requested(tmp_path):
     run_root = tmp_path / "run"
     logs = run_root / "logs"

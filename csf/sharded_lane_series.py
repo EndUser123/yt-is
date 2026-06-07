@@ -11,7 +11,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from collections import Counter
 from pathlib import Path
@@ -61,6 +61,7 @@ class LaneConfig:
     browser_profile_directory: str = ""
     coordinator_notebooklm_profile: str | None = None
     startup_delay_s: float = 0.0
+    env: dict[str, str] = field(default_factory=dict)
 
     @property
     def coordinator_profile(self) -> str:
@@ -112,6 +113,15 @@ def _lane_from_dict(raw: dict[str, object]) -> LaneConfig:
     startup_delay_s = float(raw.get("startup_delay_s") or 0.0)
     if startup_delay_s < 0:
         raise ValueError(f"lane {lane}: startup_delay_s must be >= 0")
+    raw_env = raw.get("env") or {}
+    if not isinstance(raw_env, dict):
+        raise ValueError(f"lane {lane}: env must be an object")
+    env: dict[str, str] = {}
+    for key, value in raw_env.items():
+        key_text = str(key).strip()
+        value_text = str(value).strip()
+        if key_text:
+            env[key_text] = value_text
     return LaneConfig(
         lane=lane,
         account_class=str(raw.get("account_class") or lane).strip(),
@@ -125,6 +135,7 @@ def _lane_from_dict(raw: dict[str, object]) -> LaneConfig:
         expected_email=expected_email,
         coordinator_notebooklm_profile=coordinator_profile,
         startup_delay_s=startup_delay_s,
+        env=env,
     )
 
 
@@ -386,6 +397,7 @@ def _lane_env(
     for var in _AMBUSH_VARS:
         base_env = {k: v for k, v in base_env.items() if k != var}
     env = dict(base_env)
+    env.update(lane.env)
     env["NOTEBOOKLM_PROFILE"] = lane.coordinator_profile
     env["INTELLIGENCE_STREAM_LOG_DIR"] = str(lane_output_root / "logs")
     env["YTIS_NLM_BROWSER_PROFILE_ROOT"] = str(lane.browser_profile_root)
@@ -422,6 +434,27 @@ def _lane_env(
         env.pop("YTIS_NLM_WORKER_AUTH_USE_CDP", None)
     env["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
     return env
+
+
+def _lane_process_env_snapshot(env: dict[str, str]) -> dict[str, str]:
+    """Capture the launch env flags that define a benchmark universe."""
+    return {
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": env.get(
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED", ""
+        ),
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": env.get(
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S", ""
+        ),
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": env.get(
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S", ""
+        ),
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": env.get(
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE", ""
+        ),
+        "YTIS_NLM_RUN_ENVIRONMENT_LABEL": env.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL", ""),
+        "YTIS_RUN_ENVIRONMENT_LABEL": env.get("YTIS_RUN_ENVIRONMENT_LABEL", ""),
+        "YTIS_NLM_WORKER_AUTH_USE_CDP": env.get("YTIS_NLM_WORKER_AUTH_USE_CDP", ""),
+    }
 
 
 def _run_lane(
@@ -481,6 +514,7 @@ def _run_lane(
         "command": command,
         "cwd": str(REPO_ROOT),
         "output_root": str(lane_output_root),
+        "env_snapshot": _lane_process_env_snapshot(env),
         "started_at": round(started_at, 3),
         "status": "starting",
         "pid": None,

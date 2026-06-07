@@ -597,7 +597,7 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
 
     if not _wait_for_cdp(family.cdp_port, timeout_s=1.0):
         if not _launch_cdp_browser(family, profile_root, snapshot):
-            return False
+            return refresh_profile_session(family.source_profile, timeout_s=timeout_s)
     _close_cdp_noise_tabs(family.cdp_port)
     try:
         res = run_nlm(
@@ -616,7 +616,7 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
     except subprocess.TimeoutExpired:
         if snapshot is not None:
             _restore_profile_state(profile_root, family.source_profile, snapshot)
-        return False
+        return refresh_profile_session(family.source_profile, timeout_s=timeout_s)
     if _is_noninteractive_auth():
         default_profile_pids_after = _chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
         new_default_profile_pids = default_profile_pids_after - default_profile_pids_before
@@ -624,11 +624,13 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
             _stop_chrome_pids(new_default_profile_pids)
             if snapshot is not None:
                 _restore_profile_state(profile_root, family.source_profile, snapshot)
-            return False
+            return refresh_profile_session(family.source_profile, timeout_s=timeout_s)
     success = res.returncode == 0 and _extract_account(res.stdout or "", res.stderr or "") == family.expected_email.lower()
-    if not success and snapshot is not None:
+    if success:
+        return True
+    if snapshot is not None:
         _restore_profile_state(profile_root, family.source_profile, snapshot)
-    return success
+    return refresh_profile_session(family.source_profile, timeout_s=timeout_s)
 
 
 def _refresh_with_callable(

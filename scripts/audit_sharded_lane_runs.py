@@ -27,6 +27,8 @@ class LaneMetrics:
     account_class: str
     workers: int
     hot_path_videos_per_hour: float
+    expected_processed_count_total: int | None = None
+    partial_reason: str | None = None
     success_count_total: int | None = None
     fail_count_total: int | None = None
     processed_count_total: int | None = None
@@ -67,9 +69,44 @@ class LaneMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class BatchTailRow:
+    run_name: str
+    phase: str
+    lane: str
+    batch_name: str
+    batch_index: int
+    workers: int | None
+    success_count: int | None
+    fail_count: int | None
+    processed_count: int | None
+    elapsed_s: float | None
+    source_ready_age_s_avg: float | None
+    source_ready_age_s_max: float | None
+    content_fetch_command_elapsed_s_total: float | None
+    content_fetch_command_elapsed_s_avg: float | None
+    source_list_probe_count: int | None
+    source_age_cliff_count: int | None
+    command_failed_count: int | None
+    shared_retry_recovered_count_total: float | None
+    cleanup_elapsed_s_total: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class LaneReducerSignal:
+    lane: str
+    command_completions: int | None = None
+    command_failures: int | None = None
+    command_failure_rate: float | None = None
+    worker_profile_spread_pp: float | None = None
+    auth_refresh_spread_pp: float | None = None
+    stronger_signal: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RunAudit:
     name: str
     status: str
+    summary_source: str | None = None
     throughput_valid: bool | None = None  # None = field absent
     metric_contract: str | None = None
     run_environment_label: str | None = None
@@ -97,6 +134,8 @@ class RunAudit:
     command_failed_total: int | None = None  # None = all absent in all lanes
     pre_run_browser_health: str | None = None
     post_run_hygiene: str | None = None
+    batch_tail_rows: tuple[BatchTailRow, ...] = field(default_factory=tuple)
+    reducer_signals: tuple[LaneReducerSignal, ...] = field(default_factory=tuple)
     parse_mode: str = "strict"  # "strict" or "repaired"
     parse_error: str | None = None
 
@@ -644,6 +683,8 @@ def _extract_lane(run: dict[str, Any]) -> LaneMetrics | None:
         account_class=account_class,
         workers=workers,
         hot_path_videos_per_hour=_float(vph_raw) or 0.0,
+        expected_processed_count_total=_int(agg.get("expected_processed_count_total")) if isinstance(agg, dict) else None,
+        partial_reason=str(agg.get("partial_reason")) if isinstance(agg, dict) and agg.get("partial_reason") is not None else None,
         success_count_total=_int(agg.get("success_count_total")) if isinstance(agg, dict) else None,
         fail_count_total=_int(agg.get("fail_count_total")) if isinstance(agg, dict) else None,
         processed_count_total=_int(agg.get("processed_count_total")) if isinstance(agg, dict) else None,
@@ -660,6 +701,194 @@ def _extract_lane(run: dict[str, Any]) -> LaneMetrics | None:
         command_failed=command_failed,
         content_fetch_status=content_fetch if isinstance(content_fetch, dict) else None,
     )
+
+
+def _collect_batch_tail_rows(run_root: Path) -> tuple[BatchTailRow, ...]:
+    grouped: dict[tuple[str, str, str], tuple[str, BatchTailRow]] = {}
+    for summary_path in run_root.rglob("sweep_summary.json"):
+        parts = summary_path.parts
+        if "batch_" not in summary_path.as_posix():
+            continue
+        try:
+            phase_idx = next(i for i, part in enumerate(parts) if part in {"smoke", "soak"})
+        except StopIteration:
+            continue
+        if phase_idx + 2 >= len(parts):
+            continue
+        phase = parts[phase_idx]
+        lane = parts[phase_idx + 1]
+        batch_name = parts[phase_idx + 2]
+        batch_match = re.match(r"batch_(\d+)$", batch_name)
+        if batch_match is None:
+            continue
+        try:
+            payload, _, _ = _strict_load(summary_path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if not payload:
+            continue
+        results = payload.get("results")
+        if not isinstance(results, list) or not results:
+            continue
+        result = results[0]
+        if not isinstance(result, dict):
+            continue
+        fetch_completed = result.get("fetch_completed")
+        if not isinstance(fetch_completed, dict):
+            fetch_completed = {}
+        worker_stage_totals = fetch_completed.get("worker_stage_totals")
+        if not isinstance(worker_stage_totals, dict):
+            worker_stage_totals = {}
+        content_fetch_status = worker_stage_totals.get("content_fetch_status_counts_total")
+        if not isinstance(content_fetch_status, dict):
+            content_fetch_status = {}
+        success_count = _int(fetch_completed.get("success_count"))
+        if success_count is None:
+            success_count = _int(result.get("succeeded"))
+        fail_count = _int(fetch_completed.get("fail_count"))
+        if fail_count is None:
+            fail_count = _int(result.get("failed"))
+        processed_count = _int(fetch_completed.get("processed_count"))
+        if processed_count is None:
+            processed_count = _int(result.get("video_count")) or _int(result.get("processed_count"))
+        elapsed_s = _float(fetch_completed.get("elapsed_s"))
+        if elapsed_s is None:
+            elapsed_s = _float(result.get("elapsed_s"))
+        batch_tail_row = BatchTailRow(
+            run_name=run_root.name,
+            phase=phase,
+            lane=lane,
+            batch_name=batch_name,
+            batch_index=int(batch_match.group(1)),
+            workers=_int(result.get("workers")),
+            success_count=success_count,
+            fail_count=fail_count,
+            processed_count=processed_count,
+            elapsed_s=elapsed_s,
+            source_ready_age_s_avg=_float(worker_stage_totals.get("source_ready_age_s_avg")),
+            source_ready_age_s_max=_float(worker_stage_totals.get("source_ready_age_s_max")),
+            content_fetch_command_elapsed_s_total=_float(worker_stage_totals.get("content_fetch_command_elapsed_s_total")),
+            content_fetch_command_elapsed_s_avg=_float(worker_stage_totals.get("content_fetch_command_elapsed_s_avg")),
+            source_list_probe_count=_int(worker_stage_totals.get("source_list_probe_count")),
+            source_age_cliff_count=_int(content_fetch_status.get("source_age_cliff")),
+            command_failed_count=_int(content_fetch_status.get("command_failed")),
+            shared_retry_recovered_count_total=_float(worker_stage_totals.get("shared_retry_recovered_count_total")),
+            cleanup_elapsed_s_total=_float(worker_stage_totals.get("cleanup_elapsed_s_total")),
+        )
+        timestamp = summary_path.parent.name
+        key = (phase, lane, batch_name)
+        current = grouped.get(key)
+        if current is None or timestamp >= current[0]:
+            grouped[key] = (timestamp, batch_tail_row)
+    return tuple(
+        sorted(
+            (row for _, row in grouped.values()),
+            key=lambda row: (
+                -(row.source_ready_age_s_avg or 0.0),
+                -(row.content_fetch_command_elapsed_s_total or 0.0),
+                row.phase,
+                row.lane,
+                row.batch_index,
+            ),
+        )
+    )
+
+
+def _resolve_stage_reducer_path(run_root: Path, log_root: Path | None) -> Path:
+    root = log_root if log_root is not None else run_root.parent
+    candidates = [root / f"{run_root.name}_stage_reducer.txt"]
+    if run_root.name.endswith("_current"):
+        candidates.append(root / f"{run_root.name.removesuffix('_current')}_stage_reducer.txt")
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def _collect_reducer_signals(stage_reducer_path: Path) -> tuple[LaneReducerSignal, ...]:
+    if not stage_reducer_path.exists():
+        return tuple()
+
+    current_lane = ""
+    current_command_completions: int | None = None
+    current_command_failures: int | None = None
+    current_command_failure_rate: float | None = None
+    current_worker_profile_spread_pp: float | None = None
+    current_auth_refresh_spread_pp: float | None = None
+    current_stronger_signal: str | None = None
+    signals: list[LaneReducerSignal] = []
+
+    command_pattern = re.compile(r"- command completions: (\d+)")
+    failures_pattern = re.compile(r"- failures: (\d+) \(([\d.]+)%\)")
+    skew_pattern = re.compile(
+        r"- skew comparison: worker-profile spread ([0-9.]+)pp vs auth-refresh spread ([0-9.]+)pp; (.+?) is the stronger signal"
+    )
+
+    def flush() -> None:
+        nonlocal current_lane
+        nonlocal current_command_completions
+        nonlocal current_command_failures
+        nonlocal current_command_failure_rate
+        nonlocal current_worker_profile_spread_pp
+        nonlocal current_auth_refresh_spread_pp
+        nonlocal current_stronger_signal
+        if not current_lane:
+            return
+        signals.append(
+            LaneReducerSignal(
+                lane=current_lane,
+                command_completions=current_command_completions,
+                command_failures=current_command_failures,
+                command_failure_rate=current_command_failure_rate,
+                worker_profile_spread_pp=current_worker_profile_spread_pp,
+                auth_refresh_spread_pp=current_auth_refresh_spread_pp,
+                stronger_signal=current_stronger_signal,
+            )
+        )
+        current_lane = ""
+        current_command_completions = None
+        current_command_failures = None
+        current_command_failure_rate = None
+        current_worker_profile_spread_pp = None
+        current_auth_refresh_spread_pp = None
+        current_stronger_signal = None
+
+    for raw_line in stage_reducer_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("### Lane: "):
+            flush()
+            current_lane = line.split(":", 1)[1].strip()
+            continue
+        match = command_pattern.match(line)
+        if match:
+            current_command_completions = _int(match.group(1))
+            continue
+        match = failures_pattern.match(line)
+        if match:
+            current_command_failures = _int(match.group(1))
+            current_command_failure_rate = _float(match.group(2))
+            continue
+        match = skew_pattern.match(line)
+        if match:
+            current_worker_profile_spread_pp = _float(match.group(1))
+            current_auth_refresh_spread_pp = _float(match.group(2))
+            current_stronger_signal = match.group(3).strip()
+    flush()
+    return tuple(signals)
+
+
+def _resolve_summary_path(run_root: Path) -> tuple[Path, str]:
+    candidates = [
+        (run_root / SUMMARY_NAME, "root"),
+        (run_root / "benchmark_summary.json", "benchmark"),
+        (run_root / "smoke" / SUMMARY_NAME, "smoke"),
+    ]
+    for path, source in candidates:
+        if path.exists():
+            return path, source
+    raise FileNotFoundError(f"Summary not found in {run_root}")
 
 
 def _compute_normalized_vph(
@@ -716,10 +945,8 @@ def _compute_normalized_vph(
     return normalized_vph, denom, denom_source, confidence, tuple(dict.fromkeys(absent))
 
 
-def audit_run(run_root: Path) -> RunAudit:
-    summary_path = run_root / SUMMARY_NAME
-    if not summary_path.exists():
-        raise FileNotFoundError(f"Summary not found: {summary_path}")
+def audit_run(run_root: Path, *, log_root: Path | None = None) -> RunAudit:
+    summary_path, summary_source = _resolve_summary_path(run_root)
 
     raw_text = summary_path.read_text(encoding="utf-8")
     payload, parse_mode, parse_error = _strict_load(raw_text)
@@ -747,6 +974,8 @@ def audit_run(run_root: Path) -> RunAudit:
         free_retry = _collect_retry_queue_window_metrics(_resolve_lane_roots(run_root, free_lane.lane))
         if free_retry:
             free_lane = replace(free_lane, **free_retry)
+    batch_tail_rows = _collect_batch_tail_rows(run_root)
+    reducer_signals = _collect_reducer_signals(_resolve_stage_reducer_path(run_root, log_root))
 
     combined = payload.get("combined", {})
     if not isinstance(combined, dict):
@@ -793,6 +1022,7 @@ def audit_run(run_root: Path) -> RunAudit:
     return RunAudit(
         name=run_root.name,
         status=str(payload.get("status", "")),
+        summary_source=summary_source,
         throughput_valid=throughput_valid,
         metric_contract=payload.get("metric_contract"),
         run_environment_label=payload.get("run_environment_label"),
@@ -820,6 +1050,8 @@ def audit_run(run_root: Path) -> RunAudit:
         command_failed_total=cf_total,
         pre_run_browser_health=pre_health_status,
         post_run_hygiene=post_hygiene_status,
+        batch_tail_rows=batch_tail_rows,
+        reducer_signals=reducer_signals,
         parse_mode=parse_mode,
         parse_error=parse_error,
     )
@@ -899,8 +1131,8 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
         f"_Generated: {Path(__file__).name} — {len(audits)} runs audited_\n",
         f"_Run root: `{(log_root or LOG_ROOT)}`_\n",
         _section("Table 1 — Sorted by Combined VPH (Descending)"),
-        _row(["Run", "Environment", "Geometry", "Status", "Throughput Valid", "Contract", "Limit", "Combined VPH", "Success/Fail/Processed", "Fail Rate", "Pro VPH", "Free VPH", "source_age_cliff", "command_failed", "worker_idle_wait_s", "Pre-Run Health", "Post-Run Hygiene"]),
-        _row(["---"] * 17),
+        _row(["Run", "Summary Source", "Environment", "Geometry", "Status", "Throughput Valid", "Contract", "Limit", "Combined VPH", "Success/Fail/Processed", "Fail Rate", "Pro VPH", "Free VPH", "source_age_cliff", "command_failed", "worker_idle_wait_s", "Pre-Run Health", "Post-Run Hygiene"]),
+        _row(["---"] * 18),
     ]
     for a in by_vph:
         pro_vph = _fmt_vph(a.pro_lane.hot_path_videos_per_hour if a.pro_lane else None)
@@ -919,6 +1151,7 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
             idle = f"{a.free_lane.worker_idle_wait_s_total:.3f}"
         lines.append(_row([
             a.name,
+            _fmt_text(a.summary_source),
             _fmt_text(a.run_environment_label),
             a.geometry_label,
             _fmt_text(a.status),
@@ -1140,6 +1373,72 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
             _fmt_vph(a.combined_vph),
         ]))
 
+    batch_tail_rows = [row for audit in audits for row in audit.batch_tail_rows]
+    if batch_tail_rows:
+        lines.append(_section("Table 8 — Batch Tail Summary (source_ready_age_s_avg desc, then command total desc)"))
+        lines.append(_row(["Run", "Phase", "Lane", "Batch", "Workers", "Success/Fail/Processed", "Source Ready Age Avg", "Source Ready Age Max", "Cmd Total(s)", "Cmd Avg(s)", "source_age_cliff", "command_failed", "Source-List Probes", "Shared Recovered"]))
+        lines.append(_row(["---"] * 14))
+        for row in sorted(
+            batch_tail_rows,
+            key=lambda item: (
+                -(item.source_ready_age_s_avg or 0.0),
+                -(item.content_fetch_command_elapsed_s_total or 0.0),
+                item.phase,
+                item.lane,
+                item.batch_index,
+            ),
+        ):
+            success_fail_processed = (
+                f"{_fmt_flag(row.success_count)}/"
+                f"{_fmt_flag(row.fail_count)}/"
+                f"{_fmt_flag(row.processed_count)}"
+            )
+            lines.append(_row([
+                row.run_name,
+                row.phase,
+                row.lane,
+                row.batch_name,
+                _fmt_flag(row.workers),
+                success_fail_processed,
+                _fmt_opt(row.source_ready_age_s_avg, dp=2),
+                _fmt_opt(row.source_ready_age_s_max, dp=2),
+                _fmt_opt(row.content_fetch_command_elapsed_s_total),
+                _fmt_opt(row.content_fetch_command_elapsed_s_avg),
+                _fmt_flag(row.source_age_cliff_count),
+                _fmt_flag(row.command_failed_count),
+                _fmt_flag(row.source_list_probe_count),
+                _fmt_opt(row.shared_retry_recovered_count_total, dp=0),
+            ]))
+
+    reducer_signals = [signal for audit in audits for signal in audit.reducer_signals]
+    if reducer_signals:
+        lines.append(_section("Table 9 — Worker / Auth Skew Attribution"))
+        lines.append(_row(["Run", "Lane", "Command Completions", "Command Failures", "Command Failure Rate", "Worker-Profile Spread", "Auth-Refresh Spread", "Stronger Signal"]))
+        lines.append(_row(["---"] * 8))
+        reducer_rows = [(audit.name, signal) for audit in audits for signal in audit.reducer_signals]
+        for signal in sorted(
+            reducer_signals,
+            key=lambda item: (
+                -(item.worker_profile_spread_pp or 0.0),
+                -(item.auth_refresh_spread_pp or 0.0),
+                item.lane,
+            ),
+        ):
+            failure_rate = "absent"
+            if signal.command_failure_rate is not None:
+                failure_rate = f"{signal.command_failure_rate:.1f}%"
+            run_name = next((name for name, candidate in reducer_rows if candidate == signal), "absent")
+            lines.append(_row([
+                run_name,
+                signal.lane,
+                _fmt_flag(signal.command_completions),
+                _fmt_flag(signal.command_failures),
+                failure_rate,
+                _fmt_opt(signal.worker_profile_spread_pp, dp=1),
+                _fmt_opt(signal.auth_refresh_spread_pp, dp=1),
+                _fmt_text(signal.stronger_signal),
+            ]))
+
     # Notes section
     lines.append(_section("Notes on Absent vs Zero Fields"))
     notes_lines = [
@@ -1188,6 +1487,10 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
                 continue
             lines.append(f"\n  **{lane} lane** ({lm.workers} workers):")
             lines.append(f"  - VPH: {_fmt_vph(lm.hot_path_videos_per_hour)}, success/fail/processed: {lm.success_count_total}/{lm.fail_count_total}/{lm.processed_count_total}")
+            if lm.expected_processed_count_total is not None:
+                lines.append(f"  - expected_processed_count_total: {_fmt_flag(lm.expected_processed_count_total)}")
+            if lm.partial_reason:
+                lines.append(f"  - partial_reason: `{_fmt_text(lm.partial_reason)}`")
             lines.append(f"  - source_ready_age_s_max: {_fmt_opt(lm.source_ready_age_s_max)}, avg: {_fmt_opt(lm.source_ready_age_s_avg)}")
             lines.append(f"  - worker_idle_wait_s_total: {_fmt_opt(lm.worker_idle_wait_s_total)}")
             lines.append(f"  - add_elapsed_s_total: {_fmt_opt(lm.add_elapsed_s_total)}")
@@ -1301,6 +1604,9 @@ def main(argv: list[str] | None = None) -> int:
             "hotel_wifi_3plus3_auth_interval75_run02_current",
             "hotel_wifi_3plus3_auth_interval45_run01_current",
             "hotel_wifi_3plus3_source_content_attr_run01_current",
+            "hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current",
+            "hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current",
+            "hotel_wifi_3plus3_shared_retry_source_age_cadence_run31_current",
             "hotel_wifi_4plus4_control_run03_current",
         ],
         help="Run names to audit.",
@@ -1312,7 +1618,7 @@ def main(argv: list[str] | None = None) -> int:
     for run_name in args.runs:
         run_root = args.log_root / run_name
         try:
-            audit = audit_run(run_root)
+            audit = audit_run(run_root, log_root=args.log_root)
         except FileNotFoundError:
             print(f"SKIP {run_name}: not found at {run_root}", file=sys.stderr)
             continue

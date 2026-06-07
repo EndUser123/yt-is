@@ -170,6 +170,7 @@ def _drain_balanced_pending_batches(
     *,
     batch_size: int,
     worker_count: int,
+    min_pending_batches: int = 1,
 ) -> list[list[tuple[str, str]]]:
     """Drain full worker batches and interleave items across workers.
 
@@ -182,8 +183,10 @@ def _drain_balanced_pending_batches(
         raise ValueError("batch_size must be >= 1")
     if worker_count < 1:
         raise ValueError("worker_count must be >= 1")
+    if min_pending_batches < 1:
+        raise ValueError("min_pending_batches must be >= 1")
     full_batch_count = len(pending_buffer) // batch_size
-    if full_batch_count < 1:
+    if full_batch_count < min_pending_batches:
         return []
     batch_count = min(worker_count, full_batch_count)
     if batch_count == 1:
@@ -194,6 +197,45 @@ def _drain_balanced_pending_batches(
     for index, item in enumerate(drained):
         batches[index % batch_count].append(item)
     return batches
+
+
+def _order_industrial_free_slots(
+    free_slots: list[int],
+    slot_health: dict[int, dict[str, float]],
+) -> list[int]:
+    """Prefer healthier worker slots when multiple slots are available.
+
+    The worker summary already reports batch elapsed time and failure counts.
+    Using those signals to prioritize the next dispatch keeps known-healthy
+    slots busy and reduces the chance that one weak profile absorbs the next
+    full wave. Source-list probe activity is treated as a stronger penalty
+    than raw failure rate because it usually indicates notebook instability.
+    """
+    if not free_slots:
+        return []
+
+    def _score(slot_id: int) -> tuple[float, float, float, float, float, float, int]:
+        stats = slot_health.get(slot_id)
+        if not stats:
+            return (1.0, 0.0, 0.0, 0.0, 0.0, 0.0, slot_id)
+        probe_count = float(stats.get("source_list_probe_count", 0.0))
+        probe_elapsed_s = float(stats.get("source_list_probe_elapsed_s_total", 0.0))
+        failure_rate = float(stats.get("failure_rate", 0.0))
+        content_fetch_command_elapsed_s_avg = float(
+            stats.get("content_fetch_command_elapsed_s_avg", 0.0)
+        )
+        avg_elapsed_s = float(stats.get("avg_elapsed_s", 0.0))
+        return (
+            0.0,
+            probe_count,
+            probe_elapsed_s,
+            failure_rate,
+            content_fetch_command_elapsed_s_avg,
+            avg_elapsed_s,
+            slot_id,
+        )
+
+    return sorted(free_slots, key=_score)
 
 
 def _load_worker_summary(result_path: Path | None, stdout_text: str) -> dict[str, object]:
@@ -1958,6 +2000,7 @@ def cmd_fetch(
     industrial_worker_executor: ThreadPoolExecutor | None = None
     industrial_worker_futures: set = set()
     industrial_worker_slots_in_use: dict[object, int] = {}
+    industrial_worker_slot_health: dict[int, dict[str, float]] = {}
     transcript_fallback_queue: deque[tuple[str, str, bool]] = deque()
     transcript_fallback_worker_executor: ThreadPoolExecutor | None = None
     transcript_fallback_worker_futures: set = set()
@@ -1980,6 +2023,14 @@ def cmd_fetch(
     industrial_batches_per_worker = max(
         1,
         _env_int("YTIS_INDUSTRIAL_BATCHES_PER_WORKER", "YTIS_INDUSTRIAL_BATCHES_PER_LAUNCH", 4),
+    )
+    industrial_dispatch_min_pending_batches = max(
+        1,
+        _env_int(
+            "YTIS_INDUSTRIAL_DISPATCH_MIN_PENDING_BATCHES",
+            "YTIS_INDUSTRIAL_PENDING_DRAIN_MIN_BATCHES",
+            2,
+        ),
     )
     transcript_fallback_start_lock = threading.Lock()
     transcript_fallback_last_start_at = 0.0
@@ -2498,7 +2549,7 @@ def cmd_fetch(
 
     def _service_industrial_workers(wait_for_completion: bool = False) -> None:
         nonlocal industrial_batch_queue, industrial_worker_executor, industrial_worker_futures
-        nonlocal industrial_worker_slots_in_use, industrial_batches_processed, industrial_dispatch_cycle
+        nonlocal industrial_worker_slots_in_use, industrial_worker_slot_health, industrial_batches_processed, industrial_dispatch_cycle
         nonlocal success_count, fail_count
         nonlocal industrial_first_worker_finished_at, industrial_last_worker_finished_at
         nonlocal industrial_completion_stall_alert_logged, industrial_oversized_dispatch_alert_logged
@@ -2516,9 +2567,22 @@ def cmd_fetch(
             video_count = int(summary.get("video_count", 0) or 0)
             succeeded = int(summary.get("succeeded", 0) or 0)
             failed = int(summary.get("failed", 0) or 0)
+            elapsed_s = float(summary.get("elapsed_s", 0.0) or 0.0)
             industrial_batches_processed += batch_count
             success_count += succeeded
             fail_count += failed
+            total_commands = max(succeeded + failed, 1)
+            industrial_worker_slot_health[slot_id] = {
+                "source_list_probe_count": float(summary.get("source_list_probe_count", 0) or 0.0),
+                "source_list_probe_elapsed_s_total": float(
+                    summary.get("source_list_probe_elapsed_s_total", 0.0) or 0.0
+                ),
+                "content_fetch_command_elapsed_s_avg": float(
+                    summary.get("content_fetch_command_elapsed_s_avg", 0.0) or 0.0
+                ),
+                "failure_rate": failed / total_commands,
+                "avg_elapsed_s": elapsed_s / max(video_count, 1),
+            }
             if industrial_first_worker_finished_at is None:
                 industrial_first_worker_finished_at = time.monotonic() - fetch_started_at
             industrial_last_worker_finished_at = time.monotonic() - fetch_started_at
@@ -2554,6 +2618,7 @@ def cmd_fetch(
             for slot_id in range(1, workers + 1)
             if slot_id not in industrial_worker_slots_in_use.values()
         ]
+        free_slots = _order_industrial_free_slots(free_slots, industrial_worker_slot_health)
         log_action(
             "fetch_worker_dispatch_state",
             {
@@ -2941,6 +3006,9 @@ def cmd_fetch(
                         pending_buffer,
                         batch_size=batch_size,
                         worker_count=workers if industrial_parallel_enabled else 1,
+                        min_pending_batches=(
+                            industrial_dispatch_min_pending_batches if industrial_parallel_enabled else 1
+                        ),
                     )
                     if not drained_batches:
                         break
@@ -3073,6 +3141,7 @@ def cmd_fetch(
                 pending_buffer,
                 batch_size=batch_size,
                 worker_count=workers if industrial_parallel_enabled else 1,
+                min_pending_batches=1,
             )
             if not drained_batches:
                 break
@@ -3254,8 +3323,9 @@ def cmd_fetch(
             f"[source] Pre-flight worker notebook cleanup: {deleted} worker notebooks deleted, {failed} failed"
         )
         if failed:
-            raise RuntimeError(
-                f"worker notebook preflight cleanup failed: deleted={deleted} failed={failed}"
+            print(
+                "[source] WARN: continuing despite pre-flight worker notebook cleanup failure "
+                f"deleted={deleted} failed={failed}"
             )
         log_action(
             "fetch_worker_prewarm_summary",

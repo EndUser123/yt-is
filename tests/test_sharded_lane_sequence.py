@@ -116,6 +116,7 @@ def test_main_runs_doctor_smoke_evidence_soak_in_order(tmp_path, monkeypatch):
         *,
         require_forced_refresh_marker=False,
         expected_worker_shape_signature=None,
+        allow_partial_status=False,
     ):
         calls.append("evidence")
         assert run_root == smoke_output_root
@@ -198,6 +199,7 @@ def test_main_stops_before_soak_when_evidence_fails(tmp_path, monkeypatch):
         *,
         require_forced_refresh_marker=False,
         expected_worker_shape_signature=None,
+        allow_partial_status=False,
     ):
         calls.append("evidence")
         assert expected_worker_shape_signature is None
@@ -215,6 +217,78 @@ def test_main_stops_before_soak_when_evidence_fails(tmp_path, monkeypatch):
 
     assert result == 1
     assert calls == ["doctor", "browser_health", "smoke", "evidence"]
+
+
+def test_main_allows_partial_smoke_to_proceed_when_flagged(tmp_path, monkeypatch):
+    calls: list[str] = []
+    run_root = tmp_path / "run"
+    smoke_output_root = tmp_path / "run" / "smoke"
+    soak_output_root = tmp_path / "run" / "soak"
+
+    monkeypatch.setattr(mod, "doctor_lane_setup", lambda *args, **kwargs: calls.append("doctor") or _lanes(tmp_path))
+    monkeypatch.setattr(
+        mod,
+        "_check_post_run_default_profile_hygiene",
+        lambda: {
+            "status": "clean",
+            "detected_count": 0,
+            "reaped_count": 0,
+            "remaining_count": 0,
+            "detected_pids": [],
+            "reaped_pids": [],
+            "remaining_pids": [],
+        },
+    )
+    monkeypatch.setattr(
+        mod,
+        "browser_health_gate",
+        lambda *args, **kwargs: calls.append("browser_health") or _clean_browser_health_report(),
+    )
+
+    def fake_run_sharded_lane_series(*, output_root, **kwargs):
+        phase = "smoke" if output_root == smoke_output_root else "soak"
+        calls.append(phase)
+        return {
+            "report_version": 1,
+            "status": "partial" if phase == "smoke" else "ok",
+            "report_path": str(output_root / "sharded_lane_series_summary.json"),
+            "combined": {
+                "hot_path_videos_per_hour": 0.0,
+                "hot_path_success_count_total": 0,
+                "fail_count_total": 0,
+                "wall_elapsed_s": 0.0,
+            },
+        }
+
+    def fake_inspect_run_root(
+        run_root_arg,
+        *,
+        require_forced_refresh_marker=False,
+        expected_worker_shape_signature=None,
+        allow_partial_status=False,
+    ):
+        calls.append("evidence")
+        assert run_root_arg == smoke_output_root
+        assert allow_partial_status is True
+        return EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ())
+
+    monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run_sharded_lane_series)
+    monkeypatch.setattr(mod, "inspect_run_root", fake_inspect_run_root)
+
+    result = mod.main([
+        "--lane-config",
+        str(_lane_config(tmp_path)),
+        "--run-root",
+        str(run_root),
+        "--allow-partial-smoke",
+    ])
+
+    assert result == 0
+    assert calls == ["doctor", "browser_health", "smoke", "evidence", "soak"]
+    persisted = json.loads((run_root / "sharded_lane_series_summary.json").read_text(encoding="utf-8"))
+    assert persisted["status"] == "ok"
+    assert persisted["sequence_smoke_report_path"] == str(smoke_output_root / "sharded_lane_series_summary.json")
+    assert persisted["sequence_soak_report_path"] == str(soak_output_root / "sharded_lane_series_summary.json")
 
 
 def test_main_rewrites_run_root_summary_on_invalidated_soak(tmp_path, monkeypatch):
@@ -270,6 +344,7 @@ def test_main_rewrites_run_root_summary_on_invalidated_soak(tmp_path, monkeypatc
         *,
         require_forced_refresh_marker=False,
         expected_worker_shape_signature=None,
+        allow_partial_status=False,
     ):
         calls.append("evidence")
         assert run_root_arg == smoke_output_root

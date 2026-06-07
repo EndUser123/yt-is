@@ -73,9 +73,11 @@ class FetchCompletedEntry:
     browser_profile_directory: str
     worker_state_root: str
     source_content_shared_retry_pool_enabled: bool | None
+    batch_index: int | None
     pass_name: str
     status: str
     attempts: int
+    retry_queue_gate_reason: str
     source_ready_age_s: float | None
     projected_retry_ready_age_s: float | None
     projected_retry_ready_age_with_margin_s: float | None
@@ -194,6 +196,9 @@ class LaneMetrics:
     lane_name: str
     aggregate_vph: float
     wall_elapsed_s: float
+    status: str = ""
+    partial_reason: str = ""
+    expected_processed_count_total: int | None = None
     startup_prepare_total_elapsed_s_total: float = 0.0
     startup_prepare_cleanup_elapsed_s_total: float = 0.0
     notebook_check_elapsed_s_total: float = 0.0
@@ -728,6 +733,18 @@ def _parse_worker_fetch_completed_entries(log_path: Path) -> tuple[FetchComplete
             validated: bool | None = None
         else:
             validated = bool(raw_validated)
+        raw_batch_index = payload.get("batch_index")
+        batch_index = int(raw_batch_index) if raw_batch_index is not None else None
+        retry_queue_gate_reason = str(payload.get("retry_queue_gate_reason", "") or "").strip()
+        if not retry_queue_gate_reason:
+            pass_name = str(payload.get("pass_name", "") or "").strip().lower()
+            status = str(payload.get("status", "") or "").strip().lower()
+            queued_for_retry = bool(payload.get("queued_for_retry", False))
+            retry_queue_skipped_reason = str(payload.get("retry_queue_skipped_reason", "") or "").strip()
+            if pass_name == "primary" and (queued_for_retry or retry_queue_skipped_reason):
+                retry_queue_gate_reason = "ytdlp_ok"
+            elif pass_name == "primary" and status in {"command_failed", "nlm_content_below_threshold", "source_age_cliff"}:
+                retry_queue_gate_reason = "status_not_retryable"
         entries.append(
             FetchCompletedEntry(
                 timestamp_epoch=_parse_timestamp_epoch(obj.get("timestamp")),
@@ -742,9 +759,11 @@ def _parse_worker_fetch_completed_entries(log_path: Path) -> tuple[FetchComplete
                     if payload.get("source_content_shared_retry_pool_enabled") is not None
                     else None
                 ),
+                batch_index=batch_index,
                 pass_name=str(payload.get("pass_name", "") or ""),
                 status=str(payload.get("status", "") or ""),
                 attempts=int(payload.get("attempts", 0) or 0),
+                retry_queue_gate_reason=retry_queue_gate_reason,
                 source_ready_age_s=(
                     float(payload["source_ready_age_s"])
                     if payload.get("source_ready_age_s") is not None
@@ -887,21 +906,19 @@ def _lane_dir_for(run_root: Path, lane_name: str) -> Path:
 
 def _iter_lane_dirs(run_root: Path) -> tuple[Path, ...]:
     """Discover lane directories for either smoke-root or soak-root layouts."""
-    candidate_roots = []
+    candidate_roots = [run_root]
     for child_name in ("soak", "smoke"):
         child_root = run_root / child_name
         if child_root.is_dir():
             candidate_roots.append(child_root)
-    if not candidate_roots:
-        candidate_roots.append(run_root)
 
     lane_dirs: list[Path] = []
     for root in candidate_roots:
         for lane_dir in sorted(d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")):
-            if lane_dir.name.startswith(("batch_", "cohort.")):
+            if lane_dir.name in {"smoke", "soak"} or lane_dir.name.startswith(("batch_", "cohort.")):
                 continue
             lane_dirs.append(lane_dir)
-    return tuple(lane_dirs)
+    return tuple(dict.fromkeys(lane_dirs))
 
 
 def _extract_lane_metrics(
@@ -929,6 +946,9 @@ def _extract_lane_metrics(
     success_count = 0
     fail_count = 0
     processed_count = 0
+    lane_status = ""
+    lane_partial_reason = ""
+    lane_expected_processed_count_total: int | None = None
 
     if summary_path.exists():
         try:
@@ -943,6 +963,14 @@ def _extract_lane_metrics(
             if not isinstance(agg, dict):
                 agg = run
             merged = {**run, **agg}
+            lane_status = str(run.get("status", "") or "")
+            lane_partial_reason = str(run.get("partial_reason", "") or "")
+            expected_processed_raw = run.get("expected_processed_count_total")
+            if expected_processed_raw is not None:
+                try:
+                    lane_expected_processed_count_total = int(expected_processed_raw)
+                except (TypeError, ValueError):
+                    lane_expected_processed_count_total = None
             (
                 aggregate_vph,
                 wall_elapsed_s,
@@ -1005,6 +1033,9 @@ def _extract_lane_metrics(
             success_count=success_count,
             fail_count=fail_count,
             processed_count=processed_count,
+            status=lane_status,
+            partial_reason=lane_partial_reason,
+            expected_processed_count_total=lane_expected_processed_count_total,
             content_fetch_command_elapsed_s_total=0.0,
             content_fetch_command_elapsed_s_avg=0.0,
             content_fetch_command_elapsed_s_max=0.0,
@@ -1199,6 +1230,9 @@ def _extract_lane_metrics(
         success_count=success_count,
         fail_count=fail_count,
         processed_count=processed_count,
+        status=lane_status,
+        partial_reason=lane_partial_reason,
+        expected_processed_count_total=lane_expected_processed_count_total,
         content_fetch_command_elapsed_s_total=sum(b.content_fetch_command_elapsed_s_total for b in batches),
         content_fetch_command_elapsed_s_avg=round(
             sum(b.content_fetch_command_elapsed_s_total for b in batches) / max(sum(b.content_fetch_command_elapsed_s_count for b in batches), 1), 3
@@ -1475,6 +1509,11 @@ def format_run(run: RunMetrics) -> str:
         lines.append(f"- aggregate idle wait: {lane.worker_idle_wait_s_total:.1f}s")
         lines.append(f"- aggregate sr_age_avg: {lane.source_ready_age_s_avg:.1f}s")
         lines.append(f"- success/fail/processed: {lane.success_count}/{lane.fail_count}/{lane.processed_count}")
+        if lane.expected_processed_count_total is not None:
+            lines.append(f"- expected processed: {lane.expected_processed_count_total}")
+        if lane.status or lane.partial_reason:
+            lines.append(f"- lane status: {lane.status or 'n/a'}")
+            lines.append(f"- lane partial reason: {lane.partial_reason or 'n/a'}")
         lines.append("")
 
         # Per-batch table
@@ -1490,16 +1529,16 @@ def format_run(run: RunMetrics) -> str:
                     f"{b.cleanup_sum:.1f} | {b.sr_age_avg:.1f} | "
                     f"{b.command_failed} | {b.ready} | {bottleneck} |"
                 )
-            lines.append("")
-
-            # Per-worker summary if available
-            all_entries = [e for b in lane.batches for e in b.batch_entries]
-            if all_entries:
-                lines.append("| Worker | Worker Batch Count | Succeeded | Failed |")
-                lines.append("|--------|-------|-----------|--------|")
-                for e in all_entries:
-                    lines.append(f"| {e.worker_id} | {e.batch_count} | {e.succeeded} | {e.failed} |")
                 lines.append("")
+
+                # Per-worker summary if available
+                all_entries = [e for b in lane.batches for e in b.batch_entries]
+                if all_entries:
+                    lines.append("| Worker | Worker Batch Count | Succeeded | Failed |")
+                    lines.append("|--------|-------|-----------|--------|")
+                    for e in all_entries:
+                        lines.append(f"| {e.worker_id} | {e.batch_count} | {e.succeeded} | {e.failed} |")
+                    lines.append("")
 
             all_command_entries = [e for b in lane.batches for e in b.command_completed_entries]
             all_auth_recovery_entries = [e for b in lane.batches for e in b.auth_recovery_entries]
@@ -1593,6 +1632,90 @@ def format_run(run: RunMetrics) -> str:
                     )
                 lines.append("")
 
+                worker_stage_totals: dict[tuple[str, str], dict[str, Any]] = {}
+                for batch in lane.batches:
+                    for worker_batch in batch.worker_batches:
+                        worker_key = (worker_batch.worker_id, worker_batch.notebooklm_profile or "unknown")
+                        worker_stats = worker_stage_totals.setdefault(
+                            worker_key,
+                            {
+                                "batches": 0,
+                                "succeeded": 0,
+                                "failed": 0,
+                                "batch_elapsed_s_total": 0.0,
+                                "setup_elapsed_s_total": 0.0,
+                                "add_elapsed_s_total": 0.0,
+                                "materialization_wait_elapsed_s_total": 0.0,
+                                "extract_elapsed_s_total": 0.0,
+                                "cleanup_elapsed_s_total": 0.0,
+                                "source_ready_age_s_total": 0.0,
+                                "source_ready_age_s_max": 0.0,
+                            },
+                        )
+                        worker_stats["batches"] += 1
+                        worker_stats["succeeded"] += worker_batch.succeeded
+                        worker_stats["failed"] += worker_batch.failed
+                        worker_stats["batch_elapsed_s_total"] += worker_batch.batch_elapsed_s
+                        worker_stats["setup_elapsed_s_total"] += worker_batch.setup_elapsed_s
+                        worker_stats["add_elapsed_s_total"] += worker_batch.add_sources_elapsed_s
+                        worker_stats["materialization_wait_elapsed_s_total"] += worker_batch.materialization_wait_elapsed_s
+                        worker_stats["extract_elapsed_s_total"] += worker_batch.extract_elapsed_s
+                        worker_stats["cleanup_elapsed_s_total"] += worker_batch.cleanup_elapsed_s
+                        worker_stats["source_ready_age_s_total"] += worker_batch.source_ready_age_s_total
+                        worker_stats["source_ready_age_s_max"] = max(
+                            worker_stats["source_ready_age_s_max"],
+                            worker_batch.source_ready_age_s_max,
+                        )
+
+                if worker_stage_totals:
+                    lines.append("### Stage Balance")
+                    lines.append("")
+                    lines.append(
+                        "| Worker | Profile | Batches | Success | Failed | Avg Batch(s) | Setup(s) | Add(s) | Extract(s) | Avg Extract(s) | Cleanup(s) | Avg SR Age(s) | Max SR Age(s) |"
+                    )
+                    lines.append(
+                        "|--------|---------|---------|---------|--------|--------------|----------|--------|------------|---------------|------------|---------------|---------------|"
+                    )
+                    for (worker_id, profile), stats in sorted(worker_stage_totals.items()):
+                        batch_count = stats["batches"] or 1
+                        processed_count = max(stats["succeeded"] + stats["failed"], 1)
+                        avg_batch_elapsed_s = stats["batch_elapsed_s_total"] / batch_count
+                        avg_extract_elapsed_s = stats["extract_elapsed_s_total"] / batch_count
+                        avg_source_ready_age_s = stats["source_ready_age_s_total"] / processed_count
+                        lines.append(
+                            f"| {worker_id} | {profile} | {stats['batches']} | {stats['succeeded']} | {stats['failed']} | "
+                            f"{avg_batch_elapsed_s:.2f} | {stats['setup_elapsed_s_total']:.2f} | {stats['add_elapsed_s_total']:.2f} | "
+                            f"{stats['extract_elapsed_s_total']:.2f} | {avg_extract_elapsed_s:.2f} | {stats['cleanup_elapsed_s_total']:.2f} | "
+                            f"{avg_source_ready_age_s:.1f} | {stats['source_ready_age_s_max']:.1f} |"
+                        )
+                    lines.append("")
+                    extract_totals = [
+                        (worker_id, profile, stats["extract_elapsed_s_total"], stats["batches"] or 1)
+                        for (worker_id, profile), stats in worker_stage_totals.items()
+                    ]
+                    top_worker_id, top_profile, top_extract_total, top_extract_batches = max(
+                        extract_totals, key=lambda item: item[2]
+                    )
+                    bottom_worker_id, bottom_profile, bottom_extract_total, bottom_extract_batches = min(
+                        extract_totals, key=lambda item: item[2]
+                    )
+                    extract_avgs = [
+                        (worker_id, profile, stats["extract_elapsed_s_total"] / max(stats["batches"], 1))
+                        for (worker_id, profile), stats in worker_stage_totals.items()
+                    ]
+                    top_avg_worker_id, top_avg_profile, top_avg_extract = max(extract_avgs, key=lambda item: item[2])
+                    bottom_avg_worker_id, bottom_avg_profile, bottom_avg_extract = min(extract_avgs, key=lambda item: item[2])
+                    spread_s = top_extract_total - bottom_extract_total
+                    avg_spread_s = top_avg_extract - bottom_avg_extract
+                    lines.append(
+                        f"- stage balance skew: extract spread {spread_s:.1f}s; per-batch spread {avg_spread_s:.1f}s; "
+                        f"dominant worker {top_worker_id}/{top_profile} at {top_extract_total:.1f}s/{top_extract_batches} batches vs "
+                        f"{bottom_worker_id}/{bottom_profile} at {bottom_extract_total:.1f}s/{bottom_extract_batches} batches; "
+                        f"per-batch dominant worker {top_avg_worker_id}/{top_avg_profile} at {top_avg_extract:.1f}s vs "
+                        f"{bottom_avg_worker_id}/{bottom_avg_profile} at {bottom_avg_extract:.1f}s"
+                    )
+                    lines.append("")
+
                 lines.append("| Last Auth Refresh Age | Commands | Failed | Failure Rate |")
                 lines.append("|-----------------------|----------|--------|--------------|")
                 for bucket in ("unknown", "0-4s", "5-19s", "20-59s", "60-119s", "120-179s", "180+s"):
@@ -1669,12 +1792,13 @@ def format_run(run: RunMetrics) -> str:
                         if shared_retry_states:
                             lines.append(f"- shared retry pool states: {', '.join(shared_retry_states)}")
                             lines.append("")
-                        fetch_totals: dict[tuple[str, str, str], dict[str, Any]] = {}
+                        fetch_totals: dict[tuple[str, str, str, int | None], dict[str, Any]] = {}
                         for entry in all_fetch_completed_entries:
                             fetch_key = (
                                 entry.worker_id or "unknown",
                                 entry.notebooklm_profile or "unknown",
                                 entry.pass_name or "unknown",
+                                entry.batch_index,
                             )
                             stats = fetch_totals.setdefault(
                                 fetch_key,
@@ -1689,6 +1813,7 @@ def format_run(run: RunMetrics) -> str:
                                     "projected_retry_ready_age_with_margin_s_max": None,
                                     "retry_queue_age_margin_s_max": None,
                                     "queued_for_retry_count": 0,
+                                    "retry_queue_gate_reason_counts": {},
                                     "retry_queue_skipped_counts": {},
                                     "command_elapsed_s_total": 0.0,
                                     "source_list_probe_count": 0,
@@ -1741,6 +1866,11 @@ def format_run(run: RunMetrics) -> str:
                                 )
                             if entry.queued_for_retry:
                                 stats["queued_for_retry_count"] += 1
+                            if entry.retry_queue_gate_reason:
+                                gate_counts = stats["retry_queue_gate_reason_counts"]
+                                gate_counts[entry.retry_queue_gate_reason] = (
+                                    gate_counts.get(entry.retry_queue_gate_reason, 0) + 1
+                                )
                             if entry.retry_queue_skipped_reason:
                                 skipped_counts = stats["retry_queue_skipped_counts"]
                                 skipped_counts[entry.retry_queue_skipped_reason] = (
@@ -1755,9 +1885,9 @@ def format_run(run: RunMetrics) -> str:
                             elif entry.source_id_validated_after_not_found is False:
                                 stats["source_validated_false"] += 1
 
-                        lines.append("| Worker | Profile | Pass | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |")
-                        lines.append("|--------|---------|------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|")
-                        for (worker_id, profile, pass_name), stats in sorted(fetch_totals.items()):
+                        lines.append("| Worker | Profile | Pass | Batch Index | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Gate Reasons | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |")
+                        lines.append("|--------|---------|------|-------------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|--------------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|")
+                        for (worker_id, profile, pass_name, batch_index), stats in sorted(fetch_totals.items()):
                             status_counts = stats["status_counts"]
                             status_distribution = ", ".join(
                                 f"{status}:{count}" for status, count in sorted(status_counts.items())
@@ -1793,11 +1923,16 @@ def format_run(run: RunMetrics) -> str:
                                 if retry_queue_age_margin_s is None
                                 else f"{retry_queue_age_margin_s:.1f}"
                             )
+                            retry_gate_counts = stats["retry_queue_gate_reason_counts"]
+                            retry_gate_distribution = ", ".join(
+                                f"{reason}:{count}" for reason, count in sorted(retry_gate_counts.items())
+                            )
+                            batch_index_text = "n/a" if batch_index is None else str(batch_index)
                             lines.append(
-                                f"| {worker_id} | {profile} | {pass_name} | {stats['total']} | {status_distribution or 'n/a'} | "
+                                f"| {worker_id} | {profile} | {pass_name} | {batch_index_text} | {stats['total']} | {status_distribution or 'n/a'} | "
                                 f"{avg_attempts:.2f} | {avg_source_ready_age_s:.1f} | {stats['source_ready_age_s_max']:.1f} | "
                                 f"{projected_retry_ready_age_text} | {projected_retry_ready_age_with_margin_text} | "
-                                f"{retry_queue_age_margin_text} | {stats['queued_for_retry_count']} | {skipped_distribution or 'none'} | "
+                                f"{retry_queue_age_margin_text} | {stats['queued_for_retry_count']} | {retry_gate_distribution or 'none'} | {skipped_distribution or 'none'} | "
                                 f"{stats['command_elapsed_s_total']:.2f} | "
                                 f"{stats['source_list_probe_count']} | {stats['source_list_probe_elapsed_s_total']:.2f} | "
                                 f"{stats['youtube_ytdlp_elapsed_s_total']:.2f} | {stats['source_validated_true']} | {stats['source_validated_false']} |"
@@ -1910,12 +2045,13 @@ def format_run(run: RunMetrics) -> str:
                         if worker_state_roots:
                             lines.append(f"- worker state roots: {', '.join(worker_state_roots)}")
                         lines.append("")
-                    fetch_totals: dict[tuple[str, str, str], dict[str, Any]] = {}
+                    fetch_totals: dict[tuple[str, str, str, int | None], dict[str, Any]] = {}
                     for entry in all_fetch_completed_entries:
                         fetch_key = (
                             entry.worker_id or "unknown",
                             entry.notebooklm_profile or "unknown",
                             entry.pass_name or "unknown",
+                            entry.batch_index,
                         )
                         stats = fetch_totals.setdefault(
                             fetch_key,
@@ -1928,10 +2064,11 @@ def format_run(run: RunMetrics) -> str:
                                 "source_ready_age_s_count": 0,
                                 "projected_retry_ready_age_s_max": None,
                                 "projected_retry_ready_age_with_margin_s_max": None,
-                                "retry_queue_age_margin_s_max": None,
-                                "queued_for_retry_count": 0,
-                                "retry_queue_skipped_counts": {},
-                                "command_elapsed_s_total": 0.0,
+                            "retry_queue_age_margin_s_max": None,
+                            "queued_for_retry_count": 0,
+                            "retry_queue_gate_reason_counts": {},
+                            "retry_queue_skipped_counts": {},
+                            "command_elapsed_s_total": 0.0,
                                 "source_list_probe_count": 0,
                                 "source_list_probe_elapsed_s_total": 0.0,
                                 "youtube_ytdlp_elapsed_s_total": 0.0,
@@ -1982,6 +2119,11 @@ def format_run(run: RunMetrics) -> str:
                             )
                         if entry.queued_for_retry:
                             stats["queued_for_retry_count"] += 1
+                        if entry.retry_queue_gate_reason:
+                            gate_counts = stats["retry_queue_gate_reason_counts"]
+                            gate_counts[entry.retry_queue_gate_reason] = (
+                                gate_counts.get(entry.retry_queue_gate_reason, 0) + 1
+                            )
                         if entry.retry_queue_skipped_reason:
                             skipped_counts = stats["retry_queue_skipped_counts"]
                             skipped_counts[entry.retry_queue_skipped_reason] = (
@@ -1996,9 +2138,9 @@ def format_run(run: RunMetrics) -> str:
                         elif entry.source_id_validated_after_not_found is False:
                             stats["source_validated_false"] += 1
 
-                    lines.append("| Worker | Profile | Pass | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |")
-                    lines.append("|--------|---------|------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|")
-                    for (worker_id, profile, pass_name), stats in sorted(fetch_totals.items()):
+                    lines.append("| Worker | Profile | Pass | Batch Index | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Gate Reasons | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |")
+                    lines.append("|--------|---------|------|-------------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|--------------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|")
+                    for (worker_id, profile, pass_name, batch_index), stats in sorted(fetch_totals.items()):
                         status_counts = stats["status_counts"]
                         status_distribution = ", ".join(
                             f"{status}:{count}" for status, count in sorted(status_counts.items())
@@ -2034,11 +2176,16 @@ def format_run(run: RunMetrics) -> str:
                             if retry_queue_age_margin_s is None
                             else f"{retry_queue_age_margin_s:.1f}"
                         )
+                        retry_gate_counts = stats["retry_queue_gate_reason_counts"]
+                        retry_gate_distribution = ", ".join(
+                            f"{reason}:{count}" for reason, count in sorted(retry_gate_counts.items())
+                        )
+                        batch_index_text = "n/a" if batch_index is None else str(batch_index)
                         lines.append(
-                            f"| {worker_id} | {profile} | {pass_name} | {stats['total']} | {status_distribution or 'n/a'} | "
+                            f"| {worker_id} | {profile} | {pass_name} | {batch_index_text} | {stats['total']} | {status_distribution or 'n/a'} | "
                             f"{avg_attempts:.2f} | {avg_source_ready_age_s:.1f} | {stats['source_ready_age_s_max']:.1f} | "
                             f"{projected_retry_ready_age_text} | {projected_retry_ready_age_with_margin_text} | "
-                            f"{retry_queue_age_margin_text} | {stats['queued_for_retry_count']} | {skipped_distribution or 'none'} | "
+                            f"{retry_queue_age_margin_text} | {stats['queued_for_retry_count']} | {retry_gate_distribution or 'none'} | {skipped_distribution or 'none'} | "
                             f"{stats['command_elapsed_s_total']:.2f} | "
                             f"{stats['source_list_probe_count']} | {stats['source_list_probe_elapsed_s_total']:.2f} | "
                             f"{stats['youtube_ytdlp_elapsed_s_total']:.2f} | {stats['source_validated_true']} | {stats['source_validated_false']} |"

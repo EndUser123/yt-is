@@ -1,4 +1,5 @@
 import unittest
+import subprocess
 
 from csf.youtube_page_inspector import (
     classify_youtube_watch_page,
@@ -149,6 +150,23 @@ class TestYouTubePageInspector(unittest.TestCase):
         assert result["available"] is False
         assert result["elapsed_s"] >= 0
         assert result["returncode"] == 1
+        assert result["video_id"] == "VdunqscAV5Q"
+        assert mock_which.call_count == 1
+        assert mock_run.call_count == 1
+
+    def test_inspect_youtube_watch_page_via_ytdlp_handles_timeout(self):
+        with unittest.mock.patch("shutil.which", return_value="yt-dlp") as mock_which:
+            with unittest.mock.patch(
+                "subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=["yt-dlp"], timeout=1),
+            ) as mock_run:
+                result = inspect_youtube_watch_page_via_ytdlp("VdunqscAV5Q", timeout_s=1)
+
+        assert result["classification"] == "error"
+        assert result["available"] is False
+        assert result["returncode"] is None
+        assert result["error"] == "yt-dlp timed out"
+        assert "timed out after 1" in result["stderr"]
         assert result["video_id"] == "VdunqscAV5Q"
         assert mock_which.call_count == 1
         assert mock_run.call_count == 1
