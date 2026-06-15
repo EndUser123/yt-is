@@ -1,6 +1,6 @@
 # YT-IS Test Registry
 
-Last updated: 2026-06-03
+Last updated: 2026-06-15
 
 ## Purpose
 
@@ -218,6 +218,8 @@ Treat the following as still needing live proof:
 | Account sharding | Pro+Free hotel Wi-Fi `3+3` shared-retry source-age cadence rerun after timeout-safe yt-dlp hardening | invalidated | [.logs/sharded_lane_series/hotel_wifi_3plus3_shared_retry_source_age_cadence_run33_current/sharded_lane_series_summary.json](../../.logs/sharded_lane_series/hotel_wifi_3plus3_shared_retry_source_age_cadence_run33_current/sharded_lane_series_summary.json) | `status=invalidated`, `throughput_valid=false`; this was the command-latency-removal experiment, but the proximate failure was a worker-03 auxiliary `yt-dlp -J --skip-download --no-playlist` `TimeoutExpired` on one video during Pro batch 2. Pro reached a batch-1 summary (`92/24`, `shared_retry_processed_count_total=16`) before the lane invalidated, while Free never reached a throughput summary. The yt-dlp watch-page probe is now timeout-safe so an auxiliary classification timeout can no longer kill the lane | do not treat this as throughput evidence; keep the selector on the restored `run32` baseline |
 
 ## How To Extend
+
+| Account sharding | Pro+Free fresh-state `3+3` serial extract-schema home-network repeat after returning home | negative | [.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_control_run15_current/sharded_lane_series_summary.json](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_control_run15_current/sharded_lane_series_summary.json) | combined hot-path vph `2205.73`; `751` hot-path successes, `49` failures, `800` processed; `worker_shape_signature=3+3`, `throughput_valid=true`, `run_environment_label=home_300mb`; Pro `382/18` with `content_fetch_command_elapsed_s_total=3354.524`, `worker_idle_wait_s_total=310.186`, and `source_ready_age_s_max=319.703`; Free `369/31` with `content_fetch_command_elapsed_s_total=5193.556`, `worker_idle_wait_s_total=692.818`, and `source_ready_age_s_max=377.993`; pre-run browser health was clean and within budget, but this still landed far below `fresh_state_3plus3_extract_schema_control_run07_current`; batch-level comparison shows the regression is concentrated in batch 1, especially Free, while batch 2 largely recovers | keep `run07_current` as the live same-shape baseline; rerun only if worker/profile/auth split, cohort changes, or a new first-batch warmup / ordering hypothesis is introduced |
 
 When a new benchmark is run:
 - add the case or cohort here
