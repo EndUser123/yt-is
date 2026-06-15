@@ -401,7 +401,7 @@ def test_main_records_post_run_hygiene_and_fails_when_default_profile_persists(t
     monkeypatch.setattr(
         mod,
         "inspect_run_root",
-        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None: calls.append("evidence")
+        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None, allow_partial_status=False: calls.append("evidence")
         or EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ()),
     )
     monkeypatch.setattr(
@@ -540,7 +540,7 @@ def test_main_continues_when_browser_health_is_degraded(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mod,
         "inspect_run_root",
-        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None: calls.append("evidence")
+        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None, allow_partial_status=False: calls.append("evidence")
         or EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ()),
     )
     monkeypatch.setattr(
@@ -609,7 +609,7 @@ def test_main_forwards_preserve_worker_state_root_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(
         mod,
         "inspect_run_root",
-        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None: EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ()),
+        lambda run_root_arg, *, require_forced_refresh_marker=False, expected_worker_shape_signature=None, allow_partial_status=False: EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ()),
     )
 
     result = mod.main([

@@ -1605,6 +1605,7 @@ def main(argv: list[str] | None = None) -> int:
             "hotel_wifi_3plus3_auth_interval45_run01_current",
             "hotel_wifi_3plus3_source_content_attr_run01_current",
             "fresh_state_3plus3_extract_schema_control_run15_current",
+            "fresh_state_3plus3_extract_schema_warmup_state_run01_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run31_current",

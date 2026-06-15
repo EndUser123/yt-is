@@ -1241,6 +1241,137 @@ Completed run:
 - The worker-03 timeout mode from `fresh_state_3plus3_extract_schema_ready_probe_run01_current` is now guarded in `csf/nlm_batch.py`: if a successful add is followed by a source-count probe `NOT_FOUND`, the ingestor now treats it as a dead-notebook recovery and retries immediately instead of waiting the full `600s`.
 - Next move after this attribution: do not launch another live auth-interval calibration while on hotel Wi-Fi. The current non-destructive branch is source-content retry/recovery attribution and the local retry projected-age guard; validate that guard on the next home-network same-shape run rather than as a standalone hotel-Wi-Fi ceiling benchmark. The `fresh_state_3plus3_worker_balance_ab_pro0213` confirmation repeat already exists as run06 and regressed materially, so do not run another worker-balance confirmation unless worker-profile assignment, cleanup, or `nlm` fallback behavior changes; and do not reopen agecap-200 or cadence until there is another code-path or source-readiness mechanism change.
 
+## Next Probe: First-Batch Warmup / Ordering Attribution
+
+Status: ready to run as a config-only probe. No harness code change is needed before this experiment.
+
+Question:
+
+- Did `fresh_state_3plus3_extract_schema_control_run15_current` regress because the measured soak paid first-batch worker/notebook/auth startup cost, especially on Free, rather than because the steady-state `3+3` extract path is slower than `run07_current`?
+
+Why this is not another same-shape repeat:
+
+- The measured comparison remains true `3+3`, `--limit 400`, `--batch-size 200`, serial reusable pipeline, `run_environment_label=home_300mb`.
+- The discriminating change is that smoke warms the exact same fresh worker-state roots used by soak.
+- The normal guarded sequence does not do this: without `--preserve-worker-state-root`, smoke uses `<run-root>/smoke/<lane>/worker_states` and soak uses `<run-root>/soak/<lane>/worker_states`.
+- This probe creates run-specific worker-state roots under the new run root and passes `--preserve-worker-state-root`, so smoke and soak share only that run's fresh state. Do not point this at the old global `a_hominidae_pro/worker_states` or `troup_hominidae_free/worker_states` roots.
+
+Create a run-specific lane config:
+
+```powershell
+$runRoot = 'P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_current'
+$laneConfig = 'P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_lanes.json'
+@(
+  [ordered]@{
+    lane = 'a_hominidae_pro'
+    account_class = 'pro'
+    workers = 3
+    notebooklm_profile_prefix = 'ytis-pro-worker'
+    notebooklm_profiles = @('ytis-pro-worker-01', 'ytis-pro-worker-02', 'ytis-pro-worker-03')
+    browser_profile_root = 'P:/.data/yt-is/browser/notebooklm-pro'
+    browser_profile_directory = 'Profile'
+    worker_state_root = "$runRoot/a_hominidae_pro/worker_states"
+    notebook_prefix = 'benchmark-shard-a-hominidae-pro'
+  }
+  [ordered]@{
+    lane = 'troup_hominidae_free'
+    account_class = 'free'
+    workers = 3
+    notebooklm_profile_prefix = 'ytis-free1-worker'
+    notebooklm_profiles = @('ytis-free1-worker-01', 'ytis-free1-worker-02', 'ytis-free1-worker-03')
+    browser_profile_root = 'P:/.data/yt-is/browser/notebooklm-free'
+    browser_profile_directory = 'Profile 1'
+    worker_state_root = "$runRoot/troup_hominidae_free/worker_states"
+    notebook_prefix = 'benchmark-shard-troup-hominidae-free'
+  }
+) | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 -Path $laneConfig
+```
+
+Preflight:
+
+```powershell
+$env:PYTHONPATH = 'P:/packages/yt-is'
+Remove-Item Env:\YTIS_NLM_REUSABLE_ACTIVE_WINDOW_SIZE -ErrorAction SilentlyContinue
+Remove-Item Env:\YTIS_NLM_REUSABLE_EXTRACT_WINDOW_SIZE -ErrorAction SilentlyContinue
+Remove-Item Env:\YTIS_NLM_AUTH_FORCE_REFRESH_EVERY_CHECKS -ErrorAction SilentlyContinue
+python -m pytest -q `
+  tests/test_sharded_lane_sequence.py `
+  tests/test_run_evidence_check.py `
+  tests/test_sharded_lane_series.py::test_lane_env_exports_run_environment_label `
+  tests/test_sharded_lane_series.py::test_run_sharded_lane_series_can_preserve_configured_worker_state_root
+```
+
+Benchmark command:
+
+```powershell
+python P:/packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_lanes.json `
+  --run-root P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_current `
+  --smoke-limit 400 `
+  --smoke-batch-size 200 `
+  --soak-limit 400 `
+  --soak-batch-size 200 `
+  --expected-worker-shape 3+3 `
+  --run-environment-label home_300mb `
+  --reusable-pipeline-mode serial `
+  --preserve-worker-state-root
+```
+
+Interpretation gates:
+
+| Observation | Conclusion | Next action |
+|---|---|---|
+| Soak batch 1 Free recovers toward `run07_current` and batch 2 stays healthy | `run15_current` was likely first-batch warmup / cold worker-state cost | Keep the probe as evidence; consider making a deliberate warmup phase part of future ceiling validation, but do not promote until a second discriminating shape confirms it |
+| Soak batch 1 still regresses while batch 2 recovers | Warmup alone is insufficient; order/cohort or profile assignment is still likely | Add the smallest ordering probe next, preferably a configurable first-dispatch rotation rather than another full same-shape repeat |
+| Both soak batches regress | The issue is broader steady-state command/retry latency or environment pressure | Return to source-content command/retry attribution; keep `run07_current` as baseline |
+| Smoke is partial or invalidated | The warmup probe failed before it became throughput evidence | Investigate the first invalidation; do not compare VPH |
+
+Completed run:
+
+- `fresh_state_3plus3_extract_schema_warmup_state_run01_current` completed `status=ok` and `throughput_valid=true` at `1508.94` combined soak hot-path VPH with `745/55/800`; smoke stayed valid at `1511.39` with `688/112/800`, so the warmup path did not lift the soak meaningfully above smoke. Free batch 1 improved from `617.12` VPH in smoke to `857.17` in soak, but Free batch 2 dropped from `1219.92` to `784.36`, and Pro batch 2 also fell from `2090.79` to `898.29`. The probe therefore does not support a simple warmup-state explanation; the remaining signal still looks broader than a first-batch-only artifact.
+
+### Offline Attribution Packet
+
+Artifacts inspected:
+
+- [`fresh_state_3plus3_extract_schema_control_run07_current/sharded_lane_series_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_control_run07_current/sharded_lane_series_summary.json)
+- [`fresh_state_3plus3_extract_schema_control_run15_current/sharded_lane_series_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_control_run15_current/sharded_lane_series_summary.json)
+- [`fresh_state_3plus3_extract_schema_warmup_state_run01_current/sharded_lane_series_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_current/sharded_lane_series_summary.json)
+- [`fresh_state_3plus3_extract_schema_control_run15_current/soak/a_hominidae_pro/benchmark_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_control_run15_current/soak/a_hominidae_pro/benchmark_summary.json)
+- [`fresh_state_3plus3_extract_schema_control_run15_current/soak/troup_hominidae_free/benchmark_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_control_run15_current/soak/troup_hominidae_free/benchmark_summary.json)
+- [`fresh_state_3plus3_extract_schema_warmup_state_run01_current/smoke/troup_hominidae_free/benchmark_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_current/smoke/troup_hominidae_free/benchmark_summary.json)
+- [`fresh_state_3plus3_extract_schema_warmup_state_run01_current/soak/a_hominidae_pro/benchmark_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_current/soak/a_hominidae_pro/benchmark_summary.json)
+- [`fresh_state_3plus3_extract_schema_warmup_state_run01_current/soak/troup_hominidae_free/benchmark_summary.json`](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_warmup_state_run01_current/soak/troup_hominidae_free/benchmark_summary.json)
+
+Comparison:
+
+| Run | Combined VPH | Pro `cmd / idle / age` | Free `cmd / idle / age` | Status counts |
+| --- | --- | --- | --- | --- |
+| `run07_current` | `3291.38` | `2014.284 / 43.476 / 98.644` | `3027.095 / 43.264 / 151.637` | Pro `ready=398`, `command_failed=1`; Free `ready=346`, `command_failed=3` |
+| `run15_current` | `2205.73` | `3354.524 / 310.186 / 319.703` | `5193.556 / 692.818 / 377.993` | Pro `ready=382`, `command_failed=18`, `source_age_cliff=15`; Free `ready=369`, `command_failed=24`, `source_age_cliff=26` |
+| `warmup_state_run01_current` | `1508.94` | `10101.908 / 1019.662 / 489.526` | `8565.125 / 1153.025 / 496.703` | Pro `ready=364`, `command_failed=30`, `source_age_cliff=27`; Free `ready=381`, `command_failed=32`, `source_age_cliff=12` |
+
+Batch-window notes:
+
+- `run15_current` soak batch 1 carried the regression on both lanes, but batch 2 recovered sharply. Pro moved from `184/16/200` with `source_ready_age_s_max=202.327` and `content_fetch_command_elapsed_s_total=2836.882` to `198/2/200` with `source_ready_age_s_max=319.703` and `content_fetch_command_elapsed_s_total=517.642`; Free moved from `171/29/200` with `source_ready_age_s_max=377.993` and `content_fetch_command_elapsed_s_total=4953.396` to `198/2/200` with `source_ready_age_s_max=66.43` and `content_fetch_command_elapsed_s_total=240.16`.
+- `warmup_state_run01_current` did not recover from smoke to soak. Free smoke batch 1 / batch 2 were `143/57/200` and `198/2/200`, while soak batch 1 / batch 2 were `195/5/200` and `186/14/200`; soak also kept `source_age_cliff` and `command_failed` pressure in batch 2. Pro soak batch 2 also worsened relative to batch 1, from `192/8/200` to `172/28/200`.
+- `run07_current` remains the clean comparator: Pro soak batch 1 / batch 2 were `199/1/200` and `199/1/200`; Free soak batch 1 / batch 2 were `148/52/200` and `198/2/200`, with far lower `source_ready_age_s_max` and `content_fetch_command_elapsed_s_total` than either later run.
+- Retry-drain skip evidence is not the driver here: `shared_retry_*` totals are `0` across all three runs, and the newer summaries report `retry_queue_drain_skipped_count_total=0` where that field exists. The visible retry pressure is instead the high `content_fetch_retry_queue_sleep_elapsed_s_total` and the elevated `source_age_cliff` / `command_failed` counts.
+
+Conclusion:
+
+- Warmup-state preservation did not explain the run15 regression. The warmup run is worse than both `run15_current` and `run07_current`, and smoke/soak are nearly flat overall.
+- Best fit is broader command/retry latency with cohort/order noise. Preserved-state/source-age carryover is not a fix and may be part of the problem, but it is not the sole explanation.
+- The next discriminating action is offline reducer/log attribution across the three runs, focused on source-age cliffs, retry sleeps/drain fields, command latency, and batch/cohort assignment. Do not rerun the benchmark shape.
+
+Required report fields:
+
+- Top-level `status`, `throughput_valid`, `worker_shape_signature`, `run_environment_label`, and `pre_run_browser_health`.
+- Combined `hot_path_videos_per_hour`, `hot_path_success_count_total`, `fail_count_total`, and `processed_count_total`.
+- Per-lane `content_fetch_command_elapsed_s_total`, `worker_idle_wait_s_total`, `source_ready_age_s_max`, and `content_fetch_status_counts_total`.
+- Batch-tail rows for smoke and soak, especially Free `batch_01` vs `batch_02`.
+- Reducer comparison against `fresh_state_3plus3_extract_schema_control_run07_current` and `fresh_state_3plus3_extract_schema_control_run15_current`.
+
 Agecap-200 Revalidation Branch — CLOSED:
 
 - `sweep_phase3_2lane_3w_agecap_200_run02` was revalidated as `sweep_phase3_2lane_3w_agecap_200_run03_current` under current code and instrumentation. All three promotion gates failed: combined hot-path VPH `1382.39` (threshold `2800`), fail rate `47.25%` (threshold `2%`), and `source_age_cliff` was dominant (`138/189` failures = `73%`). The run02 result of `3084.08` VPH was not reproduced. No further agecap-200 live probe will run until there is a code or source-readiness mechanism change.

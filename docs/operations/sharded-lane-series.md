@@ -94,6 +94,8 @@ Save a config like this as `P://packages/yt-is/.logs/sharded_lane_series/pro_fre
 Workers are lane-specific in the JSON config.
 Use `python P://packages/yt-is/bin/csf-sharded-lane-sequence --lane-config <lane-config> --run-root <run-root>` for the guarded sequence. It runs doctor, smoke, evidence check, then soak, writes smoke and soak outputs under `<run-root>/smoke` and `<run-root>/soak` by default, uses `<run-root>/<lane>/worker_states` unless you pass `--preserve-worker-state-root`, and reads the shared benchmark trace corpus from `P://packages/yt-is/.logs/worker_count_trials` unless you pass `--trace-root`. The same trace corpus is used for both phases. If you know the intended worker geometry, pass `--expected-worker-shape` so the smoke evidence check fails closed when a run is mislabeled.
 
+For a deliberate warmup probe, `--preserve-worker-state-root` is acceptable only when the lane config points at fresh run-specific state roots under the new run root. That makes smoke warm the exact worker notebooks/state later used by soak without reusing stale global worker-state roots. Do not use the old shared `a_hominidae_pro/worker_states` or `troup_hominidae_free/worker_states` paths for this kind of probe.
+
 ## Dedicated Browser Auth Refresh
 
 Use a root-specific CDP port when refreshing lane auth. Plain `nlm login --profile ...` can attach to an already-running Chrome instance and capture the wrong account.
