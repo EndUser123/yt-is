@@ -1688,6 +1688,37 @@ def test_find_invalid_lane_artifacts_flags_probe_terminal(tmp_path):
     assert "sources=0->0" in findings[0]
 
 
+def test_find_invalid_lane_artifacts_flags_source_add_failed_metrics(tmp_path):
+    import csf.sharded_lane_series as mod
+
+    lane_root = tmp_path / "lane"
+    log_dir = lane_root / "batch_01" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "term.jsonl").write_text(
+        json.dumps(
+            {
+                "action": "worker_batch_metrics",
+                "data": {
+                    "batch_index": 1,
+                    "batch_size": 50,
+                    "failed": 50,
+                    "content_fetch_status_counts": {
+                        "source_add_failed": 50,
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    findings = mod._find_invalid_lane_artifacts(lane_root)
+
+    assert len(findings) == 1
+    assert "source_add_failed" in findings[0]
+    assert "count=50" in findings[0]
+
+
 def test_main_refuses_to_start_when_doctor_fails(tmp_path, monkeypatch):
     import csf.sharded_lane_series as mod
 

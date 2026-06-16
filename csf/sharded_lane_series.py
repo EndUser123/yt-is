@@ -323,6 +323,13 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
                 f"subbatch_size={data.get('subbatch_size') or '<unknown>'} "
                 f"sources={data.get('source_count_before') or 0}->{data.get('source_count_after') or 0}"
             )
+        status_counts = data.get("content_fetch_status_counts")
+        if isinstance(status_counts, dict) and int(status_counts.get("source_add_failed") or 0) > 0:
+            findings.append(
+                f"{path.relative_to(lane_output_root)}:{lineno}: source_add_failed "
+                f"count={int(status_counts.get('source_add_failed') or 0)} "
+                f"batch_size={data.get('batch_size') or '<unknown>'}"
+            )
     return findings
 
 
