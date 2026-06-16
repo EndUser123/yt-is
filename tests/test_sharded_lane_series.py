@@ -1479,6 +1479,34 @@ def test_run_lane_accepts_shared_retry_processed_count_overrun(tmp_path, monkeyp
     assert report["partial_reason"] is None
 
 
+def test_lane_processed_count_reason_subtracts_shared_retry_outcomes_not_claims():
+    import csf.sharded_lane_series as mod
+
+    lane = LaneConfig(
+        lane="free",
+        account_class="free",
+        workers=1,
+        notebooklm_profile_prefix="ytis-free1-worker",
+        notebooklm_profiles=("ytis-free1-worker-01",),
+        browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
+        worker_state_root=Path("P:\\\\\\.data/yt-is/worker-states/free"),
+        notebook_prefix="benchmark-shard-free",
+    )
+
+    reason = mod._lane_processed_count_reason(
+        lane=lane,
+        expected_processed_count=50,
+        aggregate={
+            "processed_count_total": 53,
+            "shared_retry_processed_count_total": 5,
+            "shared_retry_recovered_count_total": 3,
+            "shared_retry_final_failed_count_total": 0,
+        },
+    )
+
+    assert reason is None
+
+
 def test_run_lane_rejects_default_profile_contaminated_logs(tmp_path, monkeypatch):
     """A lane that observed the shared default profile must not be accepted as a benchmark result."""
     import csf.sharded_lane_series as mod

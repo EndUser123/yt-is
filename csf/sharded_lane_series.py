@@ -330,13 +330,17 @@ def _lane_processed_count_reason(*, lane: LaneConfig, expected_processed_count: 
     """Return a partial-run reason when a lane finishes cleanly but misses the requested limit."""
     processed_count_total = int(aggregate.get("processed_count_total") or 0)
     shared_retry_processed_count_total = int(float(aggregate.get("shared_retry_processed_count_total") or 0.0))
-    primary_processed_count_total = max(processed_count_total - shared_retry_processed_count_total, 0)
+    shared_retry_recovered_count_total = int(float(aggregate.get("shared_retry_recovered_count_total") or 0.0))
+    shared_retry_final_failed_count_total = int(float(aggregate.get("shared_retry_final_failed_count_total") or 0.0))
+    shared_retry_outcome_count_total = shared_retry_recovered_count_total + shared_retry_final_failed_count_total
+    primary_processed_count_total = max(processed_count_total - shared_retry_outcome_count_total, 0)
     if primary_processed_count_total != expected_processed_count:
-        if shared_retry_processed_count_total:
+        if shared_retry_processed_count_total or shared_retry_outcome_count_total:
             return (
                 f"lane {lane.lane} incomplete benchmark: processed_count_total={primary_processed_count_total} "
                 f"expected={expected_processed_count} (raw_processed_count_total={processed_count_total} "
-                f"shared_retry_processed_count_total={shared_retry_processed_count_total})"
+                f"shared_retry_processed_count_total={shared_retry_processed_count_total} "
+                f"shared_retry_outcome_count_total={shared_retry_outcome_count_total})"
             )
         return (
             f"lane {lane.lane} incomplete benchmark: processed_count_total={processed_count_total} "
