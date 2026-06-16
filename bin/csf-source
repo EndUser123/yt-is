@@ -1831,6 +1831,11 @@ def cmd_fetch(
         "YTIS_TRANSCRIPT_ROUTE_NO_CAPTIONS_TO_FALLBACK",
         False,
     )
+    shared_retry_pool_enabled = _env_bool(
+        "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED",
+        "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED",
+        False,
+    )
 
     log_action(
         "fetch_invoked",
@@ -1856,6 +1861,7 @@ def cmd_fetch(
                 _env_int("YTIS_INDUSTRIAL_BATCHES_PER_WORKER", "YTIS_INDUSTRIAL_BATCHES_PER_LAUNCH", 4),
             ),
             "route_no_captions_to_fallback": route_no_captions_to_fallback,
+            "shared_retry_pool_enabled": shared_retry_pool_enabled,
         },
     )
     first_download_logged = False
@@ -3021,6 +3027,15 @@ def cmd_fetch(
                 _service_industrial_workers(wait_for_completion=False)
 
             if max_items is not None and _primary_pending_discovered_total() >= max_items:
+                while (
+                    shared_retry_pool_enabled
+                    and industrial_parallel_enabled
+                    and industrial_worker_futures
+                    and _primary_pending_discovered_total() >= max_items
+                ):
+                    _service_industrial_workers(wait_for_completion=True)
+                if _primary_pending_discovered_total() < max_items:
+                    continue
                 max_items_reached = True
                 break
         if max_items_reached:
