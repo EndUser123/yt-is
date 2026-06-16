@@ -71,7 +71,16 @@ def _write_batch_sweep_summary(
     source_list_probe_count: int,
     source_age_cliff: int,
     shared_retry_recovered_count_total: float,
+    source_add_failed: int = 0,
+    content_fetch_status_counts_total: dict[str, int] | None = None,
 ) -> None:
+    if content_fetch_status_counts_total is None:
+        content_fetch_status_counts_total = {
+            "ready": succeeded,
+            "source_age_cliff": source_age_cliff,
+        }
+        if source_add_failed:
+            content_fetch_status_counts_total["source_add_failed"] = source_add_failed
     payload = {
         "results": [
             {
@@ -93,10 +102,7 @@ def _write_batch_sweep_summary(
                         "source_list_probe_count": source_list_probe_count,
                         "shared_retry_recovered_count_total": shared_retry_recovered_count_total,
                         "cleanup_elapsed_s_total": 0.0,
-                        "content_fetch_status_counts_total": {
-                            "ready": succeeded,
-                            "source_age_cliff": source_age_cliff,
-                        },
+                        "content_fetch_status_counts_total": content_fetch_status_counts_total,
                     }
                 },
             }
@@ -549,6 +555,7 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
         source_list_probe_count=3,
         source_age_cliff=28,
         shared_retry_recovered_count_total=36,
+        source_add_failed=12,
     )
     _write_batch_sweep_summary(
         run_root / "smoke" / "troup_hominidae_free" / "batch_01" / "notebooklm_route_plus_fallback_30s_1w" / "20260603_033602",
@@ -578,14 +585,30 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
         source_age_cliff=39,
         shared_retry_recovered_count_total=48,
     )
+    _write_batch_sweep_summary(
+        run_root / "soak" / "a_hominidae_pro" / "batch_03" / "notebooklm_route_plus_fallback_30s_1w" / "20260603_035900",
+        workers=3,
+        elapsed_s=391.195,
+        succeeded=0,
+        failed=100,
+        source_ready_age_s_avg=0.0,
+        source_ready_age_s_max=0.0,
+        content_fetch_command_elapsed_s_total=0.0,
+        content_fetch_command_elapsed_s_avg=0.0,
+        source_list_probe_count=0,
+        source_age_cliff=0,
+        shared_retry_recovered_count_total=0,
+        content_fetch_status_counts_total={},
+    )
 
     audit = audit_run(run_root)
     report = generate_report([audit], run_root)
 
-    assert len(audit.batch_tail_rows) == 4
+    assert len(audit.batch_tail_rows) == 5
     assert "Table 8 — Batch Tail Summary" in report
-    assert "| demo_run | soak | troup_hominidae_free | batch_02 | 3 | 79/39/100 | 247.08 | 255.98 | 6669.708 | 46.685 | 39 | absent | 3 | 48 |" in report
-    assert "| demo_run | smoke | a_hominidae_pro | batch_01 | 3 | 109/20/100 | 67.14 | 220.97 | 7517.450 | 33.704 | 20 | absent | 3 | 22 |" in report
+    assert "| demo_run | soak | troup_hominidae_free | batch_02 | 3 | 79/39/100 | 247.08 | 255.98 | 6669.708 | 46.685 | 39 | absent | absent | no | 3 | 48 |" in report
+    assert "| demo_run | soak | a_hominidae_pro | batch_02 | 3 | 94/28/100 | 157.76 | 233.42 | 8743.616 | 36.345 | 28 | absent | 12 | no | 3 | 36 |" in report
+    assert "| demo_run | soak | a_hominidae_pro | batch_03 | 3 | 0/100/100 | 0.00 | 0.00 | 0.000 | 0.000 | absent | absent | absent | yes | 0 | 0 |" in report
 
 
 def test_audit_run_surfaces_partial_lane_shortfall_metadata(tmp_path):

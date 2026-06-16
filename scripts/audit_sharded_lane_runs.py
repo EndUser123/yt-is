@@ -87,6 +87,8 @@ class BatchTailRow:
     source_list_probe_count: int | None
     source_age_cliff_count: int | None
     command_failed_count: int | None
+    source_add_failed_count: int | None
+    empty_content_fetch_metrics: bool
     shared_retry_recovered_count_total: float | None
     cleanup_elapsed_s_total: float | None
 
@@ -772,6 +774,8 @@ def _collect_batch_tail_rows(run_root: Path) -> tuple[BatchTailRow, ...]:
             source_list_probe_count=_int(worker_stage_totals.get("source_list_probe_count")),
             source_age_cliff_count=_int(content_fetch_status.get("source_age_cliff")),
             command_failed_count=_int(content_fetch_status.get("command_failed")),
+            source_add_failed_count=_int(content_fetch_status.get("source_add_failed")),
+            empty_content_fetch_metrics=bool((fail_count or 0) > 0 and not content_fetch_status),
             shared_retry_recovered_count_total=_float(worker_stage_totals.get("shared_retry_recovered_count_total")),
             cleanup_elapsed_s_total=_float(worker_stage_totals.get("cleanup_elapsed_s_total")),
         )
@@ -1376,8 +1380,8 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
     batch_tail_rows = [row for audit in audits for row in audit.batch_tail_rows]
     if batch_tail_rows:
         lines.append(_section("Table 8 — Batch Tail Summary (source_ready_age_s_avg desc, then command total desc)"))
-        lines.append(_row(["Run", "Phase", "Lane", "Batch", "Workers", "Success/Fail/Processed", "Source Ready Age Avg", "Source Ready Age Max", "Cmd Total(s)", "Cmd Avg(s)", "source_age_cliff", "command_failed", "Source-List Probes", "Shared Recovered"]))
-        lines.append(_row(["---"] * 14))
+        lines.append(_row(["Run", "Phase", "Lane", "Batch", "Workers", "Success/Fail/Processed", "Source Ready Age Avg", "Source Ready Age Max", "Cmd Total(s)", "Cmd Avg(s)", "source_age_cliff", "command_failed", "source_add_failed", "Empty Fetch Metrics", "Source-List Probes", "Shared Recovered"]))
+        lines.append(_row(["---"] * 16))
         for row in sorted(
             batch_tail_rows,
             key=lambda item: (
@@ -1406,6 +1410,8 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
                 _fmt_opt(row.content_fetch_command_elapsed_s_avg),
                 _fmt_flag(row.source_age_cliff_count),
                 _fmt_flag(row.command_failed_count),
+                _fmt_flag(row.source_add_failed_count),
+                "yes" if row.empty_content_fetch_metrics else "no",
                 _fmt_flag(row.source_list_probe_count),
                 _fmt_opt(row.shared_retry_recovered_count_total, dp=0),
             ]))
@@ -1607,6 +1613,7 @@ def main(argv: list[str] | None = None) -> int:
             "fresh_state_3plus3_extract_schema_control_run15_current",
             "fresh_state_3plus3_extract_schema_warmup_state_run01_current",
             "fresh_state_3plus3_extract_schema_shared_retry_run01_current",
+            "fresh_state_3plus3_extract_schema_shared_retry_run06_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run31_current",
