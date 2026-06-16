@@ -1176,6 +1176,74 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
     }
 
 
+def test_run_sharded_lane_series_reclassifies_stale_running_lane_process(tmp_path, monkeypatch):
+    import csf.sharded_lane_series as mod
+
+    lane = LaneConfig(
+        lane="free",
+        account_class="free",
+        workers=1,
+        notebooklm_profile_prefix="ytis-free1-worker",
+        notebooklm_profiles=("ytis-free1-worker-01",),
+        browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
+        worker_state_root=tmp_path / "free" / "worker_states",
+        notebook_prefix="benchmark-shard-free",
+    )
+    lane_root = tmp_path / "out" / "free"
+    lane_root.mkdir(parents=True, exist_ok=True)
+    (lane_root / "lane_process.json").write_text(
+        json.dumps(
+            {
+                "lane": "free",
+                "status": "running",
+                "pid": 4321,
+                "started_at": 100.0,
+                "command": ["fake-benchmark"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run_calls: list[str] = []
+
+    def fake_run_lane(*args, **kwargs):
+        run_calls.append("run_lane")
+        raise AssertionError("stale lane process should have been short-circuited")
+
+    monkeypatch.setattr(mod, "_run_lane", fake_run_lane)
+    monkeypatch.setattr(mod.psutil, "pid_exists", lambda pid: False)
+
+    report = run_sharded_lane_series(
+        lanes=(lane,),
+        trace_root=tmp_path / "trace",
+        output_root=tmp_path / "out",
+        cohort_json=tmp_path / "out" / "cohort.json",
+        source_url="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        policy="notebooklm_route_plus_fallback_30s_1w",
+        limit=1,
+        batch_size=1,
+        manifest_json=Path("P:\\\\\\packages/yt-is/tests/fixtures/shared_benchmark_manifest.json"),
+        reusable_pipeline_mode="serial",
+    )
+
+    snapshot = json.loads((lane_root / "lane_process.json").read_text(encoding="utf-8"))
+    assert run_calls == []
+    assert report["status"] == "invalidated"
+    assert report["throughput_valid"] is False
+    assert report["failure_count"] == 1
+    assert report["runs"][0]["status"] == "invalidated"
+    assert report["runs"][0]["error_type"] == "orphaned_lane_process"
+    assert "stale/orphaned lane process snapshot" in report["runs"][0]["error"]
+    assert report["failures"][0]["error_type"] == "orphaned_lane_process"
+    assert "benchmark_summary.json was never written" in report["failures"][0]["error"]
+    assert snapshot["status"] == "failed"
+    assert snapshot["error_type"] == "orphaned_lane_process"
+    assert "stale/orphaned lane process snapshot" in snapshot["error"]
+    assert snapshot["pid"] == 4321
+    assert snapshot["started_at"] == 100.0
+    assert "finished_at" in snapshot
+
+
 def test_run_lane_rejects_partial_processed_count(tmp_path, monkeypatch):
     import csf.sharded_lane_series as mod
 

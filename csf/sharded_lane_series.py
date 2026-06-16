@@ -17,6 +17,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+import psutil
+
 from csf.breadth_series import _aggregate_summary
 from csf.load_ladder import build_fallback_benchmark_command
 from csf import nlm_auth_guard
@@ -361,6 +363,84 @@ def _tail_text(path: Path, max_chars: int = 2000) -> str:
 
 def _write_lane_process_snapshot(path: Path, payload: dict[str, Any]) -> None:
     _write_json_atomic(path, payload)
+
+
+def _stale_lane_process_reason(snapshot: dict[str, Any], *, benchmark_summary_path: Path) -> str | None:
+    """Return a stale/orphaned-process reason for a running lane snapshot, if any."""
+    if str(snapshot.get("status") or "").strip() != "running":
+        return None
+    try:
+        pid = int(snapshot.get("pid") or 0)
+    except Exception:
+        return None
+    if pid < 1:
+        return None
+    if benchmark_summary_path.exists():
+        return None
+    if psutil.pid_exists(pid):
+        return None
+    return (
+        f"stale/orphaned lane process snapshot: pid={pid} is no longer running "
+        f"and {benchmark_summary_path.name} was never written"
+    )
+
+
+def _stale_lane_process_report(
+    *,
+    lane: LaneConfig,
+    output_root: Path,
+    lane_process_path: Path,
+    benchmark_summary_path: Path,
+    snapshot: dict[str, Any],
+    reason: str,
+) -> dict[str, Any]:
+    """Rewrite a dead running lane snapshot into a terminal failure record."""
+    finished_at = round(time.monotonic(), 3)
+    updated_snapshot = dict(snapshot)
+    updated_snapshot.update(
+        {
+            "status": "failed",
+            "error_type": "orphaned_lane_process",
+            "error": reason,
+            "finished_at": finished_at,
+        }
+    )
+    started_at = snapshot.get("started_at")
+    try:
+        started_at_value = float(started_at)
+    except Exception:
+        started_at_value = None
+    if started_at_value is not None:
+        updated_snapshot["wall_elapsed_s"] = round(max(finished_at - started_at_value, 0.0), 3)
+    _write_lane_process_snapshot(lane_process_path, updated_snapshot)
+    return {
+        "report_version": 1,
+        "status": "invalidated",
+        "lane": lane.lane,
+        "account_class": lane.account_class,
+        "workers": lane.workers,
+        "notebooklm_profile_prefix": lane.notebooklm_profile_prefix,
+        "notebooklm_profiles": list(lane.notebooklm_profiles),
+        "coordinator_notebooklm_profile": lane.coordinator_profile,
+        "browser_profile_root": str(lane.browser_profile_root),
+        "browser_profile_directory": lane.browser_profile_directory,
+        "worker_state_root": str(lane.worker_state_root),
+        "notebook_prefix": lane.notebook_prefix,
+        "startup_delay_s": lane.startup_delay_s,
+        "output_root": str(output_root / lane.lane),
+        "stdout_path": str(output_root / lane.lane / "lane.stdout.txt"),
+        "stderr_path": str(output_root / lane.lane / "lane.stderr.txt"),
+        "lane_process_path": str(lane_process_path),
+        "benchmark_summary_path": str(benchmark_summary_path),
+        "error_type": "orphaned_lane_process",
+        "error": reason,
+        "traceback": reason,
+        "stderr_tail": _tail_text(output_root / lane.lane / "lane.stderr.txt"),
+        "hot_path_success_count_total": 0,
+        "transcript_fallback_success_count_total": 0,
+        "fail_count_total": 0,
+        "processed_count_total": 0,
+    }
 
 
 def load_lane_configs(path: Path) -> tuple[LaneConfig, ...]:
@@ -931,6 +1011,40 @@ def run_sharded_lane_series(
 
     lane_reports_by_name: dict[str, dict[str, Any]] = {}
     failures: list[dict[str, str]] = []
+    stale_lane_names: set[str] = set()
+    for lane in lane_configs:
+        lane_output_root = output_root / lane.lane
+        lane_process_path = lane_output_root / "lane_process.json"
+        benchmark_summary_path = lane_output_root / "benchmark_summary.json"
+        if not lane_process_path.exists():
+            continue
+        try:
+            snapshot = json.loads(lane_process_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(snapshot, dict):
+            continue
+        reason = _stale_lane_process_reason(snapshot, benchmark_summary_path=benchmark_summary_path)
+        if reason is None:
+            continue
+        stale_lane_names.add(lane.lane)
+        lane_reports_by_name[lane.lane] = _stale_lane_process_report(
+            lane=lane,
+            output_root=output_root,
+            lane_process_path=lane_process_path,
+            benchmark_summary_path=benchmark_summary_path,
+            snapshot=snapshot,
+            reason=reason,
+        )
+        failures.append(
+            {
+                "lane": lane.lane,
+                "error_type": "orphaned_lane_process",
+                "error": reason,
+                "traceback": reason,
+                "stderr_tail": _tail_text(lane_output_root / "lane.stderr.txt"),
+            }
+        )
     with ThreadPoolExecutor(max_workers=len(lane_configs)) as executor:
         futures = {
             executor.submit(
@@ -961,6 +1075,7 @@ def run_sharded_lane_series(
                 ),
             ): lane
             for lane in lane_configs
+            if lane.lane not in stale_lane_names
         }
         for future in as_completed(futures):
             lane = futures[future]
