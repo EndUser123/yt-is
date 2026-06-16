@@ -361,6 +361,7 @@ Current state as of 2026-04-30:
   - Free lane stdout still showed `source_add_failed` in batch 01 and batch 02
 - Next action: no further documented throughput phase remains without a new hypothesis.
 - Cleanup-cost optimization was tried next and stayed negative at `pro_free_cleanup_opt_v2`; the bulk delete path was rolled back and no further documented throughput phase remains without a new hypothesis.
+- Home shared-retry probes now need an explicit benchmark override. `fresh_state_3plus3_extract_schema_shared_retry_run01_current` completed, but it is non-discriminating because the active policy forced shared retry off for `home_300mb`; use `YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED=true` in the lane config and confirm it appears in `lane_process.json` before treating a future run as shared-retry evidence.
 
 Required verification before another full benchmark:
 

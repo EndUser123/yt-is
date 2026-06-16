@@ -722,6 +722,8 @@ def test_lane_env_exports_run_environment_label(tmp_path):
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+            "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "true",
+            "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": str(tmp_path / "shared.sqlite"),
         },
     )
     env = _lane_env(
@@ -736,6 +738,8 @@ def test_lane_env_exports_run_environment_label(tmp_path):
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S"] == "160"
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S"] == "190"
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE"] == "5"
+    assert env["YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"] == "true"
+    assert env["YTIS_NLM_SHARED_RETRY_POOL_DB_PATH"] == str(tmp_path / "shared.sqlite")
     assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_NLM_WORKER_AUTH_USE_CDP"] == "0"
@@ -1159,13 +1163,16 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
     assert snapshot["returncode"] == 0
     assert snapshot["status"] == "completed"
     assert snapshot["env_snapshot"] == {
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
-        "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
-        "YTIS_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
-        "YTIS_NLM_WORKER_AUTH_USE_CDP": "0",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "",
+        "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "",
+        "YTIS_RUN_ENVIRONMENT_LABEL": "",
+        "YTIS_NLM_WORKER_AUTH_USE_CDP": "",
+        "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
+        "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
+        "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": "",
     }
 
 

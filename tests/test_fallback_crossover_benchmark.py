@@ -164,6 +164,38 @@ def test_run_policy_hotel_environment_overrides_shared_retry_pool_policy(tmp_pat
     assert captured["shared_retry_pool_enabled"] == "true"
 
 
+def test_run_policy_benchmark_override_forces_shared_retry_pool_on_home_network(tmp_path, monkeypatch):
+    mod = _load_benchmark_module()
+    captured: dict[str, str | None] = {}
+
+    def fake_run_worker_count_sweep(**_kwargs):
+        captured["shared_retry_pool_enabled"] = mod.os.environ.get(
+            "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"
+        )
+        captured["run_environment_label"] = mod.os.environ.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL")
+        return {"results": []}
+
+    monkeypatch.setenv("YTIS_NLM_RUN_ENVIRONMENT_LABEL", "home_300mb")
+    monkeypatch.setenv("YTIS_RUN_ENVIRONMENT_LABEL", "home_300mb")
+    monkeypatch.setenv("YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", "true")
+    monkeypatch.setattr(mod, "_load_run_worker_count_sweep", lambda: fake_run_worker_count_sweep)
+
+    mod._run_policy(
+        policy_name="notebooklm_route_plus_fallback_30s_1w",
+        items=[{"video_id": "vid-a", "source_url": "https://example.invalid", "has_captions": True}],
+        source_url="https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        output_root=tmp_path / "out",
+        workers=4,
+        limit=1,
+        python_executable="python.exe",
+        sample_label="shard_pro",
+        worker_state_root_override=tmp_path / "states",
+    )
+
+    assert captured["run_environment_label"] == "home_300mb"
+    assert captured["shared_retry_pool_enabled"] == "true"
+
+
 def test_load_cohort_from_trace_include_ready_collects_ready_events(tmp_path):
     trace_root = tmp_path / "trace-root"
     trace_root.mkdir()

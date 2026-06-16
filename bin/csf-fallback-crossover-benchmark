@@ -386,9 +386,9 @@ def _run_policy(
         for key, value in POLICY_ENV[policy_name].items():
             previous_env[key] = os.environ.get(key)
             os.environ[key] = value
-        shared_retry_override = (
-            "true" if run_environment_label == "hotel_wifi" else None
-        )
+        shared_retry_override = os.environ.get("YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED")
+        if shared_retry_override is None and run_environment_label == "hotel_wifi":
+            shared_retry_override = "true"
         if shared_retry_override is not None:
             shared_retry_key = "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"
             previous_env[shared_retry_key] = os.environ.get(shared_retry_key)

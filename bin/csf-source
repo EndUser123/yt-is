@@ -2920,6 +2920,9 @@ def cmd_fetch(
             )
             transcript_fallback_worker_futures.add(future)
 
+    def _primary_pending_discovered_total() -> int:
+        return max(0, pending_discovered_total - int(shared_retry_processed_count_total))
+
     for channel_index, (channel_url, playlist_id) in enumerate(channels, start=1):
         pending_entries = get_entries_for_source_details(channel_url)
         for entry in pending_entries:
@@ -2996,10 +2999,6 @@ def cmd_fetch(
             if notebooklm_pending_count >= backlog_threshold or transcript_fallback_queued_count >= backlog_threshold:
                 industrial_selected = True
 
-            if max_items is not None and pending_discovered_total >= max_items:
-                max_items_reached = True
-                break
-
             if not dry_run and industrial_selected and len(pending_buffer) >= batch_size:
                 while len(pending_buffer) >= batch_size:
                     drained_batches = _drain_balanced_pending_batches(
@@ -3017,6 +3016,13 @@ def cmd_fetch(
                     )
                     if industrial_parallel_enabled:
                         _service_industrial_workers(wait_for_completion=False)
+
+            if industrial_parallel_enabled and industrial_worker_futures:
+                _service_industrial_workers(wait_for_completion=False)
+
+            if max_items is not None and _primary_pending_discovered_total() >= max_items:
+                max_items_reached = True
+                break
         if max_items_reached:
             print(f"[source] Pending item limit reached at {pending_discovered_total}; stopping scan early.")
             log_action(
@@ -3025,6 +3031,8 @@ def cmd_fetch(
                     "source_filter": source_filter,
                     "max_items": max_items,
                     "pending_discovered_total": pending_discovered_total,
+                    "primary_pending_discovered_total": _primary_pending_discovered_total(),
+                    "shared_retry_processed_count_total": shared_retry_processed_count_total,
                     "notebooklm_pending_count": notebooklm_pending_count,
                     "transcript_fallback_queued_count": transcript_fallback_queued_count,
                 },

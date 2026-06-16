@@ -568,6 +568,103 @@ def test_cmd_fetch_limit_caps_selected_pending_items():
     assert queued_ids[1][-1] == "vid099"
 
 
+def test_cmd_fetch_limit_counts_primary_items_when_shared_retry_processes_work():
+    """Shared-retry worker work should not consume the requested primary item limit."""
+    mod = _load_csf_source_module(stub_ensure_auth=True)
+    channel_rows = [("https://www.youtube.com/@example", "pl-1")]
+    pending_entries = [
+        {
+            "video_id": f"vid{i:03d}",
+            "status": "pending",
+            "has_captions": True,
+            "privacy_status": "public",
+            "upload_status": "uploaded",
+            "is_live_content": False,
+            "unavailable_reason": None,
+            "source": "https://www.youtube.com/@example",
+        }
+        for i in range(101)
+    ]
+
+    class FakeCursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConn:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def execute(self, *_args, **_kwargs):
+            return FakeCursor(self._rows)
+
+        def close(self):
+            return None
+
+    class FakeStorage:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def _get_conn(self):
+            return FakeConn(self._rows)
+
+    class FakeExecutor:
+        def __init__(self, max_workers):
+            self.max_workers = max_workers
+
+        def submit(self, fn, *args, **kwargs):
+            fut = Future()
+            fut.set_result(fn(*args, **kwargs))
+            return fut
+
+        def shutdown(self, wait=True, **_kwargs):
+            return None
+
+    worker_summaries = [
+        {"batch_count": 1, "video_count": 50, "succeeded": 50, "failed": 0, "shared_retry_processed_count": 1},
+        {"batch_count": 1, "video_count": 50, "succeeded": 50, "failed": 0, "shared_retry_processed_count": 0},
+        {"batch_count": 1, "video_count": 1, "succeeded": 1, "failed": 0, "shared_retry_processed_count": 0},
+    ]
+    subprocess_calls: list[list[str]] = []
+    dispatched_batches: list[list[list[str]]] = []
+
+    def fake_run(cmd, **_kwargs):
+        subprocess_calls.append(list(cmd))
+        input_path = Path(cmd[cmd.index("--input") + 1])
+        dispatched_batches.append(json.loads(input_path.read_text(encoding="utf-8")))
+        result_path = Path(cmd[cmd.index("--result-path") + 1])
+        result_path.write_text(json.dumps(worker_summaries.pop(0)), encoding="utf-8")
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with mock.patch.object(mod, "_get_batch_status_storage", return_value=FakeStorage(channel_rows)):
+        with mock.patch.object(mod, "get_channel_metadata", return_value={"playlist_id": "pl-1"}):
+            with mock.patch.object(mod, "is_channel_blocked", return_value=False):
+                with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
+                    with mock.patch.object(mod, "has_cached_transcript", return_value=False):
+                        with mock.patch.object(mod, "cleanup_stale_worker_notebooks", return_value=(0, 0)):
+                            with mock.patch.object(mod.subprocess, "run", side_effect=fake_run):
+                                with mock.patch("concurrent.futures.ThreadPoolExecutor", FakeExecutor):
+                                    with mock.patch.object(mod, "set_cached_transcript"):
+                                        with mock.patch.object(mod, "mark_complete"):
+                                            with mock.patch.object(mod, "log_action") as mock_log:
+                                                mod.cmd_fetch(dry_run=False, workers=4, max_items=100)
+
+    completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_completed")
+    assert completed["pending_total"] == 101
+    assert completed["worker_stage_totals"]["shared_retry_processed_count_total"] == 1
+    assert len(subprocess_calls) == 3
+    selected_ids = [
+        video_id
+        for worker_batches in dispatched_batches
+        for batch in worker_batches
+        for video_id in batch
+    ]
+    assert len(selected_ids) == 101
+    assert sorted(selected_ids) == [f"vid{i:03d}" for i in range(101)]
+
+
 def test_cmd_fetch_logs_cached_sample_and_hit_rate():
     """cmd_fetch should expose the cached backlog sample and hit rate."""
     mod = _load_csf_source_module(stub_ensure_auth=True)

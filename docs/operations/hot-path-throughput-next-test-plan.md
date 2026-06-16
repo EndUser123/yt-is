@@ -1364,6 +1364,32 @@ Conclusion:
 - Best fit is broader command/retry latency with cohort/order noise. Preserved-state/source-age carryover is not a fix and may be part of the problem, but it is not the sole explanation.
 - The next discriminating action is offline reducer/log attribution across the three runs, focused on source-age cliffs, retry sleeps/drain fields, command latency, and batch/cohort assignment. Do not rerun the benchmark shape.
 
+### Attempted Home Shared-Retry Probe
+
+`fresh_state_3plus3_extract_schema_shared_retry_run01_current` completed cleanly, but it is not discriminating evidence for shared retry. The run finished `status=ok`, `throughput_valid=true`, `run_environment_label=home_300mb`, and `worker_shape_signature=3+3` at `1749.44` combined hot-path VPH with `644/156/800`. Pro remained comparatively healthy at `396/4`, while Free collapsed to `248/152` and soak Free batch 2 fell to `99/101`.
+
+The key attribution result is configuration, not throughput: all `shared_retry_*` totals are still `0`, and the lane-process env snapshot did not include a shared-retry override. The benchmark wrapper's policy default forced `YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED=false` for `notebooklm_route_plus_fallback_30s_1w` unless `run_environment_label=hotel_wifi`, so the home-network command did not actually exercise the intended shared-retry path.
+
+Harness fix:
+
+- `bin/csf-fallback-crossover-benchmark` now honors `YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED` after applying policy defaults.
+- `csf/sharded_lane_series.py` now records the benchmark shared-retry override, the resolved NLM shared-retry env var, and the shared retry DB path in `lane_process.json`.
+
+If this branch is reopened, do not rerun the old command. Create a run-specific lane config whose lane `env` includes:
+
+```json
+{
+  "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "true",
+  "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": "P:/packages/yt-is/.logs/sharded_lane_series/<run-name>/nlm_shared_retry_pool.sqlite"
+}
+```
+
+Then verify the generated `lane_process.json` env snapshot shows `YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED=true` before interpreting throughput.
+
+`fresh_state_3plus3_extract_schema_shared_retry_run02_current` confirms the corrected activation path but is still not throughput evidence. The smoke phase produced `status=partial`, `throughput_valid=false`, `run_environment_label=home_300mb`, and `worker_shape_signature=3+3`; no soak artifact was produced. Shared retry was active in the lane env snapshots and summaries: combined smoke reported `shared_retry_deferred_count_total=6`, `shared_retry_recovered_count_total=3`, `shared_retry_final_failed_count_total=0`, and `shared_retry_processed_count_total=4`.
+
+Shared-retry accounting note: judge partial status from primary processed count, not raw processed count. In `run02`, Pro was partial because `processed_count_total=400` and `shared_retry_processed_count_total=1`, leaving `399/400` primary processed; Free was OK because `403-3=400/400` primary processed. Treat shared-retry work as separate recovery work, not as primary throughput. This matches the existing sharded-lane accounting contract, so do not relax the top-level partial gate. The lower-level runner now continues primary selection when completed shared-retry worker work would otherwise consume the requested lane limit; regression coverage lives in `tests/test_csf_source_fetch_timing.py::test_cmd_fetch_limit_counts_primary_items_when_shared_retry_processes_work`.
+
 Required report fields:
 
 - Top-level `status`, `throughput_valid`, `worker_shape_signature`, `run_environment_label`, and `pre_run_browser_health`.
