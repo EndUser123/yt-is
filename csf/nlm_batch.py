@@ -5558,6 +5558,16 @@ class NLMReusableIngestor:
             if len(extract_metric_snapshots) > 1
             else (extract_metric_snapshots[0] if extract_metric_snapshots else (self._ingestor.get_last_extract_metrics() or {}))
         )
+        extract_metrics = dict(extract_metrics)
+        source_add_failed_count = sum(
+            1
+            for success, transcript, error in results.values()
+            if (not success) and transcript is None and error == "Source add failed"
+        )
+        if source_add_failed_count:
+            status_counts = dict(extract_metrics.get("content_fetch_status_counts", {}) or {})
+            status_counts["source_add_failed"] = int(status_counts.get("source_add_failed", 0) or 0) + source_add_failed_count
+            extract_metrics["content_fetch_status_counts"] = status_counts
         self._last_extract_metrics = dict(extract_metrics)
         youtube_ytdlp_elapsed_s_total = float(extract_metrics.get("youtube_ytdlp_elapsed_s_total", 0) or 0.0)
         youtube_ytdlp_elapsed_s_max = float(extract_metrics.get("youtube_ytdlp_elapsed_s_max", 0) or 0.0)

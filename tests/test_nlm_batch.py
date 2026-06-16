@@ -1000,6 +1000,37 @@ class TestReusableBatchLogging:
         assert completed["cleanup_elapsed_s"] >= 0.0
         assert completed["total_elapsed_s"] > 0.0
 
+    def test_reusable_batch_counts_fresh_notebook_add_shortfall_as_source_add_failed(self):
+        """A fresh reusable notebook with no added sources should classify each missing input."""
+        batch_ids = ["vid1", "vid2", "vid3"]
+
+        def mock_create(ids):
+            ingestor._ingestor._last_added_video_ids = []
+            ingestor._ingestor._last_added_source_ids = []
+            return "nb-1"
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value=None):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor()
+                    with mock.patch.object(ingestor._ingestor, "create_batch_notebook", side_effect=mock_create) as mock_create_notebook:
+                        with mock.patch.object(ingestor._ingestor, "extract_transcripts", return_value={}) as mock_extract:
+                            with mock.patch.object(ingestor._ingestor, "get_last_extract_metrics", return_value={}):
+                                with mock.patch.object(ingestor._ingestor, "reset_sources"):
+                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                        with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[150.0 + i for i in range(30)]):
+                                            results = ingestor.process_batch(batch_ids)
+
+        mock_create_notebook.assert_called_once_with(batch_ids)
+        mock_extract.assert_called_once_with([])
+        assert len(results) == 3
+        assert all((not success) and transcript is None and error == "Source add failed" for success, transcript, error in results.values())
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["setup_mode"] == "create"
+        assert completed["succeeded"] == 0
+        assert completed["failed"] == 3
+        assert completed["content_fetch_status_counts"] == {"source_add_failed": 3}
+
     def test_reusable_batch_logs_summary_for_reused_notebook(self):
         """A reused notebook should log reuse-specific summary fields."""
         batch_ids = ["vid3"]
@@ -1247,7 +1278,7 @@ class TestReusableBatchLogging:
             ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
             return list(ids)
 
-        def mock_extract(ids):
+        def mock_extract(ids, **_kwargs):
             return {vid: (True, f"text-{vid}", None) for vid in ids}
 
         def mock_extract_metrics():
@@ -1312,7 +1343,7 @@ class TestReusableBatchLogging:
             ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
             return list(ids)
 
-        def mock_extract(ids):
+        def mock_extract(ids, **_kwargs):
             return {vid: (True, f"text-{vid}", None) for vid in ids}
 
         def mock_extract_metrics():
@@ -1513,7 +1544,7 @@ class TestReusableBatchLogging:
             ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
             return []
 
-        def mock_extract(ids):
+        def mock_extract(ids, **_kwargs):
             extract_calls.append(list(ids))
             return {vid: (True, f"text-{vid}", None) for vid in ids}
 
@@ -1558,7 +1589,14 @@ class TestReusableBatchLogging:
         assert completed["window_count"] == 1
         assert completed["succeeded"] == 0
         assert completed["failed"] == 4
-        assert completed["content_fetch_status_counts"] == {"ready": 0, "below_threshold": 0, "command_failed": 0, "parse_failed": 0, "source_age_cliff": 0}
+        assert completed["content_fetch_status_counts"] == {
+            "ready": 0,
+            "below_threshold": 0,
+            "command_failed": 0,
+            "parse_failed": 0,
+            "source_age_cliff": 0,
+            "source_add_failed": 4,
+        }
         assert completed["content_fetch_command_elapsed_s_count"] == 0
 
     def test_reusable_batch_source_age_cadence_counts_partial_add_shortfall_as_failures(self):
@@ -1575,7 +1613,7 @@ class TestReusableBatchLogging:
             ingestor._ingestor._last_materialization_ready_at_epoch = 1234.0
             return list(ids[:2])
 
-        def mock_extract(ids):
+        def mock_extract(ids, **_kwargs):
             extract_calls.append(list(ids))
             return {vid: (True, f"text-{vid}", None) for vid in ids}
 
@@ -1620,7 +1658,14 @@ class TestReusableBatchLogging:
         assert completed["window_count"] == 1
         assert completed["succeeded"] == 2
         assert completed["failed"] == 2
-        assert completed["content_fetch_status_counts"] == {"ready": 2, "below_threshold": 0, "command_failed": 0, "parse_failed": 0, "source_age_cliff": 0}
+        assert completed["content_fetch_status_counts"] == {
+            "ready": 2,
+            "below_threshold": 0,
+            "command_failed": 0,
+            "parse_failed": 0,
+            "source_age_cliff": 0,
+            "source_add_failed": 2,
+        }
         assert completed["content_fetch_command_elapsed_s_count"] == 2
 
 
