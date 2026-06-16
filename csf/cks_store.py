@@ -3,11 +3,17 @@
 import sys
 from pathlib import Path
 
-# Add P:\\\\\\packages/search-research/core to sys.path — APPEND not insert(0,) to avoid shadowing
-# cks_store.py at P:\\\\\\packages/yt-is/csf/cks_store.py
+# Add marketplace search-research/core to sys.path - APPEND not insert(0,) to avoid shadowing
+# cks_store.py at P:/packages/yt-is/csf/cks_store.py
 # .parent = csf/, .parent.parent = yt-is/, .parent.parent.parent = packages/
-# Then /search-research/core to reach the CKS
-_src = Path(__file__).parent.parent.parent / "search-research" / "core"
+# Then /.claude-marketplace/plugins/search-research/core to reach the CKS
+_src = (
+    Path(__file__).parent.parent.parent
+    / ".claude-marketplace"
+    / "plugins"
+    / "search-research"
+    / "core"
+)
 # Validate path exists before inserting
 _cks_module_path = _src / "cks" / "unified.py"
 if not _cks_module_path.exists():

@@ -111,7 +111,7 @@ def resolve_via_glm(handle: str) -> str | None:
             [sys.executable, '-m', 'search_research.cli', query, '--mode', 'glm',
              '--max-results', '3'],
             capture_output=True, text=True, timeout=60,
-            cwd='P:\\\\\\packages/search-research'
+            cwd='P:/packages/.claude-marketplace/plugins/search-research'
         )
         if result.returncode != 0:
             return None
