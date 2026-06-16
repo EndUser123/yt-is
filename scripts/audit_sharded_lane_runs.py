@@ -19,6 +19,13 @@ from typing import Any
 
 SUMMARY_NAME = "sharded_lane_series_summary.json"
 LOG_ROOT = Path(r"P:\packages\yt-is\.logs\sharded_lane_series")
+SOURCE_AGE_PRESSURE_RUNS = (
+    "fresh_state_3plus3_extract_schema_control_run07_current",
+    "fresh_state_3plus3_extract_schema_control_run15_current",
+    "fresh_state_3plus3_extract_schema_warmup_state_run01_current",
+    "fresh_state_3plus3_extract_schema_shared_retry_run06_current",
+)
+SOURCE_AGE_PRESSURE_RUN_SET = set(SOURCE_AGE_PRESSURE_RUNS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +91,7 @@ class BatchTailRow:
     source_ready_age_s_max: float | None
     content_fetch_command_elapsed_s_total: float | None
     content_fetch_command_elapsed_s_avg: float | None
+    worker_idle_wait_s: float | None
     source_list_probe_count: int | None
     source_age_cliff_count: int | None
     command_failed_count: int | None
@@ -771,6 +779,7 @@ def _collect_batch_tail_rows(run_root: Path) -> tuple[BatchTailRow, ...]:
             source_ready_age_s_max=_float(worker_stage_totals.get("source_ready_age_s_max")),
             content_fetch_command_elapsed_s_total=_float(worker_stage_totals.get("content_fetch_command_elapsed_s_total")),
             content_fetch_command_elapsed_s_avg=_float(worker_stage_totals.get("content_fetch_command_elapsed_s_avg")),
+            worker_idle_wait_s=_float(result.get("worker_idle_wait_s")),
             source_list_probe_count=_int(worker_stage_totals.get("source_list_probe_count")),
             source_age_cliff_count=_int(content_fetch_status.get("source_age_cliff")),
             command_failed_count=_int(content_fetch_status.get("command_failed")),
@@ -1380,8 +1389,8 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
     batch_tail_rows = [row for audit in audits for row in audit.batch_tail_rows]
     if batch_tail_rows:
         lines.append(_section("Table 8 — Batch Tail Summary (source_ready_age_s_avg desc, then command total desc)"))
-        lines.append(_row(["Run", "Phase", "Lane", "Batch", "Workers", "Success/Fail/Processed", "Source Ready Age Avg", "Source Ready Age Max", "Cmd Total(s)", "Cmd Avg(s)", "source_age_cliff", "command_failed", "source_add_failed", "Empty Fetch Metrics", "Source-List Probes", "Shared Recovered"]))
-        lines.append(_row(["---"] * 16))
+        lines.append(_row(["Run", "Phase", "Lane", "Batch", "Workers", "Success/Fail/Processed", "Source Ready Age Avg", "Source Ready Age Max", "Cmd Total(s)", "Cmd Avg(s)", "Worker Idle(s)", "source_age_cliff", "command_failed", "source_add_failed", "Empty Fetch Metrics", "Source-List Probes", "Shared Recovered"]))
+        lines.append(_row(["---"] * 17))
         for row in sorted(
             batch_tail_rows,
             key=lambda item: (
@@ -1408,6 +1417,7 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
                 _fmt_opt(row.source_ready_age_s_max, dp=2),
                 _fmt_opt(row.content_fetch_command_elapsed_s_total),
                 _fmt_opt(row.content_fetch_command_elapsed_s_avg),
+                _fmt_opt(row.worker_idle_wait_s),
                 _fmt_flag(row.source_age_cliff_count),
                 _fmt_flag(row.command_failed_count),
                 _fmt_flag(row.source_add_failed_count),
@@ -1416,9 +1426,47 @@ def generate_report(audits: list[RunAudit], log_root: Path | None = None) -> str
                 _fmt_opt(row.shared_retry_recovered_count_total, dp=0),
             ]))
 
+        pressure_rows = [
+            row
+            for row in batch_tail_rows
+            if row.run_name in SOURCE_AGE_PRESSURE_RUN_SET
+        ]
+        if pressure_rows:
+            run_order = {name: idx for idx, name in enumerate(SOURCE_AGE_PRESSURE_RUNS)}
+            lines.append(_section("Table 9 — Source-Age Pressure Attribution"))
+            lines.append(_row(["Run", "Phase", "Lane", "Batch", "Success/Fail/Processed", "source_age_cliff", "command_failed", "Cmd Total(s)", "Worker Idle(s)", "Source Ready Age Max", "Empty Fetch Metrics"]))
+            lines.append(_row(["---"] * 11))
+            for row in sorted(
+                pressure_rows,
+                key=lambda item: (
+                    run_order.get(item.run_name, len(run_order)),
+                    item.phase,
+                    item.lane,
+                    item.batch_index,
+                ),
+            ):
+                success_fail_processed = (
+                    f"{_fmt_flag(row.success_count)}/"
+                    f"{_fmt_flag(row.fail_count)}/"
+                    f"{_fmt_flag(row.processed_count)}"
+                )
+                lines.append(_row([
+                    row.run_name,
+                    row.phase,
+                    row.lane,
+                    row.batch_name,
+                    success_fail_processed,
+                    _fmt_flag(row.source_age_cliff_count),
+                    _fmt_flag(row.command_failed_count),
+                    _fmt_opt(row.content_fetch_command_elapsed_s_total),
+                    _fmt_opt(row.worker_idle_wait_s),
+                    _fmt_opt(row.source_ready_age_s_max, dp=2),
+                    "yes" if row.empty_content_fetch_metrics else "no",
+                ]))
+
     reducer_signals = [signal for audit in audits for signal in audit.reducer_signals]
     if reducer_signals:
-        lines.append(_section("Table 9 — Worker / Auth Skew Attribution"))
+        lines.append(_section("Table 10 — Worker / Auth Skew Attribution"))
         lines.append(_row(["Run", "Lane", "Command Completions", "Command Failures", "Command Failure Rate", "Worker-Profile Spread", "Auth-Refresh Spread", "Stronger Signal"]))
         lines.append(_row(["---"] * 8))
         reducer_rows = [(audit.name, signal) for audit in audits for signal in audit.reducer_signals]
@@ -1610,6 +1658,7 @@ def main(argv: list[str] | None = None) -> int:
             "hotel_wifi_3plus3_auth_interval75_run02_current",
             "hotel_wifi_3plus3_auth_interval45_run01_current",
             "hotel_wifi_3plus3_source_content_attr_run01_current",
+            "fresh_state_3plus3_extract_schema_control_run07_current",
             "fresh_state_3plus3_extract_schema_control_run15_current",
             "fresh_state_3plus3_extract_schema_warmup_state_run01_current",
             "fresh_state_3plus3_extract_schema_shared_retry_run01_current",

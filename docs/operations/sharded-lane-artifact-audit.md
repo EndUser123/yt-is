@@ -1,6 +1,6 @@
 # Sharded Lane Artifact Audit
 
-_Generated: audit_sharded_lane_runs.py — 22 runs audited_
+_Generated: audit_sharded_lane_runs.py — 23 runs audited_
 
 _Run root: `P:\packages\yt-is\.logs\sharded_lane_series`_
 
@@ -11,6 +11,7 @@ _Run root: `P:\packages\yt-is\.logs\sharded_lane_series`_
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pro_free_source_map_v1 | root | absent | 4+4 | absent | absent | old (excludes_whisper only) | 400 | 5572.04 | 796/4/800 | 0.50% | 2823.15 | 2790.29 | absent | 2 | 78.834 | — | — |
 | sweep_phase3_2lane_3w_run01 | root | absent | 3+3 | ok | absent | old (excludes_whisper only) | 400 | 4123.28 | 795/5/800 | 0.62% | 2061.27 | 2299.84 | absent | 3 | 11.855 | recovered_clean | clean |
+| fresh_state_3plus3_extract_schema_control_run07_current | root | absent | 3+3 | ok | true | new (includes worker_cleanup) | 400 | 3291.38 | 744/56/800 | 7.00% | 2256.45 | 2118.97 | absent | 4 | 86.740 | clean | clean |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | root | hotel_wifi | 3+3 | ok | true | new (includes worker_cleanup) | 400 | 3156.57 | 763/157/920 | 17.07% | 2014.77 | 2294.94 | 44 | absent | 221.350 | — | — |
 | sweep_phase3_2lane_4_3_run01 | root | absent | 4+3 | ok | absent | old (excludes_whisper only) | 400 | 3120.55 | 795/5/800 | 0.62% | 1579.89 | 1559.54 | absent | 62 | 628.086 | recovered_clean | clean |
 | sweep_phase3_2lane_3w_agecap_200_run02 | root | absent | 4+4 | ok | absent | old (excludes_whisper only) | 200 | 3084.08 | 398/2/400 | 0.50% | 1546.80 | 1626.92 | absent | absent | 0.000 | clean | clean |
@@ -50,6 +51,7 @@ _Run root: `P:\packages\yt-is\.logs\sharded_lane_series`_
 
 | Run | Combined VPH | Fail Rate | source_age_cliff | command_failed | worker_idle_wait_s | source_ready_age_s_max (Pro) | source_ready_age_s_max (Free) | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fresh_state_3plus3_extract_schema_control_run07_current | 3291.38 | 7.00% | absent | 4 | 86.740 | 98.644 | 151.637 | throughput_valid=true |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | 3156.57 | 17.07% | 44 | absent | 221.350 | 232.958 | 200.236 | throughput_valid=true |
 | hotel_wifi_3plus3_source_content_attr_run01_current | 2379.18 | 12.50% | 95 | 68 | 791.494 | 346.044 | 376.652 | throughput_valid=true |
 | fresh_state_3plus3_extract_schema_control_run15_current | 2205.73 | 6.12% | 41 | 42 | 1003.004 | 319.703 | 377.993 | throughput_valid=true |
@@ -77,6 +79,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pro_free_source_map_v1 | old (excludes_whisper only) | 5572.04 | 5572.04 | +0.00 | 514.282 | combined.wall_elapsed_s | wall-equivalent; current cleanup/reap boundary unproven | combined.throughput_elapsed_s |
 | sweep_phase3_2lane_3w_run01 | old (excludes_whisper only) | 4123.28 | 4123.28 | +0.00 | 694.107 | combined.wall_elapsed_s | wall-equivalent; current cleanup/reap boundary unproven | combined.throughput_elapsed_s |
+| fresh_state_3plus3_extract_schema_control_run07_current | new (includes worker_cleanup) | 3291.38 | 3291.38 | +0.00 | 813.762 | combined.throughput_elapsed_s | current-contract exact | — |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | new (includes worker_cleanup) | 3156.57 | 3156.57 | +0.00 | 870.186 | combined.throughput_elapsed_s | current-contract exact | — |
 | sweep_phase3_2lane_4_3_run01 | old (excludes_whisper only) | 3120.55 | 3120.55 | +0.00 | 917.146 | combined.wall_elapsed_s | wall-equivalent; current cleanup/reap boundary unproven | combined.throughput_elapsed_s |
 | sweep_phase3_2lane_3w_agecap_200_run02 | old (excludes_whisper only) | 3084.08 | 3084.08 | +0.00 | 464.580 | combined.wall_elapsed_s | wall-equivalent; current cleanup/reap boundary unproven | combined.throughput_elapsed_s |
@@ -124,6 +127,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | 232.958 | 200.236 | 232.958 | 44 | absent | 3156.57 | cliff=44 |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run31_current | 214.584 | 205.444 | 214.584 | 74 | absent | 1710.32 | cliff=74 |
 | sweep_phase3_2lane_3w_agecap_200_run02 | 211.292 | 160.966 | 211.292 | absent | absent | 3084.08 | — |
+| fresh_state_3plus3_extract_schema_control_run07_current | 98.644 | 151.637 | 151.637 | absent | 4 | 3291.38 | cmd_failed=4 |
 | sweep_phase3_2lane_3w_run01 | 141.476 | 115.991 | 141.476 | absent | 3 | 4123.28 | cmd_failed=3 |
 | pro_free_source_map_v1 | 103.294 | 105.559 | 105.559 | absent | 2 | 5572.04 | cmd_failed=2 |
 
@@ -155,6 +159,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | sweep_phase3_2lane_3w_agecap_200_run02 | absent | absent | 2 | 3084.08 | 0.50% | n/a |
 | pro_free_source_map_v7_rerun | absent | 58 | 5 | 2930.78 | 0.62% | n/a |
 | fresh_state_3plus3_source_age_cadence_run05 | absent | 48 | 11 | 1829.83 | 1.38% | n/a |
+| fresh_state_3plus3_extract_schema_control_run07_current | absent | 4 | 56 | 3291.38 | 7.00% | n/a |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | absent | 5 | 156 | 1749.44 | 19.50% | n/a |
 
 ### Sorted by command_failed descending
@@ -175,6 +180,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | fresh_state_3plus3_worker_balance_ab_pro0213_run06 | 20 | 25 | 30 | 1403.64 | cliff=25 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | 5 | absent | 156 | 1749.44 | — |
 | fresh_state_3plus3_worker_balance_ab_pro0213_run05 | 4 | 6 | 11 | 1533.33 | cliff=6 |
+| fresh_state_3plus3_extract_schema_control_run07_current | 4 | absent | 56 | 3291.38 | — |
 | sweep_phase3_2lane_3w_run01 | 3 | absent | 5 | 4123.28 | — |
 | sweep_phase3_2lane_3w_agecap_200_run03_current | 3 | 138 | 189 | 1382.39 | cliff=138 |
 | pro_free_source_map_v1 | 2 | absent | 4 | 5572.04 | — |
@@ -197,6 +203,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | hotel_wifi_3plus3_auth_interval45_run01_current | 54 | 212/0/212 | absent | absent | 0/0/0 | 212 | projected_source_age_cliff=96 | 429.023 | absent | absent | command_failed=77, nlm_content_below_threshold=1, source_age_cliff=134 | absent | absent/absent | 1050.000 | 1602.82 | windows=54; drain_ready_age=absent |
 | highest_vph_agecap_400_run03 | 32 | 207/1/206 | absent | absent | 0/0/0 | 207 | absent | absent | absent | absent | command_failed=128, nlm_content_below_threshold=1, ready=1, source_age_cliff=76 | absent | absent/absent | 840.000 | 1792.50 | windows=32; drain_ready_age=absent |
 | fresh_state_3plus3_source_age_cadence_run05 | 26 | 50/0/50 | absent | absent | 0/0/0 | 50 | absent | absent | absent | absent | command_failed=48, nlm_content_below_threshold=2 | absent | absent/absent | 540.000 | 1829.83 | windows=26; drain_ready_age=absent |
+| fresh_state_3plus3_extract_schema_control_run07_current | 36 | 34/3/31 | absent | absent | 0/0/0 | 34 | absent | absent | absent | absent | command_failed=24, nlm_content_below_threshold=4, ready=3, source_age_cliff=3 | absent | absent/absent | 480.000 | 3291.38 | windows=36; drain_ready_age=absent |
 | hotel_wifi_3plus3_source_content_attr_run01_current | 24 | 86/0/86 | absent | absent | 0/0/0 | 86 | projected_source_age_cliff=32 | 373.127 | absent | absent | command_failed=35, nlm_content_below_threshold=1, source_age_cliff=49 | absent | absent/absent | 420.000 | 2379.18 | windows=24; drain_ready_age=absent |
 | sweep_phase3_2lane_3w_agecap_200_run03_current | 11 | 91/0/91 | absent | absent | 0/0/0 | 91 | absent | absent | absent | absent | command_failed=6, nlm_content_below_threshold=1, source_age_cliff=83 | absent | absent/absent | 270.000 | 1382.39 | windows=11; drain_ready_age=absent |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current | 68 | 351/0/0 | 0 | absent | 351/0/0 | 350 | absent | 392.055 | 392.055 | 0.000 | absent | absent | 0.000/0 | 0.000 | 849.94 | windows=68; drain_ready_age=absent |
@@ -226,6 +233,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | hotel_wifi_3plus3_auth_interval75_run02_current | hotel_wifi | 3+3 | 16292.091 | 1068 | 15.255 | 6621.243 | 9670.848 | 2000.06 |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | hotel_wifi | 3+3 | 11439.027 | 926 | 12.353 | 5813.805 | 5625.222 | 3156.57 |
 | fresh_state_3plus3_extract_schema_control_run15_current | home_300mb | 3+3 | 8548.080 | 1109 | 7.708 | 3354.524 | 5193.556 | 2205.73 |
+| fresh_state_3plus3_extract_schema_control_run07_current | absent | 3+3 | 5041.379 | 788 | 6.398 | 2014.284 | 3027.095 | 3291.38 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | home_300mb | 3+3 | 3105.006 | 681 | 4.559 | 1758.205 | 1346.801 | 1749.44 |
 | pro_free_source_map_v1 | absent | 4+4 | absent | absent | absent | absent | absent | 5572.04 |
 | sweep_phase3_2lane_3w_run01 | absent | 3+3 | absent | absent | absent | absent | absent | 4123.28 |
@@ -240,104 +248,149 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 
 ## Table 8 — Batch Tail Summary (source_ready_age_s_avg desc, then command total desc)
 
-| Run | Phase | Lane | Batch | Workers | Success/Fail/Processed | Source Ready Age Avg | Source Ready Age Max | Cmd Total(s) | Cmd Avg(s) | source_age_cliff | command_failed | source_add_failed | Empty Fetch Metrics | Source-List Probes | Shared Recovered |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| highest_vph_agecap_400_run03 | soak | a_hominidae_pro | batch_02 | 4 | 156/44/200 | 236.47 | 392.26 | 6403.701 | 79.710 | 41 | 30 | absent | no | 5 | 0 |
-| hotel_wifi_4plus4_control_run03_current | soak | troup_hominidae_free | batch_02 | 4 | 57/143/200 | 228.04 | 455.32 | 9383.813 | 52.090 | 142 | 38 | absent | no | 4 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | a_hominidae_pro | batch_01 | 3 | 73/148/221 | 221.76 | 249.81 | 8222.837 | 78.274 | 82 | absent | absent | no | 3 | 21 |
-| highest_vph_agecap_400_run03 | soak | troup_hominidae_free | batch_01 | 4 | 154/46/200 | 220.63 | 354.61 | 7192.485 | 34.886 | 43 | 29 | absent | no | 6 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | a_hominidae_pro | batch_02 | 3 | 125/95/220 | 218.03 | 219.77 | 7426.510 | 97.901 | 38 | 1 | absent | no | 3 | 20 |
-| sweep_phase3_2lane_3w_agecap_200_run03_current | soak | a_hominidae_pro | batch_01 | 4 | 121/79/200 | 216.64 | 315.26 | 6105.219 | 66.242 | 78 | 3 | absent | no | 4 | 0 |
-| hotel_wifi_3plus3_baseline_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 139/61/200 | 206.67 | 368.76 | 7346.626 | 30.164 | 49 | 31 | absent | no | 5 | 0 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | soak | troup_hominidae_free | batch_01 | 3 | 127/73/200 | 203.71 | 373.98 | 8768.280 | 55.000 | 63 | 34 | absent | no | 6 | 0 |
-| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 91/109/200 | 190.28 | 433.91 | 5673.734 | 53.081 | 58 | 18 | absent | no | 3 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | troup_hominidae_free | batch_01 | 3 | 118/121/239 | 184.61 | 246.57 | 7489.837 | 42.140 | 35 | absent | absent | no | 3 | 15 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | troup_hominidae_free | batch_01 | 3 | 118/82/200 | 181.16 | 345.06 | 8716.807 | 39.886 | 69 | 42 | absent | no | 6 | 0 |
-| hotel_wifi_4plus4_control_run03_current | smoke | a_hominidae_pro | batch_01 | 4 | 137/63/200 | 179.31 | 332.86 | 9905.057 | 34.930 | 58 | 44 | absent | no | 6 | 0 |
-| highest_vph_agecap_400_run03 | soak | a_hominidae_pro | batch_01 | 4 | 151/49/200 | 178.01 | 290.22 | 6095.208 | 46.113 | 48 | 9 | absent | no | 4 | 0 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | soak | a_hominidae_pro | batch_01 | 3 | 131/69/200 | 175.83 | 349.05 | 5662.401 | 39.706 | 61 | 31 | absent | no | 6 | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 143/57/200 | 172.66 | 276.49 | 7630.114 | 34.345 | 48 | 38 | absent | no | 7 | 0 |
-| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 161/39/200 | 170.99 | 415.08 | 7281.264 | 39.006 | 38 | 34 | absent | no | 4 | 0 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | a_hominidae_pro | batch_01 | 3 | 134/66/200 | 166.11 | 325.91 | 6426.399 | 31.295 | 62 | 28 | absent | no | 5 | 0 |
-| sweep_phase3_2lane_3w_agecap_200_run03_current | soak | troup_hominidae_free | batch_01 | 4 | 90/110/200 | 164.84 | 270.86 | 5359.028 | 28.815 | 60 | absent | absent | no | 3 | 0 |
-| hotel_wifi_4plus4_control_run03_current | soak | a_hominidae_pro | batch_01 | 4 | 103/97/200 | 162.24 | 367.26 | 9485.758 | 50.942 | 94 | 42 | absent | no | 6 | 0 |
-| hotel_wifi_3plus3_baseline_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 150/50/200 | 156.26 | 337.47 | 6503.283 | 32.712 | 46 | 36 | absent | no | 4 | 0 |
-| hotel_wifi_3plus3_auth_interval45_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 155/45/200 | 150.14 | 389.13 | 5482.716 | 43.961 | 42 | 20 | absent | no | 4 | 0 |
-| hotel_wifi_4plus4_control_run03_current | soak | troup_hominidae_free | batch_01 | 4 | 141/59/200 | 146.11 | 344.63 | 9759.394 | 34.697 | 49 | 42 | absent | no | 5 | 0 |
-| hotel_wifi_3plus3_auth_interval45_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 161/39/200 | 144.94 | 307.43 | 4906.846 | 20.425 | 31 | 20 | absent | no | 4 | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | soak | a_hominidae_pro | batch_01 | 3 | 184/16/200 | 125.48 | 202.33 | 2836.882 | 15.176 | 15 | 16 | absent | no | 3 | 0 |
-| hotel_wifi_4plus4_control_run03_current | soak | a_hominidae_pro | batch_02 | 4 | 152/48/200 | 113.55 | 296.10 | 7521.780 | 29.167 | 48 | 24 | absent | no | 4 | 0 |
-| hotel_wifi_4plus4_control_run03_current | smoke | troup_hominidae_free | batch_01 | 4 | 146/54/200 | 112.58 | 300.03 | 8416.288 | 32.099 | 52 | 36 | absent | no | 5 | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_01 | 3 | 171/29/200 | 105.95 | 377.99 | 4953.396 | 16.489 | 26 | 22 | absent | no | 4 | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 172/28/200 | 104.20 | 291.62 | 6056.063 | 28.382 | 26 | 17 | absent | no | 5 | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 149/51/200 | 94.97 | 268.73 | 5695.287 | 18.929 | 48 | 19 | absent | no | 5 | 0 |
-| sweep_phase3_2lane_4_3_run01 | soak | a_hominidae_pro | batch_01 | 4 | 199/1/200 | 94.80 | 307.03 | absent | absent | absent | 37 | absent | no | absent | 0 |
-| hotel_wifi_3plus3_baseline_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 183/17/200 | 94.70 | 310.38 | 4516.034 | 20.917 | 17 | 25 | absent | no | 4 | 0 |
-| hotel_wifi_3plus3_auth_interval45_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 184/16/200 | 92.94 | 326.36 | 4974.827 | 36.420 | 12 | 22 | absent | no | 4 | 0 |
-| hotel_wifi_3plus3_baseline_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 159/41/200 | 92.94 | 239.18 | 4464.272 | 19.656 | 40 | 18 | absent | no | 4 | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 186/14/200 | 86.86 | 234.68 | 3646.724 | 17.992 | 11 | 20 | absent | no | 6 | 0 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | troup_hominidae_free | batch_02 | 3 | 187/13/200 | 79.29 | 222.61 | 4202.909 | 11.697 | 8 | 35 | absent | no | 6 | 0 |
-| sweep_phase3_2lane_4_3_run01 | smoke | a_hominidae_pro | batch_01 | 4 | 25/0/25 | 74.52 | 156.66 | absent | absent | absent | absent | absent | no | absent | 0 |
-| sweep_phase3_2lane_4_3_run01 | soak | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 69.74 | 90.04 | absent | absent | absent | 1 | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 192/8/200 | 59.49 | 489.53 | 4045.845 | 26.615 | 1 | 13 | absent | no | 4 | 0 |
-| sweep_phase3_2lane_4_3_run01 | soak | troup_hominidae_free | batch_01 | 3 | 198/2/200 | 59.12 | 251.16 | absent | absent | absent | 23 | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 195/5/200 | 58.93 | 496.70 | 4918.401 | 27.628 | 1 | 12 | absent | no | 3 | 0 |
-| highest_vph_agecap_400_run03 | soak | troup_hominidae_free | batch_02 | 4 | 199/1/200 | 57.33 | 313.92 | 6564.497 | 18.643 | absent | 42 | absent | no | 5 | 0 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | a_hominidae_pro | batch_02 | 3 | 193/7/200 | 55.29 | 234.12 | 4050.391 | 25.806 | 6 | 15 | absent | no | 4 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | troup_hominidae_free | batch_02 | 3 | 163/57/220 | 52.33 | 168.52 | 5980.274 | 24.545 | absent | 1 | absent | no | 3 | 20 |
-| sweep_phase3_2lane_3w_run01 | soak | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 49.67 | 141.48 | absent | absent | absent | absent | absent | no | absent | 0 |
-| hotel_wifi_4plus4_control_run03_current | smoke | troup_hominidae_free | batch_02 | 4 | 199/1/200 | 47.51 | 314.74 | 2971.704 | 15.848 | absent | 20 | absent | no | 5 | 0 |
-| hotel_wifi_3plus3_baseline_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 194/6/200 | 45.07 | 236.31 | 3133.270 | 14.462 | 4 | 18 | absent | no | 4 | 0 |
-| highest_vph_agecap_400_run03 | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 43.01 | 167.17 | 1115.280 | 11.265 | absent | 10 | absent | no | 1 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_02 | 3 | 198/23/221 | 39.51 | 145.28 | 4944.740 | 28.653 | absent | 1 | absent | no | 3 | 21 |
-| hotel_wifi_3plus3_baseline_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 38.76 | 285.13 | 2811.013 | 14.913 | absent | 17 | absent | no | 3 | 0 |
-| sweep_phase3_2lane_3w_run01 | soak | troup_hominidae_free | batch_01 | 3 | 199/1/200 | 37.78 | 115.99 | absent | absent | absent | absent | absent | no | absent | 0 |
-| hotel_wifi_3plus3_baseline_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 191/9/200 | 34.16 | 172.96 | 1657.693 | 8.545 | absent | 15 | absent | no | 4 | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 32.63 | 196.05 | 2109.894 | 8.497 | absent | 18 | absent | no | 4 | 0 |
-| sweep_phase3_2lane_4_3_run01 | soak | a_hominidae_pro | batch_02 | 4 | 199/1/200 | 32.56 | 111.22 | absent | absent | absent | 1 | absent | no | absent | 0 |
-| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 32.02 | 186.12 | 2419.804 | 10.004 | absent | 21 | absent | no | 4 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 149/51/200 | 31.58 | 388.30 | 931.678 | 9.716 | absent | 1 | absent | no | 0 | 0 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | soak | a_hominidae_pro | batch_02 | 3 | 199/1/200 | 30.47 | 90.02 | 958.842 | 6.257 | absent | 1 | absent | no | 1 | 0 |
-| sweep_phase3_2lane_3w_agecap_200_run02 | soak | a_hominidae_pro | batch_01 | 4 | 199/1/200 | 27.23 | 211.29 | absent | absent | absent | absent | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 26.83 | 92.46 | 935.814 | 6.568 | absent | absent | absent | no | 0 | 0 |
-| sweep_phase3_2lane_3w_agecap_200_run02 | soak | troup_hominidae_free | batch_01 | 4 | 199/1/200 | 25.77 | 160.97 | absent | absent | absent | absent | absent | no | absent | 0 |
-| highest_vph_agecap_400_run03 | smoke | a_hominidae_pro | batch_01 | 4 | 50/0/50 | 25.39 | 109.52 | 507.507 | 5.577 | absent | 8 | absent | no | 1 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 199/1/200 | 25.11 | 98.96 | 975.847 | 6.075 | absent | absent | absent | no | 0 | 0 |
-| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 24.04 | 115.99 | 1164.797 | 4.735 | absent | 8 | absent | no | 4 | 0 |
-| hotel_wifi_3plus3_auth_interval75_run02_current | soak | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 23.88 | 74.61 | 902.568 | 6.975 | absent | 1 | absent | no | 1 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 21.40 | 91.52 | 783.638 | 3.873 | absent | 4 | absent | no | 3 | 0 |
-| hotel_wifi_4plus4_control_run03_current | smoke | a_hominidae_pro | batch_02 | 4 | 198/2/200 | 21.13 | 165.51 | 915.442 | 4.706 | absent | 4 | absent | no | 3 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 99/101/200 | 20.68 | 36.14 | 415.123 | 4.650 | absent | 1 | absent | no | 1 | 0 |
-| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 19.09 | 93.17 | 741.293 | 3.868 | absent | 2 | absent | no | 2 | 0 |
-| sweep_phase3_2lane_3w_run01 | soak | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 18.22 | 78.80 | absent | absent | absent | 1 | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 17.43 | 94.94 | 769.468 | 3.860 | absent | 2 | absent | no | 2 | 0 |
-| sweep_phase3_2lane_3w_agecap_200_run02 | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 17.32 | 31.00 | absent | absent | absent | absent | absent | no | absent | 0 |
-| sweep_phase3_2lane_3w_agecap_200_run03_current | smoke | a_hominidae_pro | batch_01 | 4 | 49/1/50 | 15.55 | 79.87 | 146.738 | 2.574 | absent | 1 | absent | no | 1 | 0 |
-| sweep_phase3_2lane_3w_run01 | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 14.54 | 79.22 | absent | absent | absent | 2 | absent | no | absent | 0 |
-| sweep_phase3_2lane_3w_agecap_200_run03_current | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 14.18 | 97.43 | 196.987 | 2.985 | absent | 2 | absent | no | 1 | 0 |
-| sweep_phase3_2lane_3w_run01 | smoke | a_hominidae_pro | batch_02 | 3 | 25/0/25 | 10.37 | 13.26 | absent | absent | absent | absent | absent | no | absent | 0 |
-| sweep_phase3_2lane_4_3_run01 | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 9.96 | 14.44 | absent | absent | absent | absent | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 9.26 | 319.70 | 517.642 | 3.606 | absent | 2 | absent | no | 2 | 0 |
-| sweep_phase3_2lane_3w_run01 | smoke | a_hominidae_pro | batch_01 | 3 | 25/0/25 | 9.04 | 13.80 | absent | absent | absent | absent | absent | no | absent | 0 |
-| sweep_phase3_2lane_3w_run01 | smoke | troup_hominidae_free | batch_02 | 3 | 25/0/25 | 7.25 | 10.61 | absent | absent | absent | absent | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 7.04 | 66.43 | 240.160 | 1.214 | absent | 2 | absent | no | 2 | 0 |
-| sweep_phase3_2lane_3w_run01 | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 6.97 | 10.61 | absent | absent | absent | absent | absent | no | absent | 0 |
-| sweep_phase3_2lane_4_3_run01 | smoke | a_hominidae_pro | batch_02 | 4 | 25/0/25 | 6.93 | 10.11 | absent | absent | absent | absent | absent | no | absent | 0 |
-| sweep_phase3_2lane_4_3_run01 | smoke | troup_hominidae_free | batch_02 | 3 | 25/0/25 | 6.85 | 10.11 | absent | absent | absent | absent | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | smoke | troup_hominidae_free | batch_02 | 3 | 25/0/25 | 4.54 | 5.92 | 27.831 | 1.113 | absent | absent | absent | no | 0 | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | smoke | a_hominidae_pro | batch_02 | 3 | 25/0/25 | 4.39 | 5.91 | 30.990 | 1.240 | absent | absent | absent | no | 0 | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | smoke | a_hominidae_pro | batch_01 | 3 | 25/0/25 | 4.38 | 5.99 | 32.388 | 1.296 | absent | absent | absent | no | 0 | 0 |
-| fresh_state_3plus3_extract_schema_control_run15_current | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 4.25 | 5.87 | 32.213 | 1.289 | absent | absent | absent | no | 0 | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_01 | 3 | 111/110/200 | absent | 364.82 | 9872.507 | absent | 42 | absent | absent | no | 3 | absent |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | a_hominidae_pro | batch_01 | 3 | 55/161/200 | absent | 237.37 | 8923.595 | absent | 103 | absent | absent | no | 3 | absent |
-| hotel_wifi_3plus3_auth_interval45_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 168/32/200 | absent | 339.49 | 6166.049 | absent | 30 | 30 | absent | no | 5 | absent |
-| hotel_wifi_3plus3_baseline_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 195/5/200 | absent | 244.19 | 4534.164 | absent | absent | 43 | absent | no | 6 | absent |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 198/2/200 | absent | 93.86 | 881.977 | absent | absent | 1 | absent | no | 1 | absent |
-| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | absent | 101.77 | 876.228 | absent | absent | 2 | absent | no | 2 | absent |
-| sweep_phase3_2lane_3w_agecap_200_run02 | smoke | a_hominidae_pro | batch_01 | 4 | 0/0/0 | 0.00 | 0.00 | absent | absent | absent | absent | absent | no | absent | 0 |
-| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | a_hominidae_pro | batch_02 | 3 | 8/232/240 | 0.00 | 0.00 | 0.000 | 0.000 | absent | absent | absent | yes | 0 | 8 |
+| Run | Phase | Lane | Batch | Workers | Success/Fail/Processed | Source Ready Age Avg | Source Ready Age Max | Cmd Total(s) | Cmd Avg(s) | Worker Idle(s) | source_age_cliff | command_failed | source_add_failed | Empty Fetch Metrics | Source-List Probes | Shared Recovered |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| highest_vph_agecap_400_run03 | soak | a_hominidae_pro | batch_02 | 4 | 156/44/200 | 236.47 | 392.26 | 6403.701 | 79.710 | 193.072 | 41 | 30 | absent | no | 5 | 0 |
+| hotel_wifi_4plus4_control_run03_current | soak | troup_hominidae_free | batch_02 | 4 | 57/143/200 | 228.04 | 455.32 | 9383.813 | 52.090 | 410.905 | 142 | 38 | absent | no | 4 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | a_hominidae_pro | batch_01 | 3 | 73/148/221 | 221.76 | 249.81 | 8222.837 | 78.274 | 882.785 | 82 | absent | absent | no | 3 | 21 |
+| highest_vph_agecap_400_run03 | soak | troup_hominidae_free | batch_01 | 4 | 154/46/200 | 220.63 | 354.61 | 7192.485 | 34.886 | 280.684 | 43 | 29 | absent | no | 6 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | a_hominidae_pro | batch_02 | 3 | 125/95/220 | 218.03 | 219.77 | 7426.510 | 97.901 | 502.253 | 38 | 1 | absent | no | 3 | 20 |
+| sweep_phase3_2lane_3w_agecap_200_run03_current | soak | a_hominidae_pro | batch_01 | 4 | 121/79/200 | 216.64 | 315.26 | 6105.219 | 66.242 | 227.777 | 78 | 3 | absent | no | 4 | 0 |
+| hotel_wifi_3plus3_baseline_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 139/61/200 | 206.67 | 368.76 | 7346.626 | 30.164 | 380.073 | 49 | 31 | absent | no | 5 | 0 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | soak | troup_hominidae_free | batch_01 | 3 | 127/73/200 | 203.71 | 373.98 | 8768.280 | 55.000 | 522.974 | 63 | 34 | absent | no | 6 | 0 |
+| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 91/109/200 | 190.28 | 433.91 | 5673.734 | 53.081 | 265.799 | 58 | 18 | absent | no | 3 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | troup_hominidae_free | batch_01 | 3 | 118/121/239 | 184.61 | 246.57 | 7489.837 | 42.140 | 360.913 | 35 | absent | absent | no | 3 | 15 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | troup_hominidae_free | batch_01 | 3 | 118/82/200 | 181.16 | 345.06 | 8716.807 | 39.886 | 589.641 | 69 | 42 | absent | no | 6 | 0 |
+| hotel_wifi_4plus4_control_run03_current | smoke | a_hominidae_pro | batch_01 | 4 | 137/63/200 | 179.31 | 332.86 | 9905.057 | 34.930 | 623.800 | 58 | 44 | absent | no | 6 | 0 |
+| highest_vph_agecap_400_run03 | soak | a_hominidae_pro | batch_01 | 4 | 151/49/200 | 178.01 | 290.22 | 6095.208 | 46.113 | 449.533 | 48 | 9 | absent | no | 4 | 0 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | soak | a_hominidae_pro | batch_01 | 3 | 131/69/200 | 175.83 | 349.05 | 5662.401 | 39.706 | 247.011 | 61 | 31 | absent | no | 6 | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 143/57/200 | 172.66 | 276.49 | 7630.114 | 34.345 | 506.455 | 48 | 38 | absent | no | 7 | 0 |
+| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 161/39/200 | 170.99 | 415.08 | 7281.264 | 39.006 | 485.380 | 38 | 34 | absent | no | 4 | 0 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | a_hominidae_pro | batch_01 | 3 | 134/66/200 | 166.11 | 325.91 | 6426.399 | 31.295 | 649.701 | 62 | 28 | absent | no | 5 | 0 |
+| sweep_phase3_2lane_3w_agecap_200_run03_current | soak | troup_hominidae_free | batch_01 | 4 | 90/110/200 | 164.84 | 270.86 | 5359.028 | 28.815 | 60.586 | 60 | absent | absent | no | 3 | 0 |
+| hotel_wifi_4plus4_control_run03_current | soak | a_hominidae_pro | batch_01 | 4 | 103/97/200 | 162.24 | 367.26 | 9485.758 | 50.942 | 419.761 | 94 | 42 | absent | no | 6 | 0 |
+| hotel_wifi_3plus3_baseline_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 150/50/200 | 156.26 | 337.47 | 6503.283 | 32.712 | 409.724 | 46 | 36 | absent | no | 4 | 0 |
+| hotel_wifi_3plus3_auth_interval45_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 155/45/200 | 150.14 | 389.13 | 5482.716 | 43.961 | 426.418 | 42 | 20 | absent | no | 4 | 0 |
+| hotel_wifi_4plus4_control_run03_current | soak | troup_hominidae_free | batch_01 | 4 | 141/59/200 | 146.11 | 344.63 | 9759.394 | 34.697 | 479.338 | 49 | 42 | absent | no | 5 | 0 |
+| hotel_wifi_3plus3_auth_interval45_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 161/39/200 | 144.94 | 307.43 | 4906.846 | 20.425 | 367.131 | 31 | 20 | absent | no | 4 | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | a_hominidae_pro | batch_01 | 3 | 184/16/200 | 125.48 | 202.33 | 2836.882 | 15.176 | 92.509 | 15 | 16 | absent | no | 3 | 0 |
+| hotel_wifi_4plus4_control_run03_current | soak | a_hominidae_pro | batch_02 | 4 | 152/48/200 | 113.55 | 296.10 | 7521.780 | 29.167 | 279.902 | 48 | 24 | absent | no | 4 | 0 |
+| hotel_wifi_4plus4_control_run03_current | smoke | troup_hominidae_free | batch_01 | 4 | 146/54/200 | 112.58 | 300.03 | 8416.288 | 32.099 | 382.497 | 52 | 36 | absent | no | 5 | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_01 | 3 | 171/29/200 | 105.95 | 377.99 | 4953.396 | 16.489 | 692.818 | 26 | 22 | absent | no | 4 | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 172/28/200 | 104.20 | 291.62 | 6056.063 | 28.382 | 446.146 | 26 | 17 | absent | no | 5 | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 149/51/200 | 94.97 | 268.73 | 5695.287 | 18.929 | 729.242 | 48 | 19 | absent | no | 5 | 0 |
+| sweep_phase3_2lane_4_3_run01 | soak | a_hominidae_pro | batch_01 | 4 | 199/1/200 | 94.80 | 307.03 | absent | absent | 282.972 | absent | 37 | absent | no | absent | 0 |
+| hotel_wifi_3plus3_baseline_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 183/17/200 | 94.70 | 310.38 | 4516.034 | 20.917 | 450.909 | 17 | 25 | absent | no | 4 | 0 |
+| hotel_wifi_3plus3_auth_interval45_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 184/16/200 | 92.94 | 326.36 | 4974.827 | 36.420 | 270.780 | 12 | 22 | absent | no | 4 | 0 |
+| hotel_wifi_3plus3_baseline_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 159/41/200 | 92.94 | 239.18 | 4464.272 | 19.656 | 348.847 | 40 | 18 | absent | no | 4 | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 186/14/200 | 86.86 | 234.68 | 3646.724 | 17.992 | 562.968 | 11 | 20 | absent | no | 6 | 0 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | troup_hominidae_free | batch_02 | 3 | 187/13/200 | 79.29 | 222.61 | 4202.909 | 11.697 | 551.361 | 8 | 35 | absent | no | 6 | 0 |
+| sweep_phase3_2lane_4_3_run01 | smoke | a_hominidae_pro | batch_01 | 4 | 25/0/25 | 74.52 | 156.66 | absent | absent | 228.878 | absent | absent | absent | no | absent | 0 |
+| sweep_phase3_2lane_4_3_run01 | soak | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 69.74 | 90.04 | absent | absent | 0.000 | absent | 1 | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 192/8/200 | 59.49 | 489.53 | 4045.845 | 26.615 | 573.516 | 1 | 13 | absent | no | 4 | 0 |
+| sweep_phase3_2lane_4_3_run01 | soak | troup_hominidae_free | batch_01 | 3 | 198/2/200 | 59.12 | 251.16 | absent | absent | 345.114 | absent | 23 | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 195/5/200 | 58.93 | 496.70 | 4918.401 | 27.628 | 590.057 | 1 | 12 | absent | no | 3 | 0 |
+| highest_vph_agecap_400_run03 | soak | troup_hominidae_free | batch_02 | 4 | 199/1/200 | 57.33 | 313.92 | 6564.497 | 18.643 | 489.862 | absent | 42 | absent | no | 5 | 0 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | smoke | a_hominidae_pro | batch_02 | 3 | 193/7/200 | 55.29 | 234.12 | 4050.391 | 25.806 | 512.947 | 6 | 15 | absent | no | 4 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | troup_hominidae_free | batch_02 | 3 | 163/57/220 | 52.33 | 168.52 | 5980.274 | 24.545 | 478.971 | absent | 1 | absent | no | 3 | 20 |
+| sweep_phase3_2lane_3w_run01 | soak | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 49.67 | 141.48 | absent | absent | 0.000 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | a_hominidae_pro | batch_01 | 3 | 196/4/200 | 48.70 | 202.68 | 2648.524 | 17.908 | 156.676 | 3 | 6 | absent | no | 3 | 0 |
+| hotel_wifi_4plus4_control_run03_current | smoke | troup_hominidae_free | batch_02 | 4 | 199/1/200 | 47.51 | 314.74 | 2971.704 | 15.848 | 239.762 | absent | 20 | absent | no | 5 | 0 |
+| hotel_wifi_3plus3_baseline_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 194/6/200 | 45.07 | 236.31 | 3133.270 | 14.462 | 252.309 | 4 | 18 | absent | no | 4 | 0 |
+| highest_vph_agecap_400_run03 | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 43.01 | 167.17 | 1115.280 | 11.265 | 322.942 | absent | 10 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | troup_hominidae_free | batch_01 | 3 | 198/2/200 | 40.52 | 212.55 | 2943.464 | 20.337 | 169.003 | absent | 6 | absent | no | 2 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_02 | 3 | 198/23/221 | 39.51 | 145.28 | 4944.740 | 28.653 | 0.000 | absent | 1 | absent | no | 3 | 21 |
+| hotel_wifi_3plus3_baseline_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 38.76 | 285.13 | 2811.013 | 14.913 | 301.343 | absent | 17 | absent | no | 3 | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 37.96 | 98.64 | 1388.301 | 13.014 | 43.476 | absent | absent | absent | no | 0 | 0 |
+| sweep_phase3_2lane_3w_run01 | soak | troup_hominidae_free | batch_01 | 3 | 199/1/200 | 37.78 | 115.99 | absent | absent | 11.340 | absent | absent | absent | no | absent | 0 |
+| hotel_wifi_3plus3_baseline_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 191/9/200 | 34.16 | 172.96 | 1657.693 | 8.545 | 257.587 | absent | 15 | absent | no | 4 | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 32.63 | 196.05 | 2109.894 | 8.497 | 368.173 | absent | 18 | absent | no | 4 | 0 |
+| sweep_phase3_2lane_4_3_run01 | soak | a_hominidae_pro | batch_02 | 4 | 199/1/200 | 32.56 | 111.22 | absent | absent | 0.000 | absent | 1 | absent | no | absent | 0 |
+| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 32.02 | 186.12 | 2419.804 | 10.004 | 356.002 | absent | 21 | absent | no | 4 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 149/51/200 | 31.58 | 388.30 | 931.678 | 9.716 | 230.814 | absent | 1 | absent | no | 0 | 0 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | soak | a_hominidae_pro | batch_02 | 3 | 199/1/200 | 30.47 | 90.02 | 958.842 | 6.257 | 122.600 | absent | 1 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | troup_hominidae_free | batch_01 | 3 | 148/52/200 | 30.06 | 151.64 | 1482.929 | 12.468 | 0.000 | absent | 1 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | a_hominidae_pro | batch_02 | 3 | 199/1/200 | 29.44 | 207.02 | 1979.481 | 13.191 | 183.813 | absent | 4 | absent | no | 1 | 0 |
+| sweep_phase3_2lane_3w_agecap_200_run02 | soak | a_hominidae_pro | batch_01 | 4 | 199/1/200 | 27.23 | 211.29 | absent | absent | 0.000 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 26.83 | 92.46 | 935.814 | 6.568 | 40.423 | absent | absent | absent | no | 0 | 0 |
+| sweep_phase3_2lane_3w_agecap_200_run02 | soak | troup_hominidae_free | batch_01 | 4 | 199/1/200 | 25.77 | 160.97 | absent | absent | 0.000 | absent | absent | absent | no | absent | 0 |
+| highest_vph_agecap_400_run03 | smoke | a_hominidae_pro | batch_01 | 4 | 50/0/50 | 25.39 | 109.52 | 507.507 | 5.577 | 322.741 | absent | 8 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 199/1/200 | 25.11 | 98.96 | 975.847 | 6.075 | 18.814 | absent | absent | absent | no | 0 | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 24.48 | 142.13 | 1544.166 | 11.557 | 43.264 | absent | 2 | absent | no | 1 | 0 |
+| hotel_wifi_3plus3_auth_interval45_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 24.04 | 115.99 | 1164.797 | 4.735 | 332.202 | absent | 8 | absent | no | 4 | 0 |
+| hotel_wifi_3plus3_auth_interval75_run02_current | soak | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 23.88 | 74.61 | 902.568 | 6.975 | 74.075 | absent | 1 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 21.40 | 91.52 | 783.638 | 3.873 | 97.993 | absent | 4 | absent | no | 3 | 0 |
+| hotel_wifi_4plus4_control_run03_current | smoke | a_hominidae_pro | batch_02 | 4 | 198/2/200 | 21.13 | 165.51 | 915.442 | 4.706 | 52.768 | absent | 4 | absent | no | 3 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 99/101/200 | 20.68 | 36.14 | 415.123 | 4.650 | 0.000 | absent | 1 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 20.45 | 188.17 | 1450.145 | 8.744 | 81.498 | absent | 4 | absent | no | 3 | 0 |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 19.09 | 93.17 | 741.293 | 3.868 | 0.000 | absent | 2 | absent | no | 2 | 0 |
+| sweep_phase3_2lane_3w_run01 | soak | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 18.22 | 78.80 | absent | absent | 0.000 | absent | 1 | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 17.43 | 94.94 | 769.468 | 3.860 | 7.601 | absent | 2 | absent | no | 2 | 0 |
+| sweep_phase3_2lane_3w_agecap_200_run02 | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 17.32 | 31.00 | absent | absent | 195.662 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | a_hominidae_pro | batch_02 | 3 | 199/1/200 | 16.31 | 76.63 | 625.983 | 3.681 | 0.000 | absent | 1 | absent | no | 1 | 0 |
+| sweep_phase3_2lane_3w_agecap_200_run03_current | smoke | a_hominidae_pro | batch_01 | 4 | 49/1/50 | 15.55 | 79.87 | 146.738 | 2.574 | 122.204 | absent | 1 | absent | no | 1 | 0 |
+| sweep_phase3_2lane_3w_run01 | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 14.54 | 79.22 | absent | absent | 0.515 | absent | 2 | absent | no | absent | 0 |
+| sweep_phase3_2lane_3w_agecap_200_run03_current | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 14.18 | 97.43 | 196.987 | 2.985 | 224.672 | absent | 2 | absent | no | 1 | 0 |
+| sweep_phase3_2lane_3w_run01 | smoke | a_hominidae_pro | batch_02 | 3 | 25/0/25 | 10.37 | 13.26 | absent | absent | 84.463 | absent | absent | absent | no | absent | 0 |
+| sweep_phase3_2lane_4_3_run01 | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 9.96 | 14.44 | absent | absent | 28.953 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 9.26 | 319.70 | 517.642 | 3.606 | 217.677 | absent | 2 | absent | no | 2 | 0 |
+| sweep_phase3_2lane_3w_run01 | smoke | a_hominidae_pro | batch_01 | 3 | 25/0/25 | 9.04 | 13.80 | absent | absent | 28.613 | absent | absent | absent | no | absent | 0 |
+| sweep_phase3_2lane_3w_run01 | smoke | troup_hominidae_free | batch_02 | 3 | 25/0/25 | 7.25 | 10.61 | absent | absent | 67.535 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 7.04 | 66.43 | 240.160 | 1.214 | 0.000 | absent | 2 | absent | no | 2 | 0 |
+| sweep_phase3_2lane_3w_run01 | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 6.97 | 10.61 | absent | absent | 65.296 | absent | absent | absent | no | absent | 0 |
+| sweep_phase3_2lane_4_3_run01 | smoke | a_hominidae_pro | batch_02 | 4 | 25/0/25 | 6.93 | 10.11 | absent | absent | 42.256 | absent | absent | absent | no | absent | 0 |
+| sweep_phase3_2lane_4_3_run01 | smoke | troup_hominidae_free | batch_02 | 3 | 25/0/25 | 6.85 | 10.11 | absent | absent | 67.794 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | troup_hominidae_free | batch_02 | 3 | 25/0/25 | 4.54 | 5.92 | 27.831 | 1.113 | 24.047 | absent | absent | absent | no | 0 | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | a_hominidae_pro | batch_02 | 3 | 25/0/25 | 4.39 | 5.91 | 30.990 | 1.240 | 130.606 | absent | absent | absent | no | 0 | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | a_hominidae_pro | batch_01 | 3 | 25/0/25 | 4.38 | 5.99 | 32.388 | 1.296 | 33.282 | absent | absent | absent | no | 0 | 0 |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 4.25 | 5.87 | 32.213 | 1.289 | 31.137 | absent | absent | absent | no | 0 | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_01 | 3 | 111/110/200 | absent | 364.82 | 9872.507 | absent | 637.830 | 42 | absent | absent | no | 3 | absent |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | a_hominidae_pro | batch_01 | 3 | 55/161/200 | absent | 237.37 | 8923.595 | absent | 831.186 | 103 | absent | absent | no | 3 | absent |
+| hotel_wifi_3plus3_auth_interval45_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 168/32/200 | absent | 339.49 | 6166.049 | absent | 333.867 | 30 | 30 | absent | no | 5 | absent |
+| hotel_wifi_3plus3_baseline_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 195/5/200 | absent | 244.19 | 4534.164 | absent | 301.441 | absent | 43 | absent | no | 6 | absent |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 198/2/200 | absent | 93.86 | 881.977 | absent | 308.595 | absent | 1 | absent | no | 1 | absent |
+| fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | absent | 101.77 | 876.228 | absent | 149.027 | absent | 2 | absent | no | 2 | absent |
+| sweep_phase3_2lane_3w_agecap_200_run02 | smoke | a_hominidae_pro | batch_01 | 4 | 0/0/0 | 0.00 | 0.00 | absent | absent | 1004.427 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | a_hominidae_pro | batch_02 | 3 | 8/232/240 | 0.00 | 0.00 | 0.000 | 0.000 | 240.623 | absent | absent | absent | yes | 0 | 8 |
 
-## Table 9 — Worker / Auth Skew Attribution
+## Table 9 — Source-Age Pressure Attribution
+
+| Run | Phase | Lane | Batch | Success/Fail/Processed | source_age_cliff | command_failed | Cmd Total(s) | Worker Idle(s) | Source Ready Age Max | Empty Fetch Metrics |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | a_hominidae_pro | batch_01 | 196/4/200 | 3 | 6 | 2648.524 | 156.676 | 202.68 | no |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | a_hominidae_pro | batch_02 | 199/1/200 | absent | 4 | 1979.481 | 183.813 | 207.02 | no |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | troup_hominidae_free | batch_01 | 198/2/200 | absent | 6 | 2943.464 | 169.003 | 212.55 | no |
+| fresh_state_3plus3_extract_schema_control_run07_current | smoke | troup_hominidae_free | batch_02 | 198/2/200 | absent | 4 | 1450.145 | 81.498 | 188.17 | no |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | a_hominidae_pro | batch_01 | 199/1/200 | absent | absent | 1388.301 | 43.476 | 98.64 | no |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | a_hominidae_pro | batch_02 | 199/1/200 | absent | 1 | 625.983 | 0.000 | 76.63 | no |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | troup_hominidae_free | batch_01 | 148/52/200 | absent | 1 | 1482.929 | 0.000 | 151.64 | no |
+| fresh_state_3plus3_extract_schema_control_run07_current | soak | troup_hominidae_free | batch_02 | 198/2/200 | absent | 2 | 1544.166 | 43.264 | 142.13 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | a_hominidae_pro | batch_01 | 25/0/25 | absent | absent | 32.388 | 33.282 | 5.99 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | a_hominidae_pro | batch_02 | 25/0/25 | absent | absent | 30.990 | 130.606 | 5.91 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | troup_hominidae_free | batch_01 | 25/0/25 | absent | absent | 32.213 | 31.137 | 5.87 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | smoke | troup_hominidae_free | batch_02 | 25/0/25 | absent | absent | 27.831 | 24.047 | 5.92 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | a_hominidae_pro | batch_01 | 184/16/200 | 15 | 16 | 2836.882 | 92.509 | 202.33 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | a_hominidae_pro | batch_02 | 198/2/200 | absent | 2 | 517.642 | 217.677 | 319.70 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_01 | 171/29/200 | 26 | 22 | 4953.396 | 692.818 | 377.99 | no |
+| fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_02 | 198/2/200 | absent | 2 | 240.160 | 0.000 | 66.43 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | a_hominidae_pro | batch_01 | 149/51/200 | 48 | 19 | 5695.287 | 729.242 | 268.73 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | a_hominidae_pro | batch_02 | 198/2/200 | absent | 2 | 741.293 | 0.000 | 93.17 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | troup_hominidae_free | batch_01 | 143/57/200 | 48 | 38 | 7630.114 | 506.455 | 276.49 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | smoke | troup_hominidae_free | batch_02 | 198/2/200 | absent | 18 | 2109.894 | 368.173 | 196.05 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | a_hominidae_pro | batch_01 | 192/8/200 | 1 | 13 | 4045.845 | 573.516 | 489.53 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | a_hominidae_pro | batch_02 | 172/28/200 | 26 | 17 | 6056.063 | 446.146 | 291.62 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | troup_hominidae_free | batch_01 | 195/5/200 | 1 | 12 | 4918.401 | 590.057 | 496.70 | no |
+| fresh_state_3plus3_extract_schema_warmup_state_run01_current | soak | troup_hominidae_free | batch_02 | 186/14/200 | 11 | 20 | 3646.724 | 562.968 | 234.68 | no |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | a_hominidae_pro | batch_01 | 73/148/221 | 82 | absent | 8222.837 | 882.785 | 249.81 | no |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | a_hominidae_pro | batch_02 | 125/95/220 | 38 | 1 | 7426.510 | 502.253 | 219.77 | no |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | troup_hominidae_free | batch_01 | 118/121/239 | 35 | absent | 7489.837 | 360.913 | 246.57 | no |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | smoke | troup_hominidae_free | batch_02 | 163/57/220 | absent | 1 | 5980.274 | 478.971 | 168.52 | no |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | a_hominidae_pro | batch_01 | 55/161/200 | 103 | absent | 8923.595 | 831.186 | 237.37 | no |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | a_hominidae_pro | batch_02 | 8/232/240 | absent | absent | 0.000 | 240.623 | 0.00 | yes |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_01 | 111/110/200 | 42 | absent | 9872.507 | 637.830 | 364.82 | no |
+| fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_02 | 198/23/221 | absent | 1 | 4944.740 | 0.000 | 145.28 | no |
+
+## Table 10 — Worker / Auth Skew Attribution
 
 | Run | Lane | Command Completions | Command Failures | Command Failure Rate | Worker-Profile Spread | Auth-Refresh Spread | Stronger Signal |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -457,6 +510,57 @@ An absent field means the artifact was written before that instrumentation exist
   - retry_pass_status_counts: {command_failed=1, nlm_content_below_threshold=1}
   - retry_queue_drain_ready_age_s_max: absent
   - content_fetch_retry_queue_sleep_elapsed_s_total: 0.000
+  - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000
+
+
+### fresh_state_3plus3_extract_schema_control_run07_current
+
+- status: `ok`, throughput_valid: `true`, contract: `combined_hot_path_videos_per_hour_excludes_whisper_and_parent_chrome_reap_includes_worker_cleanup`
+- environment: `absent`, geometry: `3+3`, limit: `400`, batch_size: `200`, policy: `notebooklm_route_plus_fallback_30s_1w`
+- source_url: `https://www.youtube.com/channel/UCYTISFALLBACKBMK`
+- pre_run_browser_health: `clean`, post_run_hygiene: `clean`
+- parse_mode: `strict`, parse_error: `none`
+
+  **Pro lane** (3 workers):
+  - VPH: 2256.45, success/fail/processed: 398/2/400
+  - source_ready_age_s_max: 98.644, avg: 18.522
+  - worker_idle_wait_s_total: 43.476
+  - add_elapsed_s_total: 699.144
+  - cleanup_elapsed_s_total: 161.406
+  - setup_elapsed_s_total: 734.149
+  - extract_elapsed_s_total: 427.838
+  - content_fetch_command_elapsed_s_total/count: 2014.284 / 414
+  - source_age_cliff: `absent` (absent = field not in artifact)
+  - command_failed: `1` (absent = field not in artifact)
+  - content_fetch_status_counts_total: {command_failed=1, nlm_content_below_threshold=1, ready=398}
+  - retry_queue_window_count: 19
+  - retry_queue_deferred/recovered/final_failed: 17/1/16
+  - shared_retry_deferred_count/recovered_count/final_failed_count: 0/0/0
+  - retry_queue_primary_queued_count: 17
+  - retry_pass_status_counts: {command_failed=11, nlm_content_below_threshold=2, ready=1, source_age_cliff=3}
+  - retry_queue_drain_ready_age_s_max: absent
+  - content_fetch_retry_queue_sleep_elapsed_s_total: 210.000
+  - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000
+
+  **Free lane** (3 workers):
+  - VPH: 2118.97, success/fail/processed: 346/54/400
+  - source_ready_age_s_max: 151.637, avg: 19.420
+  - worker_idle_wait_s_total: 43.264
+  - add_elapsed_s_total: 590.336
+  - cleanup_elapsed_s_total: 167.358
+  - setup_elapsed_s_total: 621.562
+  - extract_elapsed_s_total: 689.237
+  - content_fetch_command_elapsed_s_total/count: 3027.095 / 374
+  - source_age_cliff: `absent` (absent = field not in artifact)
+  - command_failed: `3` (absent = field not in artifact)
+  - content_fetch_status_counts_total: {command_failed=3, nlm_content_below_threshold=1, ready=346}
+  - retry_queue_window_count: 17
+  - retry_queue_deferred/recovered/final_failed: 17/2/15
+  - shared_retry_deferred_count/recovered_count/final_failed_count: 0/0/0
+  - retry_queue_primary_queued_count: 17
+  - retry_pass_status_counts: {command_failed=13, nlm_content_below_threshold=2, ready=2}
+  - retry_queue_drain_ready_age_s_max: absent
+  - content_fetch_retry_queue_sleep_elapsed_s_total: 270.000
   - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000
 
 

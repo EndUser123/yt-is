@@ -68,6 +68,7 @@ def _write_batch_sweep_summary(
     source_ready_age_s_max: float,
     content_fetch_command_elapsed_s_total: float,
     content_fetch_command_elapsed_s_avg: float,
+    worker_idle_wait_s: float,
     source_list_probe_count: int,
     source_age_cliff: int,
     shared_retry_recovered_count_total: float,
@@ -89,6 +90,7 @@ def _write_batch_sweep_summary(
                 "succeeded": succeeded,
                 "failed": failed,
                 "video_count": 100,
+                "worker_idle_wait_s": worker_idle_wait_s,
                 "fetch_completed": {
                     "success_count": succeeded,
                     "fail_count": failed,
@@ -253,7 +255,7 @@ def test_main_default_runs_include_run29_cadence_result(tmp_path):
     assert exit_code == 0
     report = output_path.read_text(encoding="utf-8")
     assert "hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current" in report
-    assert "Table 9 — Worker / Auth Skew Attribution" in report
+    assert "Table 10 — Worker / Auth Skew Attribution" in report
     assert "| hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current | troup_hominidae_free | 333 | 204 | 61.3% | 74.2 | 71.8 | worker balance |" in report
     assert "| hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current | a_hominidae_pro | 298 | 130 | 43.6% | 50.8 | 68.2 | auth-refresh age |" in report
 
@@ -288,7 +290,7 @@ def test_main_default_runs_include_run30_cadence_result(tmp_path):
     assert exit_code == 0
     report = output_path.read_text(encoding="utf-8")
     assert "hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current" in report
-    assert "Table 9 — Worker / Auth Skew Attribution" in report
+    assert "Table 10 — Worker / Auth Skew Attribution" in report
     assert "| hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | troup_hominidae_free | 333 | 7 | 2.1% | 6.1 | 0.0 | worker balance |" in report
     assert "| hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | a_hominidae_pro | 298 | 4 | 1.3% | 4.6 | 2.8 | worker balance |" in report
 
@@ -538,6 +540,7 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
         source_ready_age_s_max=220.975,
         content_fetch_command_elapsed_s_total=7517.45,
         content_fetch_command_elapsed_s_avg=33.704,
+        worker_idle_wait_s=33.282,
         source_list_probe_count=3,
         source_age_cliff=20,
         shared_retry_recovered_count_total=22,
@@ -552,6 +555,7 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
         source_ready_age_s_max=233.417,
         content_fetch_command_elapsed_s_total=8743.616,
         content_fetch_command_elapsed_s_avg=36.345,
+        worker_idle_wait_s=217.677,
         source_list_probe_count=3,
         source_age_cliff=28,
         shared_retry_recovered_count_total=36,
@@ -567,6 +571,7 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
         source_ready_age_s_max=215.705,
         content_fetch_command_elapsed_s_total=6307.475,
         content_fetch_command_elapsed_s_avg=35.369,
+        worker_idle_wait_s=31.137,
         source_list_probe_count=3,
         source_age_cliff=39,
         shared_retry_recovered_count_total=27,
@@ -581,6 +586,7 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
         source_ready_age_s_max=255.978,
         content_fetch_command_elapsed_s_total=6669.708,
         content_fetch_command_elapsed_s_avg=46.685,
+        worker_idle_wait_s=0.0,
         source_list_probe_count=3,
         source_age_cliff=39,
         shared_retry_recovered_count_total=48,
@@ -595,6 +601,7 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
         source_ready_age_s_max=0.0,
         content_fetch_command_elapsed_s_total=0.0,
         content_fetch_command_elapsed_s_avg=0.0,
+        worker_idle_wait_s=240.623,
         source_list_probe_count=0,
         source_age_cliff=0,
         shared_retry_recovered_count_total=0,
@@ -606,9 +613,41 @@ def test_generate_report_renders_batch_tail_summary_table(tmp_path):
 
     assert len(audit.batch_tail_rows) == 5
     assert "Table 8 — Batch Tail Summary" in report
-    assert "| demo_run | soak | troup_hominidae_free | batch_02 | 3 | 79/39/100 | 247.08 | 255.98 | 6669.708 | 46.685 | 39 | absent | absent | no | 3 | 48 |" in report
-    assert "| demo_run | soak | a_hominidae_pro | batch_02 | 3 | 94/28/100 | 157.76 | 233.42 | 8743.616 | 36.345 | 28 | absent | 12 | no | 3 | 36 |" in report
-    assert "| demo_run | soak | a_hominidae_pro | batch_03 | 3 | 0/100/100 | 0.00 | 0.00 | 0.000 | 0.000 | absent | absent | absent | yes | 0 | 0 |" in report
+    assert "| demo_run | soak | troup_hominidae_free | batch_02 | 3 | 79/39/100 | 247.08 | 255.98 | 6669.708 | 46.685 | 0.000 | 39 | absent | absent | no | 3 | 48 |" in report
+    assert "| demo_run | soak | a_hominidae_pro | batch_02 | 3 | 94/28/100 | 157.76 | 233.42 | 8743.616 | 36.345 | 217.677 | 28 | absent | 12 | no | 3 | 36 |" in report
+    assert "| demo_run | soak | a_hominidae_pro | batch_03 | 3 | 0/100/100 | 0.00 | 0.00 | 0.000 | 0.000 | 240.623 | absent | absent | absent | yes | 0 | 0 |" in report
+    assert "Table 9 — Source-Age Pressure Attribution" not in report
+
+
+def test_generate_report_renders_source_age_pressure_attribution_for_target_runs(tmp_path):
+    run_root = tmp_path / "fresh_state_3plus3_extract_schema_control_run15_current"
+    _write_minimal_summary(run_root)
+
+    _write_batch_sweep_summary(
+        run_root / "soak" / "troup_hominidae_free" / "batch_01" / "notebooklm_route_plus_fallback_30s_1w" / "20260614_224527",
+        workers=3,
+        elapsed_s=511.195,
+        succeeded=50,
+        failed=50,
+        source_ready_age_s_avg=188.2,
+        source_ready_age_s_max=377.993,
+        content_fetch_command_elapsed_s_total=5193.556,
+        content_fetch_command_elapsed_s_avg=29.3,
+        worker_idle_wait_s=692.818,
+        source_list_probe_count=3,
+        source_age_cliff=26,
+        shared_retry_recovered_count_total=0,
+        content_fetch_status_counts_total={
+            "ready": 50,
+            "source_age_cliff": 26,
+            "command_failed": 24,
+        },
+    )
+
+    report = generate_report([audit_run(run_root)], run_root.parent)
+
+    assert "Table 9 — Source-Age Pressure Attribution" in report
+    assert "| fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_01 | 50/50/100 | 26 | 24 | 5193.556 | 692.818 | 377.99 | no |" in report
 
 
 def test_audit_run_surfaces_partial_lane_shortfall_metadata(tmp_path):
