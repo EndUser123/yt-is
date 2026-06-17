@@ -26,6 +26,7 @@ SOURCE_AGE_PRESSURE_RUNS = (
     "fresh_state_3plus3_extract_schema_shared_retry_run06_current",
     "fresh_state_3plus3_extract_schema_source_age_cadence_run01_current",
     "fresh_state_3plus3_extract_schema_source_age_cadence_first_window_run02_current",
+    "fresh_state_3plus3_extract_schema_source_age_cadence_first_window_post_rotation_fix_run04_current",
 )
 SOURCE_AGE_PRESSURE_RUN_SET = set(SOURCE_AGE_PRESSURE_RUNS)
 
@@ -1667,6 +1668,7 @@ def main(argv: list[str] | None = None) -> int:
             "fresh_state_3plus3_extract_schema_shared_retry_run06_current",
             "fresh_state_3plus3_extract_schema_source_age_cadence_run01_current",
             "fresh_state_3plus3_extract_schema_source_age_cadence_first_window_run02_current",
+            "fresh_state_3plus3_extract_schema_source_age_cadence_first_window_post_rotation_fix_run04_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run29_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current",
             "hotel_wifi_3plus3_shared_retry_source_age_cadence_run31_current",
