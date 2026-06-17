@@ -323,6 +323,24 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
                 f"subbatch_size={data.get('subbatch_size') or '<unknown>'} "
                 f"sources={data.get('source_count_before') or 0}->{data.get('source_count_after') or 0}"
             )
+        if action == "nlm_batch_source_materialization_wait_failed":
+            findings.append(
+                f"{path.relative_to(lane_output_root)}:{lineno}: "
+                f"{data.get('failure_reason') or 'materialization_wait_failed'} "
+                f"subbatch_index={data.get('subbatch_index') or '<unknown>'} "
+                f"expected_total={data.get('expected_total') or '<unknown>'} "
+                f"sources={data.get('source_count_before_wait') or 0}->{data.get('source_count_after_wait') or 0} "
+                f"timeout_s={data.get('timeout_s') or '<unknown>'}"
+            )
+        if action == "fetch_worker_finished":
+            summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+            worker_error = str(summary.get("error") or data.get("error") or "")
+            if summary.get("status") == "error" and "NotebookSourceMaterializationTimeout" in worker_error:
+                findings.append(
+                    f"{path.relative_to(lane_output_root)}:{lineno}: NotebookSourceMaterializationTimeout "
+                    f"worker_id={data.get('worker_id') or summary.get('worker_id') or '<unknown>'} "
+                    f"returncode={data.get('returncode') if data.get('returncode') is not None else '<unknown>'}"
+                )
         status_counts = data.get("content_fetch_status_counts")
         if isinstance(status_counts, dict) and int(status_counts.get("source_add_failed") or 0) > 0:
             findings.append(

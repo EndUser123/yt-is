@@ -124,6 +124,8 @@ Zero-growth NotebookLM source-add failures are not split into smaller chunks. If
 
 Reusable notebook-create failures are classified into the same evidence bucket. If a reusable batch cannot create or recover a notebook, the batch result now records one `source_add_failed` metric per requested video instead of leaving worker failures with empty content-fetch counts. That keeps source-add/setup failures from appearing as throughput-valid fetch-path outcomes.
 
+Source-materialization timeouts are also invalidating evidence. If a worker logs `nlm_batch_source_materialization_wait_failed` with `failure_reason="materialization_wait_failed"`, or the lane wrapper records a `fetch_worker_finished` event whose worker summary ends in `NotebookSourceMaterializationTimeout`, the sharded runner treats that lane as invalid instead of using partial fetch counters as throughput evidence; the smoke evidence checker also rejects the materialization-wait marker. This covers the run shape where a worker fetched some content metrics before a later subbatch failed to materialize sources and returned no completed processed outcomes.
+
 ## Run-Root Cleanup Policy
 
 - Keep a failed or partial smoke/soak root only until a newer successful root exists for the same hypothesis.

@@ -14,6 +14,7 @@ FORBIDDEN_MARKERS = (
     "default_profile_running",
     "source_add_failed",
     "nlm_batch_subbatch_zero_growth_terminal",
+    "nlm_batch_source_materialization_wait_failed",
 )
 OPTIONAL_REQUIRED_MARKERS = ("nlm_auth_forced_refresh_scheduled",)
 

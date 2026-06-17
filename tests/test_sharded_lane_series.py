@@ -1727,6 +1727,60 @@ def test_find_invalid_lane_artifacts_flags_source_add_failed_metrics(tmp_path):
     assert "count=50" in findings[0]
 
 
+def test_find_invalid_lane_artifacts_flags_materialization_timeout(tmp_path):
+    import csf.sharded_lane_series as mod
+
+    lane_root = tmp_path / "lane"
+    log_dir = lane_root / "batch_01" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "term.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "action": "nlm_batch_source_materialization_wait_failed",
+                        "data": {
+                            "failure_reason": "materialization_wait_failed",
+                            "subbatch_index": 2,
+                            "expected_total": 38,
+                            "source_count_before_wait": 14,
+                            "source_count_after_wait": 14,
+                            "timeout_s": 600,
+                            "halted": True,
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "action": "fetch_worker_finished",
+                        "data": {
+                            "worker_id": "worker-03",
+                            "returncode": 1,
+                            "summary": {
+                                "status": "error",
+                                "error": (
+                                    "NotebookSourceMaterializationTimeout: NotebookLM sources "
+                                    "were not ready after 600s"
+                                ),
+                            },
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    findings = mod._find_invalid_lane_artifacts(lane_root)
+
+    assert len(findings) == 2
+    assert "materialization_wait_failed" in findings[0]
+    assert "sources=14->14" in findings[0]
+    assert "NotebookSourceMaterializationTimeout" in findings[1]
+    assert "worker_id=worker-03" in findings[1]
+
+
 def test_main_refuses_to_start_when_doctor_fails(tmp_path, monkeypatch):
     import csf.sharded_lane_series as mod
 

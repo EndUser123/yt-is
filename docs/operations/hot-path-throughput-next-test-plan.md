@@ -1414,6 +1414,8 @@ The offline source-content packet `source_content_failure_event_packet_run01_vs_
 
 The follow-up harness fix closes the remaining empty-metrics hole in that attribution path: reusable notebook-create failure now emits `source_add_failed` counts for all requested inputs, so future `notebook_create_failed` worker failures will invalidate evidence instead of looking like throughput-valid empty fetch metrics.
 
+`fresh_state_3plus3_extract_schema_source_age_cadence_first_window_post_accounting_run03_current` was launched only after that accounting fix and is not throughput evidence. Smoke aborted before soak with `status=partial`, `throughput_valid=false`, and combined diagnostic VPH `1033.98` on `572/128/700`; the proximate invalidation is Pro smoke batch 1 worker-03, which logged `nlm_batch_source_materialization_wait_failed` after waiting `606.057s` for sources to materialize (`expected_total=38`, `sources=14->14`) and then returned `NotebookSourceMaterializationTimeout`. The sharded-lane guard now treats both the materialization-wait failure event and the wrapper `fetch_worker_finished` terminal error as invalidating evidence, so this run should be read as a source-materialization/accounting guard validation, not as another first-window-cap VPH sample.
+
 Command, if the first-window cap probe is intentionally launched:
 
 ```powershell
