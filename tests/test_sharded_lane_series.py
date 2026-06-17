@@ -1727,6 +1727,36 @@ def test_find_invalid_lane_artifacts_flags_source_add_failed_metrics(tmp_path):
     assert "count=50" in findings[0]
 
 
+def test_find_invalid_lane_artifacts_flags_source_mapping_failed(tmp_path):
+    import csf.sharded_lane_series as mod
+
+    lane_root = tmp_path / "lane"
+    log_dir = lane_root / "batch_01" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "term.jsonl").write_text(
+        json.dumps(
+            {
+                "action": "nlm_batch_source_mapping_failed",
+                "data": {
+                    "source_id_title_match_count": 46,
+                    "source_id_order_fallback_count": 4,
+                    "canonical_source_id_count": 0,
+                    "expected_source_id_count": 50,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    findings = mod._find_invalid_lane_artifacts(lane_root)
+
+    assert len(findings) == 1
+    assert "nlm_batch_source_mapping_failed" in findings[0]
+    assert "canonical_source_id_count=0" in findings[0]
+    assert "expected_source_id_count=50" in findings[0]
+
+
 def test_find_invalid_lane_artifacts_flags_materialization_timeout(tmp_path):
     import csf.sharded_lane_series as mod
 

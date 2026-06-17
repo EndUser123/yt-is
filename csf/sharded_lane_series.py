@@ -332,6 +332,14 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
                 f"sources={data.get('source_count_before_wait') or 0}->{data.get('source_count_after_wait') or 0} "
                 f"timeout_s={data.get('timeout_s') or '<unknown>'}"
             )
+        if action == "nlm_batch_source_mapping_failed":
+            canonical_count = data.get("canonical_source_id_count")
+            expected_count = data.get("expected_source_id_count")
+            findings.append(
+                f"{path.relative_to(lane_output_root)}:{lineno}: nlm_batch_source_mapping_failed "
+                f"canonical_source_id_count={canonical_count if canonical_count is not None else '<unknown>'} "
+                f"expected_source_id_count={expected_count if expected_count is not None else '<unknown>'}"
+            )
         if action == "fetch_worker_finished":
             summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
             worker_error = str(summary.get("error") or data.get("error") or "")

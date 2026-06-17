@@ -99,6 +99,33 @@ def test_run_evidence_check_rejects_materialization_wait_failed_marker(tmp_path)
     assert result == 1
 
 
+def test_run_evidence_check_rejects_source_mapping_failed_marker(tmp_path):
+    run_root = tmp_path / "run"
+    logs = run_root / "logs"
+    logs.mkdir(parents=True)
+    (run_root / "sharded_lane_series_summary.json").write_text(
+        json.dumps({"report_version": 1, "combined": {"hot_path_success_count_total": 0}}),
+        encoding="utf-8",
+    )
+    (logs / "term.jsonl").write_text(
+        json.dumps(
+            {
+                "action": "nlm_batch_source_mapping_failed",
+                "data": {
+                    "canonical_source_id_count": 0,
+                    "expected_source_id_count": 50,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_evidence_check.main(["--run-root", str(run_root)])
+
+    assert result == 1
+
+
 def test_run_evidence_check_rejects_invalidated_summary_status(tmp_path):
     run_root = tmp_path / "run"
     logs = run_root / "logs"
