@@ -523,6 +523,7 @@ def _lane_env(
     else:
         env.pop("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", None)
     env["YTIS_BATCH_STATUS_DB_PATH"] = str(lane_output_root / "batch_status.sqlite")
+    env["YTIS_TRANSCRIPT_CACHE_DB_PATH"] = str(lane_output_root / "transcripts.sqlite")
     if lane.expected_email:
         env["YTIS_NLM_EXPECTED_EMAIL"] = lane.expected_email
     else:
@@ -581,6 +582,7 @@ def _lane_process_env_snapshot(env: dict[str, str]) -> dict[str, str]:
             "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", ""
         ),
         "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": env.get("YTIS_NLM_SHARED_RETRY_POOL_DB_PATH", ""),
+        "YTIS_TRANSCRIPT_CACHE_DB_PATH": env.get("YTIS_TRANSCRIPT_CACHE_DB_PATH", ""),
     }
 
 

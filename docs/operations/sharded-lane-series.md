@@ -35,7 +35,7 @@ Each lane must have an isolated namespace for:
 The CLI profile and Chrome profile directory for a lane must represent the same Google account.
 The benchmark now fails closed if a lane profile has no account mapping. For a new lane, set `expected_email`
 in the lane JSON or add the profile to the auth-family map before starting a run.
-Each lane also gets its own `YTIS_BATCH_STATUS_DB_PATH` under the lane output root so the synthetic source seed does not race across concurrent lanes.
+Each lane also gets its own `YTIS_BATCH_STATUS_DB_PATH` and `YTIS_TRANSCRIPT_CACHE_DB_PATH` under the lane output root. The batch-status DB prevents synthetic source-seed races; the transcript-cache DB prevents one concurrent lane from turning the other lane's pending benchmark items into cache hits and silently reducing its processed count.
 When the worker auth profiles are not prefix-derived, set `notebooklm_profiles` to the exact CLI profile names in worker order.
 The browser-health gate normalizes Chrome subprocess `--user-data-dir` paths before matching them against lane roots, so escaped subprocess cmdlines do not trip false `unexpected_process` reports during preflight.
 The sharded lane runner now defaults to a fresh per-run worker-state root under `<run-root>/<lane>/worker_states`. Pass `--preserve-worker-state-root` only when you are explicitly testing reuse against the lane JSON fallback root.

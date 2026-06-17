@@ -11,6 +11,7 @@ from csf.sharded_lane_series import (
     DEFAULT_POLICY,
     LaneConfig,
     _lane_env,
+    _lane_process_env_snapshot,
     compute_combined_hot_path_vph,
     load_lane_configs,
     preflight_lane_auth_profiles,
@@ -745,6 +746,10 @@ def test_lane_env_exports_run_environment_label(tmp_path):
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE"] == "25"
     assert env["YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"] == "true"
     assert env["YTIS_NLM_SHARED_RETRY_POOL_DB_PATH"] == str(tmp_path / "shared.sqlite")
+    assert env["YTIS_TRANSCRIPT_CACHE_DB_PATH"] == str(tmp_path / "lane" / "transcripts.sqlite")
+    assert _lane_process_env_snapshot(env)["YTIS_TRANSCRIPT_CACHE_DB_PATH"] == str(
+        tmp_path / "lane" / "transcripts.sqlite"
+    )
     assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_NLM_WORKER_AUTH_USE_CDP"] == "0"
@@ -1180,6 +1185,7 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
         "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
         "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
         "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": "",
+        "YTIS_TRANSCRIPT_CACHE_DB_PATH": "",
     }
 
 
