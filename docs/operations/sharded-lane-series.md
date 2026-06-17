@@ -126,6 +126,8 @@ Reusable notebook-create failures are classified into the same evidence bucket. 
 
 Source-materialization timeouts are also invalidating evidence. If a worker logs `nlm_batch_source_materialization_wait_failed` with `failure_reason="materialization_wait_failed"`, or the lane wrapper records a `fetch_worker_finished` event whose worker summary ends in `NotebookSourceMaterializationTimeout`, the sharded runner treats that lane as invalid instead of using partial fetch counters as throughput evidence; the smoke evidence checker also rejects the materialization-wait marker. This covers the run shape where a worker fetched some content metrics before a later subbatch failed to materialize sources and returned no completed processed outcomes.
 
+After source-age or capacity rotation clears a reusable notebook, the materialization wait target is the current notebook source count plus the new subbatch size, not the cumulative position in the original worker batch. This keeps a rotated notebook from waiting forever for sources that belonged to the previous notebook contents.
+
 ## Run-Root Cleanup Policy
 
 - Keep a failed or partial smoke/soak root only until a newer successful root exists for the same hypothesis.

@@ -3427,6 +3427,27 @@ class TestNotebookCapRotation:
         assert capacity_rotation["cap_threshold"] == nlm_batch._NOTEBOOK_SOURCE_CAP
         assert capacity_rotation["rotation_reason"] == "source_cap_near_threshold"
 
+    def test_capacity_rotation_resets_expected_materialization_total(self):
+        """After rotating a full notebook, wait for the new notebook source count, not cumulative batch position."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=50)
+        ingestor._nb_id = "nb-cap"
+        batch_ids = [f"v{i}" for i in range(64)]
+        expected_totals: list[int] = []
+
+        def fake_add_sources_chunk(batch_ids, **kwargs):
+            expected_totals.append(kwargs["expected_total"])
+            return list(batch_ids)
+
+        def fake_rotate_notebook(*, reason):
+            ingestor._current_source_count = 0
+
+        with mock.patch.object(ingestor, "_get_current_source_count", side_effect=[0, 50, 50, 14]):
+            with mock.patch.object(ingestor, "_add_sources_chunk", side_effect=fake_add_sources_chunk):
+                with mock.patch.object(ingestor, "_rotate_notebook", side_effect=fake_rotate_notebook):
+                    ingestor._add_sources_in_subbatches(batch_ids, subbatch_size=50)
+
+        assert expected_totals == [50, 14]
+
     def test_shortfall_does_not_rotate_when_below_cap(self):
         """Zero-growth shortfall below cap should trigger the bounded notebook reset fallback."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)

@@ -2697,7 +2697,7 @@ class NLMBatchIngestor:
                 added_chunk_ids = self._add_sources_chunk(
                     subbatch,
                     subbatch_index=subbatch_index,
-                    expected_total=next_index + len(subbatch),
+                    expected_total=source_count_before + len(subbatch),
                     source_profile=source_profile,
                     source_count_before=source_count_before,
                     source_count_probe_ok_before=bool(self._last_source_count_probe_ok),
