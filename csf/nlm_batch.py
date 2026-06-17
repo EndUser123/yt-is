@@ -3215,6 +3215,8 @@ class NLMBatchIngestor:
             retry_queue_gate_reason = "status_not_retryable"
             retry_queue_skipped_reason: str | None = None
             projected_retry_ready_age_s: float | None = None
+            local_retry_skipped_reason: str | None = None
+            projected_local_retry_completion_age_s: float | None = None
             log_action(
                 "nlm_batch_source_content_fetch_started",
                 {
@@ -3508,6 +3510,14 @@ class NLMBatchIngestor:
                     delay_s = min(delay_s, remaining_budget_s)
                 if delay_s <= 0:
                     break
+                if ready_reference_epoch:
+                    projected_local_retry_completion_age_s = round(
+                        time.time() - ready_reference_epoch + delay_s + attempt_elapsed_s,
+                        3,
+                    )
+                    if projected_local_retry_completion_age_s >= _SOURCE_AGE_CLIFF_S:
+                        local_retry_skipped_reason = "projected_local_retry_completion_age_cliff"
+                        break
                 with status_lock:
                     content_fetch_stats["content_fetch_retry_sleep_elapsed_s_total"] += delay_s
                 time.sleep(delay_s)
@@ -3593,6 +3603,12 @@ class NLMBatchIngestor:
             if (
                 retry_queue_candidate
                 and not _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED
+                and local_retry_skipped_reason is not None
+            ):
+                retry_queue_skipped_reason = local_retry_skipped_reason
+            elif (
+                retry_queue_candidate
+                and not _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED
                 and projected_retry_ready_age_s is not None
                 and projected_retry_ready_age_s >= _SOURCE_AGE_CLIFF_S
             ):
@@ -3644,6 +3660,8 @@ class NLMBatchIngestor:
                         "retry_queue_skipped_reason": None,
                         "projected_retry_ready_age_s": projected_retry_ready_age_s,
                         "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                        "local_retry_skipped_reason": local_retry_skipped_reason,
+                        "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                         "queued_for_retry": True,
                         "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
                         "pass_name": pass_name,
@@ -3698,6 +3716,8 @@ class NLMBatchIngestor:
                         "source_ready_age_s": final_ready_age_s,
                         "projected_retry_ready_age_s": projected_retry_ready_age_s,
                         "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                        "local_retry_skipped_reason": local_retry_skipped_reason,
+                        "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                         "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                         "retry_queue_gate_reason": retry_queue_gate_reason,
                         "materialization_ready_at_epoch": ready_reference_epoch,
@@ -3729,6 +3749,8 @@ class NLMBatchIngestor:
                     "retry_queue_gate_reason": retry_queue_gate_reason,
                     "projected_retry_ready_age_s": projected_retry_ready_age_s,
                     "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                    "local_retry_skipped_reason": local_retry_skipped_reason,
+                    "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                     "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                     "extraction_outcome": final_status,
                     "stdout": str(last_result["stdout"])[:500],
@@ -3801,6 +3823,8 @@ class NLMBatchIngestor:
                     "retry_queue_skipped_reason": retry_queue_skipped_reason,
                     "projected_retry_ready_age_s": projected_retry_ready_age_s,
                     "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                    "local_retry_skipped_reason": local_retry_skipped_reason,
+                    "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                     "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
                     "pass_name": pass_name,
                     "youtube_ytdlp_classification": youtube_ytdlp_probe.get("classification"),
@@ -3885,6 +3909,8 @@ class NLMBatchIngestor:
                 "retry_queue_skipped_reason": retry_queue_skipped_reason,
                 "projected_retry_ready_age_s": projected_retry_ready_age_s,
                 "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                "local_retry_skipped_reason": local_retry_skipped_reason,
+                "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                 "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                 "source_id_validated_after_not_found": not_found_probe.get("source_id_present_in_source_list"),
                 "source_list_probe_returncode": not_found_probe.get("source_list_probe_returncode", -1),
