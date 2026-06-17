@@ -2212,7 +2212,7 @@ class NLMBatchIngestor:
                 f"[NLM-Batch]   Sub-batch {subbatch_index} notebook missing; "
                 f"creating a fresh notebook and retrying"
             )
-            if self._recover_dead_notebook(batch_ids):
+            if self._recover_dead_notebook():
                 return self._add_sources_chunk(
                     batch_ids,
                     subbatch_index=subbatch_index,

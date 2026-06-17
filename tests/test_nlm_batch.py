@@ -3152,16 +3152,58 @@ class TestSubBatchFailureMode:
             call.args[0] == ["notebook", "create", nlm_batch._get_reusable_notebook_title()]
             for call in mock_run_cmd.call_args_list
         )
-        assert wait_mock.call_count == 2
-        for call in wait_mock.call_args_list:
-            assert call.args == (1,)
-            assert call.kwargs == {"timeout": 600, "source_count_before_wait": 1}
+        wait_mock.assert_called_once_with(1, timeout=600, source_count_before_wait=1)
 
         log_names = [call.args[0] for call in mock_log.call_args_list]
         assert "nlm_batch_dead_notebook_recovery_scheduled" in log_names
         assert "nlm_batch_dead_notebook_recreated" in log_names
         assert "nlm_batch_subbatch_add_failed" not in log_names
         assert "nlm_batch_source_materialization_wait_failed" not in log_names
+
+    def test_source_count_probe_not_found_after_success_recreates_empty_notebook_before_retry(self):
+        """The recovery helper must not add the subbatch before the caller retries it."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-old"
+        source_list_responses = [
+            type("CompletedProcess", (), {"returncode": 0, "stdout": '{"sources": []}', "stderr": ""})(),
+            type(
+                "CompletedProcess",
+                (),
+                {"returncode": 1, "stdout": '{"status":"error","error":"API error (code 5): NOT_FOUND"}', "stderr": ""},
+            )(),
+            type(
+                "CompletedProcess",
+                (),
+                {"returncode": 1, "stdout": '{"status":"error","error":"API error (code 5): NOT_FOUND"}', "stderr": ""},
+            )(),
+            type("CompletedProcess", (), {"returncode": 0, "stdout": '{"sources": []}', "stderr": ""})(),
+            type("CompletedProcess", (), {"returncode": 0, "stdout": '{"sources": [{"id":"s1"}]}', "stderr": ""})(),
+            type("CompletedProcess", (), {"returncode": 0, "stdout": '{"sources": [{"id":"s1"}]}', "stderr": ""})(),
+        ]
+        source_add_calls = {"count": 0}
+
+        def fake_run_cmd(args, **_kwargs):
+            if args[:2] == ["source", "list"]:
+                return source_list_responses.pop(0)
+            if args[:2] == ["source", "add"]:
+                source_add_calls["count"] += 1
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": "Source ID: s1", "stderr": ""},
+                )()
+            raise AssertionError(f"unexpected command: {args}")
+
+        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+            with mock.patch("csf.nlm_batch.time.sleep"):
+                with mock.patch.object(ingestor, "_recover_dead_notebook", return_value=True) as mock_recover:
+                    with mock.patch.object(ingestor, "_wait_for_sources_ready", return_value=True) as mock_wait:
+                        result = ingestor._add_sources_chunk(["v1"], subbatch_index=1, expected_total=1)
+
+        assert result == ["v1"]
+        assert source_add_calls["count"] == 2
+        mock_recover.assert_called_once_with()
+        mock_wait.assert_called_once_with(1, timeout=600, source_count_before_wait=1)
 
     def test_zero_growth_add_failure_recovers_after_notebook_reset(self):
         """A zero-growth add failure should recover after the bounded notebook reset fallback."""
