@@ -1,6 +1,6 @@
 # Sharded Lane Artifact Audit
 
-_Generated: audit_sharded_lane_runs.py — 23 runs audited_
+_Generated: audit_sharded_lane_runs.py — 24 runs audited_
 
 _Run root: `P:\packages\yt-is\.logs\sharded_lane_series`_
 
@@ -11,6 +11,7 @@ _Run root: `P:\packages\yt-is\.logs\sharded_lane_series`_
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pro_free_source_map_v1 | root | absent | 4+4 | absent | absent | old (excludes_whisper only) | 400 | 5572.04 | 796/4/800 | 0.50% | 2823.15 | 2790.29 | absent | 2 | 78.834 | — | — |
 | sweep_phase3_2lane_3w_run01 | root | absent | 3+3 | ok | absent | old (excludes_whisper only) | 400 | 4123.28 | 795/5/800 | 0.62% | 2061.27 | 2299.84 | absent | 3 | 11.855 | recovered_clean | clean |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | root | home_300mb | 3+3 | ok | true | new (includes worker_cleanup) | 400 | 3636.16 | 793/7/800 | 0.88% | 2068.29 | 1982.80 | absent | 30 | 268.162 | clean | clean |
 | fresh_state_3plus3_extract_schema_control_run07_current | root | absent | 3+3 | ok | true | new (includes worker_cleanup) | 400 | 3291.38 | 744/56/800 | 7.00% | 2256.45 | 2118.97 | absent | 4 | 86.740 | clean | clean |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | root | hotel_wifi | 3+3 | ok | true | new (includes worker_cleanup) | 400 | 3156.57 | 763/157/920 | 17.07% | 2014.77 | 2294.94 | 44 | absent | 221.350 | — | — |
 | sweep_phase3_2lane_4_3_run01 | root | absent | 4+3 | ok | absent | old (excludes_whisper only) | 400 | 3120.55 | 795/5/800 | 0.62% | 1579.89 | 1559.54 | absent | 62 | 628.086 | recovered_clean | clean |
@@ -51,6 +52,7 @@ _Run root: `P:\packages\yt-is\.logs\sharded_lane_series`_
 
 | Run | Combined VPH | Fail Rate | source_age_cliff | command_failed | worker_idle_wait_s | source_ready_age_s_max (Pro) | source_ready_age_s_max (Free) | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | 3636.16 | 0.88% | absent | 30 | 268.162 | 109.925 | 160.247 | throughput_valid=true |
 | fresh_state_3plus3_extract_schema_control_run07_current | 3291.38 | 7.00% | absent | 4 | 86.740 | 98.644 | 151.637 | throughput_valid=true |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | 3156.57 | 17.07% | 44 | absent | 221.350 | 232.958 | 200.236 | throughput_valid=true |
 | hotel_wifi_3plus3_source_content_attr_run01_current | 2379.18 | 12.50% | 95 | 68 | 791.494 | 346.044 | 376.652 | throughput_valid=true |
@@ -79,6 +81,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pro_free_source_map_v1 | old (excludes_whisper only) | 5572.04 | 5572.04 | +0.00 | 514.282 | combined.wall_elapsed_s | wall-equivalent; current cleanup/reap boundary unproven | combined.throughput_elapsed_s |
 | sweep_phase3_2lane_3w_run01 | old (excludes_whisper only) | 4123.28 | 4123.28 | +0.00 | 694.107 | combined.wall_elapsed_s | wall-equivalent; current cleanup/reap boundary unproven | combined.throughput_elapsed_s |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | new (includes worker_cleanup) | 3636.16 | 3636.16 | +0.00 | 785.115 | combined.throughput_elapsed_s | current-contract exact | — |
 | fresh_state_3plus3_extract_schema_control_run07_current | new (includes worker_cleanup) | 3291.38 | 3291.38 | +0.00 | 813.762 | combined.throughput_elapsed_s | current-contract exact | — |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | new (includes worker_cleanup) | 3156.57 | 3156.57 | +0.00 | 870.186 | combined.throughput_elapsed_s | current-contract exact | — |
 | sweep_phase3_2lane_4_3_run01 | old (excludes_whisper only) | 3120.55 | 3120.55 | +0.00 | 917.146 | combined.wall_elapsed_s | wall-equivalent; current cleanup/reap boundary unproven | combined.throughput_elapsed_s |
@@ -127,6 +130,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run30_current | 232.958 | 200.236 | 232.958 | 44 | absent | 3156.57 | cliff=44 |
 | hotel_wifi_3plus3_shared_retry_source_age_cadence_run31_current | 214.584 | 205.444 | 214.584 | 74 | absent | 1710.32 | cliff=74 |
 | sweep_phase3_2lane_3w_agecap_200_run02 | 211.292 | 160.966 | 211.292 | absent | absent | 3084.08 | — |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | 109.925 | 160.247 | 160.247 | absent | 30 | 3636.16 | cmd_failed=30 |
 | fresh_state_3plus3_extract_schema_control_run07_current | 98.644 | 151.637 | 151.637 | absent | 4 | 3291.38 | cmd_failed=4 |
 | sweep_phase3_2lane_3w_run01 | 141.476 | 115.991 | 141.476 | absent | 3 | 4123.28 | cmd_failed=3 |
 | pro_free_source_map_v1 | 103.294 | 105.559 | 105.559 | absent | 2 | 5572.04 | cmd_failed=2 |
@@ -161,6 +165,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | fresh_state_3plus3_source_age_cadence_run05 | absent | 48 | 11 | 1829.83 | 1.38% | n/a |
 | fresh_state_3plus3_extract_schema_control_run07_current | absent | 4 | 56 | 3291.38 | 7.00% | n/a |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | absent | 5 | 156 | 1749.44 | 19.50% | n/a |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | absent | 30 | 7 | 3636.16 | 0.88% | n/a |
 
 ### Sorted by command_failed descending
 
@@ -177,6 +182,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | pro_free_source_map_v7_rerun | 58 | absent | 5 | 2930.78 | — |
 | fresh_state_3plus3_source_age_cadence_run05 | 48 | absent | 11 | 1829.83 | — |
 | fresh_state_3plus3_extract_schema_control_run15_current | 42 | 41 | 49 | 2205.73 | cliff=41 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | 30 | absent | 7 | 3636.16 | — |
 | fresh_state_3plus3_worker_balance_ab_pro0213_run06 | 20 | 25 | 30 | 1403.64 | cliff=25 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | 5 | absent | 156 | 1749.44 | — |
 | fresh_state_3plus3_worker_balance_ab_pro0213_run05 | 4 | 6 | 11 | 1533.33 | cliff=6 |
@@ -196,6 +202,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | fresh_state_3plus3_extract_schema_warmup_state_run01_current | 52 | 177/0/177 | 76 | drain_projected_source_age_cliff=76 | 0/0/0 | 177 | projected_source_age_cliff=35 | 494.920 | 494.920 | 0.000 | command_failed=97, nlm_content_below_threshold=2, source_age_cliff=78 | 496.703 | 137.002/101 | 870.000 | 1508.94 | windows=52 |
 | fresh_state_3plus3_extract_schema_control_run15_current | 25 | 75/0/75 | 41 | drain_projected_source_age_cliff=41 | 0/0/0 | 75 | projected_source_age_cliff=8 | 244.302 | 244.302 | 0.000 | command_failed=32, nlm_content_below_threshold=2, source_age_cliff=41 | 246.030 | 140.813/34 | 300.000 | 2205.73 | windows=25 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | 48 | 38/0/38 | 0 | absent | 0/0/0 | 38 | absent | 118.158 | 118.158 | 0.000 | command_failed=34, nlm_content_below_threshold=4 | 120.015 | 83.622/38 | 510.000 | 3636.16 | windows=48 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | 30 | 9/0/9 | 0 | absent | 0/0/0 | 9 | absent | 72.390 | 72.390 | 0.000 | command_failed=6, nlm_content_below_threshold=3 | 75.617 | 35.643/9 | 270.000 | 1749.44 | windows=30 |
 | hotel_wifi_3plus3_auth_interval75_run02_current | 52 | 206/1/205 | absent | absent | 0/0/0 | 206 | projected_source_age_cliff=112 | 371.906 | absent | absent | command_failed=75, nlm_content_below_threshold=3, ready=1, source_age_cliff=127 | absent | absent/absent | 1440.000 | 2000.06 | windows=52; drain_ready_age=absent |
 | hotel_wifi_4plus4_control_run03_current | 61 | 250/0/250 | absent | absent | 0/0/0 | 250 | projected_source_age_cliff=197 | 453.582 | absent | absent | command_failed=53, nlm_content_below_threshold=1, source_age_cliff=195 | absent | absent/absent | 1410.000 | 1149.72 | windows=61; drain_ready_age=absent |
@@ -235,6 +242,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | fresh_state_3plus3_extract_schema_control_run15_current | home_300mb | 3+3 | 8548.080 | 1109 | 7.708 | 3354.524 | 5193.556 | 2205.73 |
 | fresh_state_3plus3_extract_schema_control_run07_current | absent | 3+3 | 5041.379 | 788 | 6.398 | 2014.284 | 3027.095 | 3291.38 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | home_300mb | 3+3 | 3105.006 | 681 | 4.559 | 1758.205 | 1346.801 | 1749.44 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | home_300mb | 3+3 | 2652.777 | 991 | 2.677 | 904.651 | 1748.126 | 3636.16 |
 | pro_free_source_map_v1 | absent | 4+4 | absent | absent | absent | absent | absent | 5572.04 |
 | sweep_phase3_2lane_3w_run01 | absent | 3+3 | absent | absent | absent | absent | absent | 4123.28 |
 | sweep_phase3_2lane_4_3_run01 | absent | 4+3 | absent | absent | absent | absent | absent | 3120.55 |
@@ -311,6 +319,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | hotel_wifi_3plus3_auth_interval75_run02_current | soak | a_hominidae_pro | batch_02 | 3 | 199/1/200 | 30.47 | 90.02 | 958.842 | 6.257 | 122.600 | absent | 1 | absent | no | 1 | 0 |
 | fresh_state_3plus3_extract_schema_control_run07_current | soak | troup_hominidae_free | batch_01 | 3 | 148/52/200 | 30.06 | 151.64 | 1482.929 | 12.468 | 0.000 | absent | 1 | absent | no | 1 | 0 |
 | fresh_state_3plus3_extract_schema_control_run07_current | smoke | a_hominidae_pro | batch_02 | 3 | 199/1/200 | 29.44 | 207.02 | 1979.481 | 13.191 | 183.813 | absent | 4 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | troup_hominidae_free | batch_01 | 3 | 199/1/200 | 29.44 | 160.25 | 1359.805 | 7.098 | 210.416 | absent | 16 | absent | no | 3 | 0 |
 | sweep_phase3_2lane_3w_agecap_200_run02 | soak | a_hominidae_pro | batch_01 | 4 | 199/1/200 | 27.23 | 211.29 | absent | absent | 0.000 | absent | absent | absent | no | absent | 0 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 26.83 | 92.46 | 935.814 | 6.568 | 40.423 | absent | absent | absent | no | 0 | 0 |
 | sweep_phase3_2lane_3w_agecap_200_run02 | soak | troup_hominidae_free | batch_01 | 4 | 199/1/200 | 25.77 | 160.97 | absent | absent | 0.000 | absent | absent | absent | no | absent | 0 |
@@ -319,6 +328,7 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | fresh_state_3plus3_extract_schema_control_run07_current | soak | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 24.48 | 142.13 | 1544.166 | 11.557 | 43.264 | absent | 2 | absent | no | 1 | 0 |
 | hotel_wifi_3plus3_auth_interval45_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 24.04 | 115.99 | 1164.797 | 4.735 | 332.202 | absent | 8 | absent | no | 4 | 0 |
 | hotel_wifi_3plus3_auth_interval75_run02_current | soak | troup_hominidae_free | batch_02 | 3 | 199/1/200 | 23.88 | 74.61 | 902.568 | 6.975 | 74.075 | absent | 1 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | a_hominidae_pro | batch_01 | 3 | 199/1/200 | 22.54 | 109.92 | 589.921 | 2.993 | 20.939 | absent | 5 | absent | no | 2 | 0 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 21.40 | 91.52 | 783.638 | 3.873 | 97.993 | absent | 4 | absent | no | 3 | 0 |
 | hotel_wifi_4plus4_control_run03_current | smoke | a_hominidae_pro | batch_02 | 4 | 198/2/200 | 21.13 | 165.51 | 915.442 | 4.706 | 52.768 | absent | 4 | absent | no | 3 | 0 |
 | fresh_state_3plus3_extract_schema_shared_retry_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 99/101/200 | 20.68 | 36.14 | 415.123 | 4.650 | 0.000 | absent | 1 | absent | no | 1 | 0 |
@@ -329,12 +339,18 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | sweep_phase3_2lane_3w_agecap_200_run02 | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 17.32 | 31.00 | absent | absent | 195.662 | absent | absent | absent | no | absent | 0 |
 | fresh_state_3plus3_extract_schema_control_run07_current | soak | a_hominidae_pro | batch_02 | 3 | 199/1/200 | 16.31 | 76.63 | 625.983 | 3.681 | 0.000 | absent | 1 | absent | no | 1 | 0 |
 | sweep_phase3_2lane_3w_agecap_200_run03_current | smoke | a_hominidae_pro | batch_01 | 4 | 49/1/50 | 15.55 | 79.87 | 146.738 | 2.574 | 122.204 | absent | 1 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | a_hominidae_pro | batch_01 | 3 | 198/2/200 | 14.82 | 113.25 | 439.091 | 3.008 | 39.915 | absent | 3 | absent | no | 2 | 0 |
 | sweep_phase3_2lane_3w_run01 | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 14.54 | 79.22 | absent | absent | 0.515 | absent | 2 | absent | no | absent | 0 |
 | sweep_phase3_2lane_3w_agecap_200_run03_current | smoke | troup_hominidae_free | batch_01 | 4 | 50/0/50 | 14.18 | 97.43 | 196.987 | 2.985 | 224.672 | absent | 2 | absent | no | 1 | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | troup_hominidae_free | batch_02 | 3 | 197/3/200 | 11.16 | 75.30 | 388.321 | 1.901 | 0.000 | absent | 5 | absent | no | 4 | 0 |
 | sweep_phase3_2lane_3w_run01 | smoke | a_hominidae_pro | batch_02 | 3 | 25/0/25 | 10.37 | 13.26 | absent | absent | 84.463 | absent | absent | absent | no | absent | 0 |
 | sweep_phase3_2lane_4_3_run01 | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 9.96 | 14.44 | absent | absent | 28.953 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | troup_hominidae_free | batch_01 | 3 | 196/4/200 | 9.32 | 77.80 | 426.383 | 2.130 | 37.407 | absent | 3 | absent | no | 3 | 0 |
 | fresh_state_3plus3_extract_schema_control_run15_current | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 9.26 | 319.70 | 517.642 | 3.606 | 217.677 | absent | 2 | absent | no | 2 | 0 |
 | sweep_phase3_2lane_3w_run01 | smoke | a_hominidae_pro | batch_01 | 3 | 25/0/25 | 9.04 | 13.80 | absent | absent | 28.613 | absent | absent | absent | no | absent | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 8.60 | 68.14 | 314.730 | 1.419 | 36.807 | absent | 4 | absent | no | 3 | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | a_hominidae_pro | batch_02 | 3 | 198/2/200 | 7.78 | 67.44 | 288.861 | 1.401 | 0.000 | absent | 2 | absent | no | 2 | 0 |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 7.37 | 75.53 | 440.954 | 2.688 | 0.000 | absent | 2 | absent | no | 2 | 0 |
 | sweep_phase3_2lane_3w_run01 | smoke | troup_hominidae_free | batch_02 | 3 | 25/0/25 | 7.25 | 10.61 | absent | absent | 67.535 | absent | absent | absent | no | absent | 0 |
 | fresh_state_3plus3_extract_schema_control_run15_current | soak | troup_hominidae_free | batch_02 | 3 | 198/2/200 | 7.04 | 66.43 | 240.160 | 1.214 | 0.000 | absent | 2 | absent | no | 2 | 0 |
 | sweep_phase3_2lane_3w_run01 | smoke | troup_hominidae_free | batch_01 | 3 | 25/0/25 | 6.97 | 10.61 | absent | absent | 65.296 | absent | absent | absent | no | absent | 0 |
@@ -389,6 +405,14 @@ This table recomputes combined VPH from the reducer-compatible formula: `combine
 | fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | a_hominidae_pro | batch_02 | 8/232/240 | absent | absent | 0.000 | 240.623 | 0.00 | yes |
 | fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_01 | 111/110/200 | 42 | absent | 9872.507 | 637.830 | 364.82 | no |
 | fresh_state_3plus3_extract_schema_shared_retry_run06_current | soak | troup_hominidae_free | batch_02 | 198/23/221 | absent | 1 | 4944.740 | 0.000 | 145.28 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | a_hominidae_pro | batch_01 | 198/2/200 | absent | 3 | 439.091 | 39.915 | 113.25 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | a_hominidae_pro | batch_02 | 198/2/200 | absent | 2 | 288.861 | 0.000 | 67.44 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | troup_hominidae_free | batch_01 | 196/4/200 | absent | 3 | 426.383 | 37.407 | 77.80 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | smoke | troup_hominidae_free | batch_02 | 198/2/200 | absent | 2 | 440.954 | 0.000 | 75.53 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | a_hominidae_pro | batch_01 | 199/1/200 | absent | 5 | 589.921 | 20.939 | 109.92 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | a_hominidae_pro | batch_02 | 198/2/200 | absent | 4 | 314.730 | 36.807 | 68.14 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | troup_hominidae_free | batch_01 | 199/1/200 | absent | 16 | 1359.805 | 210.416 | 160.25 | no |
+| fresh_state_3plus3_extract_schema_source_age_cadence_run01_current | soak | troup_hominidae_free | batch_02 | 197/3/200 | absent | 5 | 388.321 | 0.000 | 75.30 | no |
 
 ## Table 10 — Worker / Auth Skew Attribution
 
@@ -510,6 +534,67 @@ An absent field means the artifact was written before that instrumentation exist
   - retry_pass_status_counts: {command_failed=1, nlm_content_below_threshold=1}
   - retry_queue_drain_ready_age_s_max: absent
   - content_fetch_retry_queue_sleep_elapsed_s_total: 0.000
+  - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000
+
+
+### fresh_state_3plus3_extract_schema_source_age_cadence_run01_current
+
+- status: `ok`, throughput_valid: `true`, contract: `combined_hot_path_videos_per_hour_excludes_whisper_and_parent_chrome_reap_includes_worker_cleanup`
+- environment: `home_300mb`, geometry: `3+3`, limit: `400`, batch_size: `200`, policy: `notebooklm_route_plus_fallback_30s_1w`
+- source_url: `https://www.youtube.com/channel/UCYTISFALLBACKBMK`
+- pre_run_browser_health: `clean`, post_run_hygiene: `clean`
+- parse_mode: `strict`, parse_error: `none`
+
+  **Pro lane** (3 workers):
+  - VPH: 2068.29, success/fail/processed: 397/3/400
+  - source_ready_age_s_max: 109.925, avg: 11.237
+  - worker_idle_wait_s_total: 57.746
+  - add_elapsed_s_total: 633.260
+  - cleanup_elapsed_s_total: 58.396
+  - setup_elapsed_s_total: 36.979
+  - extract_elapsed_s_total: 1129.840
+  - content_fetch_command_elapsed_s_total/count: 904.651 / 469
+  - source_age_cliff: `absent` (absent = field not in artifact)
+  - command_failed: `9` (absent = field not in artifact)
+  - content_fetch_status_counts_total: {command_failed=9, nlm_content_below_threshold=1, ready=397}
+  - retry_queue_window_count: 24
+  - retry_queue_deferred/recovered/final_failed: 13/0/13
+  - shared_retry_deferred_count/recovered_count/final_failed_count: 0/0/0
+  - retry_queue_primary_queued_count: 13
+  - retry_queue_drain_skipped_count: 0
+  - projected_retry_ready_age_s_max: 64.244
+  - projected_retry_ready_age_with_margin_s_max: 64.244
+  - retry_queue_age_margin_s_max: 0.000
+  - retry_pass_status_counts: {command_failed=11, nlm_content_below_threshold=2}
+  - retry_queue_wait_elapsed_s_total / retry_queue_wait_elapsed_s_max / retry_queue_wait_elapsed_s_count: 477.783 / 49.486 / 13
+  - retry_queue_drain_ready_age_s_max: 81.155
+  - content_fetch_retry_queue_sleep_elapsed_s_total: 210.000
+  - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000
+
+  **Free lane** (3 workers):
+  - VPH: 1982.80, success/fail/processed: 396/4/400
+  - source_ready_age_s_max: 160.247, avg: 14.056
+  - worker_idle_wait_s_total: 210.416
+  - add_elapsed_s_total: 531.530
+  - cleanup_elapsed_s_total: 49.437
+  - setup_elapsed_s_total: 18.324
+  - extract_elapsed_s_total: 1336.100
+  - content_fetch_command_elapsed_s_total/count: 1748.126 / 522
+  - source_age_cliff: `absent` (absent = field not in artifact)
+  - command_failed: `21` (absent = field not in artifact)
+  - content_fetch_status_counts_total: {command_failed=21, nlm_content_below_threshold=1, ready=396}
+  - retry_queue_window_count: 24
+  - retry_queue_deferred/recovered/final_failed: 25/0/25
+  - shared_retry_deferred_count/recovered_count/final_failed_count: 0/0/0
+  - retry_queue_primary_queued_count: 25
+  - retry_queue_drain_skipped_count: 0
+  - projected_retry_ready_age_s_max: 118.158
+  - projected_retry_ready_age_with_margin_s_max: 118.158
+  - retry_queue_age_margin_s_max: 0.000
+  - retry_pass_status_counts: {command_failed=23, nlm_content_below_threshold=2}
+  - retry_queue_wait_elapsed_s_total / retry_queue_wait_elapsed_s_max / retry_queue_wait_elapsed_s_count: 1171.656 / 83.622 / 25
+  - retry_queue_drain_ready_age_s_max: 120.015
+  - content_fetch_retry_queue_sleep_elapsed_s_total: 300.000
   - retry_queue_delay_s / retry_queue_budget_s: 30.000 / 30.000
 
 
