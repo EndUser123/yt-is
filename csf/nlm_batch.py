@@ -5249,6 +5249,8 @@ class NLMReusableIngestor:
             },
         )
         if not self._nb_id:
+            status_counts = {"source_add_failed": len(video_ids)}
+            self._last_extract_metrics = {"content_fetch_status_counts": status_counts}
             log_action(
                 "nlm_batch_reusable_process_completed",
                 {
@@ -5274,12 +5276,15 @@ class NLMReusableIngestor:
                     "extract_window_count": len(active_windows),
                     "window_count": len(active_windows),
                     "strategy": "reusable",
+                    "succeeded": 0,
+                    "failed": len(video_ids),
+                    "content_fetch_status_counts": status_counts,
                     "total_elapsed_s": round(time.monotonic() - batch_started_at, 3),
                     "started_at_epoch": batch_started_at_epoch,
                     "completed_at_epoch": time.time(),
                 },
             )
-            return {vid: (False, None, "Notebook failed") for vid in video_ids}
+            return {vid: (False, None, "Source add failed") for vid in video_ids}
         add_sources_elapsed_s = 0.0
         if window_mode == "extract_window":
             setup_mode = "reuse_extract_window" if not created_new_notebook else "create_extract_window"

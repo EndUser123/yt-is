@@ -122,6 +122,8 @@ they are diagnostic only and may include only lanes that reached `status="ok"`.
 
 Zero-growth NotebookLM source-add failures are not split into smaller chunks. If `nlm source add` returns nonzero and the notebook source count stays unchanged after one retry and one notebook reset, the worker logs `nlm_batch_subbatch_zero_growth_terminal`, then `nlm_batch_subbatch_add_failed` with `failure_reason="source_add_failed"`. The sharded runner and evidence checker treat this as invalid run evidence because the failure points at account/profile/service pressure, not an individual bad URL that smaller chunks are likely to isolate.
 
+Reusable notebook-create failures are classified into the same evidence bucket. If a reusable batch cannot create or recover a notebook, the batch result now records one `source_add_failed` metric per requested video instead of leaving worker failures with empty content-fetch counts. That keeps source-add/setup failures from appearing as throughput-valid fetch-path outcomes.
+
 ## Run-Root Cleanup Policy
 
 - Keep a failed or partial smoke/soak root only until a newer successful root exists for the same hypothesis.

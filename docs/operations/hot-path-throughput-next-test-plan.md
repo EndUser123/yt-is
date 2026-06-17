@@ -1412,6 +1412,8 @@ The first-window policy refinement is now implemented behind `YTIS_NLM_REUSABLE_
 
 The offline source-content packet `source_content_failure_event_packet_run01_vs_run02_current` splits that regression by mechanism. Pro soak batch 1 is not a source-content retry or age-cliff failure: worker accounting reports `100/100/200`, but reusable-process accounting reports `100/0/200`, the cadence windows selected and added only `100/100`, and two source-add problem events attempted `50` URLs with `0` added (`could_not_add_url_sources=2`). Pro soak batch 2 is mixed but still source-add/window dominated (`50/0` problem URLs plus only `3` command failures and no `source_age_cliff`). Free soak batch 2 is the actual source-age-pressure case (`source_age_cliff=3`, max ready age `367.065`). Treat this as a negative result for first-window capping and as positive evidence that small fresh first windows increase source-add churn/accounting holes. Keep `source_age_cadence_run01_current` as the current live same-shape leader, leave the cap defaulted off, and do not run another first-window-cap live probe without a source-add/failure-accounting mechanism change.
 
+The follow-up harness fix closes the remaining empty-metrics hole in that attribution path: reusable notebook-create failure now emits `source_add_failed` counts for all requested inputs, so future `notebook_create_failed` worker failures will invalidate evidence instead of looking like throughput-valid empty fetch metrics.
+
 Command, if the first-window cap probe is intentionally launched:
 
 ```powershell

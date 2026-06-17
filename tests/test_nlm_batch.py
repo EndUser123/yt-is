@@ -1031,6 +1031,28 @@ class TestReusableBatchLogging:
         assert completed["failed"] == 3
         assert completed["content_fetch_status_counts"] == {"source_add_failed": 3}
 
+    def test_reusable_batch_counts_notebook_create_failure_as_source_add_failed(self):
+        """A notebook-create failure should not leave failed inputs with empty fetch metrics."""
+        batch_ids = ["vid1", "vid2", "vid3"]
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value=None):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(source_age_cadence_enabled=True)
+                    with mock.patch.object(ingestor, "_ensure_notebook", return_value=(False, "create")):
+                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                            with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[200.0 + i for i in range(20)]):
+                                results = ingestor.process_batch(batch_ids)
+
+        assert len(results) == 3
+        assert all((not success) and transcript is None and error == "Source add failed" for success, transcript, error in results.values())
+        assert ingestor._last_extract_metrics == {"content_fetch_status_counts": {"source_add_failed": 3}}
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["status"] == "notebook_create_failed"
+        assert completed["succeeded"] == 0
+        assert completed["failed"] == 3
+        assert completed["content_fetch_status_counts"] == {"source_add_failed": 3}
+
     def test_reusable_batch_logs_summary_for_reused_notebook(self):
         """A reused notebook should log reuse-specific summary fields."""
         batch_ids = ["vid3"]
