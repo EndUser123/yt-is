@@ -260,6 +260,96 @@ def test_main_writes_packet_outputs(tmp_path):
     assert payload["packets"][0]["batch_rows"][0]["retry_queue_wait_total_s"] == 7.5
 
 
+def test_analyze_run_root_tracks_source_add_window_shortfall(tmp_path):
+    run_root = tmp_path / "shortfall_run"
+    _write_jsonl(
+        _term_path(run_root, phase="soak", lane="a_hominidae_pro"),
+        [
+            _event(
+                "worker_batch_completed",
+                {
+                    "worker_id": "worker-01",
+                    "video_count": 50,
+                    "succeeded": 25,
+                    "failed": 25,
+                    "notebooklm_profile": "ytis-pro-worker-01",
+                },
+            ),
+            _event(
+                "nlm_batch_reusable_process_completed",
+                {
+                    "batch_size": 50,
+                    "succeeded": 25,
+                    "failed": 0,
+                    "notebooklm_profile": "ytis-pro-worker-01",
+                },
+            ),
+            _event(
+                "nlm_batch_reusable_source_age_cadence_window_started",
+                {
+                    "selected_window_size": 25,
+                    "window_size": 25,
+                    "notebooklm_profile": "ytis-pro-worker-01",
+                },
+            ),
+            _event(
+                "nlm_batch_reusable_source_age_cadence_window_completed",
+                {
+                    "added_count": 25,
+                    "succeeded": 25,
+                    "failed": 0,
+                    "notebooklm_profile": "ytis-pro-worker-01",
+                },
+            ),
+            _event(
+                "nlm_batch_subbatch_add_completed",
+                {
+                    "subbatch_size": 25,
+                    "added_count": 25,
+                    "returncode": 0,
+                    "notebooklm_profile": "ytis-pro-worker-01",
+                },
+            ),
+            _event(
+                "nlm_batch_subbatch_add_completed",
+                {
+                    "subbatch_size": 25,
+                    "added_count": 0,
+                    "returncode": 1,
+                    "stdout": "Adding 25 URLs and waiting for processing...\nError: Could not add URL sources.",
+                    "notebooklm_profile": "ytis-pro-worker-01",
+                },
+            ),
+        ],
+    )
+
+    packet = analyze_run_root(run_root)
+    batch_row = packet["batch_rows"][0]
+    assert batch_row["worker_video_count"] == 50
+    assert batch_row["worker_succeeded_count"] == 25
+    assert batch_row["worker_failed_count"] == 25
+    assert batch_row["reusable_process_batch_size"] == 50
+    assert batch_row["reusable_process_succeeded_count"] == 25
+    assert batch_row["reusable_process_failed_count"] == 0
+    assert batch_row["source_age_window_started_count"] == 1
+    assert batch_row["source_age_window_completed_count"] == 1
+    assert batch_row["source_age_window_selected_total"] == 25
+    assert batch_row["source_age_window_added_total"] == 25
+    assert batch_row["source_add_attempted_total"] == 50
+    assert batch_row["source_add_added_total"] == 25
+    assert batch_row["source_add_problem_count"] == 1
+    assert batch_row["source_add_problem_attempted_total"] == 25
+    assert batch_row["source_add_problem_added_total"] == 0
+    assert batch_row["source_add_failure_reasons"] == {"could_not_add_url_sources": 1}
+
+    run_row = packet["run_rows"][0]
+    assert run_row["source_add_problem_attempted_total"] == 25
+    assert run_row["source_add_problem_added_total"] == 0
+
+    report = render_comparison_overview([packet])
+    assert report == ""
+
+
 def test_render_comparison_overview_includes_all_runs():
     packets = [
         {

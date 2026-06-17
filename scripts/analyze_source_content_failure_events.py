@@ -95,6 +95,24 @@ class RunningStats:
 
 @dataclass
 class BatchStats:
+    worker_video_count: int = 0
+    worker_succeeded_count: int = 0
+    worker_failed_count: int = 0
+    reusable_process_batch_size: int = 0
+    reusable_process_succeeded_count: int = 0
+    reusable_process_failed_count: int = 0
+    source_age_window_started_count: int = 0
+    source_age_window_completed_count: int = 0
+    source_age_window_selected_total: int = 0
+    source_age_window_added_total: int = 0
+    source_age_window_succeeded_total: int = 0
+    source_age_window_failed_total: int = 0
+    source_add_attempted_total: int = 0
+    source_add_added_total: int = 0
+    source_add_problem_count: int = 0
+    source_add_problem_attempted_total: int = 0
+    source_add_problem_added_total: int = 0
+    source_add_failure_reasons: Counter[str] = field(default_factory=Counter)
     fetch_status_counts: Counter[str] = field(default_factory=Counter)
     failure_marker_counts: Counter[str] = field(default_factory=Counter)
     actual_source_age_cliff_count: int = 0
@@ -407,6 +425,50 @@ def analyze_run_root(run_root: Path) -> dict[str, Any]:
                     batch.source_list_validation_unknown += 1
                 continue
 
+            if action == "worker_batch_completed":
+                batch.worker_video_count += _to_int(data.get("video_count"))
+                batch.worker_succeeded_count += _to_int(data.get("succeeded"))
+                batch.worker_failed_count += _to_int(data.get("failed"))
+                continue
+
+            if action == "nlm_batch_reusable_process_completed":
+                batch.reusable_process_batch_size += _to_int(data.get("batch_size"))
+                batch.reusable_process_succeeded_count += _to_int(data.get("succeeded"))
+                batch.reusable_process_failed_count += _to_int(data.get("failed"))
+                continue
+
+            if action == "nlm_batch_reusable_source_age_cadence_window_started":
+                selected_window_size = data.get("selected_window_size")
+                if selected_window_size is None:
+                    selected_window_size = data.get("window_size")
+                batch.source_age_window_started_count += 1
+                batch.source_age_window_selected_total += _to_int(selected_window_size)
+                continue
+
+            if action == "nlm_batch_reusable_source_age_cadence_window_completed":
+                batch.source_age_window_completed_count += 1
+                batch.source_age_window_added_total += _to_int(data.get("added_count"))
+                batch.source_age_window_succeeded_total += _to_int(data.get("succeeded"))
+                batch.source_age_window_failed_total += _to_int(data.get("failed"))
+                continue
+
+            if action == "nlm_batch_subbatch_add_completed":
+                attempted = _to_int(data.get("subbatch_size"))
+                added = _to_int(data.get("added_count"))
+                batch.source_add_attempted_total += attempted
+                batch.source_add_added_total += added
+                if _to_int(data.get("returncode")) != 0 or added < attempted:
+                    batch.source_add_problem_count += 1
+                    batch.source_add_problem_attempted_total += attempted
+                    batch.source_add_problem_added_total += added
+                    reason = _normalize_text(data.get("failure_reason"))
+                    if not reason:
+                        stdout = _normalize_text(data.get("stdout"))
+                        if "Could not add URL sources" in stdout:
+                            reason = "could_not_add_url_sources"
+                    batch.source_add_failure_reasons[reason or "unknown"] += 1
+                continue
+
             if action == "nlm_source_content_command_completed":
                 command_key = CommandWorkerKey(
                     run_name=scope.run_name,
@@ -488,6 +550,24 @@ def analyze_run_root(run_root: Path) -> dict[str, Any]:
             "phase": scope.phase,
             "lane": scope.lane,
             "batch": scope.batch,
+            "worker_video_count": batch.worker_video_count,
+            "worker_succeeded_count": batch.worker_succeeded_count,
+            "worker_failed_count": batch.worker_failed_count,
+            "reusable_process_batch_size": batch.reusable_process_batch_size,
+            "reusable_process_succeeded_count": batch.reusable_process_succeeded_count,
+            "reusable_process_failed_count": batch.reusable_process_failed_count,
+            "source_age_window_started_count": batch.source_age_window_started_count,
+            "source_age_window_completed_count": batch.source_age_window_completed_count,
+            "source_age_window_selected_total": batch.source_age_window_selected_total,
+            "source_age_window_added_total": batch.source_age_window_added_total,
+            "source_age_window_succeeded_total": batch.source_age_window_succeeded_total,
+            "source_age_window_failed_total": batch.source_age_window_failed_total,
+            "source_add_attempted_total": batch.source_add_attempted_total,
+            "source_add_added_total": batch.source_add_added_total,
+            "source_add_problem_count": batch.source_add_problem_count,
+            "source_add_problem_attempted_total": batch.source_add_problem_attempted_total,
+            "source_add_problem_added_total": batch.source_add_problem_added_total,
+            "source_add_failure_reasons": dict(batch.source_add_failure_reasons),
             "fetch_status_counts": dict(batch.fetch_status_counts),
             "failure_marker_counts": {marker: batch.failure_marker_counts.get(marker, 0) for marker in FAILURE_MARKER_ORDER},
             "actual_source_age_cliff_count": batch.actual_source_age_cliff_count,
@@ -566,6 +646,24 @@ def analyze_run_root(run_root: Path) -> dict[str, Any]:
         run_rows.append(
             {
                 "run_name": run_name,
+                "worker_video_count": sum(row["worker_video_count"] for row in rows),
+                "worker_succeeded_count": sum(row["worker_succeeded_count"] for row in rows),
+                "worker_failed_count": sum(row["worker_failed_count"] for row in rows),
+                "reusable_process_batch_size": sum(row["reusable_process_batch_size"] for row in rows),
+                "reusable_process_succeeded_count": sum(row["reusable_process_succeeded_count"] for row in rows),
+                "reusable_process_failed_count": sum(row["reusable_process_failed_count"] for row in rows),
+                "source_age_window_started_count": sum(row["source_age_window_started_count"] for row in rows),
+                "source_age_window_completed_count": sum(row["source_age_window_completed_count"] for row in rows),
+                "source_age_window_selected_total": sum(row["source_age_window_selected_total"] for row in rows),
+                "source_age_window_added_total": sum(row["source_age_window_added_total"] for row in rows),
+                "source_age_window_succeeded_total": sum(row["source_age_window_succeeded_total"] for row in rows),
+                "source_age_window_failed_total": sum(row["source_age_window_failed_total"] for row in rows),
+                "source_add_attempted_total": sum(row["source_add_attempted_total"] for row in rows),
+                "source_add_added_total": sum(row["source_add_added_total"] for row in rows),
+                "source_add_problem_count": sum(row["source_add_problem_count"] for row in rows),
+                "source_add_problem_attempted_total": sum(row["source_add_problem_attempted_total"] for row in rows),
+                "source_add_problem_added_total": sum(row["source_add_problem_added_total"] for row in rows),
+                "source_add_failure_reasons": _sum_count_maps(row["source_add_failure_reasons"] for row in rows),
                 "fetch_status_counts": _sum_count_maps(row["fetch_status_counts"] for row in rows),
                 "failure_marker_counts": _sum_count_maps(row["failure_marker_counts"] for row in rows),
                 "actual_source_age_cliff_count": sum(row["actual_source_age_cliff_count"] for row in rows),
@@ -743,6 +841,42 @@ def render_report(packet: dict[str, Any]) -> str:
                 str(row["actual_source_age_cliff_count"]),
                 str(row["projected_source_age_cliff_count"]),
                 str(counts.get("nlm_content_below_threshold", 0)),
+            ]
+        )
+    lines.append(_table(headers, rows))
+    lines.append("")
+
+    lines.append("## Source Add / Window Attribution")
+    headers = [
+        "run",
+        "phase",
+        "lane",
+        "batch",
+        "worker success / fail / video",
+        "process success / fail / batch",
+        "windows completed / started",
+        "window selected / added",
+        "window success / fail",
+        "source add attempted / added",
+        "source add problem attempted / added",
+        "source add reasons",
+    ]
+    rows = []
+    for row in _non_log_batches(packet["batch_rows"]):
+        rows.append(
+            [
+                row["run_name"],
+                row["phase"],
+                row["lane"],
+                row["batch"],
+                f"{row['worker_succeeded_count']} / {row['worker_failed_count']} / {row['worker_video_count']}",
+                f"{row['reusable_process_succeeded_count']} / {row['reusable_process_failed_count']} / {row['reusable_process_batch_size']}",
+                f"{row['source_age_window_completed_count']} / {row['source_age_window_started_count']}",
+                f"{row['source_age_window_selected_total']} / {row['source_age_window_added_total']}",
+                f"{row['source_age_window_succeeded_total']} / {row['source_age_window_failed_total']}",
+                f"{row['source_add_attempted_total']} / {row['source_add_added_total']}",
+                f"{row['source_add_problem_attempted_total']} / {row['source_add_problem_added_total']}",
+                _format_count_map(row["source_add_failure_reasons"]),
             ]
         )
     lines.append(_table(headers, rows))
@@ -985,6 +1119,7 @@ def render_comparison_overview(packets: list[dict[str, Any]]) -> str:
         "retry queued",
         "drain projected source age cliff",
         "retry wait total",
+        "source add problem attempted / added",
         "shared retry",
         "source_list_validation_true",
     ]
@@ -1005,6 +1140,7 @@ def render_comparison_overview(packets: list[dict[str, Any]]) -> str:
                 str(run_row["retry_queue_queued_count"]),
                 str(run_row["retry_queue_drain_skipped_reasons"].get("drain_projected_source_age_cliff", 0)),
                 str(run_row["retry_queue_wait_total_s"]),
+                f"{run_row.get('source_add_problem_attempted_total', 0)} / {run_row.get('source_add_problem_added_total', 0)}",
                 f"{run_row['shared_retry_deferred_count']} / {run_row['shared_retry_recovered_count']} / {run_row['shared_retry_final_failed_count']}",
                 str(run_row["source_list_validation_true"]),
             ]
@@ -1017,6 +1153,7 @@ def render_comparison_overview(packets: list[dict[str, Any]]) -> str:
         [
             "- `NOT_FOUND` is already retryable; the packet shows retry-queued events in the command-failure path, so a retry-classifier mismatch is not the leading explanation.",
             "- `command_failed`, local retry projection pressure, and drain-skipped pressure all rise from run07 -> run15 -> warmup.",
+            "- Source-add shortfall counters distinguish upstream URL-add/window failures from source-content fetch failures, so low success with clean fetch markers should be treated as a source-add attribution branch.",
             "- `shared_retry_*` remains zero across the compared runs, so shared retry is inactive even though local retry-window/source-age pressure is visible.",
             "- `retry_queue_drain_skipped_reasons` activates once the age pressure appears, which makes the local retry-window/source-age path a plausible contributor rather than background noise.",
             "- The next discriminating action is offline attribution of command stderr/returncode mix against retry-window age projections and profile/batch cohorts, not another same-shape rerun.",
