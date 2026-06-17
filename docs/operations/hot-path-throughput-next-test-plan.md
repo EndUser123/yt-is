@@ -1402,6 +1402,26 @@ Current non-live ranking after comparing `run07_current`, `run15_current`, `warm
 
 That non-live gate is now complete in `docs/operations/sharded-lane-artifact-audit.md` Table 9. It accepts the source-age / retry-window pressure hypothesis: the spike is concentrated in batch-1 cohorts rather than evenly distributed. `smoke/a_hominidae_pro/batch_01`, `soak/a_hominidae_pro/batch_01`, and `soak/troup_hominidae_free/batch_01` carry the clearest `source_age_cliff`, command elapsed, and worker-idle growth across the compared artifacts. Batch 2 is secondary for source-age pressure and mostly matters for command/idle load, except `shared_retry_run06_current` Pro soak batch 2, which remains an unusable source-add/accounting hole because failures are nonzero while content-fetch status counts are empty.
 
+The next cheapest discriminating probe is config-only source-age cadence on the same extract-schema `3+3` home-network universe, prepared as `fresh_state_3plus3_extract_schema_source_age_cadence_run01_lanes.json`. This is not a ceiling candidate: prior cadence evidence eliminated cliffs but stayed slow, so promote it only if it both reduces batch-1 `source_age_cliff` / command elapsed / worker idle and moves combined hot-path VPH back toward `run07_current`. Use it to decide whether a smarter first-window source-age mechanism is worth coding. If it lowers cliffs while VPH remains near the warmup/shared-retry negatives, do not tune cadence further; pivot to a narrower first-window policy in `NLMReusableIngestor.process_batch` / `_select_source_age_cadence_window_size`.
+
+Command, if this probe is intentionally launched:
+
+```powershell
+python P:/packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_cadence_run01_lanes.json `
+  --run-root P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_cadence_run01_current `
+  --smoke-limit 400 `
+  --smoke-batch-size 200 `
+  --soak-limit 400 `
+  --soak-batch-size 200 `
+  --expected-worker-shape 3+3 `
+  --run-environment-label home_300mb `
+  --reusable-pipeline-mode serial `
+  --preserve-worker-state-root
+```
+
+Before interpreting throughput, confirm both lane `lane_process.json` env snapshots show `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED=true` and the default `160/190/5` cadence thresholds.
+
 Required report fields:
 
 - Top-level `status`, `throughput_valid`, `worker_shape_signature`, `run_environment_label`, and `pre_run_browser_health`.
