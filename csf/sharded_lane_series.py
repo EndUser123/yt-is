@@ -542,6 +542,9 @@ def _lane_process_env_snapshot(env: dict[str, str]) -> dict[str, str]:
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": env.get(
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE", ""
         ),
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": env.get(
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE", ""
+        ),
         "YTIS_NLM_RUN_ENVIRONMENT_LABEL": env.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL", ""),
         "YTIS_RUN_ENVIRONMENT_LABEL": env.get("YTIS_RUN_ENVIRONMENT_LABEL", ""),
         "YTIS_NLM_WORKER_AUTH_USE_CDP": env.get("YTIS_NLM_WORKER_AUTH_USE_CDP", ""),

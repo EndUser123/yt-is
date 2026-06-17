@@ -35,6 +35,7 @@ def test_load_fetch_completed_event_from_jsonl(tmp_path):
                         "source_age_cadence_soft_threshold_s": 160.0,
                         "source_age_cadence_hard_threshold_s": 190.0,
                         "source_age_cadence_min_window_size": 5,
+                        "source_age_cadence_first_window_size": 25,
                         "window_mode": "source_age_cadence",
                         "window_size": 6,
                         "active_window_count": 3,
@@ -90,6 +91,7 @@ def test_load_fetch_completed_event_from_jsonl(tmp_path):
     assert payload["source_age_cadence_soft_threshold_s"] == 160.0
     assert payload["source_age_cadence_hard_threshold_s"] == 190.0
     assert payload["source_age_cadence_min_window_size"] == 5
+    assert payload["source_age_cadence_first_window_size"] == 25
     assert payload["window_mode"] == "source_age_cadence"
     assert payload["window_size"] == 6
     assert payload["active_window_count"] == 3
@@ -244,7 +246,7 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
     assert summary.worker_idle_wait_s == 3.0
     assert summary.fetch_completed["worker_stage_totals"]["startup_prepare_total_elapsed_s_total"] == 1.5
     assert summary.fetch_completed["worker_stage_totals"]["setup_elapsed_s_total"] == 3.5
-    assert cleanup_calls == [True, True, True]
+    assert cleanup_calls == [True, True]
     assert summary.sample_label == "mixed_lane"
     assert summary.source_filter == "https://www.youtube.com/channel/UCYTISFALLBACKBMK"
     assert summary.materialization_started is True
@@ -302,6 +304,7 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
                         "source_age_cadence_soft_threshold_s": 160.0,
                         "source_age_cadence_hard_threshold_s": 190.0,
                         "source_age_cadence_min_window_size": 5,
+                        "source_age_cadence_first_window_size": 25,
                         "window_mode": "source_age_cadence",
                         "window_size": 6,
                         "active_window_count": 1,
@@ -343,6 +346,7 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
                         "source_age_cadence_soft_threshold_s": 160.0,
                         "source_age_cadence_hard_threshold_s": 190.0,
                         "source_age_cadence_min_window_size": 5,
+                        "source_age_cadence_first_window_size": 25,
                         "window_mode": "source_age_cadence",
                         "window_size": 6,
                         "active_window_count": 1,
@@ -387,6 +391,7 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
     assert summary.fetch_completed["source_age_cadence_soft_threshold_s"] == 160.0
     assert summary.fetch_completed["source_age_cadence_hard_threshold_s"] == 190.0
     assert summary.fetch_completed["source_age_cadence_min_window_size"] == 5
+    assert summary.fetch_completed["source_age_cadence_first_window_size"] == 25
     assert summary.fetch_completed["window_mode"] == "source_age_cadence"
     assert summary.fetch_completed["window_size"] == 6
     assert summary.fetch_completed["window_count"] == 1
@@ -395,7 +400,7 @@ def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_mis
     assert summary.add_elapsed_s == 7.0
     assert summary.readiness_elapsed_s == 9.0
     assert summary.cleanup_elapsed_s == 2.5
-    assert cleanup_calls == [True, True, True]
+    assert cleanup_calls == [True, True]
     assert summary.fetch_completed["worker_stage_totals"]["startup_prepare_total_elapsed_s_total"] == 3.0
     assert summary.fetch_completed["worker_stage_totals"]["setup_elapsed_s_total"] == 5.0
 

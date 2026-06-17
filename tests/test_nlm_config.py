@@ -46,6 +46,7 @@ class TestSharedNlmConfig:
         assert cfg.reusable_source_age_cadence_soft_threshold_s == 160.0
         assert cfg.reusable_source_age_cadence_hard_threshold_s == 190.0
         assert cfg.reusable_source_age_cadence_min_window_size == 5
+        assert cfg.reusable_source_age_cadence_first_window_size == 0
         assert transcript.get_nlm_config() is cfg
 
     def test_hotel_environment_defaults_shared_retry_pool_on(self, monkeypatch):
@@ -85,6 +86,7 @@ class TestSharedNlmConfig:
         monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S", "155")
         monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S", "185")
         monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE", "7")
+        monkeypatch.setenv("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE", "25")
         nlm_config.reset_nlm_config()
         try:
             cfg = nlm_config.get_nlm_config()
@@ -92,6 +94,7 @@ class TestSharedNlmConfig:
             assert cfg.reusable_source_age_cadence_soft_threshold_s == 155.0
             assert cfg.reusable_source_age_cadence_hard_threshold_s == 185.0
             assert cfg.reusable_source_age_cadence_min_window_size == 7
+            assert cfg.reusable_source_age_cadence_first_window_size == 25
         finally:
             nlm_config.reset_nlm_config()
 
@@ -161,6 +164,7 @@ class TestSharedNlmConfig:
             reusable_source_age_cadence_soft_threshold_s=160.0,
             reusable_source_age_cadence_hard_threshold_s=190.0,
             reusable_source_age_cadence_min_window_size=5,
+            reusable_source_age_cadence_first_window_size=0,
         )
         try:
             nlm_config.set_nlm_config(replacement)

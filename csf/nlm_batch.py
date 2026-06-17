@@ -4755,6 +4755,7 @@ class NLMReusableIngestor:
         source_age_cadence_soft_threshold_s: float | None = None,
         source_age_cadence_hard_threshold_s: float | None = None,
         source_age_cadence_min_window_size: int | None = None,
+        source_age_cadence_first_window_size: int | None = None,
     ):
         self._ingestor = NLMBatchIngestor(batch_size)
         self._nb_id: Optional[str] = _load_reusable_notebook_id()
@@ -4795,6 +4796,14 @@ class NLMReusableIngestor:
                 else cfg.reusable_source_age_cadence_min_window_size
             ),
         )
+        self._source_age_cadence_first_window_size = max(
+            0,
+            int(
+                source_age_cadence_first_window_size
+                if source_age_cadence_first_window_size is not None
+                else cfg.reusable_source_age_cadence_first_window_size
+            ),
+        )
         self._last_source_age_cadence_window_elapsed_s = 0.0
         self._batches_since_cleanup = 0
         log_action(
@@ -4811,6 +4820,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
             },
         )
 
@@ -4832,6 +4842,7 @@ class NLMReusableIngestor:
         base_window_size = min(self._ingestor.batch_size, remaining_count)
         if not self._source_age_cadence_enabled:
             return base_window_size
+        has_source_materialization_anchor = self._ingestor._oldest_source_materialization_epoch is not None
         oldest_epoch = self._ingestor._oldest_source_materialization_epoch
         if oldest_epoch is None:
             oldest_epoch = (
@@ -4843,7 +4854,19 @@ class NLMReusableIngestor:
         last_window_elapsed_s = float(getattr(self, "_last_source_age_cadence_window_elapsed_s", 0.0) or 0.0)
         projected_oldest_age_s = oldest_age_s + last_window_elapsed_s if oldest_age_s and last_window_elapsed_s > 0.0 else oldest_age_s
         selected_window_size = base_window_size
-        if projected_oldest_age_s > self._source_age_cadence_hard_threshold_s:
+        if (
+            self._source_age_cadence_first_window_size
+            and not has_source_materialization_anchor
+            and last_window_elapsed_s <= 0.0
+        ):
+            selected_window_size = min(
+                base_window_size,
+                max(
+                    self._source_age_cadence_min_window_size,
+                    self._source_age_cadence_first_window_size,
+                ),
+            )
+        elif projected_oldest_age_s > self._source_age_cadence_hard_threshold_s:
             selected_window_size = max(
                 self._source_age_cadence_min_window_size,
                 base_window_size // 4,
@@ -5178,6 +5201,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
                 "window_mode": window_mode,
                 "window_size": window_size,
                 "window_count": len(active_windows),
@@ -5214,6 +5238,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
                 "window_mode": window_mode,
                 "window_size": window_size,
                 "active_window_count": len(active_windows),
@@ -5242,6 +5267,7 @@ class NLMReusableIngestor:
                     "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                     "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                     "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                    "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
                     "window_mode": window_mode,
                     "window_size": window_size,
                     "active_window_count": len(active_windows),
@@ -5438,6 +5464,7 @@ class NLMReusableIngestor:
                             "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                             "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                             "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                            "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
                             "subbatch_size": self._ingestor.batch_size,
                             "notebooklm_profile": _get_notebooklm_profile(),
                         },
@@ -5507,6 +5534,7 @@ class NLMReusableIngestor:
                             "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                             "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                             "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                            "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
                             "subbatch_size": self._ingestor.batch_size,
                             "notebooklm_profile": _get_notebooklm_profile(),
                         },
@@ -5601,6 +5629,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+                "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
                 "window_mode": window_mode,
                 "window_size": window_size,
                 "active_window_count": len(active_windows),
@@ -5681,6 +5710,7 @@ class NLMReusableIngestor:
             "source_age_cadence_soft_threshold_s": self._source_age_cadence_soft_threshold_s,
             "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
             "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
+            "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
             "window_mode": window_mode,
             "window_size": window_size,
             "active_window_count": len(active_windows),

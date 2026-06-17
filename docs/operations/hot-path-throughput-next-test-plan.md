@@ -1406,7 +1406,27 @@ The next cheapest discriminating probe is config-only source-age cadence on the 
 
 `fresh_state_3plus3_extract_schema_source_age_cadence_run01_current` passed that gate. It completed `status=ok`, `throughput_valid=true`, `worker_shape_signature=3+3`, and `run_environment_label=home_300mb`; all four lane-process snapshots confirmed `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED=true` with `160/190/5` thresholds. Soak landed at `3636.16` combined hot-path VPH with `793/7/800`, above `run07_current` (`3291.38`) and far above `run15_current` (`2205.73`), `warmup_state_run01_current` (`1508.94`), and `shared_retry_run06_current` (`585.40`). The pressure gate improved directly: soak had no `source_age_cliff` in either lane, Pro fell to `content_fetch_command_elapsed_s_total=904.651`, `worker_idle_wait_s_total=57.746`, `source_ready_age_s_max=109.925`, and Free fell to `1748.126`, `210.416`, `160.247`. Batch-1 pressure also dropped versus the negative samples; the remaining tail is Free soak batch 1 (`199/1`, command `1359.805`, idle `210.416`, age max `160.247`, `command_failed=16`). Treat cadence as the current live same-shape leader and the next VPH branch as optimizing or narrowing the first-window cadence policy, not reopening shared retry or warmup-state probes.
 
-Command, if this probe is intentionally launched:
+The first-window policy refinement is now implemented behind `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE`, defaulting to `0` so the `run01` leader remains unchanged. The next prepared probe is `fresh_state_3plus3_extract_schema_source_age_cadence_first_window_run02_lanes.json`, which keeps the proven `160/190/5` cadence but caps fresh no-age first cadence windows at `25`. This should be interpreted only against `source_age_cadence_run01_current`: promote it if it preserves `throughput_valid=true`, keeps `source_age_cliff` absent, and reduces the Free soak batch-1 command/idle tail without dropping combined VPH below `run07_current`; reject it if the added first-window overhead lowers VPH or simply moves the tail to later windows.
+
+Command, if the first-window cap probe is intentionally launched:
+
+```powershell
+python P:/packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_cadence_first_window_run02_lanes.json `
+  --run-root P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_cadence_first_window_run02_current `
+  --smoke-limit 400 `
+  --smoke-batch-size 200 `
+  --soak-limit 400 `
+  --soak-batch-size 200 `
+  --expected-worker-shape 3+3 `
+  --run-environment-label home_300mb `
+  --reusable-pipeline-mode serial `
+  --preserve-worker-state-root
+```
+
+Before interpreting throughput, confirm all four lane `lane_process.json` env snapshots show `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED=true`, the default `160/190/5` cadence thresholds, and `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE=25`.
+
+Historical run01 command:
 
 ```powershell
 python P:/packages/yt-is/bin/csf-sharded-lane-sequence `

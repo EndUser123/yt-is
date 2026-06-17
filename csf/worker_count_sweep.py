@@ -168,6 +168,10 @@ class TrialArtifact:
         return int(self.fetch_completed.get("source_age_cadence_min_window_size", 0) or 0)
 
     @property
+    def source_age_cadence_first_window_size(self) -> int:
+        return int(self.fetch_completed.get("source_age_cadence_first_window_size", 0) or 0)
+
+    @property
     def window_mode(self) -> str:
         return str(self.fetch_completed.get("window_mode", "") or "")
 
@@ -471,6 +475,7 @@ class TrialArtifact:
                 "source_age_cadence_soft_threshold_s": self.source_age_cadence_soft_threshold_s,
                 "source_age_cadence_hard_threshold_s": self.source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self.source_age_cadence_min_window_size,
+                "source_age_cadence_first_window_size": self.source_age_cadence_first_window_size,
                 "window_mode": self.window_mode,
                 "window_size": self.window_size,
                 "active_window_count": self.active_window_count,
@@ -586,6 +591,7 @@ def _synthesize_fetch_completed_from_worker_summaries(stdout_text: str, *, elaps
         "source_age_cadence_soft_threshold_s",
         "source_age_cadence_hard_threshold_s",
         "source_age_cadence_min_window_size",
+        "source_age_cadence_first_window_size",
         "window_mode",
         "window_size",
         "active_window_count",

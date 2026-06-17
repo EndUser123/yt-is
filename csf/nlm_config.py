@@ -61,6 +61,7 @@ class NLMConfig:
     reusable_source_age_cadence_soft_threshold_s: float = 160.0
     reusable_source_age_cadence_hard_threshold_s: float = 190.0
     reusable_source_age_cadence_min_window_size: int = 5
+    reusable_source_age_cadence_first_window_size: int = 0
 
 
 def get_nlm_config() -> NLMConfig:
@@ -212,6 +213,10 @@ def get_nlm_config() -> NLMConfig:
                 reusable_source_age_cadence_min_window_size=max(
                     1,
                     int(os.environ.get("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE", "5")),
+                ),
+                reusable_source_age_cadence_first_window_size=max(
+                    0,
+                    int(os.environ.get("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE", "0")),
                 ),
             )
         return _nlm_config

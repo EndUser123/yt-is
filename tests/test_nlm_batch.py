@@ -1450,6 +1450,29 @@ class TestReusableBatchLogging:
                     with mock.patch("csf.nlm_batch.time.time", return_value=1150.0):
                         assert ingestor._select_source_age_cadence_window_size(120) == 12
 
+    def test_source_age_cadence_window_size_can_cap_fresh_first_window(self):
+        """A configured first-window cap should narrow only the fresh no-age window."""
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(
+                        source_age_cadence_enabled=True,
+                        source_age_cadence_soft_threshold_s=160.0,
+                        source_age_cadence_hard_threshold_s=190.0,
+                        source_age_cadence_min_window_size=5,
+                        source_age_cadence_first_window_size=25,
+                    )
+                    ingestor._ingestor._source_age_cadence_notebook_ready_at_epoch = 1099.0
+                    with mock.patch("csf.nlm_batch.time.time", return_value=1100.0):
+                        assert ingestor._select_source_age_cadence_window_size(120) == 25
+                    ingestor._ingestor._oldest_source_materialization_epoch = 1000.0
+                    with mock.patch("csf.nlm_batch.time.time", return_value=1100.0):
+                        assert ingestor._select_source_age_cadence_window_size(120) == 50
+                    ingestor._ingestor._oldest_source_materialization_epoch = None
+                    ingestor._source_age_cadence_first_window_size = 100
+                    with mock.patch("csf.nlm_batch.time.time", return_value=1100.0):
+                        assert ingestor._select_source_age_cadence_window_size(120) == 50
+
     def test_reusable_batch_processes_large_batch_in_source_age_cadence_windows_without_reset(self):
         """Large reusable batches should add and extract in age-aware windows without per-window reset."""
         batch_ids = [f"vid{i:02d}" for i in range(12)]
@@ -1517,6 +1540,7 @@ class TestReusableBatchLogging:
         assert completed["source_age_cadence_soft_threshold_s"] == 160.0
         assert completed["source_age_cadence_hard_threshold_s"] == 190.0
         assert completed["source_age_cadence_min_window_size"] == 5
+        assert completed["source_age_cadence_first_window_size"] == 0
         assert completed["active_window_size"] == 20
         assert completed["extract_window_size"] == 30
         assert completed["active_window_enabled"] is False

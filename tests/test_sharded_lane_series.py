@@ -207,6 +207,7 @@ def test_load_lane_configs_accepts_lane_env_overrides(tmp_path):
                         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "155",
                         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "185",
                         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "7",
+                        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "25",
                     },
                     "browser_profile_root": "P:\\\\\\.data/yt-is/browser/notebooklm-future",
                     "worker_state_root": "P:\\\\\\.logs/shards/future/worker_states",
@@ -224,6 +225,7 @@ def test_load_lane_configs_accepts_lane_env_overrides(tmp_path):
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "155",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "185",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "7",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "25",
     }
 
 
@@ -700,6 +702,7 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "",
     }
     assert Path(report["report_path"]).exists()
     persisted = json.loads(Path(report["report_path"]).read_text(encoding="utf-8"))
@@ -722,6 +725,7 @@ def test_lane_env_exports_run_environment_label(tmp_path):
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "25",
             "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "true",
             "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": str(tmp_path / "shared.sqlite"),
         },
@@ -738,6 +742,7 @@ def test_lane_env_exports_run_environment_label(tmp_path):
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S"] == "160"
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S"] == "190"
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE"] == "5"
+    assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE"] == "25"
     assert env["YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"] == "true"
     assert env["YTIS_NLM_SHARED_RETRY_POOL_DB_PATH"] == str(tmp_path / "shared.sqlite")
     assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
@@ -806,6 +811,7 @@ def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_p
                     "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
                     "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
                     "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+                    "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "25",
                 },
             ),
         ),
@@ -1167,6 +1173,7 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "",
         "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "",
         "YTIS_RUN_ENVIRONMENT_LABEL": "",
         "YTIS_NLM_WORKER_AUTH_USE_CDP": "",
@@ -1467,6 +1474,7 @@ def test_run_lane_accepts_shared_retry_processed_count_overrun(tmp_path, monkeyp
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "",
             "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
             "YTIS_RUN_ENVIRONMENT_LABEL": "hotel_wifi",
             "YTIS_NLM_WORKER_AUTH_USE_CDP": "0",
