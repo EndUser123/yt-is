@@ -553,15 +553,16 @@ def _close_cdp_noise_tabs(port: int) -> int:
     return nlm_auth_guard.close_cdp_noise_tabs(port)
 
 
-def _cdp_target_list_has_accounts_google_challenge(port: int) -> bool:
+def _inspect_cdp_targets_for_accounts_google_challenge(port: int, *, timeout_s: float) -> bool | None:
+    """Return challenge state, or None when the target list cannot be trusted."""
     url = f"http://127.0.0.1:{port}/json"
     try:
-        with urllib.request.urlopen(url, timeout=2) as response:
+        with urllib.request.urlopen(url, timeout=min(2.0, timeout_s)) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, urllib.error.URLError, ValueError, UnicodeDecodeError):
-        return False
+        return None
     if not isinstance(payload, list):
-        return False
+        return None
     for target in payload:
         if not isinstance(target, dict):
             continue
@@ -573,7 +574,13 @@ def _cdp_target_list_has_accounts_google_challenge(port: int) -> bool:
     return False
 
 
-def _launch_cdp_browser(family: AuthFamily, profile_root: Path, snapshot: dict[str, str] | None) -> bool:
+def _launch_cdp_browser(
+    family: AuthFamily,
+    profile_root: Path,
+    snapshot: dict[str, str] | None,
+    *,
+    timeout_s: float,
+) -> bool:
     """Launch the dedicated CDP browser for a family only when it is not already alive."""
     _stop_chrome_for_root(family.cdp_browser_root)
     _mark_browser_profile_clean(family.cdp_browser_root, family.cdp_browser_profile_directory or "Default")
@@ -607,7 +614,7 @@ def _launch_cdp_browser(family: AuthFamily, profile_root: Path, snapshot: dict[s
             _restore_profile_state(profile_root, family.source_profile, snapshot)
         _stop_chrome_for_root(family.cdp_browser_root)
         return False
-    if not _wait_for_cdp(family.cdp_port):
+    if not _wait_for_cdp(family.cdp_port, timeout_s=timeout_s):
         if snapshot is not None:
             _restore_profile_state(profile_root, family.source_profile, snapshot)
         _stop_chrome_for_root(family.cdp_browser_root)
@@ -617,6 +624,11 @@ def _launch_cdp_browser(family: AuthFamily, profile_root: Path, snapshot: dict[s
 
 def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> bool:
     """Refresh worker-01 through its dedicated browser root when configured."""
+    deadline = time.monotonic() + max(0.0, timeout_s)
+
+    def remaining_timeout() -> float:
+        return max(0.0, deadline - time.monotonic())
+
     profile_root = DEFAULT_PROFILE_ROOT
     snapshot = _snapshot_profile_state(profile_root, family.source_profile)
     noninteractive = _is_noninteractive_auth()
@@ -634,15 +646,33 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
                 _restore_profile_state(profile_root, family.source_profile, snapshot)
             return False
 
-    if not _wait_for_cdp(family.cdp_port, timeout_s=1.0):
-        if not _launch_cdp_browser(family, profile_root, snapshot):
+    remaining = remaining_timeout()
+    if remaining <= 0:
+        if snapshot is not None:
+            _restore_profile_state(profile_root, family.source_profile, snapshot)
+        return False
+    if not _wait_for_cdp(family.cdp_port, timeout_s=min(1.0, remaining)):
+        remaining = remaining_timeout()
+        if remaining <= 0 or not _launch_cdp_browser(family, profile_root, snapshot, timeout_s=remaining):
             return False if noninteractive else refresh_profile_session(family.source_profile, timeout_s=timeout_s)
-    if _cdp_target_list_has_accounts_google_challenge(family.cdp_port):
+    remaining = remaining_timeout()
+    challenge_state = (
+        _inspect_cdp_targets_for_accounts_google_challenge(family.cdp_port, timeout_s=remaining)
+        if remaining > 0
+        else None
+    )
+    if challenge_state is not False:
         if snapshot is not None:
             _restore_profile_state(profile_root, family.source_profile, snapshot)
         _stop_chrome_for_root(family.cdp_browser_root)
         return False
     _close_cdp_noise_tabs(family.cdp_port)
+    remaining = remaining_timeout()
+    if remaining <= 0:
+        if snapshot is not None:
+            _restore_profile_state(profile_root, family.source_profile, snapshot)
+        _stop_chrome_for_root(family.cdp_browser_root)
+        return False
     try:
         res = run_nlm(
             [
@@ -655,7 +685,7 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
                 f"http://127.0.0.1:{family.cdp_port}",
                 "--force",
             ],
-            timeout_s=timeout_s,
+            timeout_s=remaining,
         )
     except subprocess.TimeoutExpired:
         if snapshot is not None:

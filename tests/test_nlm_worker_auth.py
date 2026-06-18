@@ -8,6 +8,8 @@ import subprocess
 import sys
 from unittest import mock
 
+import pytest
+
 from csf import nlm_worker_auth
 
 
@@ -855,6 +857,7 @@ def test_refresh_source_profile_noninteractive_reuses_existing_dedicated_cdp_bro
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: True)
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+    monkeypatch.setattr(nlm_worker_auth, "_inspect_cdp_targets_for_accounts_google_challenge", lambda port, timeout_s: False)
     monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", lambda *args, **kwargs: popen_calls.append((args, kwargs)) or object())
 
     def fake_run(cmd, **kwargs):
@@ -946,6 +949,80 @@ def test_refresh_source_profile_noninteractive_blocks_accounts_google_challenge_
     assert stop_calls == [nlm_worker_auth.DEFAULT_FAMILIES[0].cdp_browser_root]
 
 
+def test_refresh_source_profile_noninteractive_fails_closed_when_cdp_target_inspection_errors(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
+    restore_calls: list[tuple[Path, str, dict[str, str]]] = []
+    stop_calls: list[str] = []
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: set())
+    monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: True)
+    monkeypatch.setattr(nlm_worker_auth, "_snapshot_profile_state", lambda profile_root, profile: {"cookies.json": "snapshot"})
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "_restore_profile_state",
+        lambda profile_root, profile, snapshot: restore_calls.append((profile_root, profile, snapshot)),
+    )
+    monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: stop_calls.append(browser_root))
+    monkeypatch.setattr(
+        nlm_worker_auth.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("target list unavailable")),
+    )
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "run_nlm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("inspection failure must block capture")),
+    )
+
+    assert nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1) is False
+    assert restore_calls == [(root, "ytis-pro-worker-01", {"cookies.json": "snapshot"})]
+    assert stop_calls == [nlm_worker_auth.DEFAULT_FAMILIES[0].cdp_browser_root]
+
+
+def test_refresh_source_profile_passes_remaining_timeout_budget_to_launch_and_capture(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
+    clock = iter([100.0, 100.1, 100.2, 100.3, 100.4])
+    wait_timeouts: list[float] = []
+    inspection_timeouts: list[float] = []
+    capture_timeouts: list[float] = []
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: set())
+    monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: None)
+    monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
+
+    def fake_wait(port, timeout_s=20.0):
+        wait_timeouts.append(timeout_s)
+        return len(wait_timeouts) > 1
+
+    monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", fake_wait)
+    monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "_inspect_cdp_targets_for_accounts_google_challenge",
+        lambda port, timeout_s: inspection_timeouts.append(timeout_s) or False,
+        raising=False,
+    )
+    monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+
+    def fake_run(cmd, *, timeout_s, **kwargs):
+        capture_timeouts.append(timeout_s)
+        return subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", "")
+
+    monkeypatch.setattr(nlm_worker_auth, "run_nlm", fake_run)
+
+    assert nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1.0) is True
+    assert wait_timeouts == [pytest.approx(0.9), pytest.approx(0.8)]
+    assert inspection_timeouts == [pytest.approx(0.7)]
+    assert capture_timeouts == [pytest.approx(0.6)]
+
+
 def test_refresh_source_profile_noninteractive_launches_headless_cdp_browser(tmp_path, monkeypatch):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
@@ -960,6 +1037,7 @@ def test_refresh_source_profile_noninteractive_launches_headless_cdp_browser(tmp
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: next(cdp_states))
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+    monkeypatch.setattr(nlm_worker_auth, "_inspect_cdp_targets_for_accounts_google_challenge", lambda port, timeout_s: False)
     monkeypatch.setattr(
         nlm_worker_auth,
         "run_nlm",
@@ -1081,6 +1159,7 @@ def test_refresh_source_profile_closes_noise_tabs_before_capture(tmp_path, monke
         events.append(("run", cmd))
         return subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", "")
 
+    monkeypatch.setattr(nlm_worker_auth, "_inspect_cdp_targets_for_accounts_google_challenge", lambda port, timeout_s: False)
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", fake_close_noise_tabs)
     monkeypatch.setattr(nlm_worker_auth.subprocess, "run", fake_run)
 
@@ -1101,6 +1180,7 @@ def test_refresh_source_profile_launches_browser_minimized_by_default(tmp_path, 
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: next(cdp_states))
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+    monkeypatch.setattr(nlm_worker_auth, "_inspect_cdp_targets_for_accounts_google_challenge", lambda port, timeout_s: False)
     monkeypatch.setattr(nlm_worker_auth, "run_nlm", lambda cmd, timeout_s=1, env=None: subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", ""))
 
     def fake_popen(*args, **kwargs):
@@ -1129,6 +1209,7 @@ def test_refresh_source_profile_can_launch_visible_browser_when_requested(tmp_pa
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: next(cdp_states))
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+    monkeypatch.setattr(nlm_worker_auth, "_inspect_cdp_targets_for_accounts_google_challenge", lambda port, timeout_s: False)
     monkeypatch.setattr(nlm_worker_auth, "run_nlm", lambda cmd, timeout_s=1, env=None: subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", ""))
 
     def fake_popen(*args, **kwargs):
@@ -1158,6 +1239,7 @@ def test_refresh_source_profile_reuses_existing_cdp_browser_across_refreshes(tmp
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: next(cdp_states))
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
     monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: stop_calls.append(browser_root))
+    monkeypatch.setattr(nlm_worker_auth, "_inspect_cdp_targets_for_accounts_google_challenge", lambda port, timeout_s: False)
     monkeypatch.setattr(nlm_worker_auth, "run_nlm", lambda cmd, timeout_s=1, env=None: subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", ""))
 
     def fake_popen(args, **kwargs):
@@ -1184,6 +1266,7 @@ def test_refresh_source_profile_uses_family_browser_profile_directory_for_free_l
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: next(cdp_states))
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+    monkeypatch.setattr(nlm_worker_auth, "_inspect_cdp_targets_for_accounts_google_challenge", lambda port, timeout_s: False)
     monkeypatch.setattr(
         nlm_worker_auth,
         "run_nlm",
