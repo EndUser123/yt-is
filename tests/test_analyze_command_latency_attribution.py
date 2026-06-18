@@ -132,6 +132,19 @@ def _nested_projection_command_event(
     return event
 
 
+def _real_projection_event(*, notebooklm_profile: str, projected_age: float = 222.5, **overrides):
+    event = {
+        "action": "nlm_batch_source_content_fetch_completed",
+        "data": {
+            "notebooklm_profile": notebooklm_profile,
+            "local_retry_skipped_reason": "projected_local_retry_completion_age_cliff",
+            "projected_local_retry_completion_age_s": projected_age,
+        },
+    }
+    event.update(overrides)
+    return event
+
+
 def test_analyze_run_root_aggregates_worker_stdout_by_lane_batch(tmp_path):
     run_root = tmp_path / "run01"
     _write_stdout(
@@ -566,3 +579,26 @@ def test_aggregate_command_events_distinguishes_zero_denominator_from_coverage(t
     assert event_packet["reconciliation"]["command_count_ratio"] is None
     assert event_packet["reconciliation"]["command_elapsed_ratio"] is None
     assert event_packet["reconciliation"]["gate"] == "bounded"
+
+
+def test_iter_command_events_parses_real_projection_without_worker_id(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "troup_hominidae_free",
+        "batch_01",
+        [
+            _real_projection_event(notebooklm_profile="profile-a", projected_age=333.3),
+        ],
+    )
+
+    events = list(analyzer.iter_command_events(run_root))
+    event_packet = analyzer.aggregate_command_events(run_root, {"content_fetch_command_elapsed_s_count": 0, "content_fetch_command_elapsed_s_total": 0.0})
+
+    assert len(events) == 1
+    assert events[0]["event_type"] == "projection"
+    assert events[0]["profile"] == "profile-a"
+    assert "worker_id" not in events[0] or events[0]["worker_id"] is None
+    assert event_packet["projection_rows"][0]["projection_count"] == 1
+    assert event_packet["projection_rows"][0]["projection_workers"] == []

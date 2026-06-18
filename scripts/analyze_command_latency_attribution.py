@@ -270,9 +270,9 @@ def _projection_event_row(
     record: dict[str, Any], phase: str, lane: str, batch: str, *, status: str | None = None
 ) -> dict[str, Any] | None:
     profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
-    worker_id = _clean_str(_first_present(record, "worker_id"))
-    if not profile or not worker_id:
+    if not profile:
         return None
+    worker_id = _clean_str(_first_present(record, "worker_id"))
     age = _projection_age(record)
     projection_reason = _clean_str(_first_present(record, "local_retry_skipped_reason", "retry_queue_skipped_reason"))
     if projection_reason is None:
