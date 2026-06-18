@@ -253,19 +253,18 @@ def test_profile_session_is_valid_fails_closed_when_default_chrome_profile_is_ru
     assert stop_calls == [{12345}]
 
 
-def test_refresh_profile_session_stops_default_chrome_profile_after_force_login(monkeypatch):
+def test_refresh_profile_session_noninteractive_never_calls_run_nlm(monkeypatch):
     monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
     stop_calls = []
 
-    with mock.patch("csf.nlm_worker_auth._default_chrome_profile_pids", side_effect=[set(), {67890}]):
+    with mock.patch("csf.nlm_worker_auth._default_chrome_profile_pids", return_value=set()):
         with mock.patch("csf.nlm_worker_auth._stop_chrome_pids", side_effect=lambda pids: stop_calls.append(set(pids)) or set(pids)):
-            with mock.patch(
-                "csf.nlm_worker_auth.run_nlm",
-                return_value=subprocess.CompletedProcess(["login", "--force", "--profile", "ytis-free1-worker-01"], 0, "Account: troup.hominidae@gmail.com\n", ""),
-            ):
+            with mock.patch("csf.nlm_worker_auth.run_nlm") as mock_run:
+                mock_run.side_effect = AssertionError("noninteractive refresh_profile_session must fail closed before nlm runs")
                 assert nlm_worker_auth.refresh_profile_session("ytis-free1-worker-01") is False
 
-    assert stop_calls == [{67890}]
+    assert stop_calls == []
+    mock_run.assert_not_called()
 
 
 def test_refresh_profile_session_fails_closed_without_cdp_in_noninteractive_mode(tmp_path, monkeypatch):
@@ -491,21 +490,22 @@ def test_sync_worker_profiles_auto_refreshes_source_profile_before_copy(tmp_path
 def test_refresh_source_profile_noninteractive_never_launches_browser(tmp_path, monkeypatch):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "expired-pro")
+    family = nlm_worker_auth.AuthFamily(
+        source_profile="ytis-pro-worker-01",
+        sibling_profiles=(),
+        expected_email="a.hominidae@gmail.com",
+    )
 
     monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
     monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "run_nlm", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("noninteractive auth invoked force login")))
     monkeypatch.setattr(
         nlm_worker_auth.subprocess,
         "Popen",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("noninteractive auth launched Chrome")),
     )
-    monkeypatch.setattr(
-        nlm_worker_auth,
-        "run_nlm",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("noninteractive auth invoked force login")),
-    )
 
-    assert nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1) is False
+    assert nlm_worker_auth.refresh_source_profile(family, timeout_s=1) is False
 
 
 def test_worker_auth_cli_sync_defaults_to_noninteractive(monkeypatch):
@@ -840,40 +840,142 @@ def test_refresh_source_profile_restores_source_snapshot_when_cdp_unreachable(tm
     assert (root / "ytis-pro-worker-01" / "cookies.json").read_text(encoding="utf-8") == before_cookies
 
 
-def test_refresh_source_profile_noninteractive_stops_before_cdp_or_default_profile_checks(tmp_path, monkeypatch):
+def test_refresh_source_profile_noninteractive_reuses_existing_dedicated_cdp_browser_with_exact_command(tmp_path, monkeypatch):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
     before_metadata = (root / "ytis-pro-worker-01" / "metadata.json").read_text(encoding="utf-8")
     before_cookies = (root / "ytis-pro-worker-01" / "cookies.json").read_text(encoding="utf-8")
-    pid_snapshots = iter([set(), {12345}])
-    stopped_pids: list[int] = []
     called: list[list[str]] = []
+    popen_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
     monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
     monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: set())
     monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: None)
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: True)
     monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
-    monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", lambda *args, **kwargs: object())
-    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: next(pid_snapshots))
-    monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_pids", lambda pids: stopped_pids.extend(sorted(pids)))
+    monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", lambda *args, **kwargs: popen_calls.append((args, kwargs)) or object())
 
     def fake_run(cmd, **kwargs):
         called.append(cmd)
-        if len(cmd) >= 2 and cmd[1] == "login" and "--provider" in cmd and "--cdp-url" in cmd:
+        if cmd and cmd[0] == "login" and "--provider" in cmd and "--cdp-url" in cmd:
             return subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", "")
         return subprocess.CompletedProcess(cmd, 1, "", "unexpected command")
 
-    monkeypatch.setattr(nlm_worker_auth.subprocess, "run", fake_run)
+    monkeypatch.setattr(nlm_worker_auth, "run_nlm", fake_run)
+
+    ok = nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1)
+
+    assert ok is True
+    assert called == [[
+        "login",
+        "--profile",
+        "ytis-pro-worker-01",
+        "--provider",
+        "openclaw",
+        "--cdp-url",
+        "http://127.0.0.1:18870",
+        "--force",
+    ]]
+    assert popen_calls == []
+    assert (root / "ytis-pro-worker-01" / "metadata.json").read_text(encoding="utf-8") == before_metadata
+    assert (root / "ytis-pro-worker-01" / "cookies.json").read_text(encoding="utf-8") == before_cookies
+
+
+def test_refresh_source_profile_noninteractive_blocks_accounts_google_challenge_target_and_restores_snapshot(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
+    snapshot = {"metadata.json": "snapshot-metadata", "cookies.json": "snapshot-cookies"}
+    restore_calls: list[tuple[Path, str, dict[str, str]]] = []
+    stop_calls: list[str] = []
+    url_calls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, body: bytes):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return self._body
+
+    def fake_urlopen(url, timeout=2):
+        url_calls.append(url)
+        if url.endswith("/json"):
+            return FakeResponse(
+                json.dumps(
+                    [
+                        {"id": "challenge", "url": "https://accounts.google.com/signin/challenge"},
+                        {"id": "main", "url": "https://notebooklm.google.com/"},
+                    ]
+                ).encode("utf-8")
+            )
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: stop_calls.append(browser_root))
+    monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
+    monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: True)
+    monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: (_ for _ in ()).throw(AssertionError("noise tabs should not be closed after challenge detection")))
+    monkeypatch.setattr(nlm_worker_auth, "_snapshot_profile_state", lambda profile_root, profile: snapshot)
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "_restore_profile_state",
+        lambda profile_root, profile, snap: restore_calls.append((profile_root, profile, snap)),
+    )
+    monkeypatch.setattr(nlm_worker_auth.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "run_nlm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("challenge target must block capture before run_nlm")),
+    )
 
     ok = nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1)
 
     assert ok is False
-    assert stopped_pids == []
-    assert called == []
-    assert (root / "ytis-pro-worker-01" / "metadata.json").read_text(encoding="utf-8") == before_metadata
-    assert (root / "ytis-pro-worker-01" / "cookies.json").read_text(encoding="utf-8") == before_cookies
+    assert url_calls == ["http://127.0.0.1:18870/json"]
+    assert restore_calls == [(root, "ytis-pro-worker-01", snapshot)]
+    assert stop_calls == [nlm_worker_auth.DEFAULT_FAMILIES[0].cdp_browser_root]
+
+
+def test_refresh_source_profile_noninteractive_launches_headless_cdp_browser(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
+    popen_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    cdp_states = iter([False, True])
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.delenv("YTIS_NLM_BROWSER_VISIBLE", raising=False)
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: set())
+    monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: None)
+    monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
+    monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: next(cdp_states))
+    monkeypatch.setattr(nlm_worker_auth, "_close_cdp_noise_tabs", lambda port: 0)
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "run_nlm",
+        lambda cmd, timeout_s=1, env=None: subprocess.CompletedProcess(cmd, 0, "Account: a.hominidae@gmail.com\n", ""),
+    )
+
+    def fake_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", fake_popen)
+
+    assert nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1) is True
+    assert popen_calls
+    chrome_args = list(popen_calls[0][0][0])
+    assert "--headless=new" in chrome_args
 
 
 def test_refresh_source_profile_refuses_existing_default_chrome_profile_in_noninteractive_mode(

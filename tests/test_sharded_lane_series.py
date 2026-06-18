@@ -334,9 +334,8 @@ def test_compute_combined_hot_path_vph_propagates_stage_totals_from_lane_aggrega
     assert combined["source_content_readiness_probe_sleep_elapsed_s_total"] == pytest.approx(0.3)
 
 
-def test_preflight_lane_auth_profiles_syncs_expired_profile_without_interactive_refresh(monkeypatch):
+def test_preflight_lane_auth_profiles_syncs_expired_profile_without_injecting_false_refresher(monkeypatch):
     calls: list[list[str]] = []
-    refresh_calls: list[str] = []
     sync_calls: list[dict[str, object]] = []
     repaired = False
 
@@ -349,16 +348,14 @@ def test_preflight_lane_auth_profiles_syncs_expired_profile_without_interactive_
             return type("CompletedProcess", (), {"returncode": 0, "stdout": "Account: troup.hominidae@gmail.com\n", "stderr": ""})()
         return type("CompletedProcess", (), {"returncode": 1, "stdout": "", "stderr": "unexpected"})()
 
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
     monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
     monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
-    monkeypatch.setattr(
-        "csf.sharded_lane_series.refresh_source_profile",
-        lambda family, timeout_s: refresh_calls.append(family.source_profile) or True,
-    )
 
     def fake_sync_worker_profiles(**kwargs):
         nonlocal repaired
         repaired = True
+        assert "source_session_refresher" not in kwargs
         sync_calls.append(kwargs)
 
     monkeypatch.setattr("csf.sharded_lane_series.sync_worker_profiles", fake_sync_worker_profiles)
@@ -382,7 +379,6 @@ def test_preflight_lane_auth_profiles_syncs_expired_profile_without_interactive_
         ["login", "--check", "--profile", "ytis-free1-worker-01"],
         ["login", "--check", "--profile", "ytis-free1-worker-01"],
     ]
-    assert refresh_calls == []
     assert sync_calls
 
 

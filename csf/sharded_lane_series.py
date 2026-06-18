@@ -266,10 +266,7 @@ def _profile_auth_force_refresh(profile: str, *, expected_email: str, timeout_s:
     family = family_for_profile(profile)
     if family is not None:
         try:
-            sync_kwargs: dict[str, object] = {"families": (family,), "backup": True}
-            if _is_nlm_auth_noninteractive():
-                sync_kwargs["source_session_refresher"] = lambda _profile: False
-            sync_worker_profiles(**sync_kwargs)
+            sync_worker_profiles(families=(family,), backup=True)
         except Exception:
             return False
         return _profile_auth_check(profile, expected_email=expected_email, timeout_s=timeout_s)
