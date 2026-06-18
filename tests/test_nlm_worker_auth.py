@@ -488,6 +488,41 @@ def test_sync_worker_profiles_auto_refreshes_source_profile_before_copy(tmp_path
     )
 
 
+def test_refresh_source_profile_noninteractive_never_launches_browser(tmp_path, monkeypatch):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "expired-pro")
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(
+        nlm_worker_auth.subprocess,
+        "Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("noninteractive auth launched Chrome")),
+    )
+    monkeypatch.setattr(
+        nlm_worker_auth,
+        "run_nlm",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("noninteractive auth invoked force login")),
+    )
+
+    assert nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1) is False
+
+
+def test_worker_auth_cli_sync_defaults_to_noninteractive(monkeypatch):
+    observed: list[str | None] = []
+    monkeypatch.delenv("YTIS_NLM_AUTH_NONINTERACTIVE", raising=False)
+
+    def fake_sync(*args, **kwargs):
+        observed.append(os.getenv("YTIS_NLM_AUTH_NONINTERACTIVE"))
+        return None
+
+    monkeypatch.setattr(nlm_worker_auth, "sync_worker_profiles", fake_sync)
+
+    assert nlm_worker_auth.main(["--no-backup", "--skip-check", "sync"]) == 0
+    assert observed == ["1"]
+    assert "YTIS_NLM_AUTH_NONINTERACTIVE" not in os.environ
+
+
 def test_sync_worker_profiles_reports_post_refresh_live_session_failure(tmp_path):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "renewed-free")
@@ -637,6 +672,7 @@ def test_worker_auth_cli_sync_uses_real_nlm_process_for_force_recovery(tmp_path)
     env["YTIS_NLM_CLI"] = str(bin_dir / ("nlm.cmd" if os.name == "nt" else "nlm"))
     env["YTIS_FAKE_NLM_PROFILE_ROOT"] = str(root)
     env["YTIS_NLM_WORKER_AUTH_USE_CDP"] = "0"
+    env["YTIS_NLM_AUTH_NONINTERACTIVE"] = "0"
     result = subprocess.run(
         [
             sys.executable,
@@ -789,11 +825,13 @@ def test_refresh_source_profile_restores_source_snapshot_when_cdp_unreachable(tm
     before_metadata = (root / "ytis-pro-worker-01" / "metadata.json").read_text(encoding="utf-8")
     before_cookies = (root / "ytis-pro-worker-01" / "cookies.json").read_text(encoding="utf-8")
 
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "0")
     monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
     monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: None)
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: False)
     monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", lambda *args, **kwargs: object())
+    monkeypatch.setattr(nlm_worker_auth, "refresh_profile_session", lambda profile, timeout_s: False)
 
     ok = nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1)
 
@@ -802,7 +840,7 @@ def test_refresh_source_profile_restores_source_snapshot_when_cdp_unreachable(tm
     assert (root / "ytis-pro-worker-01" / "cookies.json").read_text(encoding="utf-8") == before_cookies
 
 
-def test_refresh_source_profile_fails_closed_when_default_chrome_profile_appears(tmp_path, monkeypatch):
+def test_refresh_source_profile_noninteractive_stops_before_cdp_or_default_profile_checks(tmp_path, monkeypatch):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
     before_metadata = (root / "ytis-pro-worker-01" / "metadata.json").read_text(encoding="utf-8")
@@ -832,20 +870,8 @@ def test_refresh_source_profile_fails_closed_when_default_chrome_profile_appears
     ok = nlm_worker_auth.refresh_source_profile(nlm_worker_auth.DEFAULT_FAMILIES[0], timeout_s=1)
 
     assert ok is False
-    assert stopped_pids == [12345]
-    assert called == [
-        [
-            nlm_worker_auth.nlm_auth_guard.get_nlm_executable(),
-            "login",
-            "--profile",
-            "ytis-pro-worker-01",
-            "--provider",
-            "openclaw",
-            "--cdp-url",
-            "http://127.0.0.1:18870",
-            "--force",
-        ]
-    ]
+    assert stopped_pids == []
+    assert called == []
     assert (root / "ytis-pro-worker-01" / "metadata.json").read_text(encoding="utf-8") == before_metadata
     assert (root / "ytis-pro-worker-01" / "cookies.json").read_text(encoding="utf-8") == before_cookies
 

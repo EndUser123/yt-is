@@ -151,7 +151,7 @@ Get-CimInstance Win32_Process |
   Select-Object ProcessId, Name, CommandLine
 ```
 
-Expected: no default NotebookLM auth browser and no unprofiled `nlm login --force`. A transient `nlm login --force --profile <worker-profile>` is acceptable only when tied to one of the named worker profiles. If `nlm login --force` appears without `--profile`, stop the run and mark it invalid.
+Expected: no NotebookLM auth browser and no `nlm login --force` process. Benchmark auth repair is non-interactive and may only validate profiles or copy credentials from an already-valid worker-01 profile within the same account family. Any force-login or sign-in browser invalidates the preflight.
 
 - [ ] Run the worker-notebook preflight cleanup before the benchmark starts.
 
@@ -168,9 +168,9 @@ foreach ($profile in @(
 }
 ```
 
-Expected: every profile is authenticated. If any profile fails, use the dedicated browser auth refresh commands in `sharded-lane-series.md`. Do not use a shared/default Chrome profile.
+Expected: every profile is authenticated. If a sibling profile fails, run `csf-nlm-worker-auth sync`; it may repair the sibling only from an already-valid same-account worker-01 profile. If worker-01 is invalid, stop without opening a browser or requesting sign-in.
 
-The sharded runner now also performs this as a mandatory preflight. If a profile is expired, it runs one bounded `nlm login --force --profile <profile>` recovery before launching any lane. During benchmark subprocesses, `csf-source` runs with `YTIS_NLM_AUTH_NONINTERACTIVE=1`; expired auth uses `nlm login --force` instead of plain interactive `nlm login`.
+The sharded runner performs the same mandatory non-interactive preflight. It checks each profile, attempts same-family credential sync when a sibling is stale, and fails closed when no valid source profile exists. It must not launch Chrome, run force-login, or wait for user authentication.
 
 - [ ] Run the existing focused regression tests before changing code.
 
@@ -198,10 +198,10 @@ Last verified results:
 - `pytest tests/test_nlm_batch.py -q`: `68 passed` after `nlm_content_below_threshold` metric update.
 - `pytest tests/test_nlm_scraper.py -q`: `59 passed` after staging scraper readiness-probe metric update.
 - `pytest tests/test_worker_count_sweep.py tests/test_fallback_crossover_benchmark.py -q`: `10 passed` after reporting fixtures were updated to the new status.
-- `python bin/csf-nlm-worker-auth sync`: uses account-aware `nlm login --check` parsing, repairs expired or wrong-account worker `01` profiles through the dedicated CDP root by default, then copies only after the renewed source profile matches the expected account.
+- `python bin/csf-nlm-worker-auth sync`: defaults to `YTIS_NLM_AUTH_NONINTERACTIVE=1`, uses account-aware `nlm login --check` parsing, copies only from an already-valid same-account worker `01`, and fails closed without launching Chrome or force-login when that source profile is invalid. Explicit `YTIS_NLM_AUTH_NONINTERACTIVE=0` is reserved for deliberate manual maintenance outside benchmark workflows.
 - `pytest tests/test_nlm_batch.py tests/test_nlm_config.py tests/test_sharded_lane_series.py tests/test_nlm_worker_auth.py -q`: `79 passed`.
 - `pytest tests/test_nlm_batch.py -q -k 'records_source_ids_from_stdout_in_order or rejects_duplicate_source_ids_before_fetch'`: `2 passed`.
-- `pytest tests/test_nlm_worker_auth.py -q -k "real_nlm_process or worker_auth_cli_sync"`: `2 passed`; these are process-boundary tests that run a real temporary `nlm` executable and verify `check -> force -> check -> copy`, including the `bin/csf-nlm-worker-auth sync` wrapper, without mocking `subprocess.run`.
+- `pytest tests/test_nlm_worker_auth.py -q -k "real_nlm_process or worker_auth_cli_sync"`: the direct helper test preserves the explicit interactive-maintenance `check -> force -> check -> copy` path, while the CLI sync regression verifies its default invocation is non-interactive and cannot reach that force-login path.
 - `pytest tests/test_nlm_batch.py tests/test_nlm_config.py tests/test_sharded_lane_series.py tests/test_nlm_worker_auth.py tests/test_csf_source_fetch_timing.py -q -k "not cmd_check_all_emits_elapsed_scan_status_heartbeat and not logs_fetch_start_and_first_download_started_industrial and not limit_caps_selected_pending_items and not logs_worker_prewarm_summary_before_dispatch"`: `104 passed, 4 deselected`.
 - `python -m py_compile ...`: passed for the touched `nlm_batch`, config, auth helper, tests, and CLI wrappers.
 
@@ -222,8 +222,8 @@ foreach ($profile in @(
 
 Expected:
 
-- If a worker `01` source profile is expired or mapped to the wrong account but recoverable, `csf-nlm-worker-auth sync` should refresh it through the configured dedicated CDP root, pass the follow-up account check, then copy refreshed credentials to sibling workers.
-- If Google requires passkey/browser approval or the dedicated CDP root is itself on the wrong account, the command must fail before copying sibling credentials. Refresh only the affected worker `01` through the manual CDP flow in `sharded-lane-series.md`, then rerun this gate.
+- If a sibling worker profile is expired or mapped to the wrong account, `csf-nlm-worker-auth sync` may replace it from the already-valid same-account worker `01`, then the follow-up account check must pass.
+- If worker `01` is expired, wrong-account, or Google requires browser approval, the command must fail before copying credentials. Do not start the benchmark and do not request interactive sign-in.
 - Do not start `pro_free_source_map_v1` until all twelve `nlm login --check --profile ...` commands pass.
 
 ## Metrics To Record

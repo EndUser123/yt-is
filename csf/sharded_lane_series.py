@@ -266,13 +266,16 @@ def _profile_auth_force_refresh(profile: str, *, expected_email: str, timeout_s:
     family = family_for_profile(profile)
     if family is not None:
         try:
-            if not refresh_source_profile(family, timeout_s=timeout_s):
-                return False
-            sync_worker_profiles(families=(family,), backup=True)
+            sync_kwargs: dict[str, object] = {"families": (family,), "backup": True}
+            if _is_nlm_auth_noninteractive():
+                sync_kwargs["source_session_refresher"] = lambda _profile: False
+            sync_worker_profiles(**sync_kwargs)
         except Exception:
             return False
         return _profile_auth_check(profile, expected_email=expected_email, timeout_s=timeout_s)
 
+    if _is_nlm_auth_noninteractive():
+        return False
     if _stop_default_chrome_profile_if_running(stage=f"auth_refresh_before_{profile}"):
         return False
     res = run_nlm(["login", "--force", "--profile", profile], timeout_s=timeout_s)

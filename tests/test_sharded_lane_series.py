@@ -334,7 +334,7 @@ def test_compute_combined_hot_path_vph_propagates_stage_totals_from_lane_aggrega
     assert combined["source_content_readiness_probe_sleep_elapsed_s_total"] == pytest.approx(0.3)
 
 
-def test_preflight_lane_auth_profiles_refreshes_expired_profile_before_run(monkeypatch):
+def test_preflight_lane_auth_profiles_syncs_expired_profile_without_interactive_refresh(monkeypatch):
     calls: list[list[str]] = []
     refresh_calls: list[str] = []
     sync_calls: list[dict[str, object]] = []
@@ -382,11 +382,11 @@ def test_preflight_lane_auth_profiles_refreshes_expired_profile_before_run(monke
         ["login", "--check", "--profile", "ytis-free1-worker-01"],
         ["login", "--check", "--profile", "ytis-free1-worker-01"],
     ]
-    assert refresh_calls == ["ytis-free1-worker-01"]
+    assert refresh_calls == []
     assert sync_calls
 
 
-def test_preflight_lane_auth_profiles_refreshes_wrong_account_before_run(monkeypatch):
+def test_preflight_lane_auth_profiles_syncs_wrong_account_without_interactive_refresh(monkeypatch):
     calls: list[list[str]] = []
     refresh_calls: list[str] = []
     sync_calls: list[dict[str, object]] = []
@@ -434,7 +434,7 @@ def test_preflight_lane_auth_profiles_refreshes_wrong_account_before_run(monkeyp
         ["login", "--check", "--profile", "ytis-free1-worker-01"],
         ["login", "--check", "--profile", "ytis-free1-worker-01"],
     ]
-    assert refresh_calls == ["ytis-free1-worker-01"]
+    assert refresh_calls == []
     assert sync_calls
 
 
@@ -448,6 +448,10 @@ def test_preflight_lane_auth_profiles_rejects_profile_when_refresh_fails(monkeyp
     monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
     monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
     monkeypatch.setattr("csf.sharded_lane_series.refresh_source_profile", lambda family, timeout_s: False)
+    monkeypatch.setattr(
+        "csf.sharded_lane_series.sync_worker_profiles",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("no valid source session")),
+    )
 
     try:
         preflight_lane_auth_profiles(

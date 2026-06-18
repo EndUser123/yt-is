@@ -10,6 +10,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -444,6 +445,19 @@ def _is_noninteractive_auth() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+@contextmanager
+def _noninteractive_auth_default():
+    previous = os.environ.get("YTIS_NLM_AUTH_NONINTERACTIVE")
+    os.environ.setdefault("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("YTIS_NLM_AUTH_NONINTERACTIVE", None)
+        else:
+            os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = previous
+
+
 def _browser_launch_visible() -> bool:
     value = os.getenv("YTIS_NLM_BROWSER_VISIBLE", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
@@ -581,6 +595,8 @@ def _launch_cdp_browser(family: AuthFamily, profile_root: Path, snapshot: dict[s
 
 def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> bool:
     """Refresh worker-01 through its dedicated browser root when configured."""
+    if _is_noninteractive_auth():
+        return False
     profile_root = DEFAULT_PROFILE_ROOT
     snapshot = _snapshot_profile_state(profile_root, family.source_profile)
     use_cdp = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower() not in {"0", "false", "no", "off"}
@@ -918,20 +934,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.lane_config is None or args.run_root is None:
             print("[auth] ERROR: doctor requires --lane-config and --run-root")
             return 1
-        try:
-            lanes = doctor_lane_setup(args.lane_config, args.run_root)
-        except (FileNotFoundError, RuntimeError, ValueError) as exc:
-            print(f"[auth] ERROR: {exc}")
-            return 1
+        with _noninteractive_auth_default():
+            try:
+                lanes = doctor_lane_setup(args.lane_config, args.run_root)
+            except (FileNotFoundError, RuntimeError, ValueError) as exc:
+                print(f"[auth] ERROR: {exc}")
+                return 1
         lane_names = ",".join(getattr(lane, "lane", str(lane)) for lane in lanes)
         print(f"[auth] doctor=ok lanes={lane_names} run_root={args.run_root}")
         return 0
 
-    try:
-        backup_root = sync_worker_profiles(args.profile_root, backup=not args.no_backup)
-    except (FileNotFoundError, RuntimeError, ValueError) as exc:
-        print(f"[auth] ERROR: {exc}")
-        return 1
+    with _noninteractive_auth_default():
+        try:
+            backup_root = sync_worker_profiles(args.profile_root, backup=not args.no_backup)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            print(f"[auth] ERROR: {exc}")
+            return 1
     if backup_root:
         print(f"[auth] backup={backup_root}")
     print("[auth] synced worker auth profiles from worker-01 account families")
