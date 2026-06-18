@@ -1863,6 +1863,7 @@ class NLMBatchIngestor:
         self._last_materialization_ready_at_epoch: float = 0.0
         self._source_age_cadence_notebook_ready_at_epoch: float = 0.0
         self._last_added_source_ids: List[str] = []
+        self._previously_observed_source_ids: set[str] = set()
         self._last_extract_metrics: dict[str, object] | None = None
         self._current_source_count: int = 0
         self._video_ready_epoch_by_id: dict[str, float] = {}
@@ -2799,6 +2800,7 @@ class NLMBatchIngestor:
         nb_name = _get_reusable_notebook_title()
         notebooklm_profile = _get_notebooklm_profile()
         self._last_added_video_ids = None
+        self._previously_observed_source_ids = set()
         self._last_subbatch_metrics = []
         self._nb_id = None
         print(f"[NLM-Batch] Creating notebook...")
@@ -2869,8 +2871,28 @@ class NLMBatchIngestor:
         # Prefer exact NotebookLM source title/url matches first because list
         # order is not guaranteed to be stable enough for correlation.
         source_id_list = [str(s.get("id") or "").strip() for s in sources if isinstance(s, dict) and str(s.get("id") or "").strip()]
+        previously_observed_source_ids = {
+            str(source_id).strip()
+            for source_id in getattr(self, "_previously_observed_source_ids", set())
+            if str(source_id or "").strip()
+        }
+        newly_observed_source_id_list = [
+            source_id for source_id in source_id_list if source_id not in previously_observed_source_ids
+        ]
+        self._previously_observed_source_ids = set(source_id_list)
+        newly_observed_source_ids = set(newly_observed_source_id_list)
+        mapping_sources = (
+            [
+                source
+                for source in sources
+                if isinstance(source, dict)
+                and str(source.get("id") or "").strip() in newly_observed_source_ids
+            ]
+            if previously_observed_source_ids
+            else sources
+        )
         source_id_by_video_id: dict[str, str] = {}
-        for source in sources:
+        for source in mapping_sources:
             source_id = str(source.get("id") or "").strip() if isinstance(source, dict) else ""
             video_id = _extract_video_id_from_source_entry(source)
             if source_id and video_id and video_id not in source_id_by_video_id:
@@ -2894,12 +2916,15 @@ class NLMBatchIngestor:
                 order_fallback_count = 0
                 missing_video_ids = []
         elif missing_video_ids:
-            if len(source_id_list) == len(batch_ids):
+            fallback_candidate_source_ids = (
+                newly_observed_source_id_list if previously_observed_source_ids else source_id_list
+            )
+            if len(fallback_candidate_source_ids) == len(batch_ids):
                 fallback_video_ids = [vid for vid in batch_ids if vid not in source_id_by_video_id]
                 used_source_ids = {str(source_id).strip() for source_id in source_id_by_video_id.values() if str(source_id or "").strip()}
                 fallback_source_ids = [
                     source_id
-                    for source_id in source_id_list
+                    for source_id in fallback_candidate_source_ids
                     if source_id not in used_source_ids
                 ]
                 if len(fallback_source_ids) == len(fallback_video_ids):

@@ -3084,6 +3084,7 @@ class TestSubBatchFailureMode:
         """A successful add with dead-notebook source probe failure should recover immediately."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-old"
+        ingestor._previously_observed_source_ids = {"old-source"}
 
         probe_not_found = type(
             "CompletedProcess",
@@ -3143,6 +3144,7 @@ class TestSubBatchFailureMode:
 
         assert result == ["v1"]
         assert ingestor._nb_id == "nb-fresh"
+        assert ingestor._previously_observed_source_ids == set()
         mock_clear.assert_called_once()
         mock_save.assert_called_once_with("nb-fresh")
         mock_rotate.assert_not_called()
@@ -5322,6 +5324,95 @@ class TestNotebookCapRotation:
         assert results[vid2][0] is True
         assert results[vid2][1] == "B" * 101
         assert not any(call.args[0] == "nlm_batch_source_mapping_failed" for call in mock_log.call_args_list)
+
+    def test_extract_transcripts_excludes_previously_observed_sources_from_order_fallback(self):
+        """Cadence windows should order-map only sources added since the prior extraction."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)
+        ingestor._nb_id = "nb-cadence"
+        ingestor._previously_observed_source_ids = {"old-1", "old-2"}
+        vid1 = "AAAAAAAAAAA"
+        vid2 = "BBBBBBBBBBB"
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {
+                        "returncode": 0,
+                        "stdout": json.dumps(
+                            {
+                                "sources": [
+                                    {"id": "old-1", "title": "Prior cadence source 1"},
+                                    {"id": "old-2", "title": "Prior cadence source 2"},
+                                    {"id": "new-1", "title": f"https://www.youtube.com/watch?v={vid1}"},
+                                    {"id": "new-2", "title": "New source without a video ID"},
+                                ]
+                            }
+                        ),
+                        "stderr": "",
+                    },
+                )()
+            if cmd[:2] == ["source", "content"]:
+                source_id = cmd[2]
+                content = "A" * 101 if source_id == "new-1" else "B" * 101
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"value": {"content": content}}), "stderr": ""},
+                )()
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                results = ingestor.extract_transcripts([vid1, vid2])
+
+        assert results[vid1][0] is True
+        assert results[vid1][1] == "A" * 101
+        assert results[vid2][0] is True
+        assert results[vid2][1] == "B" * 101
+        assert ingestor._previously_observed_source_ids == {"old-1", "old-2", "new-1", "new-2"}
+        assert not any(call.args[0] == "nlm_batch_source_mapping_failed" for call in mock_log.call_args_list)
+
+    def test_extract_transcripts_does_not_title_match_a_previously_observed_source(self):
+        """A repeated video must resolve within the newly observed cadence sources."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-cadence-repeat"
+        ingestor._previously_observed_source_ids = {"old-1"}
+        vid = "AAAAAAAAAAA"
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {
+                        "returncode": 0,
+                        "stdout": json.dumps(
+                            {
+                                "sources": [
+                                    {"id": "old-1", "title": f"https://www.youtube.com/watch?v={vid}"},
+                                    {"id": "new-1", "title": "New source without a video ID"},
+                                ]
+                            }
+                        ),
+                        "stderr": "",
+                    },
+                )()
+            if cmd[:2] == ["source", "content"]:
+                content = ("N" if cmd[2] == "new-1" else "O") * 101
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"value": {"content": content}}), "stderr": ""},
+                )()
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+            result = ingestor.extract_transcripts([vid])
+
+        assert result[vid][0] is True
+        assert result[vid][1] == "N" * 101
 
     def test_extract_transcripts_rejects_partial_mapping_without_order_fallback(self):
         """Partial source-list matches should fail closed instead of guessing by position."""
