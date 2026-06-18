@@ -66,6 +66,8 @@ MAX_FIELDS = (
     "source_ready_age_s_max",
     "youtube_ytdlp_elapsed_s_max",
 )
+COMMAND_EVENT_ACTION = "nlm_source_content_command_completed"
+PROJECTION_FIELD = "projected_local_retry_completion_age_cliff"
 
 
 @dataclass
@@ -228,6 +230,301 @@ def _stdout_context(path: Path, run_root: Path) -> tuple[str, str, str] | None:
     return phase, lane, batch
 
 
+def _term_context(path: Path, run_root: Path) -> tuple[str, str, str] | None:
+    return _stdout_context(path, run_root)
+
+
+def _first_present(record: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        if name in record:
+            return record[name]
+        data = record.get("data")
+        if isinstance(data, dict) and name in data:
+            return data[name]
+    return None
+
+
+def _normalize_attempt_class(value: Any) -> str:
+    if value is None:
+        return "unknown"
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if not text:
+            return "unknown"
+        if text in {"1", "attempt_1", "attempt1", "first"}:
+            return "attempt_1"
+        if text in {"retry", "attempt_retry"}:
+            return "retry"
+        if text.isdigit():
+            return "attempt_1" if int(text) == 1 else "retry"
+        return "retry" if "retry" in text else "unknown"
+    if isinstance(value, (int, float)):
+        return "attempt_1" if int(value) == 1 else "retry"
+    return "unknown"
+
+
+def _parse_term_record(record: dict[str, Any], phase: str, lane: str, batch: str) -> dict[str, Any] | None:
+    projection_value = _first_present(record, PROJECTION_FIELD)
+    if projection_value is not None:
+        profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
+        worker_id = _clean_str(_first_present(record, "worker_id"))
+        if not profile or not worker_id:
+            return None
+        source_ready_age = _as_float(_first_present(record, "source_ready_age_s", "source_age_s", "source_age"))
+        return {
+            "event_type": "projection",
+            "phase": phase,
+            "lane": lane,
+            "batch": batch,
+            "profile": profile,
+            "worker_id": worker_id,
+            "status": _clean_str(_first_present(record, "status")) or "projection",
+            "attempt": _clean_str(_first_present(record, "attempt")),
+            "attempt_class": _normalize_attempt_class(_first_present(record, "attempt")),
+            "projection_evidence": True,
+            "projected_local_retry_completion_age_cliff": _as_float(projection_value),
+            "command_elapsed_s_total": 0.0,
+            "command_elapsed_s_max": 0.0,
+            "source_ready_age_s": source_ready_age,
+            "video_id": _clean_str(_first_present(record, "video_id")),
+            "source_id": _clean_str(_first_present(record, "source_id")),
+        }
+
+    action = _clean_str(_first_present(record, "action", "event_action"))
+    if action != COMMAND_EVENT_ACTION:
+        return None
+
+    worker_id = _clean_str(_first_present(record, "worker_id"))
+    profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
+    status = _clean_str(_first_present(record, "status", "command_status"))
+    elapsed_raw = _first_present(record, "elapsed_s", "command_elapsed_s_total", "elapsed")
+    if not worker_id or not profile or not status or elapsed_raw is None:
+        return None
+
+    source_ready_age = _as_float(_first_present(record, "source_ready_age_s", "source_age_s", "source_age"))
+    video_id = _clean_str(_first_present(record, "video_id"))
+    source_id = _clean_str(_first_present(record, "source_id"))
+    attempt_raw = _first_present(record, "attempt", "attempt_name")
+    elapsed = _as_float(elapsed_raw)
+    return {
+        "event_type": "command",
+        "phase": phase,
+        "lane": lane,
+        "batch": batch,
+        "profile": profile,
+        "worker_id": worker_id,
+        "status": status,
+        "attempt": _clean_str(attempt_raw),
+        "attempt_class": _normalize_attempt_class(attempt_raw),
+        "projection_evidence": False,
+        "projected_local_retry_completion_age_cliff": None,
+        "command_elapsed_s_total": elapsed,
+        "command_elapsed_s_max": elapsed,
+        "source_ready_age_s": source_ready_age,
+        "video_id": video_id,
+        "source_id": source_id,
+    }
+
+
+def _scan_command_events(run_root: Path, phase_filter: str = "soak") -> tuple[list[dict[str, Any]], int, int]:
+    events: list[dict[str, Any]] = []
+    invalid_json_count = 0
+    missing_field_count = 0
+    for term_path in sorted(run_root.glob("**/term_*.jsonl")):
+        context = _term_context(term_path, run_root)
+        if context is None:
+            continue
+        phase, lane, batch = context
+        if phase_filter != "all" and phase != phase_filter:
+            continue
+        try:
+            lines = term_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                record = json.loads(text)
+            except json.JSONDecodeError:
+                invalid_json_count += 1
+                continue
+            if not isinstance(record, dict):
+                missing_field_count += 1
+                continue
+            parsed = _parse_term_record(record, phase, lane, batch)
+            if parsed is None:
+                if _clean_str(_first_present(record, "action", "event_action")) == COMMAND_EVENT_ACTION or _first_present(
+                    record, PROJECTION_FIELD
+                ) is not None:
+                    missing_field_count += 1
+                continue
+            events.append(parsed)
+    return events, invalid_json_count, missing_field_count
+
+
+def iter_command_events(run_root: Path, phase_filter: str = "soak") -> list[dict[str, Any]]:
+    events, _, _ = _scan_command_events(run_root, phase_filter)
+    return events
+
+
+def _aggregate_command_event_rows(events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    command_rows: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
+    projection_rows: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    attempt_totals: dict[str, dict[str, Any]] = {}
+
+    for event in events:
+        if event["event_type"] == "projection":
+            key = (event["phase"], event["lane"], event["batch"], event["profile"])
+            row = projection_rows.setdefault(
+                key,
+                {
+                    "phase": event["phase"],
+                    "lane": event["lane"],
+                    "lane_label": LANE_LABELS.get(event["lane"], event["lane"]),
+                    "batch": event["batch"],
+                    "profile": event["profile"],
+                    "projection_count": 0,
+                    "projection_workers": [],
+                    "projected_local_retry_completion_age_cliff_max": 0.0,
+                },
+            )
+            row["projection_count"] += 1
+            if event.get("worker_id") and event["worker_id"] not in row["projection_workers"]:
+                row["projection_workers"].append(event["worker_id"])
+            row["projected_local_retry_completion_age_cliff_max"] = max(
+                row["projected_local_retry_completion_age_cliff_max"],
+                _as_float(event.get("projected_local_retry_completion_age_cliff")),
+            )
+            continue
+
+        key = (
+            event["phase"],
+            event["lane"],
+            event["batch"],
+            event["profile"],
+            event["attempt_class"],
+            event["status"],
+        )
+        row = command_rows.setdefault(
+            key,
+            {
+                "phase": event["phase"],
+                "lane": event["lane"],
+                "lane_label": LANE_LABELS.get(event["lane"], event["lane"]),
+                "batch": event["batch"],
+                "profile": event["profile"],
+                "attempt_class": event["attempt_class"],
+                "status": event["status"],
+                "count": 0,
+                "command_elapsed_s_total": 0.0,
+                "command_elapsed_s_max": 0.0,
+                "source_ready_age_s_total": 0.0,
+                "source_ready_age_s_max": 0.0,
+                "worker_ids": [],
+            },
+        )
+        row["count"] += 1
+        row["command_elapsed_s_total"] += _as_float(event.get("command_elapsed_s_total"))
+        row["command_elapsed_s_max"] = max(row["command_elapsed_s_max"], _as_float(event.get("command_elapsed_s_max")))
+        row["source_ready_age_s_total"] += _as_float(event.get("source_ready_age_s"))
+        row["source_ready_age_s_max"] = max(row["source_ready_age_s_max"], _as_float(event.get("source_ready_age_s")))
+        if event.get("worker_id") and event["worker_id"] not in row["worker_ids"]:
+            row["worker_ids"].append(event["worker_id"])
+
+        attempt_row = attempt_totals.setdefault(
+            event["attempt_class"],
+            {
+                "attempt_class": event["attempt_class"],
+                "count": 0,
+                "command_elapsed_s_total": 0.0,
+                "command_elapsed_s_max": 0.0,
+            },
+        )
+        attempt_row["count"] += 1
+        attempt_row["command_elapsed_s_total"] += _as_float(event.get("command_elapsed_s_total"))
+        attempt_row["command_elapsed_s_max"] = max(
+            attempt_row["command_elapsed_s_max"], _as_float(event.get("command_elapsed_s_max"))
+        )
+
+    command_rows_list = sorted(
+        command_rows.values(),
+        key=lambda row: (row["phase"], LANE_LABELS.get(row["lane"], row["lane"]), row["batch"], row["profile"], row["attempt_class"], row["status"]),
+    )
+    projection_rows_list = sorted(
+        projection_rows.values(),
+        key=lambda row: (row["phase"], LANE_LABELS.get(row["lane"], row["lane"]), row["batch"], row["profile"]),
+    )
+    return command_rows_list, projection_rows_list, attempt_totals
+
+
+def aggregate_command_events(
+    run_root: Path,
+    worker_overall_row: dict[str, Any] | None = None,
+    phase_filter: str = "soak",
+) -> dict[str, Any]:
+    events, invalid_json_count, missing_field_count = _scan_command_events(run_root, phase_filter)
+    command_events = [event for event in events if event["event_type"] == "command"]
+    command_rows, projection_rows, attempt_totals = _aggregate_command_event_rows(events)
+    overall_count = len(command_events)
+    overall_elapsed = sum(_as_float(event.get("command_elapsed_s_total")) for event in command_events)
+    overall_max = max([_as_float(event.get("command_elapsed_s_max")) for event in command_events], default=0.0)
+    worker_command_count = _as_float((worker_overall_row or {}).get("content_fetch_command_elapsed_s_count"))
+    worker_command_elapsed = _as_float((worker_overall_row or {}).get("content_fetch_command_elapsed_s_total"))
+    command_count_ratio = overall_count / worker_command_count if worker_command_count else 0.0
+    command_elapsed_ratio = overall_elapsed / worker_command_elapsed if worker_command_elapsed else 0.0
+    gate = "discriminating" if command_count_ratio >= 0.95 and command_elapsed_ratio >= 0.95 else "bounded"
+
+    return {
+        "overall_event_count": overall_count,
+        "overall_event_elapsed_s_total": _round(overall_elapsed),
+        "overall_event_elapsed_s_max": _round(overall_max),
+        "attempt_totals": {
+            key: {
+                "attempt_class": value["attempt_class"],
+                "count": value["count"],
+                "command_elapsed_s_total": _round(value["command_elapsed_s_total"]),
+                "command_elapsed_s_max": _round(value["command_elapsed_s_max"]),
+            }
+            for key, value in sorted(attempt_totals.items())
+        },
+        "event_rows": [
+            {
+                **row,
+                "command_elapsed_s_total": _round(row["command_elapsed_s_total"]),
+                "command_elapsed_s_max": _round(row["command_elapsed_s_max"]),
+                "source_ready_age_s_total": _round(row["source_ready_age_s_total"]),
+                "source_ready_age_s_max": _round(row["source_ready_age_s_max"]),
+            }
+            for row in command_rows
+        ],
+        "projection_rows": [
+            {
+                **row,
+                "projection_count": row["projection_count"],
+                "projected_local_retry_completion_age_cliff_max": _round(
+                    row["projected_local_retry_completion_age_cliff_max"]
+                ),
+                "projection_workers": sorted(row["projection_workers"]),
+            }
+            for row in projection_rows
+        ],
+        "reconciliation": {
+            "worker_command_count": _round(worker_command_count),
+            "worker_command_elapsed_s_total": _round(worker_command_elapsed),
+            "command_count": overall_count,
+            "command_elapsed_s_total": _round(overall_elapsed),
+            "command_count_ratio": _round(command_count_ratio),
+            "command_elapsed_ratio": _round(command_elapsed_ratio),
+            "gate": gate,
+            "bounded_uncertainty": gate != "discriminating",
+        },
+        "invalid_json_count": invalid_json_count,
+        "missing_field_count": missing_field_count,
+    }
+
+
 def iter_worker_rows(run_root: Path, phase_filter: str = "soak") -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for stdout_path in sorted(run_root.glob("**/stdout.txt")):
@@ -317,13 +614,16 @@ def _aggregate(rows: list[dict[str, Any]], run_name: str) -> dict[str, list[dict
 def analyze_run_root(run_root: Path, phase_filter: str = "soak") -> dict[str, Any]:
     rows = iter_worker_rows(run_root, phase_filter)
     run_name = run_root.name
+    worker_packet = _aggregate(rows, run_name)
+    overall = worker_packet["overall_rows"][0] if worker_packet["overall_rows"] else Aggregate(run_name, "all", "all").to_row()
     return {
         "run_name": run_name,
         "run_root": str(run_root),
         "phase_filter": phase_filter,
         "summary": _read_summary(run_root),
         "worker_stdout_row_count": len(rows),
-        **_aggregate(rows, run_name),
+        **worker_packet,
+        "event_attribution": aggregate_command_events(run_root, overall, phase_filter),
     }
 
 
@@ -348,6 +648,48 @@ def compare_runs(base_packet: dict[str, Any], candidate_packet: dict[str, Any]) 
             continue
         worker_deltas.append(_delta_row(base, row))
 
+    base_events = {_event_row_key(row): row for row in base_packet.get("event_attribution", {}).get("event_rows", [])}
+    candidate_events = {
+        _event_row_key(row): row for row in candidate_packet.get("event_attribution", {}).get("event_rows", [])
+    }
+    event_deltas = []
+    for key in sorted(set(base_events) | set(candidate_events)):
+        candidate_row = candidate_events.get(key)
+        base_row = base_events.get(key)
+        if candidate_row is None and base_row is None:
+            continue
+        if candidate_row is None:
+            candidate_row = {
+                "phase": base_row["phase"],
+                "lane": base_row["lane"],
+                "lane_label": base_row["lane_label"],
+                "batch": base_row["batch"],
+                "profile": base_row["profile"],
+                "attempt_class": base_row["attempt_class"],
+                "status": base_row["status"],
+                "count": 0,
+                "command_elapsed_s_total": 0.0,
+                "command_elapsed_s_max": 0.0,
+                "source_ready_age_s_total": 0.0,
+                "source_ready_age_s_max": 0.0,
+            }
+        if base_row is None:
+            base_row = {
+                "phase": candidate_row["phase"],
+                "lane": candidate_row["lane"],
+                "lane_label": candidate_row["lane_label"],
+                "batch": candidate_row["batch"],
+                "profile": candidate_row["profile"],
+                "attempt_class": candidate_row["attempt_class"],
+                "status": candidate_row["status"],
+                "count": 0,
+                "command_elapsed_s_total": 0.0,
+                "command_elapsed_s_max": 0.0,
+                "source_ready_age_s_total": 0.0,
+                "source_ready_age_s_max": 0.0,
+            }
+        event_deltas.append(_event_delta_row(base_row, candidate_row))
+
     return {
         "base_run_name": base_packet["run_name"],
         "candidate_run_name": candidate_packet["run_name"],
@@ -359,6 +701,11 @@ def compare_runs(base_packet: dict[str, Any], candidate_packet: dict[str, Any]) 
         "worker_deltas": sorted(
             worker_deltas,
             key=lambda row: row["content_fetch_command_elapsed_s_total_delta"],
+            reverse=True,
+        ),
+        "event_deltas": sorted(
+            event_deltas,
+            key=lambda row: row["command_elapsed_s_total_delta"],
             reverse=True,
         ),
     }
@@ -392,6 +739,35 @@ def _delta_row(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
         "candidate": candidate,
     }
     for field_name in fields:
+        result[f"{field_name}_base"] = base.get(field_name, 0)
+        result[f"{field_name}_candidate"] = candidate.get(field_name, 0)
+        result[f"{field_name}_delta"] = _round(_as_float(candidate.get(field_name)) - _as_float(base.get(field_name)))
+    return result
+
+
+def _event_row_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return row["phase"], row["lane"], row.get("batch"), row.get("profile"), row.get("attempt_class"), row.get("status")
+
+
+def _event_delta_row(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        "phase": candidate["phase"],
+        "lane": candidate["lane"],
+        "lane_label": candidate["lane_label"],
+        "batch": candidate.get("batch"),
+        "profile": candidate.get("profile"),
+        "attempt_class": candidate.get("attempt_class"),
+        "status": candidate.get("status"),
+        "base": base,
+        "candidate": candidate,
+    }
+    for field_name in (
+        "count",
+        "command_elapsed_s_total",
+        "command_elapsed_s_max",
+        "source_ready_age_s_total",
+        "source_ready_age_s_max",
+    ):
         result[f"{field_name}_base"] = base.get(field_name, 0)
         result[f"{field_name}_candidate"] = candidate.get(field_name, 0)
         result[f"{field_name}_delta"] = _round(_as_float(candidate.get(field_name)) - _as_float(base.get(field_name)))
@@ -500,6 +876,146 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
         )
     )
 
+    lines.extend(["", "## Attempt-1 Versus Retry Attribution"])
+    attempt_rows = []
+    for packet in packets:
+        attribution = packet.get("event_attribution") or {}
+        attempt_totals = attribution.get("attempt_totals") or {}
+        overall_count = attribution.get("overall_event_count")
+        overall_elapsed = attribution.get("overall_event_elapsed_s_total")
+        attempt_rows.append(
+            [
+                packet["run_name"],
+                overall_count,
+                overall_elapsed,
+                attempt_totals.get("attempt_1", {}).get("count", 0),
+                attempt_totals.get("attempt_1", {}).get("command_elapsed_s_total", 0),
+                attempt_totals.get("attempt_1", {}).get("command_elapsed_s_max", 0),
+                attempt_totals.get("retry", {}).get("count", 0),
+                attempt_totals.get("retry", {}).get("command_elapsed_s_total", 0),
+                attempt_totals.get("retry", {}).get("command_elapsed_s_max", 0),
+                attempt_totals.get("unknown", {}).get("count", 0),
+                attempt_totals.get("unknown", {}).get("command_elapsed_s_total", 0),
+                attempt_totals.get("unknown", {}).get("command_elapsed_s_max", 0),
+                attribution.get("missing_field_count", 0),
+                attribution.get("invalid_json_count", 0),
+            ]
+        )
+    lines.append(
+        _table(
+            [
+                "Run",
+                "Event count",
+                "Event elapsed",
+                "Attempt-1 count",
+                "Attempt-1 elapsed",
+                "Attempt-1 max",
+                "Retry count",
+                "Retry elapsed",
+                "Retry max",
+                "Unknown count",
+                "Unknown elapsed",
+                "Unknown max",
+                "Missing fields",
+                "Invalid JSON",
+            ],
+            attempt_rows,
+        )
+    )
+
+    lines.extend(["", "## Top Event-Level Command Deltas"])
+    event_delta_rows = []
+    if comparison:
+        for row in comparison.get("event_deltas", [])[:10]:
+            event_delta_rows.append(
+                [
+                    row["phase"],
+                    row["lane_label"],
+                    row["batch"],
+                    row["profile"],
+                    row["attempt_class"],
+                    row["status"],
+                    row["command_elapsed_s_total_delta"],
+                    row["command_elapsed_s_max_delta"],
+                    row["count_delta"],
+                    row["source_ready_age_s_total_delta"],
+                    row["source_ready_age_s_max_delta"],
+                ]
+            )
+    lines.append(
+        _table(
+            [
+                "Phase",
+                "Lane",
+                "Batch",
+                "Profile",
+                "Attempt",
+                "Status",
+                "Elapsed delta",
+                "Max delta",
+                "Count delta",
+                "Source-age total delta",
+                "Source-age max delta",
+            ],
+            event_delta_rows,
+        )
+    )
+
+    lines.extend(["", "## Projection Evidence"])
+    projection_rows = []
+    for packet in packets:
+        for row in (packet.get("event_attribution") or {}).get("projection_rows", []):
+            projection_rows.append(
+                [
+                    packet["run_name"],
+                    row["lane_label"],
+                    row["batch"],
+                    row["profile"],
+                    row["projection_count"],
+                    row["projected_local_retry_completion_age_cliff_max"],
+                ]
+            )
+    lines.append(
+        _table(
+            ["Run", "Lane", "Batch", "Profile", "Projection count", "Projection max age cliff"],
+            projection_rows,
+        )
+    )
+
+    lines.extend(["", "## Event Reconciliation Gate"])
+    gate_rows = []
+    for packet in packets:
+        reconciliation = (packet.get("event_attribution") or {}).get("reconciliation") or {}
+        gate_rows.append(
+            [
+                packet["run_name"],
+                reconciliation.get("command_count"),
+                reconciliation.get("worker_command_count"),
+                reconciliation.get("command_count_ratio"),
+                reconciliation.get("command_elapsed_s_total"),
+                reconciliation.get("worker_command_elapsed_s_total"),
+                reconciliation.get("command_elapsed_ratio"),
+                reconciliation.get("gate"),
+                "bounded uncertainty" if reconciliation.get("bounded_uncertainty") else "discriminating",
+            ]
+        )
+    lines.append(
+        _table(
+            [
+                "Run",
+                "Event count",
+                "Worker count",
+                "Count ratio",
+                "Event elapsed",
+                "Worker elapsed",
+                "Elapsed ratio",
+                "Gate",
+                "Note",
+            ],
+            gate_rows,
+        )
+    )
+
     if comparison:
         lines.extend(["", "## Candidate Minus Baseline Deltas"])
         batch_delta_rows = []
@@ -578,18 +1094,6 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
                 worker_delta_rows,
             )
         )
-
-    lines.extend(
-        [
-            "",
-            "## Gate Verdict",
-            "",
-            "- If command total delta is concentrated in a lane/batch with matching source-age cliffs and high age max, treat it as retry-window/source-age pressure.",
-            "- If source-list probe delta is high but much smaller than command total delta, treat source-list probe as a contributor/symptom, not the sole driver.",
-            "- If readiness probe totals stay zero, do not attribute the regression to readiness polling.",
-            "- If shared retry remains zero in companion packets, do not attribute the regression to shared retry drain/skip behavior.",
-        ]
-    )
     return "\n".join(lines) + "\n"
 
 
