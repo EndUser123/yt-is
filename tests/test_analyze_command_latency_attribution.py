@@ -145,6 +145,23 @@ def _real_projection_event(*, notebooklm_profile: str, projected_age: float = 22
     return event
 
 
+def _retry_command_with_projected_age(*, worker_id: str, notebooklm_profile: str, projected_age: float = 88.8):
+    return _command_event(
+        worker_id=worker_id,
+        notebooklm_profile=notebooklm_profile,
+        attempt="retry",
+        status="queued",
+        elapsed_s=5.0,
+        source_ready_age_s=4.0,
+        video_id="video-queued",
+        source_id="source-queued",
+        data={
+            "retry_queue_skipped_reason": None,
+            "projected_retry_ready_age_s": projected_age,
+        },
+    )
+
+
 def test_analyze_run_root_aggregates_worker_stdout_by_lane_batch(tmp_path):
     run_root = tmp_path / "run01"
     _write_stdout(
@@ -602,3 +619,26 @@ def test_iter_command_events_parses_real_projection_without_worker_id(tmp_path):
     assert "worker_id" not in events[0] or events[0]["worker_id"] is None
     assert event_packet["projection_rows"][0]["projection_count"] == 1
     assert event_packet["projection_rows"][0]["projection_workers"] == []
+
+
+def test_numeric_projection_age_without_sentinel_reason_is_not_projection_evidence(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "troup_hominidae_free",
+        "batch_01",
+        [
+            _retry_command_with_projected_age(worker_id="worker-01", notebooklm_profile="profile-a", projected_age=444.4),
+        ],
+    )
+
+    events = list(analyzer.iter_command_events(run_root))
+    event_packet = analyzer.aggregate_command_events(
+        run_root,
+        {"content_fetch_command_elapsed_s_count": 1, "content_fetch_command_elapsed_s_total": 5.0},
+    )
+
+    assert len(events) == 1
+    assert events[0]["event_type"] == "command"
+    assert event_packet["projection_rows"] == []

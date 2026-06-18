@@ -252,10 +252,15 @@ def _projection_activation(record: dict[str, Any]) -> bool:
     reason = _first_present(record, "local_retry_skipped_reason", "retry_queue_skipped_reason")
     if isinstance(reason, str) and reason == PROJECTION_SENTINEL:
         return True
+    if _first_present(record, PROJECTION_FIELD) is not None:
+        return True
     data = record.get("data")
     if isinstance(data, dict):
         nested_reason = _first_present(data, "local_retry_skipped_reason", "retry_queue_skipped_reason")
-        return isinstance(nested_reason, str) and nested_reason == PROJECTION_SENTINEL
+        if isinstance(nested_reason, str) and nested_reason == PROJECTION_SENTINEL:
+            return True
+        if _first_present(data, PROJECTION_FIELD) is not None:
+            return True
     return False
 
 
@@ -357,13 +362,13 @@ def _parse_term_record(record: dict[str, Any], phase: str, lane: str, batch: str
                 "source_id": source_id,
             }
         )
-        if _projection_activation(record) or _projection_age(record) is not None or _first_present(record, PROJECTION_FIELD) is not None:
+        if _projection_activation(record):
             projection_row = _projection_event_row(record, phase, lane, batch, status=status)
             if projection_row:
                 parsed.append(projection_row)
         return parsed
 
-    if _projection_activation(record) or _projection_age(record) is not None or _first_present(record, PROJECTION_FIELD) is not None:
+    if _projection_activation(record):
         projection = _projection_event_row(record, phase, lane, batch)
         if projection:
             parsed.append(projection)
@@ -399,7 +404,7 @@ def _scan_command_events(run_root: Path, phase_filter: str = "soak") -> tuple[li
                 continue
             parsed = _parse_term_record(record, phase, lane, batch)
             if not parsed:
-                if _clean_str(_first_present(record, "action", "event_action")) == COMMAND_EVENT_ACTION or _projection_activation(record) or _projection_age(record) is not None or _first_present(record, PROJECTION_FIELD) is not None:
+                if _clean_str(_first_present(record, "action", "event_action")) == COMMAND_EVENT_ACTION or _projection_activation(record):
                     missing_field_count += 1
                 continue
             events.extend(parsed)
