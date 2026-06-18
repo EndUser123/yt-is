@@ -105,6 +105,33 @@ def _projection_event(*, worker_id: str, notebooklm_profile: str, **overrides):
     return event
 
 
+def _nested_projection_command_event(
+    *,
+    worker_id: str,
+    notebooklm_profile: str,
+    skipped_reason_field: str = "local_retry_skipped_reason",
+    projected_age_field: str = "projected_local_retry_completion_age_s",
+    projected_age: float = 123.4,
+    **overrides,
+):
+    event = _command_event(
+        worker_id=worker_id,
+        notebooklm_profile=notebooklm_profile,
+        attempt="retry",
+        status="queued",
+        elapsed_s=8.0,
+        source_ready_age_s=5.0,
+        video_id="video-nested",
+        source_id="source-nested",
+    )
+    event["data"] = {
+        skipped_reason_field: "projected_local_retry_completion_age_cliff",
+        projected_age_field: projected_age,
+    }
+    event.update(overrides)
+    return event
+
+
 def test_analyze_run_root_aggregates_worker_stdout_by_lane_batch(tmp_path):
     run_root = tmp_path / "run01"
     _write_stdout(
@@ -410,3 +437,132 @@ def test_render_report_includes_event_sections_and_bounded_uncertainty(tmp_path)
     assert "Lane And Batch Totals" in report
     assert "bounded uncertainty" in report
     assert "event-level causal interpretation is not authoritative" in report
+
+
+def test_analyze_run_root_with_phase_all_uses_all_phase_worker_denominator(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_stdout(run_root, "smoke", "a_hominidae_pro", "batch_01", [_worker("worker-smoke", 10.0, succeeded=1)])
+    _write_stdout(
+        run_root,
+        "soak",
+        "a_hominidae_pro",
+        "batch_01",
+        [
+                _worker("worker-soak-1", 10.0, succeeded=1),
+                _worker("worker-soak-2", 20.0, succeeded=1),
+                _worker("worker-soak-3", 30.0, succeeded=1),
+            ],
+        )
+    _write_term(
+        run_root,
+        "smoke",
+        "a_hominidae_pro",
+        "batch_01",
+            [
+                _command_event(
+                    worker_id="worker-smoke",
+                    notebooklm_profile="profile-a",
+                    attempt="1",
+                status="completed",
+                elapsed_s=10.0,
+                source_ready_age_s=1.0,
+                video_id="video-1",
+                source_id="source-1",
+            )
+        ],
+    )
+    _write_term(
+        run_root,
+        "soak",
+        "a_hominidae_pro",
+        "batch_01",
+            [
+                _command_event(
+                    worker_id="worker-soak-1",
+                    notebooklm_profile="profile-a",
+                    attempt="1",
+                status="completed",
+                elapsed_s=10.0,
+                source_ready_age_s=1.0,
+                video_id="video-2",
+                source_id="source-2",
+            ),
+                _command_event(
+                    worker_id="worker-soak-2",
+                    notebooklm_profile="profile-a",
+                    attempt="retry",
+                    status="completed",
+                elapsed_s=20.0,
+                source_ready_age_s=2.0,
+                video_id="video-3",
+                source_id="source-3",
+            ),
+                _command_event(
+                    worker_id="worker-soak-3",
+                    notebooklm_profile="profile-a",
+                    attempt=None,
+                    status="queued",
+                elapsed_s=30.0,
+                source_ready_age_s=3.0,
+                video_id="video-4",
+                source_id="source-4",
+            ),
+        ],
+    )
+
+    packet = analyzer.analyze_run_root(run_root, phase_filter="all")
+
+    assert packet["event_attribution"]["reconciliation"]["command_count_ratio"] == 1.0
+    assert packet["event_attribution"]["reconciliation"]["command_elapsed_ratio"] == 1.0
+    assert packet["event_attribution"]["reconciliation"]["worker_command_count_available"] is True
+
+
+def test_iter_command_events_parses_nested_projection_shape_separately_from_command_elapsed(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "troup_hominidae_free",
+        "batch_01",
+        [
+            _nested_projection_command_event(worker_id="worker-01", notebooklm_profile="profile-a", projected_age=222.5),
+        ],
+    )
+
+    events = list(analyzer.iter_command_events(run_root))
+    event_packet = analyzer.aggregate_command_events(
+        run_root,
+        {"content_fetch_command_elapsed_s_count": 1, "content_fetch_command_elapsed_s_total": 8.0},
+    )
+
+    assert len(events) == 2
+    assert [event["event_type"] for event in events] == ["command", "projection"]
+    assert event_packet["projection_rows"][0]["projection_count"] == 1
+    assert event_packet["projection_rows"][0]["projected_local_retry_completion_age_cliff_max"] == 222.5
+    assert len(event_packet["event_rows"]) == 1
+    assert event_packet["event_rows"][0]["command_elapsed_s_total"] == 8.0
+
+
+def test_aggregate_command_events_distinguishes_zero_denominator_from_coverage(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_stdout(
+        run_root,
+        "soak",
+        "troup_hominidae_free",
+        "batch_01",
+        [_worker("worker-01", 0.0, succeeded=0, failed=0, content_fetch_command_elapsed_s_count=0)],
+    )
+
+    event_packet = analyzer.aggregate_command_events(
+        run_root,
+        {
+            "content_fetch_command_elapsed_s_count": 0,
+            "content_fetch_command_elapsed_s_total": 0.0,
+        },
+    )
+
+    assert event_packet["reconciliation"]["worker_command_count_available"] is False
+    assert event_packet["reconciliation"]["worker_command_elapsed_available"] is False
+    assert event_packet["reconciliation"]["command_count_ratio"] is None
+    assert event_packet["reconciliation"]["command_elapsed_ratio"] is None
+    assert event_packet["reconciliation"]["gate"] == "bounded"

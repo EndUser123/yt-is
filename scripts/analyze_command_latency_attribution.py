@@ -68,6 +68,7 @@ MAX_FIELDS = (
 )
 COMMAND_EVENT_ACTION = "nlm_source_content_command_completed"
 PROJECTION_FIELD = "projected_local_retry_completion_age_cliff"
+PROJECTION_SENTINEL = "projected_local_retry_completion_age_cliff"
 
 
 @dataclass
@@ -241,7 +242,64 @@ def _first_present(record: dict[str, Any], *names: str) -> Any:
         data = record.get("data")
         if isinstance(data, dict) and name in data:
             return data[name]
+        nested = record.get("payload")
+        if isinstance(nested, dict) and name in nested:
+            return nested[name]
     return None
+
+
+def _projection_activation(record: dict[str, Any]) -> bool:
+    reason = _first_present(record, "local_retry_skipped_reason", "retry_queue_skipped_reason")
+    if isinstance(reason, str) and reason == PROJECTION_SENTINEL:
+        return True
+    data = record.get("data")
+    if isinstance(data, dict):
+        nested_reason = _first_present(data, "local_retry_skipped_reason", "retry_queue_skipped_reason")
+        return isinstance(nested_reason, str) and nested_reason == PROJECTION_SENTINEL
+    return False
+
+
+def _projection_age(record: dict[str, Any]) -> float | None:
+    age = _first_present(record, "projected_local_retry_completion_age_s", "projected_retry_ready_age_s")
+    if age is None:
+        return None
+    return _as_float(age)
+
+
+def _projection_event_row(
+    record: dict[str, Any], phase: str, lane: str, batch: str, *, status: str | None = None
+) -> dict[str, Any] | None:
+    profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
+    worker_id = _clean_str(_first_present(record, "worker_id"))
+    if not profile or not worker_id:
+        return None
+    age = _projection_age(record)
+    projection_reason = _clean_str(_first_present(record, "local_retry_skipped_reason", "retry_queue_skipped_reason"))
+    if projection_reason is None:
+        data = record.get("data")
+        if isinstance(data, dict):
+            projection_reason = _clean_str(
+                _first_present(data, "local_retry_skipped_reason", "retry_queue_skipped_reason")
+            )
+    return {
+        "event_type": "projection",
+        "phase": phase,
+        "lane": lane,
+        "batch": batch,
+        "profile": profile,
+        "worker_id": worker_id,
+        "status": status or _clean_str(_first_present(record, "status")) or "projection",
+        "attempt": _clean_str(_first_present(record, "attempt")),
+        "attempt_class": _normalize_attempt_class(_first_present(record, "attempt")),
+        "projection_evidence": True,
+        "projection_reason": projection_reason,
+        "projected_local_retry_completion_age_cliff": age,
+        "command_elapsed_s_total": 0.0,
+        "command_elapsed_s_max": 0.0,
+        "source_ready_age_s": _as_float(_first_present(record, "source_ready_age_s", "source_age_s", "source_age")),
+        "video_id": _clean_str(_first_present(record, "video_id")),
+        "source_id": _clean_str(_first_present(record, "source_id")),
+    }
 
 
 def _normalize_attempt_class(value: Any) -> str:
@@ -263,67 +321,53 @@ def _normalize_attempt_class(value: Any) -> str:
     return "unknown"
 
 
-def _parse_term_record(record: dict[str, Any], phase: str, lane: str, batch: str) -> dict[str, Any] | None:
-    projection_value = _first_present(record, PROJECTION_FIELD)
-    if projection_value is not None:
-        profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
-        worker_id = _clean_str(_first_present(record, "worker_id"))
-        if not profile or not worker_id:
-            return None
-        source_ready_age = _as_float(_first_present(record, "source_ready_age_s", "source_age_s", "source_age"))
-        return {
-            "event_type": "projection",
-            "phase": phase,
-            "lane": lane,
-            "batch": batch,
-            "profile": profile,
-            "worker_id": worker_id,
-            "status": _clean_str(_first_present(record, "status")) or "projection",
-            "attempt": _clean_str(_first_present(record, "attempt")),
-            "attempt_class": _normalize_attempt_class(_first_present(record, "attempt")),
-            "projection_evidence": True,
-            "projected_local_retry_completion_age_cliff": _as_float(projection_value),
-            "command_elapsed_s_total": 0.0,
-            "command_elapsed_s_max": 0.0,
-            "source_ready_age_s": source_ready_age,
-            "video_id": _clean_str(_first_present(record, "video_id")),
-            "source_id": _clean_str(_first_present(record, "source_id")),
-        }
-
+def _parse_term_record(record: dict[str, Any], phase: str, lane: str, batch: str) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
     action = _clean_str(_first_present(record, "action", "event_action"))
-    if action != COMMAND_EVENT_ACTION:
-        return None
+    if action == COMMAND_EVENT_ACTION:
+        worker_id = _clean_str(_first_present(record, "worker_id"))
+        profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
+        status = _clean_str(_first_present(record, "status", "command_status"))
+        elapsed_raw = _first_present(record, "elapsed_s", "command_elapsed_s_total", "elapsed")
+        if not worker_id or not profile or not status or elapsed_raw is None:
+            return []
 
-    worker_id = _clean_str(_first_present(record, "worker_id"))
-    profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
-    status = _clean_str(_first_present(record, "status", "command_status"))
-    elapsed_raw = _first_present(record, "elapsed_s", "command_elapsed_s_total", "elapsed")
-    if not worker_id or not profile or not status or elapsed_raw is None:
-        return None
+        source_ready_age = _as_float(_first_present(record, "source_ready_age_s", "source_age_s", "source_age"))
+        video_id = _clean_str(_first_present(record, "video_id"))
+        source_id = _clean_str(_first_present(record, "source_id"))
+        attempt_raw = _first_present(record, "attempt", "attempt_name")
+        elapsed = _as_float(elapsed_raw)
+        parsed.append(
+            {
+                "event_type": "command",
+                "phase": phase,
+                "lane": lane,
+                "batch": batch,
+                "profile": profile,
+                "worker_id": worker_id,
+                "status": status,
+                "attempt": _clean_str(attempt_raw),
+                "attempt_class": _normalize_attempt_class(attempt_raw),
+                "projection_evidence": False,
+                "projected_local_retry_completion_age_cliff": None,
+                "command_elapsed_s_total": elapsed,
+                "command_elapsed_s_max": elapsed,
+                "source_ready_age_s": source_ready_age,
+                "video_id": video_id,
+                "source_id": source_id,
+            }
+        )
+        if _projection_activation(record) or _projection_age(record) is not None or _first_present(record, PROJECTION_FIELD) is not None:
+            projection_row = _projection_event_row(record, phase, lane, batch, status=status)
+            if projection_row:
+                parsed.append(projection_row)
+        return parsed
 
-    source_ready_age = _as_float(_first_present(record, "source_ready_age_s", "source_age_s", "source_age"))
-    video_id = _clean_str(_first_present(record, "video_id"))
-    source_id = _clean_str(_first_present(record, "source_id"))
-    attempt_raw = _first_present(record, "attempt", "attempt_name")
-    elapsed = _as_float(elapsed_raw)
-    return {
-        "event_type": "command",
-        "phase": phase,
-        "lane": lane,
-        "batch": batch,
-        "profile": profile,
-        "worker_id": worker_id,
-        "status": status,
-        "attempt": _clean_str(attempt_raw),
-        "attempt_class": _normalize_attempt_class(attempt_raw),
-        "projection_evidence": False,
-        "projected_local_retry_completion_age_cliff": None,
-        "command_elapsed_s_total": elapsed,
-        "command_elapsed_s_max": elapsed,
-        "source_ready_age_s": source_ready_age,
-        "video_id": video_id,
-        "source_id": source_id,
-    }
+    if _projection_activation(record) or _projection_age(record) is not None or _first_present(record, PROJECTION_FIELD) is not None:
+        projection = _projection_event_row(record, phase, lane, batch)
+        if projection:
+            parsed.append(projection)
+    return parsed
 
 
 def _scan_command_events(run_root: Path, phase_filter: str = "soak") -> tuple[list[dict[str, Any]], int, int]:
@@ -354,13 +398,11 @@ def _scan_command_events(run_root: Path, phase_filter: str = "soak") -> tuple[li
                 missing_field_count += 1
                 continue
             parsed = _parse_term_record(record, phase, lane, batch)
-            if parsed is None:
-                if _clean_str(_first_present(record, "action", "event_action")) == COMMAND_EVENT_ACTION or _first_present(
-                    record, PROJECTION_FIELD
-                ) is not None:
+            if not parsed:
+                if _clean_str(_first_present(record, "action", "event_action")) == COMMAND_EVENT_ACTION or _projection_activation(record) or _projection_age(record) is not None or _first_present(record, PROJECTION_FIELD) is not None:
                     missing_field_count += 1
                 continue
-            events.append(parsed)
+            events.extend(parsed)
     return events, invalid_json_count, missing_field_count
 
 
@@ -472,9 +514,20 @@ def aggregate_command_events(
     overall_max = max([_as_float(event.get("command_elapsed_s_max")) for event in command_events], default=0.0)
     worker_command_count = _as_float((worker_overall_row or {}).get("content_fetch_command_elapsed_s_count"))
     worker_command_elapsed = _as_float((worker_overall_row or {}).get("content_fetch_command_elapsed_s_total"))
-    command_count_ratio = overall_count / worker_command_count if worker_command_count else 0.0
-    command_elapsed_ratio = overall_elapsed / worker_command_elapsed if worker_command_elapsed else 0.0
-    gate = "discriminating" if command_count_ratio >= 0.95 and command_elapsed_ratio >= 0.95 else "bounded"
+    worker_command_count_available = worker_command_count > 0
+    worker_command_elapsed_available = worker_command_elapsed > 0
+    command_count_ratio = overall_count / worker_command_count if worker_command_count_available else None
+    command_elapsed_ratio = overall_elapsed / worker_command_elapsed if worker_command_elapsed_available else None
+    gate = (
+        "discriminating"
+        if worker_command_count_available
+        and worker_command_elapsed_available
+        and command_count_ratio is not None
+        and command_elapsed_ratio is not None
+        and command_count_ratio >= 0.95
+        and command_elapsed_ratio >= 0.95
+        else "bounded"
+    )
 
     return {
         "overall_event_count": overall_count,
@@ -513,10 +566,12 @@ def aggregate_command_events(
         "reconciliation": {
             "worker_command_count": _round(worker_command_count),
             "worker_command_elapsed_s_total": _round(worker_command_elapsed),
+            "worker_command_count_available": worker_command_count_available,
+            "worker_command_elapsed_available": worker_command_elapsed_available,
             "command_count": overall_count,
             "command_elapsed_s_total": _round(overall_elapsed),
-            "command_count_ratio": _round(command_count_ratio),
-            "command_elapsed_ratio": _round(command_elapsed_ratio),
+            "command_count_ratio": _round(command_count_ratio) if command_count_ratio is not None else None,
+            "command_elapsed_ratio": _round(command_elapsed_ratio) if command_elapsed_ratio is not None else None,
             "gate": gate,
             "bounded_uncertainty": gate != "discriminating",
         },
@@ -615,7 +670,8 @@ def analyze_run_root(run_root: Path, phase_filter: str = "soak") -> dict[str, An
     rows = iter_worker_rows(run_root, phase_filter)
     run_name = run_root.name
     worker_packet = _aggregate(rows, run_name)
-    overall = worker_packet["overall_rows"][0] if worker_packet["overall_rows"] else Aggregate(run_name, "all", "all").to_row()
+    overall_rows = worker_packet["overall_rows"]
+    overall = _sum_worker_overall_rows(overall_rows) if overall_rows else Aggregate(run_name, "all", "all").to_row()
     return {
         "run_name": run_name,
         "run_root": str(run_root),
@@ -625,6 +681,19 @@ def analyze_run_root(run_root: Path, phase_filter: str = "soak") -> dict[str, An
         **worker_packet,
         "event_attribution": aggregate_command_events(run_root, overall, phase_filter),
     }
+
+
+def _sum_worker_overall_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return Aggregate("unknown", "all", "all").to_row()
+    summary = {
+        "content_fetch_command_elapsed_s_count": 0.0,
+        "content_fetch_command_elapsed_s_total": 0.0,
+    }
+    for row in rows:
+        summary["content_fetch_command_elapsed_s_count"] += _as_float(row.get("content_fetch_command_elapsed_s_count"))
+        summary["content_fetch_command_elapsed_s_total"] += _as_float(row.get("content_fetch_command_elapsed_s_total"))
+    return summary
 
 
 def _row_key(row: dict[str, Any]) -> tuple[Any, ...]:
