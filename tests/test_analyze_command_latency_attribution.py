@@ -409,3 +409,4 @@ def test_render_report_includes_event_sections_and_bounded_uncertainty(tmp_path)
     assert "Run Overview" in report
     assert "Lane And Batch Totals" in report
     assert "bounded uncertainty" in report
+    assert "event-level causal interpretation is not authoritative" in report

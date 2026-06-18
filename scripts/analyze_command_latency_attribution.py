@@ -984,8 +984,10 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
 
     lines.extend(["", "## Event Reconciliation Gate"])
     gate_rows = []
+    any_bounded = False
     for packet in packets:
         reconciliation = (packet.get("event_attribution") or {}).get("reconciliation") or {}
+        any_bounded = any_bounded or bool(reconciliation.get("bounded_uncertainty"))
         gate_rows.append(
             [
                 packet["run_name"],
@@ -1015,6 +1017,13 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
             gate_rows,
         )
     )
+    if any_bounded:
+        lines.extend(
+            [
+                "",
+                "event-level causal interpretation is not authoritative when any run is bounded.",
+            ]
+        )
 
     if comparison:
         lines.extend(["", "## Candidate Minus Baseline Deltas"])
