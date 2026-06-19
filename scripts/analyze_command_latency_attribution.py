@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -67,6 +68,7 @@ MAX_FIELDS = (
     "youtube_ytdlp_elapsed_s_max",
 )
 COMMAND_EVENT_ACTION = "nlm_source_content_command_completed"
+FETCH_COMPLETION_EVENT_ACTION = "nlm_batch_source_content_fetch_completed"
 PROJECTION_FIELD = "projected_local_retry_completion_age_cliff"
 PROJECTION_SENTINEL = "projected_local_retry_completion_age_cliff"
 
@@ -167,6 +169,29 @@ def _as_counter(value: Any) -> Counter[str]:
     return Counter({str(key): int(count) for key, count in value.items() if isinstance(count, int | float)})
 
 
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _as_bool_or_none(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off", ""}:
+            return False
+        return None
+    return bool(value)
+
+
 def _clean_str(value: Any) -> str | None:
     if value is None:
         return None
@@ -248,6 +273,13 @@ def _first_present(record: dict[str, Any], *names: str) -> Any:
     return None
 
 
+def _derive_worker_id_from_notebooklm_profile(profile: str | None) -> str | None:
+    if not profile:
+        return None
+    match = re.search(r"(worker-\d+)$", profile.strip())
+    return match.group(1) if match else None
+
+
 def _projection_activation(record: dict[str, Any]) -> bool:
     reason = _first_present(record, "local_retry_skipped_reason", "retry_queue_skipped_reason")
     if isinstance(reason, str) and reason == PROJECTION_SENTINEL:
@@ -307,6 +339,51 @@ def _projection_event_row(
     }
 
 
+def _fetch_completion_event_row(record: dict[str, Any], phase: str, lane: str, batch: str) -> dict[str, Any] | None:
+    worker_id = _clean_str(_first_present(record, "worker_id"))
+    profile = _clean_str(_first_present(record, "notebooklm_profile", "profile"))
+    if not worker_id:
+        worker_id = _derive_worker_id_from_notebooklm_profile(profile)
+    status = _clean_str(_first_present(record, "status", "command_status"))
+    if not worker_id or not profile or not status:
+        return None
+
+    batch_index = _first_present(record, "batch_index")
+    if batch_index is None or batch_index == "":
+        batch_index = batch
+
+    pass_name = _clean_str(_first_present(record, "pass_name")) or "unknown"
+    return {
+        "event_type": "fetch_completion",
+        "phase": phase,
+        "lane": lane,
+        "batch": batch,
+        "profile": profile,
+        "worker_id": worker_id,
+        "pass_name": pass_name,
+        "batch_index": batch_index,
+        "status": status,
+        "event_count": 1,
+        "command_elapsed_s_total": _as_float(
+            _first_present(record, "content_fetch_command_elapsed_s_total", "command_elapsed_s_total")
+        ),
+        "command_elapsed_s_max": _as_float(
+            _first_present(record, "content_fetch_command_elapsed_s_max", "command_elapsed_s_max")
+        ),
+        "command_elapsed_s_count": _as_float(
+            _first_present(record, "content_fetch_command_elapsed_s_count", "command_elapsed_s_count")
+        ),
+        "source_ready_age_s": _as_float(_first_present(record, "source_ready_age_s")),
+        "projected_retry_ready_age_s": _as_float(_first_present(record, "projected_retry_ready_age_s")),
+        "source_list_probe_elapsed_s_total": _as_float(_first_present(record, "source_list_probe_elapsed_s_total")),
+        "youtube_ytdlp_elapsed_s_total": _as_float(_first_present(record, "youtube_ytdlp_elapsed_s_total")),
+        "queued_for_retry": _as_bool(_first_present(record, "queued_for_retry")),
+        "source_validated_after_not_found": _as_bool_or_none(
+            _first_present(record, "source_id_validated_after_not_found", "source_validated_after_not_found")
+        ),
+    }
+
+
 def _normalize_attempt_class(value: Any) -> str:
     if value is None:
         return "unknown"
@@ -326,7 +403,9 @@ def _normalize_attempt_class(value: Any) -> str:
     return "unknown"
 
 
-def _parse_term_record(record: dict[str, Any], phase: str, lane: str, batch: str) -> list[dict[str, Any]]:
+def _parse_term_record(
+    record: dict[str, Any], phase: str, lane: str, batch: str, *, include_fetch_completion_rows: bool = False
+) -> list[dict[str, Any]]:
     parsed: list[dict[str, Any]] = []
     action = _clean_str(_first_present(record, "action", "event_action"))
     if action == COMMAND_EVENT_ACTION:
@@ -368,6 +447,11 @@ def _parse_term_record(record: dict[str, Any], phase: str, lane: str, batch: str
                 parsed.append(projection_row)
         return parsed
 
+    if include_fetch_completion_rows and action == FETCH_COMPLETION_EVENT_ACTION:
+        fetch_row = _fetch_completion_event_row(record, phase, lane, batch)
+        if fetch_row:
+            parsed.append(fetch_row)
+
     if _projection_activation(record):
         projection = _projection_event_row(record, phase, lane, batch)
         if projection:
@@ -375,10 +459,14 @@ def _parse_term_record(record: dict[str, Any], phase: str, lane: str, batch: str
     return parsed
 
 
-def _scan_command_events(run_root: Path, phase_filter: str = "soak") -> tuple[list[dict[str, Any]], int, int]:
+def _scan_command_events(
+    run_root: Path, phase_filter: str = "soak", *, include_fetch_completion_rows: bool = False
+) -> tuple[list[dict[str, Any]], int, int, int, int]:
     events: list[dict[str, Any]] = []
     invalid_json_count = 0
     missing_field_count = 0
+    fetch_completion_event_count = 0
+    malformed_fetch_completion_count = 0
     for term_path in sorted(run_root.glob("**/term_*.jsonl")):
         context = _term_context(term_path, run_root)
         if context is None:
@@ -402,17 +490,24 @@ def _scan_command_events(run_root: Path, phase_filter: str = "soak") -> tuple[li
             if not isinstance(record, dict):
                 missing_field_count += 1
                 continue
-            parsed = _parse_term_record(record, phase, lane, batch)
+            parsed = _parse_term_record(record, phase, lane, batch, include_fetch_completion_rows=include_fetch_completion_rows)
             if not parsed:
-                if _clean_str(_first_present(record, "action", "event_action")) == COMMAND_EVENT_ACTION or _projection_activation(record):
+                action = _clean_str(_first_present(record, "action", "event_action"))
+                if action == COMMAND_EVENT_ACTION or _projection_activation(record):
+                    missing_field_count += 1
+                elif include_fetch_completion_rows and action == FETCH_COMPLETION_EVENT_ACTION:
+                    fetch_completion_event_count += 1
+                    malformed_fetch_completion_count += 1
                     missing_field_count += 1
                 continue
+            if include_fetch_completion_rows and _clean_str(_first_present(record, "action", "event_action")) == FETCH_COMPLETION_EVENT_ACTION:
+                fetch_completion_event_count += 1
             events.extend(parsed)
-    return events, invalid_json_count, missing_field_count
+    return events, invalid_json_count, missing_field_count, fetch_completion_event_count, malformed_fetch_completion_count
 
 
 def iter_command_events(run_root: Path, phase_filter: str = "soak") -> list[dict[str, Any]]:
-    events, _, _ = _scan_command_events(run_root, phase_filter)
+    events, _, _, _, _ = _scan_command_events(run_root, phase_filter)
     return events
 
 
@@ -444,6 +539,8 @@ def _aggregate_command_event_rows(events: list[dict[str, Any]]) -> tuple[list[di
                 row["projected_local_retry_completion_age_cliff_max"],
                 _as_float(event.get("projected_local_retry_completion_age_cliff")),
             )
+            continue
+        if event["event_type"] != "command":
             continue
 
         key = (
@@ -506,14 +603,106 @@ def _aggregate_command_event_rows(events: list[dict[str, Any]]) -> tuple[list[di
     return command_rows_list, projection_rows_list, attempt_totals
 
 
+def _aggregate_fetch_completion_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+    for event in events:
+        if event["event_type"] != "fetch_completion":
+            continue
+        key = (
+            event["phase"],
+            event["lane"],
+            event["batch"],
+            event["profile"],
+            event["worker_id"],
+            event["pass_name"],
+            event["batch_index"],
+            event["status"],
+        )
+        row = rows.setdefault(
+            key,
+            {
+                "phase": event["phase"],
+                "lane": event["lane"],
+                "lane_label": LANE_LABELS.get(event["lane"], event["lane"]),
+                "batch": event["batch"],
+                "profile": event["profile"],
+                "worker_id": event["worker_id"],
+                "pass_name": event["pass_name"],
+                "batch_index": event["batch_index"],
+                "status": event["status"],
+                "event_count": 0,
+                "command_elapsed_s_total": 0.0,
+                "command_elapsed_s_max": 0.0,
+                "command_elapsed_s_count": 0.0,
+                "_source_ready_age_s_total": 0.0,
+                "_source_ready_age_s_count": 0,
+                "source_ready_age_max": 0.0,
+                "projected_retry_ready_age_max": 0.0,
+                "source_list_probe_elapsed_total": 0.0,
+                "youtube_ytdlp_elapsed_total": 0.0,
+                "queued_for_retry_count": 0,
+                "source_validated_after_not_found_count": 0,
+                "source_not_validated_after_not_found_count": 0,
+                "source_validation_after_not_found_unknown_count": 0,
+            },
+        )
+        row["event_count"] += 1
+        row["command_elapsed_s_total"] += _as_float(event.get("command_elapsed_s_total"))
+        row["command_elapsed_s_max"] = max(row["command_elapsed_s_max"], _as_float(event.get("command_elapsed_s_max")))
+        row["command_elapsed_s_count"] += _as_float(event.get("command_elapsed_s_count"))
+        source_ready_age = _as_float(event.get("source_ready_age_s"))
+        if source_ready_age or event.get("source_ready_age_s") is not None:
+            row["_source_ready_age_s_total"] += source_ready_age
+            row["_source_ready_age_s_count"] += 1
+            row["source_ready_age_max"] = max(row["source_ready_age_max"], source_ready_age)
+        row["projected_retry_ready_age_max"] = max(
+            row["projected_retry_ready_age_max"], _as_float(event.get("projected_retry_ready_age_s"))
+        )
+        row["source_list_probe_elapsed_total"] += _as_float(event.get("source_list_probe_elapsed_s_total"))
+        row["youtube_ytdlp_elapsed_total"] += _as_float(event.get("youtube_ytdlp_elapsed_s_total"))
+        row["queued_for_retry_count"] += 1 if event.get("queued_for_retry") else 0
+        validation = event.get("source_validated_after_not_found")
+        if validation is True:
+            row["source_validated_after_not_found_count"] += 1
+        elif validation is False:
+            row["source_not_validated_after_not_found_count"] += 1
+        else:
+            row["source_validation_after_not_found_unknown_count"] += 1
+
+    rows_list = sorted(
+        rows.values(),
+        key=lambda row: (
+            row["phase"],
+            LANE_LABELS.get(row["lane"], row["lane"]),
+            row["batch"],
+            row["profile"],
+            row["worker_id"],
+            row["pass_name"],
+            str(row["batch_index"]),
+            row["status"],
+        ),
+    )
+    for row in rows_list:
+        row["source_ready_age_avg"] = _round(
+            row["_source_ready_age_s_total"] / row["_source_ready_age_s_count"] if row["_source_ready_age_s_count"] else 0.0
+        )
+        del row["_source_ready_age_s_total"]
+        del row["_source_ready_age_s_count"]
+    return rows_list
+
+
 def aggregate_command_events(
     run_root: Path,
     worker_overall_row: dict[str, Any] | None = None,
     phase_filter: str = "soak",
 ) -> dict[str, Any]:
-    events, invalid_json_count, missing_field_count = _scan_command_events(run_root, phase_filter)
+    events, invalid_json_count, missing_field_count, fetch_completion_event_count, malformed_fetch_completion_count = _scan_command_events(
+        run_root, phase_filter, include_fetch_completion_rows=True
+    )
     command_events = [event for event in events if event["event_type"] == "command"]
     command_rows, projection_rows, attempt_totals = _aggregate_command_event_rows(events)
+    fetch_completion_rows = _aggregate_fetch_completion_rows(events)
     overall_count = len(command_events)
     overall_elapsed = sum(_as_float(event.get("command_elapsed_s_total")) for event in command_events)
     overall_max = max([_as_float(event.get("command_elapsed_s_max")) for event in command_events], default=0.0)
@@ -568,6 +757,38 @@ def aggregate_command_events(
             }
             for row in projection_rows
         ],
+        "fetch_completion_rows": [
+            {
+                **row,
+                "event_count": row["event_count"],
+                "command_elapsed_total": _round(row["command_elapsed_s_total"]),
+                "command_elapsed_max": _round(row["command_elapsed_s_max"]),
+                "command_elapsed_count": _round(row["command_elapsed_s_count"]),
+                "source_ready_age_avg": row["source_ready_age_avg"],
+                "source_ready_age_max": _round(row["source_ready_age_max"]),
+                "projected_retry_ready_age_max": _round(row["projected_retry_ready_age_max"]),
+                "source_list_probe_elapsed_total": _round(row["source_list_probe_elapsed_total"]),
+                "youtube_ytdlp_elapsed_total": _round(row["youtube_ytdlp_elapsed_total"]),
+                "queued_for_retry_count": row["queued_for_retry_count"],
+                "source_validated_after_not_found_count": row["source_validated_after_not_found_count"],
+                "source_not_validated_after_not_found_count": row["source_not_validated_after_not_found_count"],
+                "source_validation_after_not_found_unknown_count": row["source_validation_after_not_found_unknown_count"],
+            }
+            for row in fetch_completion_rows
+        ],
+        "fetch_completion_availability": {
+            "event_count": fetch_completion_event_count,
+            "row_count": len(fetch_completion_rows),
+            "malformed_event_count": malformed_fetch_completion_count,
+            "available": bool(fetch_completion_rows),
+            "note": (
+                "available"
+                if fetch_completion_rows
+                else "fetch-completed rows found but missing required grouping fields"
+                if malformed_fetch_completion_count
+                else "no fetch-completed rows found in scanned logs"
+            ),
+        },
         "reconciliation": {
             "worker_command_count": _round(worker_command_count),
             "worker_command_elapsed_s_total": _round(worker_command_elapsed),
@@ -677,6 +898,7 @@ def analyze_run_root(run_root: Path, phase_filter: str = "soak") -> dict[str, An
     worker_packet = _aggregate(rows, run_name)
     overall_rows = worker_packet["overall_rows"]
     overall = _sum_worker_overall_rows(overall_rows) if overall_rows else Aggregate(run_name, "all", "all").to_row()
+    event_attribution = aggregate_command_events(run_root, overall, phase_filter)
     return {
         "run_name": run_name,
         "run_root": str(run_root),
@@ -684,7 +906,8 @@ def analyze_run_root(run_root: Path, phase_filter: str = "soak") -> dict[str, An
         "summary": _read_summary(run_root),
         "worker_stdout_row_count": len(rows),
         **worker_packet,
-        "event_attribution": aggregate_command_events(run_root, overall, phase_filter),
+        "event_attribution": event_attribution,
+        "fetch_completion_rows": event_attribution.get("fetch_completion_rows", []),
     }
 
 
@@ -994,6 +1217,79 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
                 "Invalid JSON",
             ],
             attempt_rows,
+        )
+    )
+
+    lines.extend(["", "## Fetch Completion Detail"])
+    fetch_completion_rows = []
+    fetch_completion_availability_rows = []
+    for packet in packets:
+        availability = (packet.get("event_attribution") or {}).get("fetch_completion_availability", {})
+        fetch_completion_availability_rows.append(
+            [
+                packet["run_name"],
+                availability.get("event_count", 0),
+                availability.get("row_count", 0),
+                availability.get("malformed_event_count", 0),
+                availability.get("note", ""),
+            ]
+        )
+        for row in (packet.get("event_attribution") or {}).get("fetch_completion_rows", []):
+            fetch_completion_rows.append(
+                [
+                    packet["run_name"],
+                    row["phase"],
+                    row["lane_label"],
+                    row["batch"],
+                    row["profile"],
+                    row["worker_id"],
+                    row["pass_name"],
+                    row["batch_index"],
+                    row["status"],
+                    row["event_count"],
+                    row["command_elapsed_total"],
+                    row["command_elapsed_max"],
+                    row["command_elapsed_count"],
+                    row["source_ready_age_avg"],
+                    row["source_ready_age_max"],
+                    row["projected_retry_ready_age_max"],
+                    row["source_list_probe_elapsed_total"],
+                    row["youtube_ytdlp_elapsed_total"],
+                    row["queued_for_retry_count"],
+                    row["source_validated_after_not_found_count"],
+                    row["source_not_validated_after_not_found_count"],
+                    row["source_validation_after_not_found_unknown_count"],
+                ]
+            )
+    fetch_completion_rows.sort(key=lambda row: row[10], reverse=True)
+    lines.append(_table(["Run", "Fetch events", "Grouped rows", "Malformed rows", "Availability"], fetch_completion_availability_rows))
+    lines.append(
+        _table(
+            [
+                "Run",
+                "Phase",
+                "Lane",
+                "Batch",
+                "Profile",
+                "Worker",
+                "Pass",
+                "Batch index",
+                "Status",
+                "Count",
+                "Command elapsed total",
+                "Command elapsed max",
+                "Command elapsed count",
+                "Source ready avg",
+                "Source ready max",
+                "Projected retry ready max",
+                "Source list probe total",
+                "YTDLP total",
+                "Queued retry",
+                "Validated after not found",
+                "Not validated after not found",
+                "Validation after not found unknown",
+            ],
+            fetch_completion_rows,
         )
     )
 

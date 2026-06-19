@@ -145,6 +145,45 @@ def _real_projection_event(*, notebooklm_profile: str, projected_age: float = 22
     return event
 
 
+def _fetch_completed_event(
+    *,
+    worker_id: str,
+    notebooklm_profile: str,
+    status: str,
+    pass_name: str | None = None,
+    batch_index: str | int | None = None,
+    command_elapsed_total: float | None = None,
+    command_elapsed_max: float | None = None,
+    command_elapsed_count: float | None = None,
+    source_ready_age_s: float | None = None,
+    projected_retry_ready_age_s: float | None = None,
+    source_list_probe_elapsed_s_total: float | None = None,
+    youtube_ytdlp_elapsed_s_total: float | None = None,
+    queued_for_retry: bool | None = None,
+    source_id_validated_after_not_found: bool | None = None,
+    **overrides,
+):
+    event = {
+        "action": "nlm_batch_source_content_fetch_completed",
+        "worker_id": worker_id,
+        "notebooklm_profile": notebooklm_profile,
+        "status": status,
+        "pass_name": pass_name,
+        "batch_index": batch_index,
+        "content_fetch_command_elapsed_s_total": command_elapsed_total,
+        "content_fetch_command_elapsed_s_max": command_elapsed_max,
+        "content_fetch_command_elapsed_s_count": command_elapsed_count,
+        "source_ready_age_s": source_ready_age_s,
+        "projected_retry_ready_age_s": projected_retry_ready_age_s,
+        "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
+        "youtube_ytdlp_elapsed_s_total": youtube_ytdlp_elapsed_s_total,
+        "queued_for_retry": queued_for_retry,
+        "source_id_validated_after_not_found": source_id_validated_after_not_found,
+    }
+    event.update(overrides)
+    return event
+
+
 def _retry_command_with_projected_age(*, worker_id: str, notebooklm_profile: str, projected_age: float = 88.8):
     return _command_event(
         worker_id=worker_id,
@@ -545,6 +584,209 @@ def test_analyze_run_root_with_phase_all_uses_all_phase_worker_denominator(tmp_p
     assert packet["event_attribution"]["reconciliation"]["command_count_ratio"] == 1.0
     assert packet["event_attribution"]["reconciliation"]["command_elapsed_ratio"] == 1.0
     assert packet["event_attribution"]["reconciliation"]["worker_command_count_available"] is True
+
+
+def test_aggregate_command_events_parses_and_groups_fetch_completed_rows(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "troup_hominidae_free",
+        "batch_01",
+        [
+            _fetch_completed_event(
+                worker_id="worker-01",
+                notebooklm_profile="profile-a",
+                status="completed",
+                pass_name="pass-a",
+                batch_index=7,
+                command_elapsed_total=3.0,
+                command_elapsed_max=3.0,
+                command_elapsed_count=1,
+                source_ready_age_s=10.0,
+                projected_retry_ready_age_s=12.0,
+                source_list_probe_elapsed_s_total=0.5,
+                youtube_ytdlp_elapsed_s_total=1.5,
+                queued_for_retry=True,
+                source_id_validated_after_not_found=True,
+            ),
+            _fetch_completed_event(
+                worker_id="worker-01",
+                notebooklm_profile="profile-a",
+                status="completed",
+                pass_name="pass-a",
+                batch_index=7,
+                command_elapsed_total=5.0,
+                command_elapsed_max=5.0,
+                command_elapsed_count=2,
+                source_ready_age_s=20.0,
+                projected_retry_ready_age_s=15.0,
+                source_list_probe_elapsed_s_total=0.25,
+                youtube_ytdlp_elapsed_s_total=2.5,
+                queued_for_retry=False,
+                source_id_validated_after_not_found=False,
+            ),
+        ],
+    )
+
+    packet = analyzer.analyze_run_root(run_root)
+    row = packet["fetch_completion_rows"][0]
+
+    assert packet["fetch_completion_rows"]
+    assert row["event_count"] == 2
+    assert row["command_elapsed_total"] == 8.0
+    assert row["command_elapsed_max"] == 5.0
+    assert row["command_elapsed_count"] == 3
+    assert row["source_ready_age_avg"] == 15.0
+    assert row["source_ready_age_max"] == 20.0
+    assert row["projected_retry_ready_age_max"] == 15.0
+    assert row["source_list_probe_elapsed_total"] == 0.75
+    assert row["youtube_ytdlp_elapsed_total"] == 4.0
+    assert row["queued_for_retry_count"] == 1
+    assert row["source_validated_after_not_found_count"] == 1
+    assert row["source_not_validated_after_not_found_count"] == 1
+    assert row["source_validation_after_not_found_unknown_count"] == 0
+
+    report = analyzer.render_report([packet], None)
+    assert "Fetch Completion Detail" in report
+    assert "Fetch events" in report
+    assert "pass-a" in report
+    assert "worker-01" in report
+
+
+def test_fetch_completed_rows_fall_back_to_path_batch_and_unknown_pass_name(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "a_hominidae_pro",
+        "batch_02",
+        [
+            _fetch_completed_event(
+                worker_id="worker-02",
+                notebooklm_profile="profile-b",
+                status="failed",
+                command_elapsed_total=4.0,
+                command_elapsed_max=4.0,
+                command_elapsed_count=1,
+            )
+        ],
+    )
+
+    packet = analyzer.analyze_run_root(run_root)
+    row = packet["fetch_completion_rows"][0]
+
+    assert row["batch_index"] == "batch_02"
+    assert row["pass_name"] == "unknown"
+
+
+def test_fetch_completed_rows_parse_false_boolean_strings_and_report_absence(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "a_hominidae_pro",
+        "batch_02",
+        [
+            _fetch_completed_event(
+                worker_id="worker-02",
+                notebooklm_profile="profile-b",
+                status="failed",
+                command_elapsed_total=4.0,
+                command_elapsed_max=4.0,
+                command_elapsed_count=1,
+                queued_for_retry="false",
+                source_id_validated_after_not_found="false",
+            )
+        ],
+    )
+
+    packet = analyzer.analyze_run_root(run_root)
+    row = packet["fetch_completion_rows"][0]
+
+    assert row["queued_for_retry_count"] == 0
+    assert row["source_validated_after_not_found_count"] == 0
+    assert row["source_not_validated_after_not_found_count"] == 1
+    assert row["source_validation_after_not_found_unknown_count"] == 0
+
+    empty_root = tmp_path / "empty"
+    _write_term(empty_root, "soak", "a_hominidae_pro", "batch_02", [])
+    empty_packet = analyzer.analyze_run_root(empty_root)
+
+    assert empty_packet["event_attribution"]["fetch_completion_availability"] == {
+        "event_count": 0,
+        "row_count": 0,
+        "malformed_event_count": 0,
+        "available": False,
+        "note": "no fetch-completed rows found in scanned logs",
+    }
+    report = analyzer.render_report([empty_packet], None)
+    assert "no fetch-completed rows found in scanned logs" in report
+
+
+def test_fetch_completed_availability_distinguishes_malformed_rows(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "a_hominidae_pro",
+        "batch_02",
+        [
+            {
+                "action": "nlm_batch_source_content_fetch_completed",
+                "status": "ready",
+                "content_fetch_command_elapsed_s_total": 4.0,
+            }
+        ],
+    )
+
+    packet = analyzer.analyze_run_root(run_root)
+
+    assert packet["fetch_completion_rows"] == []
+    assert packet["event_attribution"]["fetch_completion_availability"] == {
+        "event_count": 1,
+        "row_count": 0,
+        "malformed_event_count": 1,
+        "available": False,
+        "note": "fetch-completed rows found but missing required grouping fields",
+    }
+
+
+def test_fetch_completed_rows_parse_nested_payload_and_derive_worker_from_profile(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "soak",
+        "troup_hominidae_free",
+        "batch_02",
+        [
+            {
+                "action": "nlm_batch_source_content_fetch_completed",
+                "data": {
+                    "notebooklm_profile": "ytis-free1-worker-03",
+                    "status": "ready",
+                    "pass_name": "primary",
+                    "batch_index": 1,
+                    "content_fetch_command_elapsed_s_total": 1.4,
+                    "content_fetch_command_elapsed_s_max": 1.4,
+                    "content_fetch_command_elapsed_s_count": 1,
+                    "source_ready_age_s": 4.069,
+                    "source_list_probe_elapsed_s_total": 0.0,
+                    "source_id_validated_after_not_found": None,
+                },
+            }
+        ],
+    )
+
+    packet = analyzer.analyze_run_root(run_root)
+    row = packet["fetch_completion_rows"][0]
+
+    assert row["worker_id"] == "worker-03"
+    assert row["profile"] == "ytis-free1-worker-03"
+    assert row["pass_name"] == "primary"
+    assert row["batch_index"] == 1
+    assert row["source_validation_after_not_found_unknown_count"] == 1
+    assert packet["event_attribution"]["fetch_completion_availability"]["malformed_event_count"] == 0
 
 
 def test_iter_command_events_parses_nested_projection_shape_separately_from_command_elapsed(tmp_path):
