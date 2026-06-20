@@ -1440,6 +1440,24 @@ The source-window timeline extension now produces that comparison from the same 
 
 The config surface now has the next mechanism behind `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S`, defaulting to `0.0` so the `run01` leader remains unchanged. This is deliberately not another first-window cap: when enabled, cadence checks the projected oldest source age before the next source window and clears the reusable notebook's sources before adding that window if the projection crosses the threshold, resetting the cadence age basis for the new window. The first live probe for this branch should set the threshold below the observed cliff, for example around `180s`, and compare only against `source_age_cadence_run01_current`. Keep `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE=0`; prior first-window-cap, readiness-probe, and local-retry-projection evidence remains negative.
 
+Prepared source-age rotation `180s` command:
+
+```powershell
+python P:/packages/yt-is/bin/csf-sharded-lane-sequence `
+  --lane-config P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_rotation_180_run01_lanes.json `
+  --run-root P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_rotation_180_run01_current `
+  --smoke-limit 400 `
+  --smoke-batch-size 200 `
+  --soak-limit 400 `
+  --soak-batch-size 200 `
+  --expected-worker-shape 3+3 `
+  --run-environment-label home_300mb `
+  --reusable-pipeline-mode serial `
+  --preserve-worker-state-root
+```
+
+Before interpreting throughput, confirm both lane `lane_process.json` env snapshots show `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S=180.0`, `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE` absent or `0`, and the default `160/190/5` cadence thresholds. Also confirm `nlm_batch_reusable_source_age_cadence_rotation_completed` appears if source ages cross the threshold; if no rotation events fire, this run is only a no-op validation of the default cadence branch.
+
 Historical first-window cap command:
 
 ```powershell
