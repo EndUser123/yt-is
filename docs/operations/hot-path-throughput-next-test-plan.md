@@ -1502,6 +1502,8 @@ The next code-path candidate is now available behind `YTIS_NLM_SOURCE_CONTENT_PR
 
 Operational lesson from `primary_command_projection_60_run02`: `csf-sharded-lane-sequence` only applies the documented smoke promotion gates when the CLI passes `--smoke-promotion-max-source-age-cliff 0 --smoke-promotion-max-fail-count 0 --smoke-promotion-min-hot-path-vph 3000`. The run02 command omitted those flags, so soak ran even though smoke had source-age cliffs and below-3000 VPH. Future cost-controlled diagnostic probes should include the gate flags; deliberate warmed-state soak probes may omit them, but the report must say that explicitly.
 
+`fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current` is the gated rerun of the same branch. Smoke stayed clearly negative at `1456.24` combined hot-path VPH on `458/342/800`, with `source_age_cliff=340`, `command_failed=44`, and `source_ready_age_s_max=305.297`. Because the smoke promotion flags were enabled on the command line, the sequence stopped before soak with `status=blocked_before_soak` and `sequence_stop_reason=smoke_promotion_gate_failed`, which is the cost-saving behavior we wanted for this diagnostic path. The gate reasons were exactly the ones expected from the smoke numbers: `source_age_cliff=340 exceeds max 0`, `fail_count_total=342 exceeds max 0`, and `hot_path_videos_per_hour=1456.24 below min 3000.0`. This closes projection-60 as a warmed-state soak candidate for now; it does not yet justify a promotion without either a better smoke shape or a narrower probe that reduces batch-1 source-age pressure first.
+
 Historical first-window cap command:
 
 ```powershell
