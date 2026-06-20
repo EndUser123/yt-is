@@ -4807,6 +4807,7 @@ class NLMReusableIngestor:
         source_age_cadence_hard_threshold_s: float | None = None,
         source_age_cadence_min_window_size: int | None = None,
         source_age_cadence_first_window_size: int | None = None,
+        source_age_cadence_rotate_threshold_s: float | None = None,
     ):
         self._ingestor = NLMBatchIngestor(batch_size)
         self._nb_id: Optional[str] = _load_reusable_notebook_id()
@@ -4855,6 +4856,14 @@ class NLMReusableIngestor:
                 else cfg.reusable_source_age_cadence_first_window_size
             ),
         )
+        self._source_age_cadence_rotate_threshold_s = max(
+            0.0,
+            float(
+                source_age_cadence_rotate_threshold_s
+                if source_age_cadence_rotate_threshold_s is not None
+                else cfg.reusable_source_age_cadence_rotate_threshold_s
+            ),
+        )
         self._last_source_age_cadence_window_elapsed_s = 0.0
         self._batches_since_cleanup = 0
         log_action(
@@ -4872,6 +4881,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                 "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+                "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
             },
         )
 
@@ -4893,17 +4903,10 @@ class NLMReusableIngestor:
         base_window_size = min(self._ingestor.batch_size, remaining_count)
         if not self._source_age_cadence_enabled:
             return base_window_size
-        has_source_materialization_anchor = self._ingestor._oldest_source_materialization_epoch is not None
-        oldest_epoch = self._ingestor._oldest_source_materialization_epoch
-        if oldest_epoch is None:
-            oldest_epoch = (
-                self._ingestor._source_age_cadence_notebook_ready_at_epoch
-                or self._ingestor._last_materialization_ready_at_epoch
-                or 0.0
-            )
-        oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
-        last_window_elapsed_s = float(getattr(self, "_last_source_age_cadence_window_elapsed_s", 0.0) or 0.0)
-        projected_oldest_age_s = oldest_age_s + last_window_elapsed_s if oldest_age_s and last_window_elapsed_s > 0.0 else oldest_age_s
+        age_snapshot = self._source_age_cadence_age_snapshot()
+        has_source_materialization_anchor = bool(age_snapshot["has_source_materialization_anchor"])
+        last_window_elapsed_s = float(age_snapshot["last_source_age_cadence_window_elapsed_s"])
+        projected_oldest_age_s = float(age_snapshot["projected_oldest_source_age_s"])
         selected_window_size = base_window_size
         if (
             self._source_age_cadence_first_window_size
@@ -4925,6 +4928,34 @@ class NLMReusableIngestor:
         elif projected_oldest_age_s > self._source_age_cadence_soft_threshold_s:
             selected_window_size = max(self._source_age_cadence_min_window_size, base_window_size // 2)
         return max(1, min(selected_window_size, remaining_count))
+
+    def _source_age_cadence_age_snapshot(self) -> dict[str, object]:
+        has_source_materialization_anchor = self._ingestor._oldest_source_materialization_epoch is not None
+        oldest_epoch = self._ingestor._oldest_source_materialization_epoch
+        if oldest_epoch is None:
+            oldest_epoch = (
+                self._ingestor._source_age_cadence_notebook_ready_at_epoch
+                or self._ingestor._last_materialization_ready_at_epoch
+                or 0.0
+            )
+        oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
+        last_window_elapsed_s = float(getattr(self, "_last_source_age_cadence_window_elapsed_s", 0.0) or 0.0)
+        projected_oldest_age_s = (
+            oldest_age_s + last_window_elapsed_s if oldest_age_s and last_window_elapsed_s > 0.0 else oldest_age_s
+        )
+        return {
+            "has_source_materialization_anchor": has_source_materialization_anchor,
+            "oldest_source_age_s": oldest_age_s,
+            "last_source_age_cadence_window_elapsed_s": last_window_elapsed_s,
+            "projected_oldest_source_age_s": projected_oldest_age_s,
+        }
+
+    def _source_age_cadence_rotation_due(self) -> tuple[bool, dict[str, object]]:
+        snapshot = self._source_age_cadence_age_snapshot()
+        threshold_s = self._source_age_cadence_rotate_threshold_s
+        projected_oldest_age_s = float(snapshot["projected_oldest_source_age_s"])
+        oldest_age_s = float(snapshot["oldest_source_age_s"])
+        return threshold_s > 0.0 and oldest_age_s > 0.0 and projected_oldest_age_s >= threshold_s, snapshot
 
     @staticmethod
     def _merge_extract_metric_snapshots(metric_snapshots: list[dict[str, object]]) -> dict[str, object]:
@@ -5253,6 +5284,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                 "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+                "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
                 "window_mode": window_mode,
                 "window_size": window_size,
                 "window_count": len(active_windows),
@@ -5290,6 +5322,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                 "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+                "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
                 "window_mode": window_mode,
                 "window_size": window_size,
                 "active_window_count": len(active_windows),
@@ -5321,6 +5354,7 @@ class NLMReusableIngestor:
                     "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                     "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                     "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+                    "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
                     "window_mode": window_mode,
                     "window_size": window_size,
                     "active_window_count": len(active_windows),
@@ -5376,6 +5410,7 @@ class NLMReusableIngestor:
         cleanup_elapsed_s = 0.0
         extract_metric_snapshots: list[dict[str, object]] = []
         window_count_total = len(active_windows)
+        source_age_cadence_rotation_count = 0
         try:
             if window_mode in {"active_window", "extract_window"}:
                 results = {}
@@ -5488,22 +5523,66 @@ class NLMReusableIngestor:
                 while remaining_video_ids:
                     cadence_window_index += 1
                     window_count_total = cadence_window_index
+                    rotation_due, age_snapshot = self._source_age_cadence_rotation_due()
+                    if rotation_due:
+                        rotation_started_at = time.monotonic()
+                        log_action(
+                            "nlm_batch_reusable_source_age_cadence_rotation_started",
+                            {
+                                "nb_id": self._nb_id,
+                                "window_index": cadence_window_index,
+                                "remaining_count": len(remaining_video_ids),
+                                "oldest_source_age_s": round(float(age_snapshot["oldest_source_age_s"]), 3),
+                                "last_source_age_cadence_window_elapsed_s": round(
+                                    float(age_snapshot["last_source_age_cadence_window_elapsed_s"]),
+                                    3,
+                                ),
+                                "projected_oldest_source_age_s": round(
+                                    float(age_snapshot["projected_oldest_source_age_s"]),
+                                    3,
+                                ),
+                                "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
+                                "reason": "projected_source_age_threshold",
+                                "notebooklm_profile": _get_notebooklm_profile(),
+                            },
+                        )
+                        self._ingestor._nb_id = self._nb_id
+                        self._ingestor.reset_sources()
+                        self._mark_sources_cleared()
+                        self._ingestor._source_age_cadence_notebook_ready_at_epoch = 0.0
+                        self._last_source_age_cadence_window_elapsed_s = 0.0
+                        source_age_cadence_rotation_count += 1
+                        rotation_elapsed_s = round(time.monotonic() - rotation_started_at, 3)
+                        cleanup_elapsed_s = round(cleanup_elapsed_s + rotation_elapsed_s, 3)
+                        log_action(
+                            "nlm_batch_reusable_source_age_cadence_rotation_completed",
+                            {
+                                "nb_id": self._nb_id,
+                                "window_index": cadence_window_index,
+                                "remaining_count": len(remaining_video_ids),
+                                "oldest_source_age_s": round(float(age_snapshot["oldest_source_age_s"]), 3),
+                                "last_source_age_cadence_window_elapsed_s": round(
+                                    float(age_snapshot["last_source_age_cadence_window_elapsed_s"]),
+                                    3,
+                                ),
+                                "projected_oldest_source_age_s": round(
+                                    float(age_snapshot["projected_oldest_source_age_s"]),
+                                    3,
+                                ),
+                                "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
+                                "cleanup_elapsed_s": rotation_elapsed_s,
+                                "reason": "projected_source_age_threshold",
+                                "notebooklm_profile": _get_notebooklm_profile(),
+                            },
+                        )
                     cadence_window_size = self._select_source_age_cadence_window_size(len(remaining_video_ids))
                     window_video_ids = remaining_video_ids[:cadence_window_size]
                     window_started_at = time.monotonic()
                     self._ingestor._nb_id = self._nb_id
-                    oldest_epoch = self._ingestor._oldest_source_materialization_epoch
-                    if oldest_epoch is None:
-                        oldest_epoch = (
-                            self._ingestor._source_age_cadence_notebook_ready_at_epoch
-                            or self._ingestor._last_materialization_ready_at_epoch
-                            or 0.0
-                        )
-                    oldest_age_s = time.time() - oldest_epoch if oldest_epoch else 0.0
-                    last_window_elapsed_s = float(getattr(self, "_last_source_age_cadence_window_elapsed_s", 0.0) or 0.0)
-                    projected_oldest_age_s = (
-                        oldest_age_s + last_window_elapsed_s if oldest_age_s and last_window_elapsed_s > 0.0 else oldest_age_s
-                    )
+                    age_snapshot = self._source_age_cadence_age_snapshot()
+                    oldest_age_s = float(age_snapshot["oldest_source_age_s"])
+                    last_window_elapsed_s = float(age_snapshot["last_source_age_cadence_window_elapsed_s"])
+                    projected_oldest_age_s = float(age_snapshot["projected_oldest_source_age_s"])
                     log_action(
                         "nlm_batch_reusable_source_age_cadence_window_started",
                         {
@@ -5521,6 +5600,7 @@ class NLMReusableIngestor:
                             "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                             "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                             "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+                            "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
                             "subbatch_size": self._ingestor.batch_size,
                             "notebooklm_profile": _get_notebooklm_profile(),
                         },
@@ -5591,6 +5671,7 @@ class NLMReusableIngestor:
                             "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                             "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                             "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+                            "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
                             "subbatch_size": self._ingestor.batch_size,
                             "notebooklm_profile": _get_notebooklm_profile(),
                         },
@@ -5686,6 +5767,8 @@ class NLMReusableIngestor:
                 "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                 "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+                "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
+                "source_age_cadence_rotation_count": source_age_cadence_rotation_count,
                 "window_mode": window_mode,
                 "window_size": window_size,
                 "active_window_count": len(active_windows),
@@ -5767,6 +5850,8 @@ class NLMReusableIngestor:
             "source_age_cadence_hard_threshold_s": self._source_age_cadence_hard_threshold_s,
             "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
             "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
+            "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
+            "source_age_cadence_rotation_count": source_age_cadence_rotation_count,
             "window_mode": window_mode,
             "window_size": window_size,
             "active_window_count": len(active_windows),

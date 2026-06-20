@@ -1495,6 +1495,83 @@ class TestReusableBatchLogging:
                     with mock.patch("csf.nlm_batch.time.time", return_value=1100.0):
                         assert ingestor._select_source_age_cadence_window_size(120) == 50
 
+    def test_source_age_cadence_rotation_threshold_resets_age_anchor_before_next_window(self):
+        """A threshold-triggered cadence rotation should clear the stale age basis before adding more sources."""
+        batch_ids = [f"vid{i:02d}" for i in range(4)]
+        operations: list[str] = []
+        windows_seen: list[list[str]] = []
+
+        def mock_reset_sources():
+            operations.append("reset")
+
+        def mock_add(ids, subbatch_size):
+            operations.append("add")
+            assert ingestor._ingestor._oldest_source_materialization_epoch is None
+            assert ingestor._ingestor._source_age_cadence_notebook_ready_at_epoch == 0.0
+            windows_seen.append(list(ids))
+            ingestor._ingestor._last_added_video_ids = list(ids)
+            ingestor._ingestor._oldest_source_materialization_epoch = 1100.0
+            ingestor._ingestor._last_materialization_ready_at_epoch = 1100.0
+            ingestor._ingestor._source_age_cadence_notebook_ready_at_epoch = 1100.0
+            return list(ids)
+
+        def mock_extract(ids, **kwargs):
+            return {vid: (True, f"text-{vid}", None) for vid in ids}
+
+        def mock_extract_metrics():
+            return {
+                "content_fetch_status_counts": {"ready": len(windows_seen[-1])},
+                "source_ready_age_s_total": float(len(windows_seen[-1])),
+                "source_ready_age_s_max": 1.0,
+                "source_ready_age_s_avg": 1.0,
+                "content_fetch_attempts_total": len(windows_seen[-1]),
+                "content_fetch_attempts_max": 1,
+                "content_fetch_attempts_avg": 1.0,
+                "content_fetch_command_elapsed_s_total": float(len(windows_seen[-1])) / 10.0,
+                "content_fetch_command_elapsed_s_max": 0.1,
+                "content_fetch_command_elapsed_s_count": len(windows_seen[-1]),
+                "content_fetch_command_elapsed_s_avg": 0.1,
+            }
+
+        with mock.patch("csf.nlm_batch._load_reusable_notebook_id", return_value="nb-existing"):
+            with mock.patch("csf.nlm_batch._save_reusable_notebook_id"):
+                with mock.patch("csf.nlm_batch._clear_reusable_notebook_state"):
+                    ingestor = nlm_batch.NLMReusableIngestor(
+                        cleanup_every_n_batches=99,
+                        source_age_cadence_enabled=True,
+                        source_age_cadence_soft_threshold_s=160.0,
+                        source_age_cadence_hard_threshold_s=190.0,
+                        source_age_cadence_min_window_size=5,
+                        source_age_cadence_rotate_threshold_s=150.0,
+                    )
+                    ingestor._ingestor._oldest_source_materialization_epoch = 1000.0
+                    ingestor._ingestor._source_age_cadence_notebook_ready_at_epoch = 1000.0
+                    ingestor._last_source_age_cadence_window_elapsed_s = 60.0
+                    with mock.patch.object(ingestor, "_ensure_notebook", return_value=(False, "reuse")):
+                        with mock.patch.object(ingestor._ingestor, "reset_sources", side_effect=mock_reset_sources) as mock_reset:
+                            with mock.patch.object(ingestor._ingestor, "_add_sources_in_subbatches", side_effect=mock_add):
+                                with mock.patch.object(ingestor._ingestor, "extract_transcripts", side_effect=mock_extract):
+                                    with mock.patch.object(ingestor._ingestor, "get_last_extract_metrics", side_effect=mock_extract_metrics):
+                                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                            with mock.patch("csf.nlm_batch.time.time", return_value=1100.0):
+                                                with mock.patch("csf.nlm_batch.time.monotonic", side_effect=[1000.0 + i for i in range(80)]):
+                                                    results = ingestor.process_batch(batch_ids)
+
+        assert operations[:2] == ["reset", "add"]
+        assert windows_seen == [batch_ids]
+        assert mock_reset.call_count == 1
+        assert all(success for success, transcript, _ in results.values() if transcript)
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_reusable_process_completed")
+        assert completed["source_age_cadence_rotate_threshold_s"] == 150.0
+        assert completed["source_age_cadence_rotation_count"] == 1
+        rotation_completed = next(
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_reusable_source_age_cadence_rotation_completed"
+        )
+        assert rotation_completed["reason"] == "projected_source_age_threshold"
+        assert rotation_completed["projected_oldest_source_age_s"] == 160.0
+
     def test_reusable_batch_processes_large_batch_in_source_age_cadence_windows_without_reset(self):
         """Large reusable batches should add and extract in age-aware windows without per-window reset."""
         batch_ids = [f"vid{i:02d}" for i in range(12)]
