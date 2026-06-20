@@ -126,6 +126,43 @@ def _run_phase(
     )
 
 
+def _smoke_promotion_gate(
+    smoke_report: dict[str, Any],
+    *,
+    max_source_age_cliff: int | None,
+    max_fail_count: int | None,
+    min_hot_path_vph: float | None,
+) -> dict[str, Any]:
+    combined = smoke_report.get("combined") if isinstance(smoke_report.get("combined"), dict) else {}
+    status_counts = (
+        combined.get("content_fetch_status_counts_total")
+        if isinstance(combined.get("content_fetch_status_counts_total"), dict)
+        else {}
+    )
+    reasons: list[str] = []
+    source_age_cliff = int(status_counts.get("source_age_cliff") or 0)
+    fail_count = int(combined.get("fail_count_total") or 0)
+    hot_path_vph = float(combined.get("hot_path_videos_per_hour") or 0.0)
+    if max_source_age_cliff is not None and source_age_cliff > max_source_age_cliff:
+        reasons.append(f"source_age_cliff={source_age_cliff} exceeds max {max_source_age_cliff}")
+    if max_fail_count is not None and fail_count > max_fail_count:
+        reasons.append(f"fail_count_total={fail_count} exceeds max {max_fail_count}")
+    if min_hot_path_vph is not None and hot_path_vph < min_hot_path_vph:
+        reasons.append(f"hot_path_videos_per_hour={hot_path_vph} below min {float(min_hot_path_vph)}")
+    return {
+        "ok": not reasons,
+        "reasons": reasons,
+        "max_source_age_cliff": max_source_age_cliff,
+        "max_fail_count": max_fail_count,
+        "min_hot_path_vph": min_hot_path_vph,
+        "observed": {
+            "source_age_cliff": source_age_cliff,
+            "fail_count_total": fail_count,
+            "hot_path_videos_per_hour": hot_path_vph,
+        },
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the guarded sharded lane benchmark sequence.")
     parser.add_argument("--lane-config", required=True, type=Path, help="JSON list of lane configs.")
@@ -183,6 +220,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-partial-smoke",
         action="store_true",
         help="Allow a diagnostic smoke summary with status=partial to proceed to soak.",
+    )
+    parser.add_argument(
+        "--smoke-promotion-max-source-age-cliff",
+        type=int,
+        default=None,
+        help="Stop before soak if smoke has more source_age_cliff rows than this.",
+    )
+    parser.add_argument(
+        "--smoke-promotion-max-fail-count",
+        type=int,
+        default=None,
+        help="Stop before soak if smoke has more failed rows than this.",
+    )
+    parser.add_argument(
+        "--smoke-promotion-min-hot-path-vph",
+        type=float,
+        default=None,
+        help="Stop before soak if smoke hot-path VPH is below this value.",
     )
     return parser
 
@@ -267,6 +322,27 @@ def main(argv: list[str] | None = None) -> int:
             f"--allow-partial-smoke was set; summary={evidence.summary_path}"
         )
     print(f"[sequence] evidence=ok summary={evidence.summary_path}")
+    promotion_gate = _smoke_promotion_gate(
+        smoke_report,
+        max_source_age_cliff=args.smoke_promotion_max_source_age_cliff,
+        max_fail_count=args.smoke_promotion_max_fail_count,
+        min_hot_path_vph=args.smoke_promotion_min_hot_path_vph,
+    )
+    if not promotion_gate["ok"]:
+        blocked_report = dict(smoke_report)
+        blocked_report["status"] = "blocked_before_soak"
+        blocked_report["sequence_stop_reason"] = "smoke_promotion_gate_failed"
+        blocked_report["sequence_promotion_gate"] = promotion_gate
+        sequence_report_path = _write_sequence_summary(
+            run_root=run_root,
+            smoke_report=blocked_report,
+            pre_run_browser_health=browser_health,
+            run_environment_label=args.run_environment_label,
+        )
+        for reason in promotion_gate["reasons"]:
+            print(f"[sequence] ERROR: smoke promotion gate failed: {reason}")
+        print(f"[sequence] summary={sequence_report_path}")
+        return 1
 
     soak_report = _run_phase(
         phase="soak",

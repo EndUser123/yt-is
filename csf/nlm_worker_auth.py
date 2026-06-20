@@ -887,6 +887,48 @@ def check_worker_profiles(
     return failed
 
 
+def _sync_families_from_lane_config(lane_config: Path) -> tuple[AuthFamily, ...]:
+    """Build exact worker auth families for profiles used by a benchmark lane config."""
+    from csf.sharded_lane_series import load_lane_configs
+
+    families: list[AuthFamily] = []
+    seen_sources: set[str] = set()
+    for lane in load_lane_configs(lane_config):
+        profiles = tuple(str(profile) for profile in getattr(lane, "notebooklm_profiles", ()) if str(profile))
+        if not profiles:
+            continue
+        source_profile = profiles[0]
+        default_family = family_for_profile(source_profile)
+        if default_family is None:
+            expected_email = str(getattr(lane, "expected_email", "") or "").strip().lower()
+            if not expected_email:
+                raise RuntimeError(
+                    f"lane {getattr(lane, 'lane', '<unknown>')}: profile {source_profile} has no auth-family mapping; "
+                    "add expected_email or update the auth-family map"
+                )
+            family = AuthFamily(
+                source_profile=source_profile,
+                sibling_profiles=tuple(profiles[1:]),
+                expected_email=expected_email,
+            )
+        else:
+            family = AuthFamily(
+                source_profile=default_family.source_profile,
+                sibling_profiles=tuple(profile for profile in profiles if profile != default_family.source_profile),
+                expected_email=default_family.expected_email,
+                cdp_browser_root=default_family.cdp_browser_root,
+                cdp_browser_profile_directory=default_family.cdp_browser_profile_directory,
+                cdp_port=default_family.cdp_port,
+            )
+        if family.source_profile in seen_sources:
+            continue
+        seen_sources.add(family.source_profile)
+        families.append(family)
+    if not families:
+        raise RuntimeError(f"lane config does not define any NotebookLM worker profiles: {lane_config}")
+    return tuple(families)
+
+
 def doctor_lane_setup(lane_config: Path, run_root: Path, *, timeout_s: float = 30.0) -> tuple[object, ...]:
     """Validate lane auth and refuse stale or contaminated run roots before a benchmark starts."""
     from csf.sharded_lane_series import load_lane_configs, preflight_lane_auth_profiles
@@ -1007,7 +1049,8 @@ def main(argv: list[str] | None = None) -> int:
 
     with _noninteractive_auth_default():
         try:
-            backup_root = sync_worker_profiles(args.profile_root, backup=not args.no_backup)
+            families = _sync_families_from_lane_config(args.lane_config) if args.lane_config is not None else DEFAULT_FAMILIES
+            backup_root = sync_worker_profiles(args.profile_root, families=families, backup=not args.no_backup)
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             print(f"[auth] ERROR: {exc}")
             return 1

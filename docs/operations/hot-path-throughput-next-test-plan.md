@@ -1442,6 +1442,27 @@ The config surface now has the next mechanism behind `YTIS_NLM_REUSABLE_SOURCE_A
 
 Prepared source-age rotation `180s` command:
 
+Use a fresh `--run-root` for any rerun. `csf-nlm-worker-auth doctor` intentionally rejects non-empty run roots so old smoke/soak artifacts cannot contaminate a new benchmark.
+
+Auth preflight must use the profile-pinned worker-auth command. Do not run raw `nlm login` for benchmark prep; raw login is interactive and can open the default NotebookLM account chooser. Use lane-scoped doctor/sync instead:
+
+```powershell
+$env:PYTHONPATH = 'P:/packages/yt-is'
+python P:/packages/yt-is/bin/csf-nlm-worker-auth `
+  --lane-config P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_rotation_180_run01_lanes.json `
+  --run-root P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_rotation_180_run01_current `
+  doctor
+```
+
+If doctor reports expired worker profiles, repair only the configured lane profiles:
+
+```powershell
+python P:/packages/yt-is/bin/csf-nlm-worker-auth `
+  --lane-config P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_rotation_180_run01_lanes.json `
+  --run-root P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_rotation_180_run01_current `
+  sync
+```
+
 ```powershell
 python P:/packages/yt-is/bin/csf-sharded-lane-sequence `
   --lane-config P:/packages/yt-is/.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_source_age_rotation_180_run01_lanes.json `
@@ -1453,8 +1474,13 @@ python P:/packages/yt-is/bin/csf-sharded-lane-sequence `
   --expected-worker-shape 3+3 `
   --run-environment-label home_300mb `
   --reusable-pipeline-mode serial `
-  --preserve-worker-state-root
+  --preserve-worker-state-root `
+  --smoke-promotion-max-source-age-cliff 0 `
+  --smoke-promotion-max-fail-count 0 `
+  --smoke-promotion-min-hot-path-vph 3000
 ```
+
+The smoke promotion gates intentionally stop before soak if smoke has any `source_age_cliff`, any failed rows, or less than `3000` combined hot-path VPH. This prevents a valid-but-bad smoke from spending a full soak on an already-negative branch. If the sequence stops with `status=blocked_before_soak`, treat the smoke artifact as diagnostic evidence, not throughput evidence.
 
 Before interpreting throughput, confirm both lane `lane_process.json` env snapshots show `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S=180.0`, `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE` absent or `0`, and the default `160/190/5` cadence thresholds. Also confirm `nlm_batch_reusable_source_age_cadence_rotation_completed` appears if source ages cross the threshold; if no rotation events fire, this run is only a no-op validation of the default cadence branch.
 

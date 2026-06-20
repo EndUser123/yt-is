@@ -382,6 +382,51 @@ def test_preflight_lane_auth_profiles_syncs_expired_profile_without_injecting_fa
     assert sync_calls
 
 
+def test_preflight_lane_auth_profiles_syncs_only_configured_lane_family(monkeypatch):
+    repaired = False
+    observed_siblings: list[tuple[str, ...]] = []
+
+    def fake_run(cmd, **kwargs):
+        nonlocal repaired
+        profile = cmd[-1]
+        if profile == "ytis-free1-worker-02" and not repaired:
+            return type("CompletedProcess", (), {"returncode": 1, "stdout": "", "stderr": "expired"})()
+        return type(
+            "CompletedProcess",
+            (),
+            {"returncode": 0, "stdout": "Account: troup.hominidae@gmail.com\n", "stderr": ""},
+        )()
+
+    def fake_sync_worker_profiles(**kwargs):
+        nonlocal repaired
+        repaired = True
+        families = tuple(kwargs["families"])
+        assert len(families) == 1
+        observed_siblings.append(tuple(families[0].sibling_profiles))
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
+    monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
+    monkeypatch.setattr("csf.sharded_lane_series.sync_worker_profiles", fake_sync_worker_profiles)
+
+    preflight_lane_auth_profiles(
+        (
+            LaneConfig(
+                lane="free",
+                account_class="free",
+                workers=3,
+                notebooklm_profile_prefix="ytis-free1-worker",
+                notebooklm_profiles=("ytis-free1-worker-01", "ytis-free1-worker-02", "ytis-free1-worker-03"),
+                browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
+                worker_state_root=Path("P:\\\\\\.logs/shards/free/worker_states"),
+                notebook_prefix="benchmark-shard-free",
+            ),
+        )
+    )
+
+    assert observed_siblings == [("ytis-free1-worker-02", "ytis-free1-worker-03")]
+
+
 def test_preflight_lane_auth_profiles_syncs_wrong_account_without_interactive_refresh(monkeypatch):
     calls: list[list[str]] = []
     refresh_calls: list[str] = []
@@ -698,13 +743,7 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
     assert report["report_version"] == 1
     assert report["lanes"][0]["worker_state_root"].endswith("out\\pro\\worker_states")
     assert report["lanes"][0]["configured_worker_state_root"].endswith("pro\\worker_states")
-    assert report["lanes"][0]["env"] == {
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "1",
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160",
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
-        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "",
-    }
+    assert report["lanes"][0]["env"] == {}
     assert Path(report["report_path"]).exists()
     persisted = json.loads(Path(report["report_path"]).read_text(encoding="utf-8"))
     assert persisted["run_environment_label"] == "hotel_wifi"
@@ -727,6 +766,7 @@ def test_lane_env_exports_run_environment_label(tmp_path):
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "25",
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S": "180",
             "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "true",
             "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": str(tmp_path / "shared.sqlite"),
         },
@@ -744,12 +784,13 @@ def test_lane_env_exports_run_environment_label(tmp_path):
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S"] == "190"
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE"] == "5"
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE"] == "25"
+    assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S"] == "180"
     assert env["YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"] == "true"
     assert env["YTIS_NLM_SHARED_RETRY_POOL_DB_PATH"] == str(tmp_path / "shared.sqlite")
+    snapshot = _lane_process_env_snapshot(env)
     assert env["YTIS_TRANSCRIPT_CACHE_DB_PATH"] == str(tmp_path / "lane" / "transcripts.sqlite")
-    assert _lane_process_env_snapshot(env)["YTIS_TRANSCRIPT_CACHE_DB_PATH"] == str(
-        tmp_path / "lane" / "transcripts.sqlite"
-    )
+    assert snapshot["YTIS_TRANSCRIPT_CACHE_DB_PATH"] == str(tmp_path / "lane" / "transcripts.sqlite")
+    assert snapshot["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S"] == "180"
     assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_NLM_WORKER_AUTH_USE_CDP"] == "0"
@@ -1179,6 +1220,7 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "",
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S": "",
         "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "",
         "YTIS_RUN_ENVIRONMENT_LABEL": "",
         "YTIS_NLM_WORKER_AUTH_USE_CDP": "",
@@ -1616,12 +1658,13 @@ def test_run_lane_rejects_default_profile_contaminated_logs(tmp_path, monkeypatc
             env={},
         )
     except RuntimeError as exc:
-        assert "missing benchmark summary" in str(exc)
+        assert "invalidated by NotebookLM auth/source failures" in str(exc)
+        assert "default_profile_running" in str(exc)
     else:
-        raise AssertionError("lane should still fail when it cannot produce a benchmark summary")
+        raise AssertionError("lane should fail closed when it observes the shared default profile")
 
 
-def test_find_invalid_lane_artifacts_ignores_default_profile_running(tmp_path):
+def test_find_invalid_lane_artifacts_flags_default_profile_running(tmp_path):
     import csf.sharded_lane_series as mod
 
     lane_root = tmp_path / "lane"
@@ -1643,7 +1686,9 @@ def test_find_invalid_lane_artifacts_ignores_default_profile_running(tmp_path):
 
     findings = mod._find_invalid_lane_artifacts(lane_root)
 
-    assert findings == []
+    assert len(findings) == 1
+    assert "default_profile_running" in findings[0]
+    assert "ytis-free1-worker-01" in findings[0]
 
 
 def test_find_invalid_lane_artifacts_flags_zero_growth_terminal(tmp_path):

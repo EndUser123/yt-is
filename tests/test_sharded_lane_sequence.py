@@ -219,6 +219,79 @@ def test_main_stops_before_soak_when_evidence_fails(tmp_path, monkeypatch):
     assert calls == ["doctor", "browser_health", "smoke", "evidence"]
 
 
+def test_main_stops_before_soak_when_smoke_fails_promotion_gate(tmp_path, monkeypatch):
+    calls: list[str] = []
+    run_root = tmp_path / "run"
+    smoke_output_root = tmp_path / "run" / "smoke"
+
+    monkeypatch.setattr(mod, "doctor_lane_setup", lambda *args, **kwargs: calls.append("doctor") or _lanes(tmp_path))
+    monkeypatch.setattr(
+        mod,
+        "browser_health_gate",
+        lambda *args, **kwargs: calls.append("browser_health") or _clean_browser_health_report(),
+    )
+
+    def fake_run_sharded_lane_series(*, output_root, **kwargs):
+        calls.append("smoke" if output_root == smoke_output_root else "soak")
+        return {
+            "report_version": 1,
+            "status": "ok",
+            "throughput_valid": True,
+            "worker_shape_signature": "3+3",
+            "report_path": str(output_root / "sharded_lane_series_summary.json"),
+            "combined": {
+                "hot_path_videos_per_hour": 2189.22,
+                "hot_path_success_count_total": 750,
+                "fail_count_total": 50,
+                "processed_count_total": 800,
+                "content_fetch_status_counts_total": {
+                    "ready": 750,
+                    "command_failed": 49,
+                    "source_age_cliff": 41,
+                },
+            },
+        }
+
+    def fake_inspect_run_root(
+        run_root_arg,
+        *,
+        require_forced_refresh_marker=False,
+        expected_worker_shape_signature=None,
+        allow_partial_status=False,
+    ):
+        calls.append("evidence")
+        assert run_root_arg == smoke_output_root
+        return EvidenceCheckResult(True, smoke_output_root / "sharded_lane_series_summary.json", ())
+
+    monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run_sharded_lane_series)
+    monkeypatch.setattr(mod, "inspect_run_root", fake_inspect_run_root)
+
+    result = mod.main([
+        "--lane-config",
+        str(_lane_config(tmp_path)),
+        "--run-root",
+        str(run_root),
+        "--expected-worker-shape",
+        "3+3",
+        "--smoke-promotion-max-source-age-cliff",
+        "0",
+        "--smoke-promotion-max-fail-count",
+        "0",
+        "--smoke-promotion-min-hot-path-vph",
+        "3000",
+    ])
+
+    assert result == 1
+    assert calls == ["doctor", "browser_health", "smoke", "evidence"]
+    persisted = json.loads((run_root / "sharded_lane_series_summary.json").read_text(encoding="utf-8"))
+    assert persisted["status"] == "blocked_before_soak"
+    assert persisted["sequence_stop_reason"] == "smoke_promotion_gate_failed"
+    assert persisted["sequence_promotion_gate"]["ok"] is False
+    assert any("source_age_cliff=41 exceeds max 0" in reason for reason in persisted["sequence_promotion_gate"]["reasons"])
+    assert any("fail_count_total=50 exceeds max 0" in reason for reason in persisted["sequence_promotion_gate"]["reasons"])
+    assert any("hot_path_videos_per_hour=2189.22 below min 3000.0" in reason for reason in persisted["sequence_promotion_gate"]["reasons"])
+
+
 def test_main_allows_partial_smoke_to_proceed_when_flagged(tmp_path, monkeypatch):
     calls: list[str] = []
     run_root = tmp_path / "run"

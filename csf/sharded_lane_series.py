@@ -23,6 +23,7 @@ from csf.breadth_series import _aggregate_summary
 from csf.load_ladder import build_fallback_benchmark_command
 from csf import nlm_auth_guard
 from csf.nlm_worker_auth import (
+    AuthFamily,
     expected_email_for_profile,
     doctor_lane_setup,
     family_for_profile,
@@ -229,6 +230,7 @@ def preflight_lane_auth_profiles(lanes: Iterable[LaneConfig], *, timeout_s: floa
     _stop_default_chrome_profile_if_running(stage="preflight_start")
     checked: set[str] = set()
     for lane in _validate_lanes(lanes):
+        lane_family = _lane_scoped_auth_family(lane)
         for profile in _lane_auth_profiles(lane):
             if profile in checked:
                 continue
@@ -241,7 +243,12 @@ def preflight_lane_auth_profiles(lanes: Iterable[LaneConfig], *, timeout_s: floa
                 )
             if _profile_auth_check(profile, expected_email=expected_email, timeout_s=timeout_s):
                 continue
-            if not _profile_auth_force_refresh(profile, expected_email=expected_email, timeout_s=max(120.0, timeout_s)):
+            if not _profile_auth_force_refresh(
+                profile,
+                expected_email=expected_email,
+                timeout_s=max(120.0, timeout_s),
+                family=lane_family,
+            ):
                 raise RuntimeError(f"NotebookLM auth expired for profile {profile} and force refresh failed")
             if _stop_default_chrome_profile_if_running(stage=f"preflight_refresh_{profile}"):
                 raise RuntimeError(
@@ -262,8 +269,32 @@ def _profile_auth_check(profile: str, *, expected_email: str, timeout_s: float) 
     return _extract_account(res.stdout or "", res.stderr or "") == expected_email.lower()
 
 
-def _profile_auth_force_refresh(profile: str, *, expected_email: str, timeout_s: float) -> bool:
-    family = family_for_profile(profile)
+def _lane_scoped_auth_family(lane: LaneConfig) -> AuthFamily | None:
+    profiles = tuple(_lane_auth_profiles(lane))
+    if not profiles:
+        return None
+    source_profile = lane.coordinator_profile
+    family = family_for_profile(source_profile)
+    if family is None:
+        return None
+    return AuthFamily(
+        source_profile=family.source_profile,
+        sibling_profiles=tuple(profile for profile in profiles if profile != family.source_profile),
+        expected_email=family.expected_email,
+        cdp_browser_root=family.cdp_browser_root,
+        cdp_browser_profile_directory=family.cdp_browser_profile_directory,
+        cdp_port=family.cdp_port,
+    )
+
+
+def _profile_auth_force_refresh(
+    profile: str,
+    *,
+    expected_email: str,
+    timeout_s: float,
+    family: AuthFamily | None = None,
+) -> bool:
+    family = family or family_for_profile(profile)
     if family is not None:
         try:
             sync_worker_profiles(families=(family,), backup=True)
@@ -306,6 +337,11 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
     for path, lineno, event in _iter_jsonl_events(lane_output_root):
         action = str(event.get("action") or "")
         data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        if action == "nlm_auth_failed" and str(data.get("status") or "") == "default_profile_running":
+            findings.append(
+                f"{path.relative_to(lane_output_root)}:{lineno}: default_profile_running "
+                f"profile={data.get('notebooklm_profile') or '<unknown>'}"
+            )
         if action == "nlm_batch_subbatch_add_failed" and data.get("failure_reason") in {"source_add_failed", "source_count_probe_failed"}:
             findings.append(
                 f"{path.relative_to(lane_output_root)}:{lineno}: {data.get('failure_reason')} "
@@ -571,6 +607,9 @@ def _lane_process_env_snapshot(env: dict[str, str]) -> dict[str, str]:
         ),
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": env.get(
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE", ""
+        ),
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S": env.get(
+            "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S", ""
         ),
         "YTIS_NLM_RUN_ENVIRONMENT_LABEL": env.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL", ""),
         "YTIS_RUN_ENVIRONMENT_LABEL": env.get("YTIS_RUN_ENVIRONMENT_LABEL", ""),

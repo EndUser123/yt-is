@@ -525,6 +525,37 @@ def test_worker_auth_cli_sync_defaults_to_noninteractive(monkeypatch):
     assert "YTIS_NLM_AUTH_NONINTERACTIVE" not in os.environ
 
 
+def test_worker_auth_cli_sync_with_lane_config_limits_families(tmp_path, monkeypatch):
+    lane_config = tmp_path / "lanes.json"
+    lane_config.write_text(
+        json.dumps(
+            [
+                {
+                    "lane": "free",
+                    "account_class": "free",
+                    "workers": 2,
+                    "notebooklm_profile_prefix": "ytis-free1-worker",
+                    "notebooklm_profiles": ["ytis-free1-worker-01", "ytis-free1-worker-02"],
+                    "browser_profile_root": "P:/.data/yt-is/browser/notebooklm-free",
+                    "worker_state_root": str(tmp_path / "free" / "worker_states"),
+                    "notebook_prefix": "benchmark-shard-free",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    observed: list[tuple[str, ...]] = []
+
+    def fake_sync(*args, **kwargs):
+        observed.append(tuple(family.source_profile for family in kwargs["families"]))
+        return None
+
+    monkeypatch.setattr(nlm_worker_auth, "sync_worker_profiles", fake_sync)
+
+    assert nlm_worker_auth.main(["--lane-config", str(lane_config), "--skip-check", "sync"]) == 0
+    assert observed == [("ytis-free1-worker-01",)]
+
+
 def test_sync_worker_profiles_reports_post_refresh_live_session_failure(tmp_path):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-free1-worker-01", "troup.hominidae@gmail.com", "renewed-free")
