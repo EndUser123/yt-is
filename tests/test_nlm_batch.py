@@ -2141,34 +2141,52 @@ class TestReusableNotebookEnvironmentOverrides:
         import importlib
         from csf.nlm_config import reset_nlm_config
 
-        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "custom-worker-12")
-        monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-        monkeypatch.setenv("YTIS_NLM_AUTH_CHECK_CACHE_TTL_SECONDS", "120")
-        monkeypatch.setenv("YTIS_NLM_RUN_ENVIRONMENT_LABEL", "hotel_wifi")
-        reset_nlm_config()
-        reloaded_nlm_batch = importlib.reload(nlm_batch)
-        monkeypatch.setattr(reloaded_nlm_batch, "_default_chrome_profile_pids", lambda: set())
+        restored_env = {
+            name: os.environ.get(name)
+            for name in (
+                "NOTEBOOKLM_PROFILE",
+                "YTIS_NLM_AUTH_NONINTERACTIVE",
+                "YTIS_NLM_AUTH_CHECK_CACHE_TTL_SECONDS",
+                "YTIS_NLM_RUN_ENVIRONMENT_LABEL",
+            )
+        }
+        try:
+            monkeypatch.setenv("NOTEBOOKLM_PROFILE", "custom-worker-12")
+            monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+            monkeypatch.setenv("YTIS_NLM_AUTH_CHECK_CACHE_TTL_SECONDS", "120")
+            monkeypatch.setenv("YTIS_NLM_RUN_ENVIRONMENT_LABEL", "hotel_wifi")
+            reset_nlm_config()
+            reloaded_nlm_batch = importlib.reload(nlm_batch)
+            monkeypatch.setattr(reloaded_nlm_batch, "_default_chrome_profile_pids", lambda: set())
 
-        def mock_run(cmd, **kwargs):
-            return subprocess.CompletedProcess(cmd, 0, "", "Auth valid")
+            def mock_run(cmd, **kwargs):
+                return subprocess.CompletedProcess(cmd, 0, "", "Auth valid")
 
-        with mock.patch("csf.nlm_batch.run_nlm", side_effect=mock_run):
-            with mock.patch("csf.nlm_batch.log_action") as mock_log:
-                result = reloaded_nlm_batch._ensure_nlm_auth()
+            with mock.patch("csf.nlm_batch.run_nlm", side_effect=mock_run):
+                with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                    result = reloaded_nlm_batch._ensure_nlm_auth()
 
-        assert result is True
-        assert [call.args[0] for call in mock_log.call_args_list] == [
-            "nlm_auth_runtime_config_snapshot",
-            "nlm_auth_checked",
-        ]
-        snapshot = mock_log.call_args_list[0].args[1]
-        assert snapshot["notebooklm_profile"] == "custom-worker-12"
-        assert snapshot["env_auth_check_cache_ttl_raw"] == "120"
-        assert snapshot["resolved_auth_check_cache_ttl_s"] == 120.0
-        assert snapshot["resolved_auth_check_interval_s"] == 60.0
-        assert snapshot["resolved_auth_cooldown_s"] == 300.0
-        assert snapshot["run_environment_label"] == "hotel_wifi"
-        assert snapshot["resolved_source_content_shared_retry_pool_enabled"] is True
+            assert result is True
+            assert [call.args[0] for call in mock_log.call_args_list] == [
+                "nlm_auth_runtime_config_snapshot",
+                "nlm_auth_checked",
+            ]
+            snapshot = mock_log.call_args_list[0].args[1]
+            assert snapshot["notebooklm_profile"] == "custom-worker-12"
+            assert snapshot["env_auth_check_cache_ttl_raw"] == "120"
+            assert snapshot["resolved_auth_check_cache_ttl_s"] == 120.0
+            assert snapshot["resolved_auth_check_interval_s"] == 60.0
+            assert snapshot["resolved_auth_cooldown_s"] == 300.0
+            assert snapshot["run_environment_label"] == "hotel_wifi"
+            assert snapshot["resolved_source_content_shared_retry_pool_enabled"] is True
+        finally:
+            for name, value in restored_env.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+            reset_nlm_config()
+            importlib.reload(nlm_batch)
 
     def test_ensure_nlm_auth_logs_login_attempt_and_refresh(self, monkeypatch):
         """A forced auth refresh should emit login timing markers."""
@@ -2227,8 +2245,8 @@ class TestReusableNotebookEnvironmentOverrides:
         assert checked["status"] == "ok"
         assert checked["account"] == "custom@example.com"
 
-    def test_run_cmd_logs_present_default_profile_before_command_and_continues(self, monkeypatch):
-        """Worker commands should continue when the shared default profile is only present."""
+    def test_run_cmd_fails_closed_when_default_profile_cannot_be_reaped_before_command(self, monkeypatch):
+        """Worker commands must not continue if the shared default profile cannot be cleared."""
         import subprocess
 
         monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free1-worker-01")
@@ -2236,16 +2254,17 @@ class TestReusableNotebookEnvironmentOverrides:
         ingestor = nlm_batch.NLMBatchIngestor()
 
         with mock.patch("csf.nlm_batch._default_chrome_profile_pids", return_value={24680}):
-            with mock.patch("csf.nlm_batch._ensure_nlm_auth", return_value=True):
-                with mock.patch("csf.nlm_batch.run_nlm", return_value=subprocess.CompletedProcess(["notebook"], 0, "ok", "")) as mock_run:
-                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
-                        result = ingestor._run_cmd(["notebook", "create", "bench"], timeout=30)
+            with mock.patch("csf.nlm_batch._stop_chrome_pids", return_value=set()):
+                with mock.patch("csf.nlm_batch._ensure_nlm_auth", return_value=True):
+                    with mock.patch("csf.nlm_batch.run_nlm", return_value=subprocess.CompletedProcess(["notebook"], 0, "ok", "")) as mock_run:
+                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                            result = ingestor._run_cmd(["notebook", "create", "bench"], timeout=30)
 
-        assert result.returncode == 0
-        mock_run.assert_called_once()
+        assert result.returncode == 1
+        mock_run.assert_not_called()
         assert any(
-            call.args[0] == "nlm_auth_recovered"
-            and call.args[1]["status"] == "default_profile_present_before_command"
+            call.args[0] == "nlm_auth_failed"
+            and call.args[1]["status"] == "default_profile_running"
             for call in mock_log.call_args_list
         )
 
@@ -4010,6 +4029,45 @@ class TestNotebookCapRotation:
         assert summary["content_fetch_attempts_max"] == 0
         assert summary["content_fetch_attempts_avg"] == 0.0
 
+    def test_source_content_fetch_skips_when_primary_command_projection_hits_age_cliff(self):
+        """An old source should not start a primary content command projected to finish past the cliff."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-primary-projection"
+        ingestor._last_materialization_ready_at_epoch = 1000.0
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""},
+                )()
+            if cmd[:2] == ["source", "content"]:
+                raise AssertionError("source content should not run when primary command projection crosses the age cliff")
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+            with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S", 60.0):
+                    with mock.patch("csf.nlm_batch.time.time", return_value=1150.0):
+                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                            results = ingestor.extract_transcripts(["vid1"])
+
+        assert results["vid1"][0] is False
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_completed")
+        assert completed["status"] == "source_age_cliff"
+        assert completed["failure_reason"] == "Fetch failed for s1: source_age_cliff"
+        assert completed["source_ready_age_s"] == 150.0
+        assert completed["projected_primary_command_completion_age_s"] == 210.0
+        assert completed["primary_command_age_projection_s"] == 60.0
+        assert completed["retry_queue_skipped_reason"] == "projected_primary_command_age_cliff"
+        assert completed["attempts"] == 0
+        assert not any(call.args[0] == "nlm_source_content_command_completed" for call in mock_log.call_args_list)
+        summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
+        assert summary["content_fetch_status_counts"]["source_age_cliff"] == 1
+        assert summary["source_ready_age_s_total"] == 150.0
+        assert summary["content_fetch_attempts_total"] == 0
+
     def test_source_content_fetch_logs_not_found_probe_metrics(self):
         """A final NOT_FOUND should contribute command and source-list probe timing."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
@@ -5619,8 +5677,9 @@ class TestNotebookCapRotation:
             return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
-            with mock.patch("csf.nlm_batch.log_action"):
-                ingestor._add_sources_in_subbatches(["v1", "v2", "v3", "v4"], subbatch_size=2)
+            with mock.patch.object(ingestor, "_wait_for_sources_ready", return_value=True):
+                with mock.patch("csf.nlm_batch.log_action"):
+                    ingestor._add_sources_in_subbatches(["v1", "v2", "v3", "v4"], subbatch_size=2)
 
         for metric in ingestor._last_subbatch_metrics:
             assert "current_source_count" in metric

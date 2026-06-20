@@ -72,6 +72,10 @@ _SOURCE_CONTENT_RETRY_BUDGET_S = max(0.0, float(_NLM_CONFIG.source_content_retry
 _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_delay_s))
 _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_budget_s))
 _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_age_margin_s))
+_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S = max(
+    0.0,
+    float(os.getenv("YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S", "0")),
+)
 _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED = bool(_NLM_CONFIG.source_content_shared_retry_pool_enabled)
 _NOT_FOUND_SOURCE_LIST_PROBE_CAP_RAW = os.getenv("YTIS_NLM_NOT_FOUND_SOURCE_LIST_PROBE_CAP", "1").strip()
 try:
@@ -622,29 +626,32 @@ def _reap_default_chrome_profile_before_command(
     args: List[str],
     phase: str,
 ) -> set[int]:
-    """Record a present shared default chrome-profile before a non-auth command.
+    """Close a transient shared default chrome-profile before a non-auth command.
 
-    Worker-profile pinned commands should continue without touching unrelated
-    browser sessions; the presence of the shared default profile is diagnostic,
-    not a hard failure.
+    Worker-profile pinned commands should not proceed while the upstream default
+    NotebookLM profile is active, because it can trigger account chooser UI or
+    contaminate the human-free auth path. Reap it and let the caller retry once.
     """
     default_profile_pids = _default_chrome_profile_pids()
     if not default_profile_pids:
         return set()
+    stopped_pids = _stop_chrome_pids(default_profile_pids)
+    if not stopped_pids:
+        return set(default_profile_pids)
     recovery_context = _build_nlm_auth_recovery_context(auth_context)
     log_action(
         "nlm_auth_recovered",
         {
             "component": "nlm_batch",
-            "status": "default_profile_present_before_command",
+            "status": "default_profile_reaped_before_command",
             "phase": phase,
             **recovery_context,
             "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-            "default_chrome_profile_pids": sorted(default_profile_pids),
+            "default_chrome_profile_pids": sorted(stopped_pids),
             "command": ["nlm"] + args,
         },
     )
-    return set()
+    return set(stopped_pids)
 
 
 def _is_cleanup_command(args: List[str]) -> bool:
@@ -842,6 +849,7 @@ def _source_count_probe_indicates_auth_failure(res: subprocess.CompletedProcess)
 def _classify_source_content_retry_queue(
     ytdlp_probe: dict[str, object],
     status: str,
+    youtube_page_probe: dict[str, object] | None = None,
 ) -> tuple[bool, str]:
     """Return whether a failure should be queued and why."""
     if status not in {"command_failed", _NLM_CONTENT_BELOW_THRESHOLD_STATUS, _LEGACY_NLM_CONTENT_BELOW_THRESHOLD_STATUS}:
@@ -849,6 +857,10 @@ def _classify_source_content_retry_queue(
     classification = str(ytdlp_probe.get("classification") or "").strip().lower()
     if classification == "ok":
         return True, "ytdlp_ok"
+    if classification in {"error", "unknown"} and youtube_page_probe:
+        page_classification = str(youtube_page_probe.get("classification") or "").strip().lower()
+        if page_classification:
+            return False, f"ytdlp_{page_classification}"
     if classification:
         return False, f"ytdlp_{classification}"
     return False, "ytdlp_absent"
@@ -1864,6 +1876,7 @@ class NLMBatchIngestor:
         self._source_age_cadence_notebook_ready_at_epoch: float = 0.0
         self._last_added_source_ids: List[str] = []
         self._previously_observed_source_ids: set[str] = set()
+        self._previously_observed_source_ids_nb_id: str | None = None
         self._last_extract_metrics: dict[str, object] | None = None
         self._current_source_count: int = 0
         self._video_ready_epoch_by_id: dict[str, float] = {}
@@ -1881,20 +1894,12 @@ class NLMBatchIngestor:
             tracker.apply_delay()
             auth_context = _get_nlm_auth_context()
             cmd_args = nlm_auth_guard.add_profile_args(args, auth_context.profile if auth_context.has_profile else None)
-            default_profile_pids = _default_chrome_profile_pids()
-            if default_profile_pids:
-                log_action(
-                    "nlm_auth_recovered",
-                    {
-                        "component": "nlm_batch",
-                        "status": "default_profile_present_before_command",
-                        "phase": "pre_auth",
-                        **_build_nlm_auth_recovery_context(auth_context),
-                        "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-                        "default_chrome_profile_pids": sorted(default_profile_pids),
-                        "command": ["nlm"] + cmd_args,
-                    },
-                )
+            _reap_default_chrome_profile_for_auth(
+                auth_context,
+                args=cmd_args,
+                phase="pre_auth",
+                allow_reap=True,
+            )
             if not _ensure_nlm_auth():
                 return subprocess.CompletedProcess(["nlm"] + cmd_args, 1, "", "Auth failed")
             default_profile_pids = _reap_default_chrome_profile_before_command(
@@ -1905,30 +1910,25 @@ class NLMBatchIngestor:
             if default_profile_pids:
                 tracker.record_failure(is_rate_limit=False)
                 if pre_command_retry_attempted:
-                    return subprocess.CompletedProcess(
-                        ["nlm"] + cmd_args,
-                        1,
-                        "",
-                        f"default NotebookLM chrome-profile is already running: {DEFAULT_NLM_CHROME_PROFILE_ROOT}",
+                    return _default_profile_blocked_result(
+                        auth_context,
+                        args=cmd_args,
+                        phase="pre_command",
                     )
                 pre_command_retry_attempted = True
                 continue
             res = run_nlm(cmd_args, timeout_s=timeout)
-            default_profile_pids = _default_chrome_profile_pids()
-            if default_profile_pids:
-                log_action(
-                    "nlm_auth_recovered",
-                    {
-                        "component": "nlm_batch",
-                        "status": "default_profile_present_after_command",
-                        "phase": "post_command",
-                        **_build_nlm_auth_recovery_context(auth_context),
-                        "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
-                        "default_chrome_profile_pids": sorted(default_profile_pids),
-                        "command_succeeded": res.returncode == 0,
-                        "command": ["nlm"] + cmd_args,
-                    },
-                )
+            default_profile_block = _fail_closed_on_default_chrome_profile(
+                auth_context,
+                args=cmd_args,
+                phase="post_command",
+                stdout=res.stdout or "",
+                stderr=res.stderr or "",
+                allow_post_command_recovery=True,
+                command_succeeded=res.returncode == 0,
+            )
+            if default_profile_block is not None:
+                return default_profile_block
 
             # Check for rate limit indicators — require BOTH a status code AND rate-limit context
             # to avoid false positives from bare 500/502 errors that happen to contain "503"
@@ -2871,6 +2871,11 @@ class NLMBatchIngestor:
         # Prefer exact NotebookLM source title/url matches first because list
         # order is not guaranteed to be stable enough for correlation.
         source_id_list = [str(s.get("id") or "").strip() for s in sources if isinstance(s, dict) and str(s.get("id") or "").strip()]
+        if self._previously_observed_source_ids and self._previously_observed_source_ids_nb_id is None:
+            self._previously_observed_source_ids_nb_id = self._nb_id
+        elif self._nb_id != self._previously_observed_source_ids_nb_id:
+            self._previously_observed_source_ids = set()
+            self._previously_observed_source_ids_nb_id = self._nb_id
         previously_observed_source_ids = {
             str(source_id).strip()
             for source_id in getattr(self, "_previously_observed_source_ids", set())
@@ -2881,7 +2886,7 @@ class NLMBatchIngestor:
         ]
         self._previously_observed_source_ids = set(source_id_list)
         newly_observed_source_ids = set(newly_observed_source_id_list)
-        mapping_sources = (
+        newly_observed_mapping_sources = (
             [
                 source
                 for source in sources
@@ -2891,8 +2896,13 @@ class NLMBatchIngestor:
             if previously_observed_source_ids
             else sources
         )
+        exact_mapping_sources = (
+            sources
+            if previously_observed_source_ids and not newly_observed_source_id_list
+            else newly_observed_mapping_sources
+        )
         source_id_by_video_id: dict[str, str] = {}
-        for source in mapping_sources:
+        for source in exact_mapping_sources:
             source_id = str(source.get("id") or "").strip() if isinstance(source, dict) else ""
             video_id = _extract_video_id_from_source_entry(source)
             if source_id and video_id and video_id not in source_id_by_video_id:
@@ -2917,7 +2927,9 @@ class NLMBatchIngestor:
                 missing_video_ids = []
         elif missing_video_ids:
             fallback_candidate_source_ids = (
-                newly_observed_source_id_list if previously_observed_source_ids else source_id_list
+                newly_observed_source_id_list
+                if previously_observed_source_ids and newly_observed_source_id_list
+                else source_id_list
             )
             if len(fallback_candidate_source_ids) == len(batch_ids):
                 fallback_video_ids = [vid for vid in batch_ids if vid not in source_id_by_video_id]
@@ -3259,9 +3271,24 @@ class NLMBatchIngestor:
                 },
             )
             age_cliff_hit, source_ready_age_s = _source_ready_age_exceeds_cliff(ready_reference_epoch, started_at_epoch)
-            if age_cliff_hit:
+            projected_primary_command_completion_age_s = (
+                round(source_ready_age_s + _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S, 3)
+                if ready_reference_epoch and _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S > 0.0
+                else None
+            )
+            primary_command_projection_hits_cliff = (
+                not age_cliff_hit
+                and projected_primary_command_completion_age_s is not None
+                and projected_primary_command_completion_age_s >= _SOURCE_AGE_CLIFF_S
+            )
+            if age_cliff_hit or primary_command_projection_hits_cliff:
                 status = "source_age_cliff"
                 failure_reason = f"Fetch failed for {source_id}: {status}"
+                age_retry_queue_skipped_reason = (
+                    "projected_primary_command_age_cliff"
+                    if primary_command_projection_hits_cliff
+                    else None
+                )
                 with status_lock:
                     content_fetch_stats["status_counts"][status] = content_fetch_stats["status_counts"].get(status, 0) + 1
                     content_fetch_stats["ready_age_s_total"] += source_ready_age_s
@@ -3297,6 +3324,8 @@ class NLMBatchIngestor:
                         "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
                         "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
                         "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
+                        "primary_command_age_projection_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S,
+                        "projected_primary_command_completion_age_s": projected_primary_command_completion_age_s,
                         "pass_name": pass_name,
                         "youtube_ytdlp_classification": None,
                         "youtube_ytdlp_available": None,
@@ -3325,7 +3354,7 @@ class NLMBatchIngestor:
                         "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                         "source_list_probe_count": source_list_probe_count,
                         "retry_queue_gate_reason": "source_age_cliff",
-                        "retry_queue_skipped_reason": None,
+                        "retry_queue_skipped_reason": age_retry_queue_skipped_reason,
                         "projected_retry_ready_age_s": None,
                         "source_id_validated_after_not_found": None,
                         "source_list_probe_returncode": -1,
@@ -3356,7 +3385,9 @@ class NLMBatchIngestor:
                     "source_list_probe_count": source_list_probe_count,
                     "queued_for_retry": False,
                     "retry_queue_gate_reason": "source_age_cliff",
-                    "retry_queue_skipped_reason": None,
+                    "retry_queue_skipped_reason": age_retry_queue_skipped_reason,
+                    "primary_command_age_projection_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S,
+                    "projected_primary_command_completion_age_s": projected_primary_command_completion_age_s,
                     "projected_retry_ready_age_s": None,
                     "extraction_outcome": status,
                     "stdout": "",
@@ -3464,6 +3495,10 @@ class NLMBatchIngestor:
                                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                                     "source_list_probe_count": source_list_probe_count,
+                                    "retry_queue_gate_reason": "status_not_retryable",
+                                    "retry_queue_skipped_reason": None,
+                                    "projected_retry_ready_age_s": None,
+                                    "projected_retry_ready_age_with_margin_s": None,
                                 },
                             )
                             return {
@@ -3610,6 +3645,7 @@ class NLMBatchIngestor:
             retry_queue_deferable, retry_queue_gate_reason = _classify_source_content_retry_queue(
                 youtube_ytdlp_probe,
                 final_status,
+                youtube_page_probe,
             )
             retry_queue_skipped_reason: str | None = None
             retry_queue_candidate = (
@@ -4644,6 +4680,8 @@ class NLMBatchIngestor:
         self._last_source_count_probe_error = None
         self._not_found_source_list_probe_nb_id = None
         self._not_found_source_list_probe_count = 0
+        self._previously_observed_source_ids = set()
+        self._previously_observed_source_ids_nb_id = None
         self._last_subbatch_elapsed_s = 0.0
         self.create_batch_notebook(list(batch_ids or []))
         log_action(
