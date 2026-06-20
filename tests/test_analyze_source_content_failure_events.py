@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.analyze_source_content_failure_events import analyze_run_root, main, render_comparison_overview
+from scripts.analyze_source_content_failure_events import analyze_run_root, main, render_comparison_overview, render_report
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -258,6 +258,150 @@ def test_main_writes_packet_outputs(tmp_path):
     assert "| logs |" not in text
     payload = json.loads(json_output.read_text(encoding="utf-8"))
     assert payload["packets"][0]["batch_rows"][0]["retry_queue_wait_total_s"] == 7.5
+
+
+def test_analyze_run_root_builds_source_window_timeline_rows(tmp_path):
+    run_root = tmp_path / "timeline_run"
+    term_path = _term_path(run_root, phase="soak", lane="troup_hominidae_free", batch="batch_01")
+    _write_jsonl(
+        term_path,
+        [
+            _event(
+                "nlm_batch_source_materialization_wait_started",
+                {
+                    "worker_id": "worker-01",
+                    "notebooklm_profile": "ytis-free1-worker-01",
+                    "browser_profile_directory": "Profile 1",
+                    "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-free",
+                    "phase": "soak",
+                    "lane": "troup_hominidae_free",
+                    "batch": "batch_01",
+                    "status": "waiting",
+                    "timestamp_epoch": 101.5,
+                    "source_materialization_ready_at_epoch": 130.25,
+                    "materialization_ready_at_epoch": 130.25,
+                },
+                timestamp="2026-06-15T00:00:02+00:00",
+            ),
+            _event(
+                "nlm_batch_source_materialization_wait_completed",
+                {
+                    "worker_id": "worker-01",
+                    "notebooklm_profile": "ytis-free1-worker-01",
+                    "browser_profile_directory": "Profile 1",
+                    "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-free",
+                    "phase": "soak",
+                    "lane": "troup_hominidae_free",
+                    "batch": "batch_01",
+                    "status": "done",
+                    "timestamp_epoch": 102.25,
+                    "source_materialization_ready_at_epoch": 130.25,
+                    "materialization_ready_at_epoch": 130.25,
+                },
+                timestamp="2026-06-15T00:00:03+00:00",
+            ),
+            _event(
+                "nlm_batch_source_content_fetch_started",
+                {
+                    "notebooklm_profile": "ytis-free1-worker-02",
+                    "browser_profile_directory": "Profile 2",
+                    "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-free",
+                    "phase": "soak",
+                    "lane": "troup_hominidae_free",
+                    "batch": "batch_01",
+                    "status": "fetching",
+                    "timestamp_epoch": 100.5,
+                    "selected_window_size": 3,
+                    "window_index": 1,
+                    "window_count": 4,
+                    "window_size": 6,
+                    "remaining_count": 2,
+                },
+                timestamp="2026-06-15T00:00:01+00:00",
+            ),
+            _event(
+                "nlm_batch_source_content_fetch_completed",
+                {
+                    "notebooklm_profile": "ytis-free1-worker-02",
+                    "browser_profile_directory": "Profile 2",
+                    "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-free",
+                    "phase": "soak",
+                    "lane": "troup_hominidae_free",
+                    "batch": "batch_01",
+                    "status": "ready",
+                    "timestamp_epoch": 103.0,
+                    "elapsed_s": 1.7,
+                    "source_count_before": 5,
+                    "source_count_after": 6,
+                    "source_ready_age_s": 12.75,
+                },
+                timestamp="2026-06-15T00:00:04+00:00",
+            ),
+            _event(
+                "nlm_batch_source_content_fetch_completed",
+                {
+                    "notebooklm_profile": "ytis-pro-worker-99",
+                    "browser_profile_directory": "Profile 9",
+                    "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-pro",
+                    "phase": "soak",
+                    "lane": "troup_hominidae_free",
+                    "batch": "batch_01",
+                    "status": "ready",
+                    "timestamp_epoch": 104.0,
+                    "elapsed_s": 2.1,
+                    "source_count_before": 6,
+                    "source_count_after": 7,
+                    "source_ready_age_s": 15.0,
+                },
+                timestamp="2026-06-15T00:00:05+00:00",
+            ),
+        ],
+    )
+
+    packet = analyze_run_root(run_root, timeline_profile="ytis-free1-worker-02")
+    timeline_rows = packet["timeline_rows"]
+    assert len(timeline_rows) == 2
+    assert [row["action"] for row in timeline_rows] == [
+        "nlm_batch_source_content_fetch_started",
+        "nlm_batch_source_content_fetch_completed",
+    ]
+    first_row = timeline_rows[0]
+    assert first_row["run_name"] == run_root.name
+    assert first_row["phase"] == "soak"
+    assert first_row["lane"] == "troup_hominidae_free"
+    assert first_row["batch"] == "batch_01"
+    assert first_row["worker_id"] == "worker-02"
+    assert first_row["notebooklm_profile"] == "ytis-free1-worker-02"
+    assert first_row["event"] == "nlm_batch_source_content_fetch_started"
+    assert first_row["status"] == "fetching"
+    assert first_row["timestamp"] == "2026-06-15T00:00:01+00:00"
+    assert first_row["timestamp_epoch"] == 100.5
+    assert "selected_window_size=3" in first_row["summary"]
+    assert "window_count=4" in first_row["summary"]
+    assert "window_size=6" in first_row["summary"]
+    assert "remaining_count=2" in first_row["summary"]
+
+    unfiltered_packet = analyze_run_root(run_root)
+    assert [row["timestamp_epoch"] for row in unfiltered_packet["timeline_rows"]] == [
+        100.5,
+        101.5,
+        102.25,
+        103.0,
+        104.0,
+    ]
+    assert [row["worker_id"] for row in unfiltered_packet["timeline_rows"]] == [
+        "worker-02",
+        "worker-01",
+        "worker-01",
+        "worker-02",
+        "worker-99",
+    ]
+
+    report = render_report(packet)
+    assert "Source Window Timeline Detail" in report
+    timeline_section = report.split("## Source Window Timeline Detail", 1)[1].split("## Actual Failure Markers", 1)[0]
+    assert "ytis-free1-worker-02" in timeline_section
+    assert "ytis-pro-worker-99" not in timeline_section
 
 
 def test_analyze_run_root_tracks_source_add_window_shortfall(tmp_path):

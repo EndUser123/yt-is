@@ -31,6 +31,63 @@ DEFAULT_OUTPUT = Path(r"P:\packages\yt-is\.logs\sharded_lane_series\source_conte
 DEFAULT_JSON_OUTPUT = Path(r"P:\packages\yt-is\.logs\sharded_lane_series\source_content_failure_event_packet_current.json")
 PHASE_ORDER = {"smoke": 0, "soak": 1}
 FAILURE_MARKER_ORDER = ("NOT_FOUND", "AUTH_FAILED", "RATE_LIMIT", "TEMP_UNAVAILABLE", "BELOW_THRESHOLD", "OTHER")
+TIMELINE_EVENT_PREFIXES = (
+    "nlm_batch_source_materialization_wait_",
+    "nlm_batch_source_content_retry_queue_window_",
+    "nlm_batch_source_content_shared_retry_queue_window_",
+    "nlm_batch_source_content_dead_notebook_recovery_",
+)
+TIMELINE_EXACT_ACTIONS = {
+    "nlm_batch_reusable_source_age_cadence_window_started",
+    "nlm_batch_reusable_source_age_cadence_window_completed",
+    "nlm_batch_subbatch_add_started",
+    "nlm_batch_subbatch_add_completed",
+    "nlm_batch_source_materialization_wait_started",
+    "nlm_batch_source_materialization_wait_failed",
+    "nlm_batch_source_materialization_wait_succeeded",
+    "nlm_batch_source_materialization_wait_completed",
+    "nlm_batch_source_content_fetch_started",
+    "nlm_batch_source_content_fetch_completed",
+    "nlm_batch_source_content_retry_queue_window_started",
+    "nlm_batch_source_content_retry_queue_window_completed",
+    "nlm_batch_source_content_shared_retry_queue_window_started",
+    "nlm_batch_source_content_shared_retry_queue_window_completed",
+    "nlm_batch_source_content_dead_notebook_recovery_scheduled",
+    "nlm_batch_source_content_dead_notebook_recovery_completed",
+}
+TIMELINE_SUMMARY_FIELDS = (
+    "window_index",
+    "window_count",
+    "window_size",
+    "selected_window_size",
+    "remaining_count",
+    "oldest_source_age_s",
+    "projected_oldest_source_age_s",
+    "subbatch_size",
+    "expected_total",
+    "source_count_before",
+    "source_count_after",
+    "elapsed_s",
+    "source_materialization_ready_at_epoch",
+    "materialization_ready_at_epoch",
+    "source_ready_age_s",
+    "content_fetch_command_elapsed_s_total",
+    "source_list_probe_elapsed_s_total",
+    "queued_for_retry",
+    "projected_retry_ready_age_s",
+    "source_id_validated_after_not_found",
+    "recovery_reason",
+    "recovered_video_count",
+    "created_new_notebook",
+    "browser_profile_directory",
+    "browser_profile_root",
+    "auth_cache_session_age_s",
+    "status",
+    "failure_reason",
+    "retry_queue_gate_reason",
+    "retry_queue_skipped_reason",
+    "retry_queue_drain_skipped_reason",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +272,110 @@ def _truncate(text: str, limit: int = 160) -> str:
     return text[: max(0, limit - 1)].rstrip() + "…"
 
 
+def _format_timeline_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, dict):
+        return _truncate(json.dumps(value, sort_keys=True, separators=(",", ":")), 180)
+    text = _normalize_text(value)
+    return text or None
+
+
+def _timeline_summary(data: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in TIMELINE_SUMMARY_FIELDS:
+        if key not in data:
+            continue
+        text = _format_timeline_value(data.get(key))
+        if text is None:
+            continue
+        parts.append(f"{key}={text}")
+    return "; ".join(parts)
+
+
+def _timeline_sort_scalar(value: Any) -> tuple[int, Any]:
+    if isinstance(value, (int, float)):
+        return (0, float(value))
+    text = _normalize_text(value)
+    if text:
+        return (1, text)
+    return (2, "")
+
+
+def _is_timeline_action(action: str) -> bool:
+    return action in TIMELINE_EXACT_ACTIONS or any(action.startswith(prefix) for prefix in TIMELINE_EVENT_PREFIXES)
+
+
+def _timeline_worker_id(data: dict[str, Any]) -> str:
+    worker_id = _normalize_text(data.get("worker_id"))
+    if worker_id:
+        return worker_id
+    notebooklm_profile = _normalize_text(data.get("notebooklm_profile"))
+    if notebooklm_profile:
+        match = re.search(r"(worker-\d+)$", notebooklm_profile.strip())
+        if match:
+            return match.group(1)
+    return "unknown"
+
+
+def _timeline_row(scope: Scope, event: dict[str, Any]) -> dict[str, Any]:
+    data = _event_data(event)
+    timestamp = _normalize_text(event.get("timestamp"))
+    timestamp_epoch = _to_float(data.get("timestamp_epoch"))
+    if timestamp_epoch is None:
+        timestamp_epoch = _to_float(event.get("timestamp_epoch"))
+    worker_id = _timeline_worker_id(data)
+    notebooklm_profile = _normalize_text(data.get("notebooklm_profile")) or worker_id
+    row = {
+        "run_name": scope.run_name,
+        "phase": scope.phase,
+        "lane": scope.lane,
+        "batch": scope.batch,
+        "timestamp": timestamp,
+        "timestamp_epoch": timestamp_epoch,
+        "timestamp_sort_key": timestamp_epoch if timestamp_epoch is not None else timestamp,
+        "event": _get_event_name(event),
+        "action": _get_event_name(event),
+        "worker_id": worker_id,
+        "notebooklm_profile": notebooklm_profile,
+        "status": _normalize_text(data.get("status")),
+        "failure_reason": _normalize_text(data.get("failure_reason")),
+        "recovery_reason": _normalize_text(data.get("recovery_reason")),
+        "summary": _timeline_summary(data),
+    }
+    return row
+
+
+def _timeline_row_matches_filters(
+    row: dict[str, Any],
+    timeline_profile: str | None,
+    timeline_worker: str | None,
+) -> bool:
+    if timeline_profile and row["notebooklm_profile"] != timeline_profile:
+        return False
+    if timeline_worker and row["worker_id"] != timeline_worker and row["notebooklm_profile"] != timeline_worker:
+        return False
+    return True
+
+
+def _timeline_row_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        row["run_name"],
+        _slug_phase(row["phase"]),
+        row["lane"],
+        row["batch"],
+        _timeline_sort_scalar(row["timestamp_sort_key"]),
+        _timeline_sort_scalar(row["timestamp"]),
+        row["worker_id"],
+        row["notebooklm_profile"],
+        row["event"],
+    )
+
+
 def _format_count_map(counter: Counter[str]) -> str:
     if not counter:
         return "none"
@@ -356,12 +517,18 @@ def _update_worker_context(worker: Any, data: dict[str, Any]) -> None:
     worker.browser_profile_root = worker.browser_profile_root or _normalize_text(data.get("browser_profile_root"))
 
 
-def analyze_run_root(run_root: Path) -> dict[str, Any]:
+def analyze_run_root(
+    run_root: Path,
+    *,
+    timeline_profile: str | None = None,
+    timeline_worker: str | None = None,
+) -> dict[str, Any]:
     term_files = sorted(run_root.rglob("term_*.jsonl"))
     batch_stats: dict[Scope, BatchStats] = {}
     fetch_stats: dict[FetchKey, FetchAttributionStats] = {}
     command_stats: dict[CommandWorkerKey, CommandAttributionStats] = {}
     marker_samples: dict[str, SampleBucket] = {marker: SampleBucket() for marker in FAILURE_MARKER_ORDER}
+    timeline_rows: list[dict[str, Any]] = []
     total_events = 0
     parse_errors = [0]
 
@@ -376,6 +543,10 @@ def analyze_run_root(run_root: Path) -> dict[str, Any]:
             notebooklm_profile = _normalize_text(data.get("notebooklm_profile"))
             browser_profile_directory = _normalize_text(data.get("browser_profile_directory"))
             browser_profile_root = _normalize_text(data.get("browser_profile_root"))
+            if _is_timeline_action(action):
+                row = _timeline_row(scope, event)
+                if _timeline_row_matches_filters(row, timeline_profile, timeline_worker):
+                    timeline_rows.append(row)
             fetch_key = FetchKey(
                 run_name=scope.run_name,
                 phase=scope.phase,
@@ -544,6 +715,8 @@ def analyze_run_root(run_root: Path) -> dict[str, Any]:
                 batch.dead_notebook_completed[f"{family}:{reason}"] += 1
                 continue
 
+    timeline_rows.sort(key=_timeline_row_sort_key)
+
     run_batches = [
         {
             "run_name": scope.run_name,
@@ -702,6 +875,7 @@ def analyze_run_root(run_root: Path) -> dict[str, Any]:
         "batch_rows": run_batches,
         "worker_rows": worker_rows,
         "command_worker_rows": command_worker_rows,
+        "timeline_rows": timeline_rows,
         "marker_samples": {
             marker: {"count": bucket.count, "samples": bucket.samples}
             for marker, bucket in marker_samples.items()
@@ -880,6 +1054,39 @@ def render_report(packet: dict[str, Any]) -> str:
             ]
         )
     lines.append(_table(headers, rows))
+    lines.append("")
+
+    lines.append("## Source Window Timeline Detail")
+    headers = [
+        "run",
+        "phase",
+        "lane",
+        "batch",
+        "timestamp",
+        "worker_id",
+        "notebooklm_profile",
+        "event",
+        "summary",
+    ]
+    rows = []
+    for row in packet.get("timeline_rows", []):
+        rows.append(
+            [
+                row["run_name"],
+                row["phase"],
+                row["lane"],
+                row["batch"],
+                row["timestamp"] or "unknown",
+                row["worker_id"] or "unknown",
+                row["notebooklm_profile"] or "unknown",
+                row["event"],
+                row["summary"] or "none",
+            ]
+        )
+    if rows:
+        lines.append(_table(headers, rows))
+    else:
+        lines.append("- no selected timeline rows")
     lines.append("")
 
     lines.append("## Actual Failure Markers")
@@ -1188,6 +1395,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_JSON_OUTPUT,
         help="JSON output path.",
     )
+    parser.add_argument(
+        "--timeline-profile",
+        type=str,
+        default=None,
+        help="Filter timeline rows to a specific notebooklm_profile.",
+    )
+    parser.add_argument(
+        "--timeline-worker",
+        type=str,
+        default=None,
+        help="Filter timeline rows to a specific worker_id or notebooklm_profile.",
+    )
     return parser
 
 
@@ -1199,7 +1418,13 @@ def main(argv: list[str] | None = None) -> int:
         if not run_root.exists():
             print(f"Skipping missing run root: {run_root}", file=sys.stderr)
             continue
-        packets.append(analyze_run_root(run_root))
+        packets.append(
+            analyze_run_root(
+                run_root,
+                timeline_profile=args.timeline_profile,
+                timeline_worker=args.timeline_worker,
+            )
+        )
     if not packets:
         print("No run roots analyzed.", file=sys.stderr)
         return 1
