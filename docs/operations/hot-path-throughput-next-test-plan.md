@@ -1484,6 +1484,14 @@ The smoke promotion gates intentionally stop before soak if smoke has any `sourc
 
 Before interpreting throughput, confirm both lane `lane_process.json` env snapshots show `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S=180.0`, `YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE` absent or `0`, and the default `160/190/5` cadence thresholds. Also confirm `nlm_batch_reusable_source_age_cadence_rotation_completed` appears if source ages cross the threshold; if no rotation events fire, this run is only a no-op validation of the default cadence branch.
 
+Completed `run02` after auth/preflight hardening:
+
+- `fresh_state_3plus3_extract_schema_source_age_rotation_180_run02_current` validated the new human-free auth and smoke-promotion path. `csf-nlm-worker-auth doctor` passed on the fresh run root, smoke completed with profile-pinned worker auth, and no raw `nlm login` or default NotebookLM `chrome-profile` path appeared in the narrowed process scan.
+- The sequence stopped before soak with `status=blocked_before_soak`, `throughput_valid=true`, and `worker_shape_signature=3+3`. The promotion gate failed all three configured thresholds: `source_age_cliff=101`, `fail_count_total=106`, and combined hot-path VPH `2545.69` below the `3000` floor.
+- Smoke result: combined `694/106/800`; Pro `368/32/400` at `1651.17` VPH with `source_age_cliff=30`, `command_failed=31`, and `source_ready_age_s_max=394.782`; Free `326/74/400` at `1319.25` VPH with `source_age_cliff=71`, `command_failed=26`, `nlm_content_below_threshold=1`, and `source_ready_age_s_max=352.132`.
+- Browser health was degraded by unrelated Chrome load (`unexpected_process_count=87`, budget `24`) but default NotebookLM profile remained clear (`default_profile_remaining_count=0`). Treat this as a valid negative smoke and a successful soak-cost avoidance, not as a new throughput candidate.
+- Do not rerun source-age rotation `180s` under the same shape. The remaining failure is source-age / NOT_FOUND pressure, not human auth. Next work should change the source-readiness/notebook-age mechanism or pivot to command-latency attribution before another live run.
+
 Historical first-window cap command:
 
 ```powershell
