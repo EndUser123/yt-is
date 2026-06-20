@@ -678,6 +678,22 @@ def _fail_closed_on_default_chrome_profile(
         return None
     stopped_pids = _stop_chrome_pids(default_profile_pids)
     if not stopped_pids:
+        remaining_default_profile_pids = _default_chrome_profile_pids()
+        if not remaining_default_profile_pids:
+            recovery_context = _build_nlm_auth_recovery_context(auth_context)
+            log_action(
+                "nlm_auth_recovered",
+                {
+                    "component": "nlm_batch",
+                    "status": "default_profile_disappeared_after_stop_attempt",
+                    "phase": phase,
+                    **recovery_context,
+                    "default_chrome_profile": str(DEFAULT_NLM_CHROME_PROFILE_ROOT),
+                    "default_chrome_profile_pids": sorted(default_profile_pids),
+                    "command": ["nlm"] + args,
+                },
+            )
+            return None
         return _default_profile_blocked_result(
             auth_context,
             args=args,

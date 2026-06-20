@@ -617,6 +617,34 @@ class TestAuthAutoLogin:
         assert payload["notebooklm_profile"] == "ytis-free1-worker-04"
         assert payload["expected_email"] == "troup.hominidae@gmail.com"
 
+    def test_default_profile_stop_race_is_rechecked_before_fail_closed(self, monkeypatch):
+        """A default profile that disappears during stop should not invalidate the worker command."""
+
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free1-worker-04")
+        monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+        auth_context = nlm_batch._get_nlm_auth_context()
+
+        with mock.patch("csf.nlm_batch._default_chrome_profile_pids", side_effect=[{24680}, set()]):
+            with mock.patch("csf.nlm_batch._stop_chrome_pids", return_value=set()) as mock_stop:
+                with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                    result = nlm_batch._fail_closed_on_default_chrome_profile(
+                        auth_context,
+                        args=["source", "list", "nb-1", "--json"],
+                        phase="post_command",
+                        allow_post_command_recovery=True,
+                        command_succeeded=True,
+                    )
+
+        assert result is None
+        mock_stop.assert_called_once_with({24680})
+        assert any(
+            call.args[0] == "nlm_auth_recovered"
+            and call.args[1]["status"] == "default_profile_disappeared_after_stop_attempt"
+            and call.args[1]["phase"] == "post_command"
+            for call in mock_log.call_args_list
+        )
+        assert not any(call.args[0] == "nlm_auth_failed" for call in mock_log.call_args_list)
+
     def test_run_cmd_retries_once_when_default_profile_exists_before_command(self, monkeypatch):
         """A transient default profile before a harmless command should be reaped and retried once."""
 
