@@ -4945,13 +4945,18 @@ class NLMReusableIngestor:
             return [list(video_ids)]
         return [list(video_ids[index : index + window_size]) for index in range(0, len(video_ids), window_size)]
 
-    def _select_source_age_cadence_window_size(self, remaining_count: int) -> int:
+    def _select_source_age_cadence_window_size(
+        self,
+        remaining_count: int,
+        *,
+        allow_first_window_cap: bool = True,
+    ) -> int:
         """Choose a reusable cadence window size based on notebook age.
 
         The soft threshold halves the window; the hard threshold falls back to
-        a quarter-window instead of collapsing straight to the minimum. That
-        keeps the notebook turning over earlier without turning every old
-        notebook into a tiny serial bottleneck.
+        a quarter-window instead of collapsing straight to the minimum. The
+        optional first-window cap only applies to the first cadence window of a
+        batch, which avoids re-arming the cap after later rotation resets.
         """
         remaining_count = max(1, int(remaining_count))
         base_window_size = min(self._ingestor.batch_size, remaining_count)
@@ -4964,6 +4969,7 @@ class NLMReusableIngestor:
         selected_window_size = base_window_size
         if (
             self._source_age_cadence_first_window_size
+            and allow_first_window_cap
             and not has_source_materialization_anchor
             and last_window_elapsed_s <= 0.0
         ):
@@ -5316,7 +5322,7 @@ class NLMReusableIngestor:
             if extract_window_enabled
             else self._active_window_size
             if active_window_enabled
-            else self._select_source_age_cadence_window_size(len(video_ids))
+            else self._select_source_age_cadence_window_size(len(video_ids), allow_first_window_cap=True)
             if source_age_cadence_enabled
             else 0
         )
@@ -5629,7 +5635,10 @@ class NLMReusableIngestor:
                                 "notebooklm_profile": _get_notebooklm_profile(),
                             },
                         )
-                    cadence_window_size = self._select_source_age_cadence_window_size(len(remaining_video_ids))
+                    cadence_window_size = self._select_source_age_cadence_window_size(
+                        len(remaining_video_ids),
+                        allow_first_window_cap=cadence_window_index == 1,
+                    )
                     window_video_ids = remaining_video_ids[:cadence_window_size]
                     window_started_at = time.monotonic()
                     self._ingestor._nb_id = self._nb_id
