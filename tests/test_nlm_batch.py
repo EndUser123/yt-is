@@ -5276,6 +5276,98 @@ class TestNotebookCapRotation:
         assert summary["retry_queue_wait_elapsed_s_max"] == retry_completed["retry_queue_wait_elapsed_s_max"]
         assert summary["retry_queue_wait_elapsed_s_count"] == 1
 
+    def test_source_content_retry_queue_shortens_sleep_when_headroom_remains(self):
+        """The local drain should trim its sleep instead of overshooting a still-safe retry window."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-retry-drain-short-sleep"
+        ingestor._last_materialization_ready_at_epoch = 1000.0
+        content_attempts = {"count": 0}
+        clock = {"value": 1150.0, "primary_content_returned": False, "post_primary_calls": 0}
+
+        def fake_time():
+            if clock["primary_content_returned"]:
+                clock["post_primary_calls"] += 1
+                if clock["post_primary_calls"] > 5:
+                    clock["value"] = 1183.0
+                    return clock["value"]
+            clock["value"] += 0.01
+            return clock["value"]
+
+        def fake_sleep(duration):
+            clock["value"] += duration
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""},
+                )()
+            if cmd[:2] == ["source", "content"]:
+                content_attempts["count"] += 1
+                if content_attempts["count"] > 1:
+                    return type(
+                        "CompletedProcess",
+                        (),
+                        {"returncode": 0, "stdout": json.dumps({"value": {"content": "x" * 101}}), "stderr": ""},
+                    )()
+                clock["primary_content_returned"] = True
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 1, "stdout": "", "stderr": "API error (code 5): NOT_FOUND"},
+                )()
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", False):
+                    with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 30.0):
+                        with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                            with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                                with mock.patch(
+                                    "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                                    return_value={
+                                        "classification": "ok",
+                                        "available": True,
+                                        "availability": "public",
+                                        "live_status": "not_live",
+                                        "was_live": False,
+                                        "is_live": False,
+                                        "title": None,
+                                        "error": None,
+                                    },
+                                ) as mock_ytdlp:
+                                    with mock.patch("csf.nlm_batch.time.time", side_effect=fake_time):
+                                        with mock.patch("csf.nlm_batch.time.sleep", side_effect=fake_sleep) as mock_sleep:
+                                            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                                results = ingestor.extract_transcripts(["vid1"])
+
+        assert results["vid1"][0] is True
+        assert results["vid1"][1] == "x" * 101
+        assert content_attempts["count"] == 2
+        assert mock_ytdlp.call_count == 1
+        mock_sleep.assert_called_once()
+        sleep_s = mock_sleep.call_args.args[0]
+        assert 0.0 < sleep_s < 30.0
+        retry_completed = next(
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+            and call.args[1].get("pass_name") == "retry"
+        )
+        assert retry_completed["status"] == "ready"
+        assert retry_completed["projected_retry_ready_age_s"] is None
+        assert retry_completed["projected_retry_ready_age_with_margin_s"] is None
+        assert retry_completed["retry_queue_gate_reason"] == "status_not_retryable"
+        summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
+        assert summary["retry_queue_deferred_count"] == 1
+        assert summary["retry_queue_recovered_count"] == 1
+        assert summary["retry_queue_final_failed_count"] == 0
+        assert summary["content_fetch_retry_queue_sleep_elapsed_s_total"] == round(sleep_s, 3)
+        assert summary["retry_queue_wait_elapsed_s_count"] == 1
+        assert summary["retry_queue_drain_ready_age_s"] < 200.0
+
     def test_source_content_retry_queue_skips_when_drain_delay_would_cross_age_cliff(self):
         """The local drain should not sleep/retry when the actual drain window is already unsafe."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
@@ -5288,7 +5380,8 @@ class TestNotebookCapRotation:
             if clock["primary_content_returned"]:
                 clock["post_primary_calls"] += 1
                 if clock["post_primary_calls"] > 5:
-                    return 1196.0
+                    clock["value"] = 1200.1
+                    return clock["value"]
             clock["value"] += 0.01
             return clock["value"]
 

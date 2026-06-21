@@ -4139,14 +4139,37 @@ class NLMBatchIngestor:
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
                 )
-                retry_queue_drain_projected_ready_age_s = (
-                    round(time.time() - ready_reference_epoch + _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S, 3)
+                retry_queue_drain_ready_age_before_sleep_s = (
+                    time.time() - ready_reference_epoch
                     if ready_reference_epoch
                     else None
                 )
+                retry_queue_drain_projected_ready_age_s = (
+                    round(
+                        retry_queue_drain_ready_age_before_sleep_s + _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
+                        3,
+                    )
+                    if retry_queue_drain_ready_age_before_sleep_s is not None
+                    else None
+                )
+                retry_queue_drain_sleep_s = (
+                    min(
+                        _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
+                        max(
+                            0.0,
+                            _SOURCE_AGE_CLIFF_S
+                            - retry_queue_drain_ready_age_before_sleep_s
+                            - _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S
+                            - 0.001,
+                        ),
+                    )
+                    if retry_queue_drain_ready_age_before_sleep_s is not None
+                    else _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S
+                )
                 if (
                     retry_queue_drain_projected_ready_age_s is not None
-                    and retry_queue_drain_projected_ready_age_s >= _SOURCE_AGE_CLIFF_S
+                    and retry_queue_drain_sleep_s is not None
+                    and retry_queue_drain_sleep_s <= 0.0
                 ):
                     retry_queue_drain_ready_age_s = retry_queue_drain_projected_ready_age_s
                     retry_queue_drain_skipped_reason = "drain_projected_source_age_cliff"
@@ -4284,10 +4307,10 @@ class NLMBatchIngestor:
                         },
                     )
                     retry_queue = []
-                if retry_queue and _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S > 0:
+                if retry_queue and retry_queue_drain_sleep_s is not None and retry_queue_drain_sleep_s > 0:
                     with status_lock:
-                        content_fetch_stats["content_fetch_retry_queue_sleep_elapsed_s_total"] += _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S
-                    time.sleep(_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S)
+                        content_fetch_stats["content_fetch_retry_queue_sleep_elapsed_s_total"] += retry_queue_drain_sleep_s
+                    time.sleep(retry_queue_drain_sleep_s)
                 if retry_queue:
                     retry_queue_drain_started_at_epoch = time.time()
                     retry_queue_drain_ready_age_s = (
