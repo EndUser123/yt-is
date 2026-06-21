@@ -36,6 +36,7 @@ class TestSharedNlmConfig:
         assert cfg.source_content_retry_queue_delay_s == 30.0
         assert cfg.source_content_retry_queue_budget_s == 30.0
         assert cfg.source_content_retry_queue_age_margin_s == 0.0
+        assert cfg.source_content_primary_command_age_margin_s == 0.0
         assert cfg.source_content_shared_retry_pool_enabled is False
         assert cfg.transcript_expensive_fallback_enabled is True
         assert cfg.whisper_on_notebooklm_add_failed is True
@@ -108,6 +109,16 @@ class TestSharedNlmConfig:
         try:
             cfg = nlm_config.get_nlm_config()
             assert cfg.source_content_retry_queue_age_margin_s == 12.5
+        finally:
+            nlm_config.reset_nlm_config()
+
+    def test_source_content_primary_command_age_margin_follows_env(self, monkeypatch):
+        """Primary command age-margin experiments should be named in shared config."""
+        monkeypatch.setenv("YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S", "14.25")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.source_content_primary_command_age_margin_s == 14.25
         finally:
             nlm_config.reset_nlm_config()
 

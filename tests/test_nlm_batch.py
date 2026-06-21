@@ -4178,6 +4178,48 @@ class TestNotebookCapRotation:
         assert summary["source_ready_age_s_total"] == 150.0
         assert summary["content_fetch_attempts_total"] == 0
 
+    def test_source_content_fetch_skips_when_primary_command_projection_margin_hits_age_cliff(self):
+        """A margin-adjusted primary command projection should also stop old-window fetches."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-primary-projection-margin"
+        ingestor._last_materialization_ready_at_epoch = 1000.0
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""},
+                )()
+            if cmd[:2] == ["source", "content"]:
+                raise AssertionError("source content should not run when the margin-adjusted projection crosses the age cliff")
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+            with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S", 40.0):
+                    with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S", 20.0):
+                        with mock.patch("csf.nlm_batch.time.time", return_value=1150.0):
+                            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                results = ingestor.extract_transcripts(["vid1"])
+
+        assert results["vid1"][0] is False
+        completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_completed")
+        assert completed["status"] == "source_age_cliff"
+        assert completed["failure_reason"] == "Fetch failed for s1: source_age_cliff"
+        assert completed["source_ready_age_s"] == 150.0
+        assert completed["projected_primary_command_completion_age_s"] == 190.0
+        assert completed["projected_primary_command_completion_age_with_margin_s"] == 210.0
+        assert completed["primary_command_age_projection_s"] == 40.0
+        assert completed["primary_command_age_margin_s"] == 20.0
+        assert completed["retry_queue_skipped_reason"] == "projected_primary_command_age_cliff"
+        assert completed["attempts"] == 0
+        assert not any(call.args[0] == "nlm_source_content_command_completed" for call in mock_log.call_args_list)
+        summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
+        assert summary["content_fetch_status_counts"]["source_age_cliff"] == 1
+        assert summary["source_ready_age_s_total"] == 150.0
+        assert summary["content_fetch_attempts_total"] == 0
+
     def test_source_content_fetch_logs_not_found_probe_metrics(self):
         """A final NOT_FOUND should contribute command and source-list probe timing."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)

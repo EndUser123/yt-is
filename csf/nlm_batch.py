@@ -72,6 +72,7 @@ _SOURCE_CONTENT_RETRY_BUDGET_S = max(0.0, float(_NLM_CONFIG.source_content_retry
 _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_delay_s))
 _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_budget_s))
 _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S = max(0.0, float(_NLM_CONFIG.source_content_retry_queue_age_margin_s))
+_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S = max(0.0, float(_NLM_CONFIG.source_content_primary_command_age_margin_s))
 _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S = max(
     0.0,
     float(os.getenv("YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S", "0")),
@@ -3289,13 +3290,25 @@ class NLMBatchIngestor:
             age_cliff_hit, source_ready_age_s = _source_ready_age_exceeds_cliff(ready_reference_epoch, started_at_epoch)
             projected_primary_command_completion_age_s = (
                 round(source_ready_age_s + _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S, 3)
-                if ready_reference_epoch and _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S > 0.0
+                if ready_reference_epoch
+                and (
+                    _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S > 0.0
+                    or _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S > 0.0
+                )
+                else None
+            )
+            projected_primary_command_completion_age_with_margin_s = (
+                round(
+                    projected_primary_command_completion_age_s + _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S,
+                    3,
+                )
+                if projected_primary_command_completion_age_s is not None
                 else None
             )
             primary_command_projection_hits_cliff = (
                 not age_cliff_hit
-                and projected_primary_command_completion_age_s is not None
-                and projected_primary_command_completion_age_s >= _SOURCE_AGE_CLIFF_S
+                and projected_primary_command_completion_age_with_margin_s is not None
+                and projected_primary_command_completion_age_with_margin_s >= _SOURCE_AGE_CLIFF_S
             )
             if age_cliff_hit or primary_command_projection_hits_cliff:
                 status = "source_age_cliff"
@@ -3342,6 +3355,8 @@ class NLMBatchIngestor:
                         "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
                         "primary_command_age_projection_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S,
                         "projected_primary_command_completion_age_s": projected_primary_command_completion_age_s,
+                        "primary_command_age_margin_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S,
+                        "projected_primary_command_completion_age_with_margin_s": projected_primary_command_completion_age_with_margin_s,
                         "pass_name": pass_name,
                         "youtube_ytdlp_classification": None,
                         "youtube_ytdlp_available": None,
@@ -3404,6 +3419,8 @@ class NLMBatchIngestor:
                     "retry_queue_skipped_reason": age_retry_queue_skipped_reason,
                     "primary_command_age_projection_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S,
                     "projected_primary_command_completion_age_s": projected_primary_command_completion_age_s,
+                    "primary_command_age_margin_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S,
+                    "projected_primary_command_completion_age_with_margin_s": projected_primary_command_completion_age_with_margin_s,
                     "projected_retry_ready_age_s": None,
                     "extraction_outcome": status,
                     "stdout": "",
@@ -3515,6 +3532,10 @@ class NLMBatchIngestor:
                                     "retry_queue_skipped_reason": None,
                                     "projected_retry_ready_age_s": None,
                                     "projected_retry_ready_age_with_margin_s": None,
+                                    "primary_command_age_projection_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S,
+                                    "primary_command_age_margin_s": _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S,
+                                    "projected_primary_command_completion_age_s": projected_primary_command_completion_age_s,
+                                    "projected_primary_command_completion_age_with_margin_s": projected_primary_command_completion_age_with_margin_s,
                                 },
                             )
                             return {

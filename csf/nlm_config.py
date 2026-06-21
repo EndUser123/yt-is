@@ -51,6 +51,7 @@ class NLMConfig:
     source_content_retry_queue_delay_s: float = 30.0
     source_content_retry_queue_budget_s: float = 30.0
     source_content_retry_queue_age_margin_s: float = 0.0
+    source_content_primary_command_age_margin_s: float = 0.0
     source_content_shared_retry_pool_enabled: bool = False
     transcript_expensive_fallback_enabled: bool = True
     whisper_on_notebooklm_add_failed: bool = True
@@ -173,6 +174,9 @@ def get_nlm_config() -> NLMConfig:
                 ),
                 source_content_retry_queue_age_margin_s=float(
                     os.environ.get("YTIS_NLM_SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S", "0.0")
+                ),
+                source_content_primary_command_age_margin_s=float(
+                    os.environ.get("YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S", "0.0")
                 ),
                 source_content_shared_retry_pool_enabled=shared_retry_pool_enabled,
                 transcript_expensive_fallback_enabled=(
