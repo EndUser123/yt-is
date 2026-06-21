@@ -288,6 +288,12 @@ def main(argv: list[str] | None = None) -> int:
     if browser_health["status"] == "degraded":
         for warning in browser_health.get("warnings", []):
             print(f"[sequence] WARN: {warning}")
+        if browser_health.get("unexpected_process_budget_exceeded"):
+            print(
+                "[sequence] ERROR: browser health exceeded the unrelated Chrome process budget; "
+                "stopping before smoke"
+            )
+            return 1
 
     smoke_report = _run_phase(
         phase="smoke",

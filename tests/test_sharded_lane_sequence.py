@@ -641,6 +641,57 @@ def test_main_continues_when_browser_health_is_degraded(tmp_path, monkeypatch):
     assert calls == ["doctor", "browser_health", "smoke", "evidence", "soak"]
 
 
+def test_main_stops_before_smoke_when_browser_health_is_degraded_over_budget(tmp_path, monkeypatch):
+    calls: list[str] = []
+    run_root = tmp_path / "run"
+
+    monkeypatch.setattr(mod, "doctor_lane_setup", lambda *args, **kwargs: calls.append("doctor") or _lanes(tmp_path))
+    monkeypatch.setattr(
+        mod,
+        "browser_health_gate",
+        lambda *args, **kwargs: calls.append("browser_health")
+        or {
+            "status": "degraded",
+            "settle_window_s": 30.0,
+            "sample_interval_s": 5.0,
+            "sample_count": 2,
+            "elapsed_s": 0.0,
+            "allowed_browser_roots": [r"P:\\\\\\.data\yt-is\browser\notebooklm-pro"],
+            "initial_default_profile_detected_count": 0,
+            "initial_default_profile_detected_pids": [],
+            "initial_default_profile_reaped_count": 0,
+            "initial_default_profile_reaped_pids": [],
+            "default_profile_detected_count": 0,
+            "default_profile_detected_pids": [],
+            "default_profile_reaped_count": 0,
+            "default_profile_reaped_pids": [],
+            "default_profile_remaining_count": 0,
+            "default_profile_remaining_pids": [],
+            "unexpected_process_count": 111,
+            "unexpected_processes": [{"pid": 9999, "cmdline": "chrome.exe --user-data-dir=C:\\Temp"}],
+            "unexpected_process_count_budget": 10,
+            "unexpected_process_rss_bytes_total": 0,
+            "unexpected_process_rss_bytes_budget": 0,
+            "unexpected_process_budget_exceeded": True,
+            "chrome_process_count_max": 2,
+            "chrome_rss_bytes_max": 1024,
+            "issues": [],
+            "warnings": ["unexpected Chrome processes detected during browser health settle: 9999:chrome.exe --user-data-dir=C:\\Temp"],
+        },
+    )
+
+    result = mod.main([
+        "--lane-config",
+        str(_lane_config(tmp_path)),
+        "--run-root",
+        str(run_root),
+    ])
+
+    assert result == 1
+    assert calls == ["doctor", "browser_health"]
+    assert (run_root / "browser_health.json").exists()
+
+
 def test_main_forwards_preserve_worker_state_root_flag(tmp_path, monkeypatch):
     calls: list[bool] = []
     run_root = tmp_path / "run"
