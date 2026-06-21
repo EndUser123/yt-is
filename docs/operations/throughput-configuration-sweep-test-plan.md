@@ -22,6 +22,7 @@ These requirements apply to every phase and every run:
 - Record whether the run is `valid`, `invalid`, `negative`, `promising`, or `promoted`.
 - Record the account family used by each lane.
 - Record the browser root used by each lane.
+- Benchmark-owned lane Chrome may be closed at any time when you need a clean rerun. Use `python P:/packages/yt-is/kill_lane_chrome.py` to drain only the lane roots under `P:\.data\yt-is\browser\notebooklm-pro` and `P:\.data\yt-is\browser\notebooklm-free`; do not touch user-owned Chrome or Comet sessions.
 - Record whether the run used the current supported profile family or a frozen historical one.
 - Record whether the run used the raw series runner or the guarded sequence runner.
 - Keep `serial` mode and batch size `200` unless the phase explicitly changes them.

@@ -1,4 +1,9 @@
-"""Clean shutdown of all lane Chrome processes with sub-process drain."""
+"""Clean shutdown of benchmark-owned lane Chrome processes with sub-process drain.
+
+Safe to run any time you need to reset yt-is-owned browser state before or after
+a benchmark rerun. This helper only targets the dedicated lane roots and leaves
+user-owned Chrome or Comet sessions alone.
+"""
 import psutil, time, subprocess, os, sys
 
 roots = [

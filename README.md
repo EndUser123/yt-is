@@ -97,7 +97,7 @@ Extract YouTube transcripts using NotebookLM's batch notebook workflow.
 
 **Recommended approach:** Worker-owned batch notebooks (one notebook per worker title, reused across batches; batch size 200) — uses `nlm source content` (raw text), has auth auto-recovery built in.
 
-**Auth contract for tests:** `nlm login` covers the CLI path only. The DOM/spinner readiness path uses a separate persistent Chrome profile and must be bootstrapped once with a signed-in browser session before DOM tests will work. yt-is also refreshes the NotebookLM CLI itself with `uv tool install --upgrade notebooklm-mcp-cli` unless `YTIS_NLM_AUTO_UPDATE=0`, then probes `nlm login --check` and falls back to the known-good pinned git spec via `YTIS_NLM_FALLBACK_SPEC` if the latest release breaks login on this machine.
+**Auth contract for tests:** `nlm login` covers the CLI path only. The DOM/spinner readiness path uses a separate persistent Chrome profile and must be bootstrapped once with a signed-in browser session before DOM tests will work. Benchmark-owned lane Chrome may be closed at any time to reset browser state before a rerun; that cleanup should only target the lane roots under `P:\.data\yt-is\browser\notebooklm-pro` and `P:\.data\yt-is\browser\notebooklm-free`, not user-owned Chrome or Comet sessions. yt-is also refreshes the NotebookLM CLI itself with `uv tool install --upgrade notebooklm-mcp-cli` unless `YTIS_NLM_AUTO_UPDATE=0`, then probes `nlm login --check` and falls back to the known-good pinned git spec via `YTIS_NLM_FALLBACK_SPEC` if the latest release breaks login on this machine.
 
 **Old approach (deprecated):** Ephemeral notebooks — one notebook per video, slow, wastes NotebookLM slots.
 
