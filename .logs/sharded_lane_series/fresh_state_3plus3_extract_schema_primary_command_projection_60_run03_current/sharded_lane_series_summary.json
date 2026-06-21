@@ -1,0 +1,799 @@
+{
+  "report_version": 1,
+  "status": "blocked_before_soak",
+  "invalidated": false,
+  "throughput_valid": true,
+  "attempted_lane_count": 2,
+  "successful_lane_count": 2,
+  "completed_lane_count": 2,
+  "partial_lane_count": 0,
+  "failure_count": 0,
+  "failures": [],
+  "generated_at": "2026-06-20T23:19:35.333063+00:00",
+  "metric_contract": "combined_hot_path_videos_per_hour_excludes_whisper_and_parent_chrome_reap_includes_worker_cleanup",
+  "trace_root": "P:\\packages\\yt-is\\.logs\\worker_count_trials",
+  "cohort_json": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\cohort.json",
+  "source_url": "https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+  "policy": "notebooklm_route_plus_fallback_30s_1w",
+  "limit": 400,
+  "batch_size": 200,
+  "reusable_pipeline_mode": "serial",
+  "run_environment_label": "home_300mb",
+  "worker_shape_signature": "3+3",
+  "lane_worker_counts": {
+    "a_hominidae_pro": 3,
+    "troup_hominidae_free": 3
+  },
+  "lanes": [
+    {
+      "lane": "a_hominidae_pro",
+      "account_class": "pro",
+      "workers": 3,
+      "notebooklm_profile_prefix": "ytis-pro-worker",
+      "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-pro",
+      "worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\a_hominidae_pro\\worker_states",
+      "notebook_prefix": "benchmark-shard-a-hominidae-pro",
+      "notebooklm_profiles": [
+        "ytis-pro-worker-01",
+        "ytis-pro-worker-02",
+        "ytis-pro-worker-03"
+      ],
+      "expected_email": "",
+      "browser_profile_directory": "Profile",
+      "coordinator_notebooklm_profile": null,
+      "startup_delay_s": 0.0,
+      "env": {
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "true",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160.0",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190.0",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S": "180.0",
+        "YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S": "60.0"
+      },
+      "configured_worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\a_hominidae_pro\\worker_states"
+    },
+    {
+      "lane": "troup_hominidae_free",
+      "account_class": "free",
+      "workers": 3,
+      "notebooklm_profile_prefix": "ytis-free1-worker",
+      "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-free",
+      "worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\troup_hominidae_free\\worker_states",
+      "notebook_prefix": "benchmark-shard-troup-hominidae-free",
+      "notebooklm_profiles": [
+        "ytis-free1-worker-01",
+        "ytis-free1-worker-02",
+        "ytis-free1-worker-03"
+      ],
+      "expected_email": "",
+      "browser_profile_directory": "Profile 1",
+      "coordinator_notebooklm_profile": null,
+      "startup_delay_s": 0.0,
+      "env": {
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ENABLED": "true",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_SOFT_THRESHOLD_S": "160.0",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_HARD_THRESHOLD_S": "190.0",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_MIN_WINDOW_SIZE": "5",
+        "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S": "180.0",
+        "YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S": "60.0"
+      },
+      "configured_worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\troup_hominidae_free\\worker_states"
+    }
+  ],
+  "runs": [
+    {
+      "status": "ok",
+      "lane": "a_hominidae_pro",
+      "account_class": "pro",
+      "workers": 3,
+      "notebooklm_profile_prefix": "ytis-pro-worker",
+      "notebooklm_profiles": [
+        "ytis-pro-worker-01",
+        "ytis-pro-worker-02",
+        "ytis-pro-worker-03"
+      ],
+      "coordinator_notebooklm_profile": "ytis-pro-worker-01",
+      "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-pro",
+      "browser_profile_directory": "Profile",
+      "configured_worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\a_hominidae_pro\\worker_states",
+      "worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\a_hominidae_pro\\worker_states",
+      "notebook_prefix": "benchmark-shard-a-hominidae-pro",
+      "startup_delay_s": 0.0,
+      "expected_processed_count_total": 400,
+      "partial_reason": null,
+      "started_at": 128199.988,
+      "finished_at": 129332.222,
+      "wall_elapsed_s": 1132.234,
+      "throughput_started_at": 128199.988,
+      "throughput_finished_at": 129332.222,
+      "throughput_wall_elapsed_s": 1132.234,
+      "returncode": 0,
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-fallback-crossover-benchmark",
+        "--trace-root",
+        "P:\\packages\\yt-is\\.logs\\worker_count_trials",
+        "--cohort-json",
+        "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\cohort.a_hominidae_pro.json",
+        "--output-root",
+        "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\a_hominidae_pro",
+        "--source-url",
+        "https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        "--workers",
+        "3",
+        "--limit",
+        "400",
+        "--batch-size",
+        "200",
+        "--policy",
+        "notebooklm_route_plus_fallback_30s_1w",
+        "--cohort-shape",
+        "captioned",
+        "--worker-state-root",
+        "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\a_hominidae_pro\\worker_states",
+        "--sample-label",
+        "shard_a_hominidae_pro"
+      ],
+      "output_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\a_hominidae_pro",
+      "stdout_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\a_hominidae_pro\\lane.stdout.txt",
+      "stderr_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\a_hominidae_pro\\lane.stderr.txt",
+      "lane_process_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\a_hominidae_pro\\lane_process.json",
+      "benchmark_summary_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\a_hominidae_pro\\benchmark_summary.json",
+      "aggregate": {
+        "row_count": 2,
+        "success_count_total": 261,
+        "fail_count_total": 139,
+        "skip_count_total": 0,
+        "processed_count_total": 400,
+        "hot_path_success_count_total": 261,
+        "transcript_fallback_success_count_total": 0,
+        "elapsed_s_total": 1023.1289999999999,
+        "process_elapsed_s_total": 1088.5,
+        "startup_prepare_total_elapsed_s_total": 123.724,
+        "setup_elapsed_s_total": 22.521,
+        "add_elapsed_s_total": 398.31,
+        "extract_elapsed_s_total": 2087.5730000000003,
+        "content_fetch_command_elapsed_s_total": 10583.793000000001,
+        "content_fetch_command_elapsed_s_max": 192.001,
+        "content_fetch_command_elapsed_s_count": 556,
+        "readiness_elapsed_s_total": 4.9,
+        "cleanup_elapsed_s_total": 65.37100000000001,
+        "worker_idle_wait_s_total": 619.919,
+        "source_ready_age_s_total": 41651.172,
+        "source_ready_age_s_max": 305.297,
+        "source_list_probe_elapsed_s_total": 462.408,
+        "source_list_probe_elapsed_s_max": 180.0,
+        "source_list_probe_count": 7,
+        "source_id_validated_after_not_found_true_count": 0,
+        "source_id_validated_after_not_found_false_count": 0,
+        "source_id_validated_after_not_found_unknown_count": 0,
+        "content_fetch_retry_sleep_elapsed_s_total": 364.0,
+        "content_fetch_retry_queue_sleep_elapsed_s_total": 60.0,
+        "retry_queue_drain_skipped_count_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_max": 0.0,
+        "source_content_readiness_probe_count": 0,
+        "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
+        "shared_retry_deferred_count_total": 0.0,
+        "shared_retry_recovered_count_total": 0.0,
+        "shared_retry_final_failed_count_total": 0.0,
+        "shared_retry_processed_count_total": 0.0,
+        "youtube_ytdlp_elapsed_s_total": 206.55900000000003,
+        "youtube_ytdlp_elapsed_s_max": 2.966,
+        "youtube_ytdlp_elapsed_s_count_total": 100,
+        "youtube_page_elapsed_s_total": 0.0,
+        "youtube_page_elapsed_s_max": 0.0,
+        "youtube_page_elapsed_s_count_total": 0,
+        "content_fetch_status_counts_total": {
+          "ready": 261,
+          "source_age_cliff": 138,
+          "command_failed": 30
+        },
+        "retry_queue_drain_skipped_reason_counts_total": {},
+        "videos_per_hour": 918.36,
+        "hot_path_videos_per_hour": 918.36,
+        "transcript_fallback_videos_per_hour": 0.0,
+        "processed_per_hour": 1407.45,
+        "source_ready_age_s_avg": 97.089,
+        "youtube_ytdlp_elapsed_s_avg": 2.066,
+        "youtube_page_elapsed_s_avg": 0.0
+      },
+      "row_count": 2,
+      "success_count_total": 261,
+      "fail_count_total": 139,
+      "skip_count_total": 0,
+      "processed_count_total": 400,
+      "hot_path_success_count_total": 261,
+      "transcript_fallback_success_count_total": 0,
+      "elapsed_s_total": 1023.1289999999999,
+      "process_elapsed_s_total": 1088.5,
+      "startup_prepare_total_elapsed_s_total": 123.724,
+      "setup_elapsed_s_total": 22.521,
+      "add_elapsed_s_total": 398.31,
+      "extract_elapsed_s_total": 2087.5730000000003,
+      "content_fetch_command_elapsed_s_total": 10583.793000000001,
+      "content_fetch_command_elapsed_s_max": 192.001,
+      "content_fetch_command_elapsed_s_count": 556,
+      "readiness_elapsed_s_total": 4.9,
+      "cleanup_elapsed_s_total": 65.37100000000001,
+      "worker_idle_wait_s_total": 619.919,
+      "source_ready_age_s_total": 41651.172,
+      "source_ready_age_s_max": 305.297,
+      "source_list_probe_elapsed_s_total": 462.408,
+      "source_list_probe_elapsed_s_max": 180.0,
+      "source_list_probe_count": 7,
+      "source_id_validated_after_not_found_true_count": 0,
+      "source_id_validated_after_not_found_false_count": 0,
+      "source_id_validated_after_not_found_unknown_count": 0,
+      "content_fetch_retry_sleep_elapsed_s_total": 364.0,
+      "content_fetch_retry_queue_sleep_elapsed_s_total": 60.0,
+      "retry_queue_drain_skipped_count_total": 0.0,
+      "source_content_readiness_probe_elapsed_s_total": 0.0,
+      "source_content_readiness_probe_elapsed_s_max": 0.0,
+      "source_content_readiness_probe_count": 0,
+      "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
+      "shared_retry_deferred_count_total": 0.0,
+      "shared_retry_recovered_count_total": 0.0,
+      "shared_retry_final_failed_count_total": 0.0,
+      "shared_retry_processed_count_total": 0.0,
+      "youtube_ytdlp_elapsed_s_total": 206.55900000000003,
+      "youtube_ytdlp_elapsed_s_max": 2.966,
+      "youtube_ytdlp_elapsed_s_count_total": 100,
+      "youtube_page_elapsed_s_total": 0.0,
+      "youtube_page_elapsed_s_max": 0.0,
+      "youtube_page_elapsed_s_count_total": 0,
+      "content_fetch_status_counts_total": {
+        "ready": 261,
+        "source_age_cliff": 138,
+        "command_failed": 30
+      },
+      "retry_queue_drain_skipped_reason_counts_total": {},
+      "videos_per_hour": 918.36,
+      "hot_path_videos_per_hour": 918.36,
+      "transcript_fallback_videos_per_hour": 0.0,
+      "processed_per_hour": 1407.45,
+      "source_ready_age_s_avg": 97.089,
+      "youtube_ytdlp_elapsed_s_avg": 2.066,
+      "youtube_page_elapsed_s_avg": 0.0
+    },
+    {
+      "status": "ok",
+      "lane": "troup_hominidae_free",
+      "account_class": "free",
+      "workers": 3,
+      "notebooklm_profile_prefix": "ytis-free1-worker",
+      "notebooklm_profiles": [
+        "ytis-free1-worker-01",
+        "ytis-free1-worker-02",
+        "ytis-free1-worker-03"
+      ],
+      "coordinator_notebooklm_profile": "ytis-free1-worker-01",
+      "browser_profile_root": "P:\\.data\\yt-is\\browser\\notebooklm-free",
+      "browser_profile_directory": "Profile 1",
+      "configured_worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\troup_hominidae_free\\worker_states",
+      "worker_state_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\troup_hominidae_free\\worker_states",
+      "notebook_prefix": "benchmark-shard-troup-hominidae-free",
+      "startup_delay_s": 0.0,
+      "expected_processed_count_total": 400,
+      "partial_reason": null,
+      "started_at": 128199.989,
+      "finished_at": 129232.267,
+      "wall_elapsed_s": 1032.278,
+      "throughput_started_at": 128199.989,
+      "throughput_finished_at": 129232.267,
+      "throughput_wall_elapsed_s": 1032.278,
+      "returncode": 0,
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-fallback-crossover-benchmark",
+        "--trace-root",
+        "P:\\packages\\yt-is\\.logs\\worker_count_trials",
+        "--cohort-json",
+        "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\cohort.troup_hominidae_free.json",
+        "--output-root",
+        "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\troup_hominidae_free",
+        "--source-url",
+        "https://www.youtube.com/channel/UCYTISFALLBACKBMK",
+        "--workers",
+        "3",
+        "--limit",
+        "400",
+        "--batch-size",
+        "200",
+        "--policy",
+        "notebooklm_route_plus_fallback_30s_1w",
+        "--cohort-shape",
+        "captioned",
+        "--worker-state-root",
+        "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\troup_hominidae_free\\worker_states",
+        "--sample-label",
+        "shard_troup_hominidae_free"
+      ],
+      "output_root": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\troup_hominidae_free",
+      "stdout_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\troup_hominidae_free\\lane.stdout.txt",
+      "stderr_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\troup_hominidae_free\\lane.stderr.txt",
+      "lane_process_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\troup_hominidae_free\\lane_process.json",
+      "benchmark_summary_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\troup_hominidae_free\\benchmark_summary.json",
+      "aggregate": {
+        "row_count": 2,
+        "success_count_total": 197,
+        "fail_count_total": 203,
+        "skip_count_total": 0,
+        "processed_count_total": 400,
+        "hot_path_success_count_total": 197,
+        "transcript_fallback_success_count_total": 0,
+        "elapsed_s_total": 942.168,
+        "process_elapsed_s_total": 1019.2429999999999,
+        "startup_prepare_total_elapsed_s_total": 65.411,
+        "setup_elapsed_s_total": 19.264000000000003,
+        "add_elapsed_s_total": 600.22,
+        "extract_elapsed_s_total": 1995.7379999999998,
+        "content_fetch_command_elapsed_s_total": 8797.439,
+        "content_fetch_command_elapsed_s_max": 126.001,
+        "content_fetch_command_elapsed_s_count": 475,
+        "readiness_elapsed_s_total": 0.0,
+        "cleanup_elapsed_s_total": 77.075,
+        "worker_idle_wait_s_total": 341.948,
+        "source_ready_age_s_total": 43903.647,
+        "source_ready_age_s_max": 291.567,
+        "source_list_probe_elapsed_s_total": 429.164,
+        "source_list_probe_elapsed_s_max": 120.0,
+        "source_list_probe_count": 6,
+        "source_id_validated_after_not_found_true_count": 0,
+        "source_id_validated_after_not_found_false_count": 0,
+        "source_id_validated_after_not_found_unknown_count": 0,
+        "content_fetch_retry_sleep_elapsed_s_total": 394.0,
+        "content_fetch_retry_queue_sleep_elapsed_s_total": 120.0,
+        "retry_queue_drain_skipped_count_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_total": 0.0,
+        "source_content_readiness_probe_elapsed_s_max": 0.0,
+        "source_content_readiness_probe_count": 0,
+        "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
+        "shared_retry_deferred_count_total": 0.0,
+        "shared_retry_recovered_count_total": 0.0,
+        "shared_retry_final_failed_count_total": 0.0,
+        "shared_retry_processed_count_total": 0.0,
+        "youtube_ytdlp_elapsed_s_total": 188.817,
+        "youtube_ytdlp_elapsed_s_max": 2.904,
+        "youtube_ytdlp_elapsed_s_count_total": 86,
+        "youtube_page_elapsed_s_total": 0.0,
+        "youtube_page_elapsed_s_max": 0.0,
+        "youtube_page_elapsed_s_count_total": 0,
+        "content_fetch_status_counts_total": {
+          "ready": 197,
+          "source_age_cliff": 202,
+          "command_failed": 14
+        },
+        "retry_queue_drain_skipped_reason_counts_total": {},
+        "videos_per_hour": 752.73,
+        "hot_path_videos_per_hour": 752.73,
+        "transcript_fallback_videos_per_hour": 0.0,
+        "processed_per_hour": 1528.39,
+        "source_ready_age_s_avg": 106.304,
+        "youtube_ytdlp_elapsed_s_avg": 2.196,
+        "youtube_page_elapsed_s_avg": 0.0
+      },
+      "row_count": 2,
+      "success_count_total": 197,
+      "fail_count_total": 203,
+      "skip_count_total": 0,
+      "processed_count_total": 400,
+      "hot_path_success_count_total": 197,
+      "transcript_fallback_success_count_total": 0,
+      "elapsed_s_total": 942.168,
+      "process_elapsed_s_total": 1019.2429999999999,
+      "startup_prepare_total_elapsed_s_total": 65.411,
+      "setup_elapsed_s_total": 19.264000000000003,
+      "add_elapsed_s_total": 600.22,
+      "extract_elapsed_s_total": 1995.7379999999998,
+      "content_fetch_command_elapsed_s_total": 8797.439,
+      "content_fetch_command_elapsed_s_max": 126.001,
+      "content_fetch_command_elapsed_s_count": 475,
+      "readiness_elapsed_s_total": 0.0,
+      "cleanup_elapsed_s_total": 77.075,
+      "worker_idle_wait_s_total": 341.948,
+      "source_ready_age_s_total": 43903.647,
+      "source_ready_age_s_max": 291.567,
+      "source_list_probe_elapsed_s_total": 429.164,
+      "source_list_probe_elapsed_s_max": 120.0,
+      "source_list_probe_count": 6,
+      "source_id_validated_after_not_found_true_count": 0,
+      "source_id_validated_after_not_found_false_count": 0,
+      "source_id_validated_after_not_found_unknown_count": 0,
+      "content_fetch_retry_sleep_elapsed_s_total": 394.0,
+      "content_fetch_retry_queue_sleep_elapsed_s_total": 120.0,
+      "retry_queue_drain_skipped_count_total": 0.0,
+      "source_content_readiness_probe_elapsed_s_total": 0.0,
+      "source_content_readiness_probe_elapsed_s_max": 0.0,
+      "source_content_readiness_probe_count": 0,
+      "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
+      "shared_retry_deferred_count_total": 0.0,
+      "shared_retry_recovered_count_total": 0.0,
+      "shared_retry_final_failed_count_total": 0.0,
+      "shared_retry_processed_count_total": 0.0,
+      "youtube_ytdlp_elapsed_s_total": 188.817,
+      "youtube_ytdlp_elapsed_s_max": 2.904,
+      "youtube_ytdlp_elapsed_s_count_total": 86,
+      "youtube_page_elapsed_s_total": 0.0,
+      "youtube_page_elapsed_s_max": 0.0,
+      "youtube_page_elapsed_s_count_total": 0,
+      "content_fetch_status_counts_total": {
+        "ready": 197,
+        "source_age_cliff": 202,
+        "command_failed": 14
+      },
+      "retry_queue_drain_skipped_reason_counts_total": {},
+      "videos_per_hour": 752.73,
+      "hot_path_videos_per_hour": 752.73,
+      "transcript_fallback_videos_per_hour": 0.0,
+      "processed_per_hour": 1528.39,
+      "source_ready_age_s_avg": 106.304,
+      "youtube_ytdlp_elapsed_s_avg": 2.196,
+      "youtube_page_elapsed_s_avg": 0.0
+    }
+  ],
+  "combined": {
+    "lane_count": 2,
+    "started_at": 128199.988,
+    "finished_at": 129332.222,
+    "wall_elapsed_s": 1132.234,
+    "throughput_elapsed_s": 1132.234,
+    "hot_path_success_count_total": 458,
+    "transcript_fallback_success_count_total": 0,
+    "fail_count_total": 342,
+    "processed_count_total": 800,
+    "row_count": 4,
+    "success_count_total": 458,
+    "skip_count_total": 0,
+    "elapsed_s_total": 1965.297,
+    "process_elapsed_s_total": 2107.743,
+    "startup_prepare_total_elapsed_s_total": 189.135,
+    "setup_elapsed_s_total": 41.785000000000004,
+    "add_elapsed_s_total": 998.53,
+    "extract_elapsed_s_total": 4083.311,
+    "content_fetch_command_elapsed_s_total": 19381.232000000004,
+    "content_fetch_command_elapsed_s_max": 192.001,
+    "content_fetch_command_elapsed_s_count": 1031,
+    "readiness_elapsed_s_total": 4.9,
+    "cleanup_elapsed_s_total": 142.44600000000003,
+    "worker_idle_wait_s_total": 961.867,
+    "source_ready_age_s_total": 85554.81899999999,
+    "source_ready_age_s_max": 305.297,
+    "source_list_probe_elapsed_s_total": 891.572,
+    "source_list_probe_elapsed_s_max": 180.0,
+    "source_list_probe_count": 13,
+    "source_id_validated_after_not_found_true_count": 0,
+    "source_id_validated_after_not_found_false_count": 0,
+    "source_id_validated_after_not_found_unknown_count": 0,
+    "content_fetch_retry_sleep_elapsed_s_total": 758.0,
+    "content_fetch_retry_queue_sleep_elapsed_s_total": 180.0,
+    "retry_queue_drain_skipped_count_total": 0.0,
+    "source_content_readiness_probe_elapsed_s_total": 0.0,
+    "source_content_readiness_probe_elapsed_s_max": 0.0,
+    "source_content_readiness_probe_count": 0,
+    "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
+    "shared_retry_deferred_count_total": 0.0,
+    "shared_retry_recovered_count_total": 0.0,
+    "shared_retry_final_failed_count_total": 0.0,
+    "shared_retry_processed_count_total": 0.0,
+    "youtube_ytdlp_elapsed_s_total": 395.37600000000003,
+    "youtube_ytdlp_elapsed_s_max": 2.966,
+    "youtube_ytdlp_elapsed_s_count_total": 186,
+    "youtube_page_elapsed_s_total": 0.0,
+    "youtube_page_elapsed_s_max": 0.0,
+    "youtube_page_elapsed_s_count_total": 0,
+    "content_fetch_status_counts_total": {
+      "ready": 458,
+      "source_age_cliff": 340,
+      "command_failed": 44
+    },
+    "retry_queue_drain_skipped_reason_counts_total": {},
+    "source_ready_age_s_avg": 101.609,
+    "youtube_ytdlp_elapsed_s_avg": 2.126,
+    "youtube_page_elapsed_s_avg": 0.0,
+    "aggregate": {
+      "row_count": 4,
+      "success_count_total": 458,
+      "fail_count_total": 342,
+      "skip_count_total": 0,
+      "processed_count_total": 800,
+      "hot_path_success_count_total": 458,
+      "transcript_fallback_success_count_total": 0,
+      "elapsed_s_total": 1965.297,
+      "process_elapsed_s_total": 2107.743,
+      "startup_prepare_total_elapsed_s_total": 189.135,
+      "setup_elapsed_s_total": 41.785000000000004,
+      "add_elapsed_s_total": 998.53,
+      "extract_elapsed_s_total": 4083.311,
+      "content_fetch_command_elapsed_s_total": 19381.232000000004,
+      "content_fetch_command_elapsed_s_max": 192.001,
+      "content_fetch_command_elapsed_s_count": 1031,
+      "readiness_elapsed_s_total": 4.9,
+      "cleanup_elapsed_s_total": 142.44600000000003,
+      "worker_idle_wait_s_total": 961.867,
+      "source_ready_age_s_total": 85554.81899999999,
+      "source_ready_age_s_max": 305.297,
+      "source_list_probe_elapsed_s_total": 891.572,
+      "source_list_probe_elapsed_s_max": 180.0,
+      "source_list_probe_count": 13,
+      "source_id_validated_after_not_found_true_count": 0,
+      "source_id_validated_after_not_found_false_count": 0,
+      "source_id_validated_after_not_found_unknown_count": 0,
+      "content_fetch_retry_sleep_elapsed_s_total": 758.0,
+      "content_fetch_retry_queue_sleep_elapsed_s_total": 180.0,
+      "retry_queue_drain_skipped_count_total": 0.0,
+      "source_content_readiness_probe_elapsed_s_total": 0.0,
+      "source_content_readiness_probe_elapsed_s_max": 0.0,
+      "source_content_readiness_probe_count": 0,
+      "source_content_readiness_probe_sleep_elapsed_s_total": 0.0,
+      "shared_retry_deferred_count_total": 0.0,
+      "shared_retry_recovered_count_total": 0.0,
+      "shared_retry_final_failed_count_total": 0.0,
+      "shared_retry_processed_count_total": 0.0,
+      "youtube_ytdlp_elapsed_s_total": 395.37600000000003,
+      "youtube_ytdlp_elapsed_s_max": 2.966,
+      "youtube_ytdlp_elapsed_s_count_total": 186,
+      "youtube_page_elapsed_s_total": 0.0,
+      "youtube_page_elapsed_s_max": 0.0,
+      "youtube_page_elapsed_s_count_total": 0,
+      "content_fetch_status_counts_total": {
+        "ready": 458,
+        "source_age_cliff": 340,
+        "command_failed": 44
+      },
+      "retry_queue_drain_skipped_reason_counts_total": {},
+      "source_ready_age_s_avg": 101.609,
+      "youtube_ytdlp_elapsed_s_avg": 2.126,
+      "youtube_page_elapsed_s_avg": 0.0
+    },
+    "hot_path_videos_per_hour": 1456.24,
+    "transcript_fallback_videos_per_hour": 0.0,
+    "processed_per_hour": 2543.64
+  },
+  "report_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\sharded_lane_series_summary.json",
+  "sequence_stop_reason": "smoke_promotion_gate_failed",
+  "sequence_promotion_gate": {
+    "ok": false,
+    "reasons": [
+      "source_age_cliff=340 exceeds max 0",
+      "fail_count_total=342 exceeds max 0",
+      "hot_path_videos_per_hour=1456.24 below min 3000.0"
+    ],
+    "max_source_age_cliff": 0,
+    "max_fail_count": 0,
+    "min_hot_path_vph": 3000.0,
+    "observed": {
+      "source_age_cliff": 340,
+      "fail_count_total": 342,
+      "hot_path_videos_per_hour": 1456.24
+    }
+  },
+  "sequence_smoke_report_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\smoke\\sharded_lane_series_summary.json",
+  "pre_run_browser_health": {
+    "status": "degraded",
+    "settle_window_s": 30.0,
+    "sample_interval_s": 5.0,
+    "sample_count": 8,
+    "elapsed_s": 30.039,
+    "allowed_browser_roots": [
+      "P:\\.data\\yt-is\\browser\\notebooklm-free",
+      "P:\\.data\\yt-is\\browser\\notebooklm-pro"
+    ],
+    "initial_default_profile_detected_count": 0,
+    "initial_default_profile_detected_pids": [],
+    "initial_default_profile_reaped_count": 0,
+    "initial_default_profile_reaped_pids": [],
+    "default_profile_detected_count": 0,
+    "default_profile_detected_pids": [],
+    "default_profile_reaped_count": 0,
+    "default_profile_reaped_pids": [],
+    "default_profile_remaining_count": 0,
+    "default_profile_remaining_pids": [],
+    "unexpected_process_count": 48,
+    "unexpected_processes": [
+      {
+        "pid": 812,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1287 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=110054316424 --metrics-shmem-handle=24680,i,11678765812714800895,3110149658223300835,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710192284731157 --mojo-platform-channel-handle=18984 /prefetch:1"
+      },
+      {
+        "pid": 3620,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2776 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=127777114599 --metrics-shmem-handle=22196,i,2881087660831423753,13163118359148937328,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711587540044318 --mojo-platform-channel-handle=23568 /prefetch:9"
+      },
+      {
+        "pid": 6996,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=73 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60531239096 --metrics-shmem-handle=11416,i,4044452421520260249,18013836578168889348,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709054715926471 --mojo-platform-channel-handle=11408 /prefetch:1"
+      },
+      {
+        "pid": 10108,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --no-pre-read-main-dll --metrics-shmem-handle=2008,i,14035873834610117019,11015718542404705441,524288 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708989122997041 --mojo-platform-channel-handle=2192 /prefetch:11"
+      },
+      {
+        "pid": 11980,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      },
+      {
+        "pid": 12000,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=crashpad-handler --user-data-dir=C:\\Users\\brsth\\AppData\\Local\\Google\\Chrome\\User Data /prefetch:4 --monitor-self-annotation=ptype=crashpad-handler --database=C:\\Users\\brsth\\AppData\\Local\\Google\\Chrome\\User Data\\Crashpad --metrics-dir=C:\\Users\\brsth\\AppData\\Local\\Google\\Chrome\\User Data --url=https://clients2.google.com/cr/report --annotation=channel= --annotation=plat=Win64 --annotation=prod=Chrome --annotation=ver=149.0.7827.115 --initial-client-data=0x120,0x124,0x128,0xfc,0x12c,0x7ffc1717a9e0,0x7ffc1717a9ec,0x7ffc1717a9f8"
+      },
+      {
+        "pid": 12368,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2779 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=127901957973 --metrics-shmem-handle=8644,i,5116006929868373788,3474247640214559449,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711590351169865 --mojo-platform-channel-handle=29484 /prefetch:1"
+      },
+      {
+        "pid": 13016,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2780 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=127995973973 --metrics-shmem-handle=29344,i,18101531562480493671,17678211666379873651,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711591288211714 --mojo-platform-channel-handle=20020 /prefetch:1"
+      },
+      {
+        "pid": 14528,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1263 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=110008130304 --metrics-shmem-handle=31320,i,1016398883060080298,7617507007965095847,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710169795726781 --mojo-platform-channel-handle=24172 /prefetch:1"
+      },
+      {
+        "pid": 14576,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=8 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60523111517 --metrics-shmem-handle=5140,i,16640126229025749523,5691116626566677170,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708993808206286 --mojo-platform-channel-handle=5156 /prefetch:9"
+      },
+      {
+        "pid": 15464,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=106 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60548323092 --metrics-shmem-handle=14696,i,18446268299273016910,3108293337808540249,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709085638307488 --mojo-platform-channel-handle=14956 /prefetch:1"
+      },
+      {
+        "pid": 17016,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=68 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60535005227 --metrics-shmem-handle=11544,i,15253916014031071498,12450318337326141514,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709050030717226 --mojo-platform-channel-handle=11700 /prefetch:1"
+      },
+      {
+        "pid": 18240,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=9 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60523114733 --metrics-shmem-handle=5300,i,7018580681900552485,16784217808585169684,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708994745248135 --mojo-platform-channel-handle=5296 /prefetch:9"
+      },
+      {
+        "pid": 18396,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=94 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60526492293 --metrics-shmem-handle=10340,i,16493867957345226810,182347121931669551,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709074393805300 --mojo-platform-channel-handle=10348 /prefetch:1"
+      },
+      {
+        "pid": 19472,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=77 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60527080785 --metrics-shmem-handle=10076,i,7115430403851015722,377161652793255854,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709058464093867 --mojo-platform-channel-handle=10084 /prefetch:1"
+      },
+      {
+        "pid": 19504,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1680 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=119221189727 --metrics-shmem-handle=21508,i,9413181222794819977,3260621220495214437,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710560542177814 --mojo-platform-channel-handle=15216 /prefetch:1"
+      },
+      {
+        "pid": 20164,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=80 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60524188729 --metrics-shmem-handle=7808,i,6337259438592575615,16389254395406622676,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709061275219414 --mojo-platform-channel-handle=8020 /prefetch:1"
+      },
+      {
+        "pid": 25160,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=98 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60537853358 --metrics-shmem-handle=12888,i,428612861893991365,5811046922077084589,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709078141972696 --mojo-platform-channel-handle=12944 /prefetch:1"
+      },
+      {
+        "pid": 27844,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=101 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60543705673 --metrics-shmem-handle=13536,i,15910379983522541949,6690610677119982688,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709080953098243 --mojo-platform-channel-handle=8888 /prefetch:1"
+      },
+      {
+        "pid": 28328,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --top-chrome-webui --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=16 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60523192644 --metrics-shmem-handle=6740,i,7058803505652946177,5219966364233650481,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709001304541078 --mojo-platform-channel-handle=5340 /prefetch:1"
+      },
+      {
+        "pid": 28376,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=577 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=64166352146 --metrics-shmem-handle=22276,i,5940802456368612086,16409224095295273688,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709526985018367 --mojo-platform-channel-handle=8568 /prefetch:1"
+      },
+      {
+        "pid": 28608,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=72 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60530273427 --metrics-shmem-handle=9540,i,400582607824299278,10854944011273895657,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709053778884622 --mojo-platform-channel-handle=9896 /prefetch:1"
+      },
+      {
+        "pid": 28868,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=96 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60530465837 --metrics-shmem-handle=10832,i,17762713916853663918,13617952731882414791,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709076267888998 --mojo-platform-channel-handle=10720 /prefetch:1"
+      },
+      {
+        "pid": 28908,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=75 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60529256710 --metrics-shmem-handle=11000,i,321579028861353666,13977030515409817907,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709056590010169 --mojo-platform-channel-handle=10820 /prefetch:1"
+      },
+      {
+        "pid": 28920,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1237 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=109887997901 --metrics-shmem-handle=17412,i,5927905546515244371,9219987170068016601,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710145432638707 --mojo-platform-channel-handle=14408 /prefetch:9"
+      },
+      {
+        "pid": 30992,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=gpu-process --no-pre-read-main-dll --gpu-preferences=SAAAAAAAAADgAAAEAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --metrics-shmem-handle=1776,i,5918931145220321831,410786650112949268,262144 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708988185955192 --mojo-platform-channel-handle=1884 /prefetch:2"
+      },
+      {
+        "pid": 31216,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=105 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60548253141 --metrics-shmem-handle=14860,i,10030454038762254659,9660486715652891120,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709084701265639 --mojo-platform-channel-handle=14808 /prefetch:1"
+      },
+      {
+        "pid": 32448,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=71 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60534304356 --metrics-shmem-handle=11916,i,16548580384439425750,1262014544871307554,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709052841842773 --mojo-platform-channel-handle=11964 /prefetch:1"
+      },
+      {
+        "pid": 33064,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=69 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60534884078 --metrics-shmem-handle=12092,i,3104549744242730527,10304626738860785848,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709050967759075 --mojo-platform-channel-handle=12040 /prefetch:1"
+      },
+      {
+        "pid": 34356,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2620 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=122794150924 --metrics-shmem-handle=18484,i,5198207522718457896,9732767139290656801,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711441361515874 --mojo-platform-channel-handle=18644 /prefetch:1"
+      },
+      {
+        "pid": 35052,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=92 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60526098821 --metrics-shmem-handle=8848,i,742033556723858208,9351424923313224698,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709072519721602 --mojo-platform-channel-handle=9648 /prefetch:1"
+      },
+      {
+        "pid": 35880,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=14 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=63562257632 --metrics-shmem-handle=2164,i,3027853361494800704,15370474051062041700,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708999430457380 --mojo-platform-channel-handle=20100 /prefetch:9"
+      },
+      {
+        "pid": 36416,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=70 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60532309419 --metrics-shmem-handle=11516,i,12228261649656333448,17285044173199951784,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709051904800924 --mojo-platform-channel-handle=11584 /prefetch:1"
+      },
+      {
+        "pid": 36964,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2781 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=127996503601 --metrics-shmem-handle=25376,i,6341291863524760736,4139428251290205876,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711592225253563 --mojo-platform-channel-handle=16152 /prefetch:1"
+      },
+      {
+        "pid": 38480,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-US --service-sandbox-type=service --no-pre-read-main-dll --metrics-shmem-handle=2292,i,13244628933426578015,199127076886591315,524288 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708990060038890 --mojo-platform-channel-handle=2272 /prefetch:13"
+      },
+      {
+        "pid": 43152,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=utility --utility-sub-type=audio.mojom.AudioService --lang=en-US --service-sandbox-type=audio --video-capture-use-gpu-memory-buffer --no-pre-read-main-dll --metrics-shmem-handle=14432,i,15949301251853429148,17537227314956707817,524288 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709086575349337 --mojo-platform-channel-handle=14656 /prefetch:12"
+      },
+      {
+        "pid": 43276,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=12 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60523119122 --metrics-shmem-handle=5464,i,18157203062908222309,12277363760516352002,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708997556373682 --mojo-platform-channel-handle=5500 /prefetch:9"
+      },
+      {
+        "pid": 44168,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1327 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=110223354165 --metrics-shmem-handle=11728,i,18196091824329756819,8953903671287387033,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710229766405117 --mojo-platform-channel-handle=26456 /prefetch:1"
+      },
+      {
+        "pid": 44348,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=10 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60523116224 --metrics-shmem-handle=5360,i,12088553302604945835,13847211719996711435,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708995682289984 --mojo-platform-channel-handle=5380 /prefetch:9"
+      },
+      {
+        "pid": 44440,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=74 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60529262314 --metrics-shmem-handle=11132,i,18144514584455867680,19299878517424041,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709055652968320 --mojo-platform-channel-handle=9988 /prefetch:1"
+      },
+      {
+        "pid": 45796,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1324 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=110217590752 --metrics-shmem-handle=20760,i,12061212759595110187,7401273606997573085,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710226955279570 --mojo-platform-channel-handle=13432 /prefetch:1"
+      },
+      {
+        "pid": 46176,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=utility --utility-sub-type=video_capture.mojom.VideoCaptureService --lang=en-US --service-sandbox-type=none --video-capture-use-gpu-memory-buffer --no-pre-read-main-dll --metrics-shmem-handle=16424,i,8014739267322291318,17750853016470590600,524288 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709185901785331 --mojo-platform-channel-handle=6268 /prefetch:14"
+      },
+      {
+        "pid": 47996,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1289 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=110059194840 --metrics-shmem-handle=25268,i,5176146648986300230,9166523796190386798,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710194158814855 --mojo-platform-channel-handle=14084 /prefetch:1"
+      },
+      {
+        "pid": 48364,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2474 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=121824925360 --metrics-shmem-handle=16492,i,262670577836203520,12917240426638460534,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711304553405920 --mojo-platform-channel-handle=29180 /prefetch:1"
+      },
+      {
+        "pid": 48516,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=31 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=121827177586 --metrics-shmem-handle=24816,i,8636979814535517600,7343662008015810738,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709015360168813 --mojo-platform-channel-handle=31428 /prefetch:1"
+      },
+      {
+        "pid": 51924,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=527 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=64013016590 --metrics-shmem-handle=16920,i,11310785627451233539,10705360175384935185,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709480132925917 --mojo-platform-channel-handle=16904 /prefetch:1"
+      },
+      {
+        "pid": 58228,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2475 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=121828773501 --metrics-shmem-handle=21724,i,7389715921984217970,17338907660784319181,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711305490447769 --mojo-platform-channel-handle=10888 /prefetch:1"
+      },
+      {
+        "pid": 62184,
+        "cmdline": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2398 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=121328905309 --metrics-shmem-handle=14396,i,13396173829728334389,8362270462548830462,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711233338225396 --mojo-platform-channel-handle=8624 /prefetch:1"
+      }
+    ],
+    "unexpected_process_rss_bytes_total": 7662624768,
+    "unexpected_process_count_budget": 24,
+    "unexpected_process_rss_bytes_budget": 6442450944,
+    "unexpected_process_budget_exceeded": true,
+    "chrome_process_count_max": 70,
+    "chrome_rss_bytes_max": 9536905216,
+    "issues": [],
+    "warnings": [
+      "unexpected Chrome processes exceeded soft budget during browser health settle: 812:C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=1287 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=110054316424 --metrics-shmem-handle=24680,i,11678765812714800895,3110149658223300835,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190710192284731157 --mojo-platform-channel-handle=18984 /prefetch:1, 3620:C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --extension-process --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=2776 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=127777114599 --metrics-shmem-handle=22196,i,2881087660831423753,13163118359148937328,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190711587540044318 --mojo-platform-channel-handle=23568 /prefetch:9, 6996:C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=renderer --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --no-pre-read-main-dll --video-capture-use-gpu-memory-buffer --lang=en-US --device-scale-factor=1.75 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=73 --time-ticks-at-unix-epoch=-1781868244135593 --launch-time-ticks=60531239096 --metrics-shmem-handle=11416,i,4044452421520260249,18013836578168889348,2097152 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190709054715926471 --mojo-platform-channel-handle=11408 /prefetch:1, 10108:C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --no-pre-read-main-dll --metrics-shmem-handle=2008,i,14035873834610117019,11015718542404705441,524288 --field-trial-handle=1888,i,8556831777876517226,8531848405073397444,262144 --variations-seed-version=20260618-170054.182000-production --pseudonymization-salt-handle=1916,i,4437449779409874369,16951888425108095548,4 --trace-process-track-uuid=3190708989122997041 --mojo-platform-channel-handle=2192 /prefetch:11, 11980:C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+    ]
+  },
+  "pre_run_browser_health_path": "P:\\packages\\yt-is\\.logs\\sharded_lane_series\\fresh_state_3plus3_extract_schema_primary_command_projection_60_run03_current\\browser_health.json"
+}
