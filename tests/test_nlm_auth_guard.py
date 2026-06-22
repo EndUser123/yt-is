@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from csf.browser_ownership_manifest import build_browser_ownership_manifest, write_browser_ownership_manifest
 from csf import nlm_auth_guard
 
 
@@ -117,6 +118,27 @@ def test_sample_browser_health_counts_escaped_default_profile_subprocess(monkeyp
     assert report["unexpected_processes"] == []
 
 
+def test_sample_browser_health_ignores_plain_chrome_without_user_data_dir(monkeypatch):
+    root = r"P:\\\\.data\yt-is\browser\notebooklm-pro"
+    monkeypatch.setattr(
+        nlm_auth_guard,
+        "_collect_chrome_process_records",
+        lambda: [
+            {
+                "pid": 333,
+                "cmdline": "chrome.exe --type=renderer --lang=en-US",
+                "rss_bytes": 100,
+            }
+        ],
+    )
+
+    report = nlm_auth_guard._sample_browser_health([Path(root)])
+
+    assert report["allowed_profile_pid_count"] == 0
+    assert report["default_profile_pids"] == []
+    assert report["unexpected_processes"] == []
+
+
 def test_browser_health_gate_passes_when_environment_is_clean(monkeypatch):
     monkeypatch.setattr(nlm_auth_guard, "chrome_pids_for_root", lambda root: set())
     monkeypatch.setattr(nlm_auth_guard, "stop_chrome_pids", lambda pids: None)
@@ -139,6 +161,65 @@ def test_browser_health_gate_passes_when_environment_is_clean(monkeypatch):
     assert report["default_profile_remaining_count"] == 0
     assert report["unexpected_process_count"] == 0
     assert report["sample_count"] == 2
+
+
+def test_browser_health_gate_prefers_browser_ownership_manifest(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "browser_ownership.json"
+    manifest = build_browser_ownership_manifest(
+        run_root=tmp_path / "run",
+        run_environment_label="hotel_wifi",
+        default_browser_profile_root=nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT,
+        owned_browser_roots=[
+            {
+                "lane": "pro",
+                "browser_profile_root": r"P:\\\\.data\yt-is\browser\notebooklm-pro",
+                "browser_profile_directory": "",
+                "browser_profile_namespace": r"P:\\\\.data\yt-is\browser\notebooklm-pro",
+            }
+        ],
+    )
+    write_browser_ownership_manifest(manifest_path, manifest)
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(nlm_auth_guard, "chrome_pids_for_root", lambda root: set())
+    monkeypatch.setattr(nlm_auth_guard, "stop_chrome_pids", lambda pids: None)
+
+    def fake_sample(allowed_roots, **kwargs):
+        seen["allowed_roots"] = list(allowed_roots)
+        seen["default_root"] = str(kwargs.get("default_browser_profile_root") or "")
+        return _browser_health_sample(chrome_process_count=1, chrome_rss_bytes_total=128)
+
+    monkeypatch.setattr(nlm_auth_guard, "_sample_browser_health", fake_sample)
+
+    report = nlm_auth_guard.browser_health_gate(
+        [Path(r"P:\\\\\\.data\yt-is\browser\wrong-root")],
+        ownership_manifest_path=manifest_path,
+        settle_window_s=0.0,
+        sample_interval_s=0.0,
+        clock=lambda: 0.0,
+        sleeper=lambda _: None,
+    )
+
+    assert report["status"] == "clean"
+    assert report["browser_ownership_manifest_loaded"] is True
+    assert report["browser_ownership_manifest_path"] == str(manifest_path)
+    assert report["allowed_browser_roots"] == [r"P:\\\\.data\yt-is\browser\notebooklm-pro"]
+    assert seen["allowed_roots"] == [r"P:\\\\.data\yt-is\browser\notebooklm-pro"]
+    assert seen["default_root"] == str(nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT)
+
+
+def test_browser_health_gate_fails_closed_when_manifest_path_is_missing(tmp_path):
+    missing_manifest = tmp_path / "browser_ownership.json"
+
+    with pytest.raises(FileNotFoundError, match="browser ownership manifest not found"):
+        nlm_auth_guard.browser_health_gate(
+            [Path(r"P:\\\\\\.data\yt-is\browser\notebooklm-pro")],
+            ownership_manifest_path=missing_manifest,
+            settle_window_s=0.0,
+            sample_interval_s=0.0,
+            clock=lambda: 0.0,
+            sleeper=lambda _: None,
+        )
 
 
 def test_browser_health_gate_marks_recovered_clean_after_owned_profile_cleanup(monkeypatch):
@@ -311,6 +392,7 @@ def test_default_chrome_profile_pids_uses_short_cache_ttl(monkeypatch):
         "chrome_pids_for_root",
         lambda root: calls.append(Path(root)) or {111},
     )
+    monkeypatch.setattr(nlm_auth_guard.psutil, "pid_exists", lambda pid: True)
     monkeypatch.setattr(nlm_auth_guard, "_DEFAULT_CHROME_PROFILE_PIDS_CACHE", None)
 
     first = nlm_auth_guard.default_chrome_profile_pids()

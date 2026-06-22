@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 import psutil
 
+from csf.browser_ownership_manifest import load_browser_ownership_manifest
 from csf.nlm_bootstrap import ensure_latest_nlm_cli, get_nlm_executable as _bootstrap_get_nlm_executable
 
 
@@ -235,7 +236,24 @@ def _normalize_cmdline_path(cmdline: str) -> str:
     return cmdline[:start] + normalized_path + cmdline[end:]
 
 
-def _sample_browser_health(allowed_browser_roots: Iterable[str | Path]) -> dict[str, Any]:
+def _extract_user_data_dir(cmdline: str) -> str:
+    user_data_dir_prefix = "--user-data-dir="
+    idx = cmdline.find(user_data_dir_prefix)
+    if idx < 0:
+        return ""
+    start = idx + len(user_data_dir_prefix)
+    end = len(cmdline)
+    next_space = cmdline.find(" ", start)
+    if next_space >= 0:
+        end = next_space
+    return cmdline[start:end].strip()
+
+
+def _sample_browser_health(
+    allowed_browser_roots: Iterable[str | Path],
+    *,
+    default_browser_profile_root: str | Path = DEFAULT_NLM_CHROME_PROFILE_ROOT,
+) -> dict[str, Any]:
     allowed_roots = tuple(
         sorted(
             {
@@ -245,7 +263,7 @@ def _sample_browser_health(allowed_browser_roots: Iterable[str | Path]) -> dict[
             }
         )
     )
-    default_root = str(DEFAULT_NLM_CHROME_PROFILE_ROOT)
+    default_root = str(default_browser_profile_root)
     normalized_allowed_roots = {
         root: _normalize_path_for_matching(root)
         for root in allowed_roots
@@ -264,6 +282,9 @@ def _sample_browser_health(allowed_browser_roots: Iterable[str | Path]) -> dict[
         rss_bytes = int(record.get("rss_bytes") or 0)
         chrome_rss_bytes_total += rss_bytes
         normalized_cmdline = _normalize_cmdline_path(cmdline)
+        user_data_dir = _extract_user_data_dir(cmdline)
+        if not user_data_dir:
+            continue
         matched_root = next(
             (
                 root
@@ -383,6 +404,7 @@ def reap_default_chrome_profile() -> set[int]:
 def browser_health_gate(
     allowed_browser_roots: Iterable[str | Path],
     *,
+    ownership_manifest_path: str | Path | None = None,
     settle_window_s: float = 30.0,
     sample_interval_s: float = 5.0,
     clock: Callable[[], float] | None = None,
@@ -399,9 +421,24 @@ def browser_health_gate(
             }
         )
     )
+    browser_ownership_manifest_path = Path(ownership_manifest_path) if ownership_manifest_path is not None else None
+    if browser_ownership_manifest_path is not None and not browser_ownership_manifest_path.exists():
+        raise FileNotFoundError(f"browser ownership manifest not found: {browser_ownership_manifest_path}")
+    browser_ownership_manifest = (
+        load_browser_ownership_manifest(browser_ownership_manifest_path)
+        if browser_ownership_manifest_path is not None
+        else None
+    )
+    if browser_ownership_manifest is not None and browser_ownership_manifest.allowed_browser_roots:
+        allowed_roots = browser_ownership_manifest.allowed_browser_roots
     start = clock()
     deadline = start + max(0.0, float(settle_window_s))
-    initial_default_profile_pids = sorted(chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT))
+    default_profile_root = (
+        Path(browser_ownership_manifest.default_browser_profile_root)
+        if browser_ownership_manifest is not None and browser_ownership_manifest.default_browser_profile_root
+        else DEFAULT_NLM_CHROME_PROFILE_ROOT
+    )
+    initial_default_profile_pids = sorted(chrome_pids_for_root(default_profile_root))
     initial_default_profile_reaped_pids: list[int] = []
     if initial_default_profile_pids:
         initial_default_profile_reaped_pids = sorted(stop_chrome_pids(set(initial_default_profile_pids)) or set())
@@ -420,7 +457,11 @@ def browser_health_gate(
     )
 
     while True:
-        sample = _sample_browser_health(allowed_roots)
+        sample = (
+            _sample_browser_health(allowed_roots, default_browser_profile_root=default_profile_root)
+            if browser_ownership_manifest is not None
+            else _sample_browser_health(allowed_roots)
+        )
         sample_count += 1
         chrome_process_count_max = max(chrome_process_count_max, int(sample["chrome_process_count"]))
         chrome_rss_bytes_max = max(chrome_rss_bytes_max, int(sample["chrome_rss_bytes_total"]))
@@ -442,7 +483,11 @@ def browser_health_gate(
         if sleep_for > 0:
             sleeper(sleep_for)
 
-    final_sample = _sample_browser_health(allowed_roots)
+    final_sample = (
+        _sample_browser_health(allowed_roots, default_browser_profile_root=default_profile_root)
+        if browser_ownership_manifest is not None
+        else _sample_browser_health(allowed_roots)
+    )
     sample_count += 1
     chrome_process_count_max = max(chrome_process_count_max, int(final_sample["chrome_process_count"]))
     chrome_rss_bytes_max = max(chrome_rss_bytes_max, int(final_sample["chrome_rss_bytes_total"]))
@@ -491,6 +536,8 @@ def browser_health_gate(
         "sample_interval_s": float(sample_interval_s),
         "sample_count": sample_count,
         "elapsed_s": round(clock() - start, 3),
+        "browser_ownership_manifest_path": str(browser_ownership_manifest_path) if browser_ownership_manifest_path is not None else "",
+        "browser_ownership_manifest_loaded": browser_ownership_manifest is not None,
         "allowed_browser_roots": list(allowed_roots),
         "initial_default_profile_detected_count": len(initial_default_profile_pids),
         "initial_default_profile_detected_pids": initial_default_profile_pids,

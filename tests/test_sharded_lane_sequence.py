@@ -225,11 +225,16 @@ def test_main_stops_before_soak_when_smoke_fails_promotion_gate(tmp_path, monkey
     smoke_output_root = tmp_path / "run" / "smoke"
 
     monkeypatch.setattr(mod, "doctor_lane_setup", lambda *args, **kwargs: calls.append("doctor") or _lanes(tmp_path))
-    monkeypatch.setattr(
-        mod,
-        "browser_health_gate",
-        lambda *args, **kwargs: calls.append("browser_health") or _clean_browser_health_report(),
-    )
+    def fake_browser_health_gate(*args, **kwargs):
+        calls.append("browser_health")
+        ownership_manifest_path = Path(kwargs["ownership_manifest_path"])
+        assert ownership_manifest_path.exists()
+        manifest = json.loads(ownership_manifest_path.read_text(encoding="utf-8"))
+        assert manifest["manifest_version"] == 1
+        assert manifest["owned_browser_roots"][0]["lane"] == "pro"
+        return _clean_browser_health_report()
+
+    monkeypatch.setattr(mod, "browser_health_gate", fake_browser_health_gate)
 
     def fake_run_sharded_lane_series(*, output_root, **kwargs):
         calls.append("smoke" if output_root == smoke_output_root else "soak")

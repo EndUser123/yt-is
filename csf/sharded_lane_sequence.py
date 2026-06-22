@@ -6,6 +6,11 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from csf.browser_ownership_manifest import (
+    BROWSER_OWNERSHIP_MANIFEST_NAME,
+    build_browser_ownership_manifest,
+    write_browser_ownership_manifest,
+)
 from csf.run_evidence_check import inspect_run_root
 from csf import nlm_auth_guard
 browser_health_gate = nlm_auth_guard.browser_health_gate
@@ -27,6 +32,7 @@ DEFAULT_SMOKE_LIMIT = 50
 DEFAULT_SMOKE_BATCH_SIZE = 25
 SUMMARY_NAME = "sharded_lane_series_summary.json"
 BROWSER_HEALTH_NAME = "browser_health.json"
+BROWSER_OWNERSHIP_NAME = BROWSER_OWNERSHIP_MANIFEST_NAME
 
 
 def _print_sequence_header(step: str, *, root: Path) -> None:
@@ -64,6 +70,36 @@ def _write_browser_health_summary(*, run_root: Path, browser_health: dict[str, A
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_atomic(summary_path, browser_health)
     return summary_path
+
+
+def _write_browser_ownership_manifest(
+    *,
+    run_root: Path,
+    lanes: tuple[object, ...],
+    run_environment_label: str | None,
+) -> Path:
+    manifest = build_browser_ownership_manifest(
+        run_root=run_root,
+        run_environment_label=run_environment_label,
+        default_browser_profile_root=nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT,
+        owned_browser_roots=[
+            {
+                "lane": getattr(lane, "lane", str(lane)),
+                "browser_profile_root": str(getattr(lane, "browser_profile_root")),
+                "browser_profile_directory": str(getattr(lane, "browser_profile_directory", "") or ""),
+                "browser_profile_namespace": str(
+                    (
+                        Path(getattr(lane, "browser_profile_root"))
+                        / str(getattr(lane, "browser_profile_directory", "") or "")
+                    )
+                    if str(getattr(lane, "browser_profile_directory", "") or "").strip()
+                    else Path(getattr(lane, "browser_profile_root"))
+                ),
+            }
+            for lane in lanes
+        ],
+    )
+    return write_browser_ownership_manifest(run_root / BROWSER_OWNERSHIP_NAME, manifest)
 
 
 def _check_post_run_default_profile_hygiene() -> dict[str, Any]:
@@ -265,8 +301,15 @@ def main(argv: list[str] | None = None) -> int:
     lane_names = ",".join(getattr(lane, "lane", str(lane)) for lane in lanes)
     print(f"[sequence] doctor=ok lanes={lane_names} run_root={run_root}")
 
+    browser_ownership_manifest_path = _write_browser_ownership_manifest(
+        run_root=run_root,
+        lanes=lanes,
+        run_environment_label=args.run_environment_label,
+    )
+    print(f"[sequence] browser_ownership_manifest={browser_ownership_manifest_path}")
     browser_health = browser_health_gate(
         [lane.browser_profile_root for lane in lanes],
+        ownership_manifest_path=browser_ownership_manifest_path,
         settle_window_s=args.browser_health_window_s,
         sample_interval_s=args.browser_health_sample_interval_s,
     )
