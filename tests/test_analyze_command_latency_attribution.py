@@ -298,6 +298,108 @@ def test_main_writes_markdown_and_json_outputs(tmp_path):
     assert payload["comparison"]["batch_deltas"][0]["content_fetch_command_elapsed_s_total_delta"] == 20.0
 
 
+def test_main_supports_multiple_labeled_run_specs(tmp_path):
+    run01 = tmp_path / "run01"
+    run02 = tmp_path / "run02"
+    output = tmp_path / "packet.md"
+    json_output = tmp_path / "packet.json"
+
+    _write_stdout(run01, "smoke", "a_hominidae_pro", "batch_01", [_worker("worker-01", 10.0, source_list_probe_elapsed_s_total=1.0)])
+    _write_stdout(run02, "smoke", "a_hominidae_pro", "batch_01", [_worker("worker-01", 20.0, source_list_probe_elapsed_s_total=2.0)])
+    _write_stdout(run02, "soak", "a_hominidae_pro", "batch_01", [_worker("worker-01", 30.0, source_list_probe_elapsed_s_total=3.0)])
+    _write_term(
+        run01,
+        "smoke",
+        "a_hominidae_pro",
+        "batch_01",
+        [
+            _command_event(
+                worker_id="worker-01",
+                notebooklm_profile="profile-a",
+                attempt="1",
+                status="completed",
+                elapsed_s=10.0,
+                source_ready_age_s=5.0,
+                video_id="video-1",
+                source_id="source-1",
+            )
+        ],
+    )
+    _write_term(
+        run02,
+        "smoke",
+        "a_hominidae_pro",
+        "batch_01",
+        [
+            _command_event(
+                worker_id="worker-01",
+                notebooklm_profile="profile-a",
+                attempt="1",
+                status="completed",
+                elapsed_s=20.0,
+                source_ready_age_s=6.0,
+                video_id="video-1",
+                source_id="source-1",
+            )
+        ],
+    )
+    _write_term(
+        run02,
+        "soak",
+        "a_hominidae_pro",
+        "batch_01",
+        [
+            _command_event(
+                worker_id="worker-01",
+                notebooklm_profile="profile-a",
+                attempt="1",
+                status="completed",
+                elapsed_s=30.0,
+                source_ready_age_s=7.0,
+                video_id="video-1",
+                source_id="source-1",
+            )
+        ],
+    )
+
+    for root, status in ((run01, "clean"), (run02, "degraded")):
+        (root / "sharded_lane_series_summary.json").write_text(
+            json.dumps({"pre_run_browser_health": {"status": status}, "combined": {"hot_path_videos_per_hour": 1.0}}),
+            encoding="utf-8",
+        )
+
+    assert (
+        analyzer.main(
+            [
+                "--run-spec",
+                f"retry_queue_fix_run01_smoke|smoke|{run01}",
+                "--run-spec",
+                f"run02_smoke|smoke|{run02}",
+                "--run-spec",
+                f"run02_soak|soak|{run02}",
+                "--output",
+                str(output),
+                "--json-output",
+                str(json_output),
+            ]
+        )
+        == 0
+    )
+
+    report = output.read_text(encoding="utf-8")
+    payload = json.loads(json_output.read_text(encoding="utf-8"))
+
+    assert payload["phase"] == "mixed"
+    assert len(payload["runs"]) == 3
+    assert len(payload["comparisons"]) == 2
+    assert payload["comparisons"][1]["batch_deltas"][0]["content_fetch_command_elapsed_s_total_delta"] == 10.0
+    assert payload["comparisons"][1]["worker_deltas"][0]["content_fetch_command_elapsed_s_total_delta"] == 10.0
+    assert payload["comparisons"][1]["event_deltas"][0]["command_elapsed_s_total_delta"] == 10.0
+    assert "run02_smoke minus retry_queue_fix_run01_smoke" in report
+    assert "run02_soak minus run02_smoke" in report
+    assert "Top Worker Command Deltas" in report
+
+
 def test_iter_command_events_parses_attempt_classes_projection_and_skips_malformed(tmp_path):
     run_root = tmp_path / "run01"
     _write_term(
@@ -416,6 +518,98 @@ def test_aggregate_command_events_reconciles_complete_fixture(tmp_path):
     assert event_packet["attempt_totals"]["retry"]["count"] == 1
     assert event_packet["attempt_totals"]["unknown"]["count"] == 1
     assert event_packet["projection_rows"][0]["projection_count"] == 1
+
+
+def test_aggregate_command_events_computes_percentiles_and_age_buckets(tmp_path):
+    run_root = tmp_path / "run01"
+    _write_term(
+        run_root,
+        "smoke",
+        "troup_hominidae_free",
+        "batch_01",
+        [
+            _command_event(
+                worker_id="worker-01",
+                notebooklm_profile="profile-a",
+                attempt="1",
+                status="completed",
+                elapsed_s=10.0,
+                source_ready_age_s=10.0,
+                video_id="video-1",
+                source_id="source-1",
+            ),
+            _command_event(
+                worker_id="worker-02",
+                notebooklm_profile="profile-a",
+                attempt="retry",
+                status="command_failed",
+                elapsed_s=20.0,
+                source_ready_age_s=40.0,
+                video_id="video-2",
+                source_id="source-2",
+            ),
+            _command_event(
+                worker_id="worker-03",
+                notebooklm_profile="profile-a",
+                attempt="1",
+                status="source_age_cliff",
+                elapsed_s=30.0,
+                source_ready_age_s=80.0,
+                video_id="video-3",
+                source_id="source-3",
+            ),
+            _command_event(
+                worker_id="worker-04",
+                notebooklm_profile="profile-a",
+                attempt="retry",
+                status="completed",
+                elapsed_s=40.0,
+                source_ready_age_s=250.0,
+                video_id="video-4",
+                source_id="source-4",
+            ),
+        ],
+    )
+
+    packet = analyzer.aggregate_command_events(
+        run_root,
+        {"content_fetch_command_elapsed_s_count": 4, "content_fetch_command_elapsed_s_total": 100.0},
+        phase_filter="smoke",
+    )
+
+    assert packet["overall_event_elapsed_s_p50"] == 25.0
+    assert packet["overall_event_elapsed_s_p95"] == 38.5
+    assert packet["attempt_totals"]["attempt_1"]["command_elapsed_s_p50"] == 20.0
+    assert packet["attempt_totals"]["retry"]["command_elapsed_s_p95"] == 39.0
+    buckets = {(row["attempt_class"], row["source_age_bucket"]): row for row in packet["age_bucket_rows"]}
+    assert buckets[("attempt_1", "60-119")]["source_age_cliff"] == 1
+    assert buckets[("retry", "240+")]["command_failed"] == 0
+    report = analyzer.render_report(
+        [
+            {
+                "run_name": "run01",
+                "summary": {"hot_path_videos_per_hour": 1.0, "success_count_total": 1, "failed_count_total": 1, "processed_count_total": 2, "pre_run_browser_health_status": "clean"},
+                "overall_rows": [
+                    {
+                        "content_fetch_command_elapsed_s_total": 100.0,
+                        "content_fetch_command_elapsed_s_avg": 25.0,
+                        "content_fetch_command_elapsed_s_max": 40.0,
+                        "content_fetch_retry_sleep_elapsed_s_total": 0.0,
+                        "source_list_probe_elapsed_s_total": 0.0,
+                        "source_content_readiness_probe_elapsed_s_total": 0.0,
+                        "source_ready_age_s_max": 250.0,
+                    }
+                ],
+                "lane_batch_rows": [],
+                "worker_rows": [],
+                "event_attribution": packet,
+            }
+        ],
+        None,
+    )
+    assert "Command p50" in report
+    assert "Source Age Buckets" in report
+    assert "240+" in report
 
 
 def test_aggregate_command_events_marks_bounded_uncertainty_when_reconciliation_is_incomplete(tmp_path):

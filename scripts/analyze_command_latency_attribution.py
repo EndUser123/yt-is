@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import json
 import re
 import sys
@@ -35,6 +36,15 @@ LANE_LABELS = {
     "a_hominidae_pro": "Pro",
     "troup_hominidae_free": "Free",
 }
+
+
+@dataclass(frozen=True, slots=True)
+class RunSpec:
+    label: str
+    phase: str
+    run_root: Path
+
+
 METRIC_FIELDS = (
     "content_fetch_command_elapsed_s_total",
     "content_fetch_command_elapsed_s_count",
@@ -198,6 +208,19 @@ def _clean_str(value: Any) -> str | None:
     return str(value)
 
 
+def _parse_run_spec(value: str) -> RunSpec:
+    """Parse a reusable `label|phase|path` run specification."""
+    parts = [part.strip() for part in value.split("|", 2)]
+    if len(parts) != 3 or not all(parts):
+        raise ValueError(
+            f"invalid run spec {value!r}; expected 'label|phase|path' with non-empty parts"
+        )
+    label, phase, path_text = parts
+    if phase not in {"smoke", "soak", "all"}:
+        raise ValueError(f"invalid phase {phase!r}; expected smoke, soak, or all")
+    return RunSpec(label=label, phase=phase, run_root=Path(path_text))
+
+
 def _round(value: float, digits: int = 3) -> float:
     return round(float(value), digits)
 
@@ -210,6 +233,36 @@ def _fmt(value: Any) -> str:
             return str(int(value))
         return f"{value:.3f}".rstrip("0").rstrip(".")
     return str(value)
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * percentile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[int(position)]
+    lower_value = ordered[lower]
+    upper_value = ordered[upper]
+    return lower_value + (upper_value - lower_value) * (position - lower)
+
+
+def _source_age_bucket(value: float) -> str:
+    if value < 30:
+        return "<30"
+    if value < 60:
+        return "30-59"
+    if value < 120:
+        return "60-119"
+    if value < 180:
+        return "120-179"
+    if value < 240:
+        return "180-239"
+    return "240+"
 
 
 def _read_summary(run_root: Path) -> dict[str, Any]:
@@ -564,16 +617,20 @@ def _aggregate_command_event_rows(events: list[dict[str, Any]]) -> tuple[list[di
                 "count": 0,
                 "command_elapsed_s_total": 0.0,
                 "command_elapsed_s_max": 0.0,
+                "command_elapsed_samples": [],
                 "source_ready_age_s_total": 0.0,
                 "source_ready_age_s_max": 0.0,
+                "source_ready_age_samples": [],
                 "worker_ids": [],
             },
         )
         row["count"] += 1
         row["command_elapsed_s_total"] += _as_float(event.get("command_elapsed_s_total"))
         row["command_elapsed_s_max"] = max(row["command_elapsed_s_max"], _as_float(event.get("command_elapsed_s_max")))
+        row["command_elapsed_samples"].append(_as_float(event.get("command_elapsed_s_total")))
         row["source_ready_age_s_total"] += _as_float(event.get("source_ready_age_s"))
         row["source_ready_age_s_max"] = max(row["source_ready_age_s_max"], _as_float(event.get("source_ready_age_s")))
+        row["source_ready_age_samples"].append(_as_float(event.get("source_ready_age_s")))
         if event.get("worker_id") and event["worker_id"] not in row["worker_ids"]:
             row["worker_ids"].append(event["worker_id"])
 
@@ -584,6 +641,7 @@ def _aggregate_command_event_rows(events: list[dict[str, Any]]) -> tuple[list[di
                 "count": 0,
                 "command_elapsed_s_total": 0.0,
                 "command_elapsed_s_max": 0.0,
+                "command_elapsed_samples": [],
             },
         )
         attempt_row["count"] += 1
@@ -591,6 +649,7 @@ def _aggregate_command_event_rows(events: list[dict[str, Any]]) -> tuple[list[di
         attempt_row["command_elapsed_s_max"] = max(
             attempt_row["command_elapsed_s_max"], _as_float(event.get("command_elapsed_s_max"))
         )
+        attempt_row["command_elapsed_samples"].append(_as_float(event.get("command_elapsed_s_total")))
 
     command_rows_list = sorted(
         command_rows.values(),
@@ -600,6 +659,17 @@ def _aggregate_command_event_rows(events: list[dict[str, Any]]) -> tuple[list[di
         projection_rows.values(),
         key=lambda row: (row["phase"], LANE_LABELS.get(row["lane"], row["lane"]), row["batch"], row["profile"]),
     )
+    for row in command_rows_list:
+        row["command_elapsed_s_p50"] = _round(_percentile(row["command_elapsed_samples"], 0.5))
+        row["command_elapsed_s_p95"] = _round(_percentile(row["command_elapsed_samples"], 0.95))
+        row["source_ready_age_s_p50"] = _round(_percentile(row["source_ready_age_samples"], 0.5))
+        row["source_ready_age_s_p95"] = _round(_percentile(row["source_ready_age_samples"], 0.95))
+        del row["command_elapsed_samples"]
+        del row["source_ready_age_samples"]
+    for row in attempt_totals.values():
+        row["command_elapsed_s_p50"] = _round(_percentile(row["command_elapsed_samples"], 0.5))
+        row["command_elapsed_s_p95"] = _round(_percentile(row["command_elapsed_samples"], 0.95))
+        del row["command_elapsed_samples"]
     return command_rows_list, projection_rows_list, attempt_totals
 
 
@@ -692,6 +762,68 @@ def _aggregate_fetch_completion_rows(events: list[dict[str, Any]]) -> list[dict[
     return rows_list
 
 
+def _aggregate_age_bucket_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+    for event in events:
+        if event["event_type"] != "command":
+            continue
+        bucket = _source_age_bucket(_as_float(event.get("source_ready_age_s")))
+        key = (event["phase"], event["lane"], event["batch"], event["attempt_class"], bucket)
+        row = rows.setdefault(
+            key,
+            {
+                "phase": event["phase"],
+                "lane": event["lane"],
+                "lane_label": LANE_LABELS.get(event["lane"], event["lane"]),
+                "batch": event["batch"],
+                "attempt_class": event["attempt_class"],
+                "source_age_bucket": bucket,
+                "count": 0,
+                "command_elapsed_s_total": 0.0,
+                "command_elapsed_s_max": 0.0,
+                "command_elapsed_samples": [],
+                "source_ready_age_s_total": 0.0,
+                "source_ready_age_s_max": 0.0,
+                "source_ready_age_samples": [],
+                "command_failed": 0,
+                "source_age_cliff": 0,
+            },
+        )
+        elapsed = _as_float(event.get("command_elapsed_s_total"))
+        age = _as_float(event.get("source_ready_age_s"))
+        row["count"] += 1
+        row["command_elapsed_s_total"] += elapsed
+        row["command_elapsed_s_max"] = max(row["command_elapsed_s_max"], _as_float(event.get("command_elapsed_s_max")))
+        row["command_elapsed_samples"].append(elapsed)
+        row["source_ready_age_s_total"] += age
+        row["source_ready_age_s_max"] = max(row["source_ready_age_s_max"], age)
+        row["source_ready_age_samples"].append(age)
+        status = _clean_str(event.get("status")) or ""
+        if status == "command_failed":
+            row["command_failed"] += 1
+        if status == "source_age_cliff":
+            row["source_age_cliff"] += 1
+    rows_list = sorted(
+        rows.values(),
+        key=lambda row: (
+            row["phase"],
+            LANE_LABELS.get(row["lane"], row["lane"]),
+            row["batch"],
+            row["attempt_class"],
+            row["source_age_bucket"],
+        ),
+    )
+    for row in rows_list:
+        row["command_elapsed_s_p50"] = _round(_percentile(row["command_elapsed_samples"], 0.5))
+        row["command_elapsed_s_p95"] = _round(_percentile(row["command_elapsed_samples"], 0.95))
+        row["source_ready_age_s_avg"] = _round(row["source_ready_age_s_total"] / row["count"] if row["count"] else 0.0)
+        row["source_ready_age_s_p50"] = _round(_percentile(row["source_ready_age_samples"], 0.5))
+        row["source_ready_age_s_p95"] = _round(_percentile(row["source_ready_age_samples"], 0.95))
+        del row["command_elapsed_samples"]
+        del row["source_ready_age_samples"]
+    return rows_list
+
+
 def aggregate_command_events(
     run_root: Path,
     worker_overall_row: dict[str, Any] | None = None,
@@ -702,10 +834,12 @@ def aggregate_command_events(
     )
     command_events = [event for event in events if event["event_type"] == "command"]
     command_rows, projection_rows, attempt_totals = _aggregate_command_event_rows(events)
+    age_bucket_rows = _aggregate_age_bucket_rows(events)
     fetch_completion_rows = _aggregate_fetch_completion_rows(events)
     overall_count = len(command_events)
     overall_elapsed = sum(_as_float(event.get("command_elapsed_s_total")) for event in command_events)
     overall_max = max([_as_float(event.get("command_elapsed_s_max")) for event in command_events], default=0.0)
+    overall_samples = [_as_float(event.get("command_elapsed_s_total")) for event in command_events]
     worker_command_count = _as_float((worker_overall_row or {}).get("content_fetch_command_elapsed_s_count"))
     worker_command_elapsed = _as_float((worker_overall_row or {}).get("content_fetch_command_elapsed_s_total"))
     worker_command_count_available = worker_command_count > 0
@@ -727,12 +861,16 @@ def aggregate_command_events(
         "overall_event_count": overall_count,
         "overall_event_elapsed_s_total": _round(overall_elapsed),
         "overall_event_elapsed_s_max": _round(overall_max),
+        "overall_event_elapsed_s_p50": _round(_percentile(overall_samples, 0.5)),
+        "overall_event_elapsed_s_p95": _round(_percentile(overall_samples, 0.95)),
         "attempt_totals": {
             key: {
                 "attempt_class": value["attempt_class"],
                 "count": value["count"],
                 "command_elapsed_s_total": _round(value["command_elapsed_s_total"]),
                 "command_elapsed_s_max": _round(value["command_elapsed_s_max"]),
+                "command_elapsed_s_p50": _round(value["command_elapsed_s_p50"]),
+                "command_elapsed_s_p95": _round(value["command_elapsed_s_p95"]),
             }
             for key, value in sorted(attempt_totals.items())
         },
@@ -741,10 +879,29 @@ def aggregate_command_events(
                 **row,
                 "command_elapsed_s_total": _round(row["command_elapsed_s_total"]),
                 "command_elapsed_s_max": _round(row["command_elapsed_s_max"]),
+                "command_elapsed_s_p50": _round(row["command_elapsed_s_p50"]),
+                "command_elapsed_s_p95": _round(row["command_elapsed_s_p95"]),
                 "source_ready_age_s_total": _round(row["source_ready_age_s_total"]),
                 "source_ready_age_s_max": _round(row["source_ready_age_s_max"]),
+                "source_ready_age_s_p50": _round(row["source_ready_age_s_p50"]),
+                "source_ready_age_s_p95": _round(row["source_ready_age_s_p95"]),
             }
             for row in command_rows
+        ],
+        "age_bucket_rows": [
+            {
+                **row,
+                "command_elapsed_s_total": _round(row["command_elapsed_s_total"]),
+                "command_elapsed_s_max": _round(row["command_elapsed_s_max"]),
+                "command_elapsed_s_p50": _round(row["command_elapsed_s_p50"]),
+                "command_elapsed_s_p95": _round(row["command_elapsed_s_p95"]),
+                "source_ready_age_s_total": _round(row["source_ready_age_s_total"]),
+                "source_ready_age_s_max": _round(row["source_ready_age_s_max"]),
+                "source_ready_age_s_avg": _round(row["source_ready_age_s_avg"]),
+                "source_ready_age_s_p50": _round(row["source_ready_age_s_p50"]),
+                "source_ready_age_s_p95": _round(row["source_ready_age_s_p95"]),
+            }
+            for row in age_bucket_rows
         ],
         "projection_rows": [
             {
@@ -892,9 +1049,9 @@ def _aggregate(rows: list[dict[str, Any]], run_name: str) -> dict[str, list[dict
     }
 
 
-def analyze_run_root(run_root: Path, phase_filter: str = "soak") -> dict[str, Any]:
+def analyze_run_root(run_root: Path, phase_filter: str = "soak", run_name: str | None = None) -> dict[str, Any]:
     rows = iter_worker_rows(run_root, phase_filter)
-    run_name = run_root.name
+    run_name = run_name or run_root.name
     worker_packet = _aggregate(rows, run_name)
     overall_rows = worker_packet["overall_rows"]
     overall = _sum_worker_overall_rows(overall_rows) if overall_rows else Aggregate(run_name, "all", "all").to_row()
@@ -925,7 +1082,7 @@ def _sum_worker_overall_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _row_key(row: dict[str, Any]) -> tuple[Any, ...]:
-    return row["phase"], row["lane"], row.get("batch"), row.get("worker_id")
+    return row["lane"], row.get("batch"), row.get("worker_id")
 
 
 def compare_runs(base_packet: dict[str, Any], candidate_packet: dict[str, Any]) -> dict[str, Any]:
@@ -1043,7 +1200,7 @@ def _delta_row(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
 
 
 def _event_row_key(row: dict[str, Any]) -> tuple[Any, ...]:
-    return row["phase"], row["lane"], row.get("batch"), row.get("profile"), row.get("attempt_class"), row.get("status")
+    return row["lane"], row.get("batch"), row.get("profile"), row.get("attempt_class"), row.get("status")
 
 
 def _event_delta_row(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
@@ -1084,7 +1241,95 @@ def _status_counts(row: dict[str, Any]) -> str:
     return ", ".join(f"{key}={value}" for key, value in counts.items())
 
 
-def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | None) -> str:
+def _render_comparison_section(comparison: dict[str, Any]) -> list[str]:
+    lines = []
+    title = comparison.get("title")
+    if title:
+        lines.extend(["", f"## {title}"])
+    lines.extend(["", "### Candidate Minus Baseline Deltas"])
+    batch_delta_rows = []
+    for row in comparison["batch_deltas"]:
+        batch_delta_rows.append(
+            [
+                row["lane_label"],
+                row["batch"],
+                row["content_fetch_command_elapsed_s_total_delta"],
+                row["content_fetch_command_elapsed_s_avg_delta"],
+                row["content_fetch_command_elapsed_s_max_delta"],
+                row["content_fetch_retry_sleep_elapsed_s_total_delta"],
+                row["source_list_probe_elapsed_s_total_delta"],
+                row["source_age_cliff_delta"],
+                row["command_failed_delta"],
+                row["succeeded_delta"],
+                row["source_ready_age_s_max_delta"],
+                row["window_count_delta"],
+            ]
+        )
+    lines.append(
+        _table(
+            [
+                "Lane",
+                "Batch",
+                "Command total delta",
+                "Command avg delta",
+                "Command max delta",
+                "Retry sleep delta",
+                "Source-list delta",
+                "Source cliff delta",
+                "Command failed delta",
+                "Success delta",
+                "Age max delta",
+                "Window delta",
+            ],
+            batch_delta_rows,
+        )
+    )
+
+    lines.extend(["", "### Top Worker Command Deltas"])
+    worker_delta_rows = []
+    for row in comparison["worker_deltas"][:10]:
+        worker_delta_rows.append(
+            [
+                row["lane_label"],
+                row["batch"],
+                row["worker_id"],
+                row["content_fetch_command_elapsed_s_total_delta"],
+                row["content_fetch_command_elapsed_s_avg_delta"],
+                row["content_fetch_command_elapsed_s_max_delta"],
+                row["content_fetch_retry_sleep_elapsed_s_total_delta"],
+                row["source_list_probe_elapsed_s_total_delta"],
+                row["source_age_cliff_delta"],
+                row["command_failed_delta"],
+                row["succeeded_delta"],
+                row["source_ready_age_s_max_delta"],
+            ]
+        )
+    lines.append(
+        _table(
+            [
+                "Lane",
+                "Batch",
+                "Worker",
+                "Command total delta",
+                "Command avg delta",
+                "Command max delta",
+                "Retry sleep delta",
+                "Source-list delta",
+                "Source cliff delta",
+                "Command failed delta",
+                "Success delta",
+                "Age max delta",
+            ],
+            worker_delta_rows,
+        )
+    )
+    return lines
+
+
+def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | list[dict[str, Any]] | None) -> str:
+    comparisons = []
+    if comparison:
+        comparisons = comparison if isinstance(comparison, list) else [comparison]
     lines = [
         "# Command Latency Attribution Packet",
         "",
@@ -1096,6 +1341,7 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
     overview_rows = []
     for packet in packets:
         overall = packet["overall_rows"][0] if packet["overall_rows"] else {}
+        event_attribution = packet.get("event_attribution") or {}
         summary = packet.get("summary") or {}
         overview_rows.append(
             [
@@ -1104,6 +1350,8 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
                 f"{summary.get('success_count_total')}/{summary.get('failed_count_total')}/{summary.get('processed_count_total')}",
                 summary.get("pre_run_browser_health_status"),
                 overall.get("content_fetch_command_elapsed_s_total"),
+                event_attribution.get("overall_event_elapsed_s_p50"),
+                event_attribution.get("overall_event_elapsed_s_p95"),
                 overall.get("content_fetch_command_elapsed_s_avg"),
                 overall.get("content_fetch_command_elapsed_s_max"),
                 overall.get("content_fetch_retry_sleep_elapsed_s_total"),
@@ -1121,6 +1369,8 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
                 "Success / Fail / Processed",
                 "Pre-run browser health",
                 "Command total",
+                "Command p50",
+                "Command p95",
                 "Command avg",
                 "Command max",
                 "Retry sleep",
@@ -1187,12 +1437,18 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
                 overall_elapsed,
                 attempt_totals.get("attempt_1", {}).get("count", 0),
                 attempt_totals.get("attempt_1", {}).get("command_elapsed_s_total", 0),
+                attempt_totals.get("attempt_1", {}).get("command_elapsed_s_p50", 0),
+                attempt_totals.get("attempt_1", {}).get("command_elapsed_s_p95", 0),
                 attempt_totals.get("attempt_1", {}).get("command_elapsed_s_max", 0),
                 attempt_totals.get("retry", {}).get("count", 0),
                 attempt_totals.get("retry", {}).get("command_elapsed_s_total", 0),
+                attempt_totals.get("retry", {}).get("command_elapsed_s_p50", 0),
+                attempt_totals.get("retry", {}).get("command_elapsed_s_p95", 0),
                 attempt_totals.get("retry", {}).get("command_elapsed_s_max", 0),
                 attempt_totals.get("unknown", {}).get("count", 0),
                 attempt_totals.get("unknown", {}).get("command_elapsed_s_total", 0),
+                attempt_totals.get("unknown", {}).get("command_elapsed_s_p50", 0),
+                attempt_totals.get("unknown", {}).get("command_elapsed_s_p95", 0),
                 attempt_totals.get("unknown", {}).get("command_elapsed_s_max", 0),
                 attribution.get("missing_field_count", 0),
                 attribution.get("invalid_json_count", 0),
@@ -1206,12 +1462,18 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
                 "Event elapsed",
                 "Attempt-1 count",
                 "Attempt-1 elapsed",
+                "Attempt-1 p50",
+                "Attempt-1 p95",
                 "Attempt-1 max",
                 "Retry count",
                 "Retry elapsed",
+                "Retry p50",
+                "Retry p95",
                 "Retry max",
                 "Unknown count",
                 "Unknown elapsed",
+                "Unknown p50",
+                "Unknown p95",
                 "Unknown max",
                 "Missing fields",
                 "Invalid JSON",
@@ -1293,10 +1555,60 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
         )
     )
 
+    lines.extend(["", "## Source Age Buckets"])
+    age_bucket_rows = []
+    for packet in packets:
+        for row in (packet.get("event_attribution") or {}).get("age_bucket_rows", []):
+            age_bucket_rows.append(
+                [
+                    packet["run_name"],
+                    row["phase"],
+                    row["lane_label"],
+                    row["batch"],
+                    row["attempt_class"],
+                    row["source_age_bucket"],
+                    row["count"],
+                    row["command_elapsed_s_total"],
+                    row["command_elapsed_s_p50"],
+                    row["command_elapsed_s_p95"],
+                    row["command_elapsed_s_max"],
+                    row["source_ready_age_s_avg"],
+                    row["source_ready_age_s_p50"],
+                    row["source_ready_age_s_p95"],
+                    row["command_failed"],
+                    row["source_age_cliff"],
+                ]
+            )
+    lines.append(
+        _table(
+            [
+                "Run",
+                "Phase",
+                "Lane",
+                "Batch",
+                "Attempt",
+                "Age bucket",
+                "Count",
+                "Command total",
+                "Command p50",
+                "Command p95",
+                "Command max",
+                "Age avg",
+                "Age p50",
+                "Age p95",
+                "Command failed",
+                "Source cliff",
+            ],
+            age_bucket_rows,
+        )
+    )
+
+    primary_comparison = comparisons[0] if comparisons else None
+
     lines.extend(["", "## Top Event-Level Command Deltas"])
     event_delta_rows = []
-    if comparison:
-        for row in comparison.get("event_deltas", [])[:10]:
+    if primary_comparison:
+        for row in primary_comparison.get("event_deltas", [])[:10]:
             event_delta_rows.append(
                 [
                     row["phase"],
@@ -1395,102 +1707,57 @@ def render_report(packets: list[dict[str, Any]], comparison: dict[str, Any] | No
             ]
         )
 
-    if comparison:
-        lines.extend(["", "## Candidate Minus Baseline Deltas"])
-        batch_delta_rows = []
-        for row in comparison["batch_deltas"]:
-            batch_delta_rows.append(
-                [
-                    row["lane_label"],
-                    row["batch"],
-                    row["content_fetch_command_elapsed_s_total_delta"],
-                    row["content_fetch_command_elapsed_s_avg_delta"],
-                    row["content_fetch_command_elapsed_s_max_delta"],
-                    row["content_fetch_retry_sleep_elapsed_s_total_delta"],
-                    row["source_list_probe_elapsed_s_total_delta"],
-                    row["source_age_cliff_delta"],
-                    row["command_failed_delta"],
-                    row["succeeded_delta"],
-                    row["source_ready_age_s_max_delta"],
-                    row["window_count_delta"],
-                ]
-            )
-        lines.append(
-            _table(
-                [
-                    "Lane",
-                    "Batch",
-                    "Command total delta",
-                    "Command avg delta",
-                    "Command max delta",
-                    "Retry sleep delta",
-                    "Source-list delta",
-                    "Source cliff delta",
-                    "Command failed delta",
-                    "Success delta",
-                    "Age max delta",
-                    "Window delta",
-                ],
-                batch_delta_rows,
-            )
-        )
-
-        lines.extend(["", "## Top Worker Command Deltas"])
-        worker_delta_rows = []
-        for row in comparison["worker_deltas"][:10]:
-            worker_delta_rows.append(
-                [
-                    row["lane_label"],
-                    row["batch"],
-                    row["worker_id"],
-                    row["content_fetch_command_elapsed_s_total_delta"],
-                    row["content_fetch_command_elapsed_s_avg_delta"],
-                    row["content_fetch_command_elapsed_s_max_delta"],
-                    row["content_fetch_retry_sleep_elapsed_s_total_delta"],
-                    row["source_list_probe_elapsed_s_total_delta"],
-                    row["source_age_cliff_delta"],
-                    row["command_failed_delta"],
-                    row["succeeded_delta"],
-                    row["source_ready_age_s_max_delta"],
-                ]
-            )
-        lines.append(
-            _table(
-                [
-                    "Lane",
-                    "Batch",
-                    "Worker",
-                    "Command total delta",
-                    "Command avg delta",
-                    "Command max delta",
-                    "Retry sleep delta",
-                    "Source-list delta",
-                    "Source cliff delta",
-                    "Command failed delta",
-                    "Success delta",
-                    "Age max delta",
-                ],
-                worker_delta_rows,
-            )
-        )
+    if comparisons:
+        for item in comparisons:
+            lines.extend(_render_comparison_section(item))
     return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", action="append", type=Path, default=None, help="Run root to analyze.")
+    parser.add_argument(
+        "--run-spec",
+        action="append",
+        default=None,
+        help="Reusable labeled run spec in the form label|phase|path.",
+    )
     parser.add_argument("--phase", choices=("smoke", "soak", "all"), default="soak")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--json-output", type=Path, default=DEFAULT_JSON_OUTPUT)
     args = parser.parse_args(argv)
 
-    run_roots = args.run_root or list(DEFAULT_RUN_ROOTS)
-    packets = [analyze_run_root(root, args.phase) for root in run_roots]
-    comparison = compare_runs(packets[0], packets[1]) if len(packets) >= 2 else None
-    payload = {"phase": args.phase, "runs": packets, "comparison": comparison}
+    if args.run_spec:
+        run_specs = [_parse_run_spec(spec) for spec in args.run_spec]
+        packets = [analyze_run_root(spec.run_root, spec.phase, spec.label) for spec in run_specs]
+        phase_values = {spec.phase for spec in run_specs}
+        payload_phase = next(iter(phase_values)) if len(phase_values) == 1 else "mixed"
+    else:
+        run_roots = args.run_root or list(DEFAULT_RUN_ROOTS)
+        packets = [analyze_run_root(root, args.phase) for root in run_roots]
+        payload_phase = args.phase
+
+    comparisons: list[dict[str, Any]] = []
+    for base_packet, candidate_packet in zip(packets, packets[1:]):
+        comparison = compare_runs(base_packet, candidate_packet)
+        comparison["title"] = f"{candidate_packet['run_name']} minus {base_packet['run_name']}"
+        comparisons.append(comparison)
+    comparison_payload: dict[str, Any] | list[dict[str, Any]] | None
+    if not comparisons:
+        comparison_payload = None
+    elif len(comparisons) == 1:
+        comparison_payload = comparisons[0]
+    else:
+        comparison_payload = comparisons
+    payload = {
+        "phase": payload_phase,
+        "runs": packets,
+        "comparison": comparisons[0] if comparisons else None,
+        "comparisons": comparisons,
+    }
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(render_report(packets, comparison), encoding="utf-8")
+    args.output.write_text(render_report(packets, comparison_payload), encoding="utf-8")
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
