@@ -341,8 +341,10 @@ The attempted `pro_free_source_map_v4` follow-up is invalid. It was interrupted 
 
 ## Next LLM Bootstrap
 
-Current state as of 2026-04-30:
+Current state as of 2026-06-22:
 
+- Addendum: the projection-60 margin ladder now has a negative lower neighbor at `margin25` (`2147.11` combined hot-path VPH) and an invalidated dead branch at `margin15`; keep `margin20` as the guard unless the source-add/materialization path changes.
+- Do not reopen the same nearby margin probes from this point unless a narrower hypothesis is defined and the invalidation path is addressed first.
 - Worker auth repair is scripted. Prefer `python P://packages/yt-is/bin/csf-nlm-worker-auth sync`; it now account-checks `nlm login --check` output and uses root-specific CDP refresh for worker `01` recovery before copying credentials to sibling workers.
 - Latest best sustained Pro+Free control is `pro_free_source_map_v1` at `5572.04` combined hot-path VPH.
 - The earlier `pro_free_post_retry_v2` control at `4407.40` is now superseded by the source-map run.

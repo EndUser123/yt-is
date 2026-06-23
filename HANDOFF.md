@@ -1,10 +1,22 @@
 # yt-is Handoff
 
-Last updated: 2026-04-25
+Last updated: 2026-06-22
 
 ## Current state
 
 - The current worker run is stopped.
+- The current best sustained current-contract result on disk is `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` at `3788.53` combined hot-path VPH. It is valid (`status=ok`, `throughput_valid=true`, `3+3`, `home_300mb`) but still a mixed diagnostic branch because the smoke promotion gate failed.
+- Do not treat `3788.53` as proven optimal sustained VPH; it is only the current observed leader on disk.
+- The nearby June reruns are closed: `run03` is `blocked_before_soak`, `margin20_run06` is `blocked_before_soak`, `margin25` is negative, `post_scope_fix_run05` is `blocked_before_soak`, and `margin15` is invalidated.
+- The local-retry projection branch is now closed too: `fresh_state_3plus3_extract_schema_source_age_cadence_local_retry_projection_run08_current` validated as a negative rerun and did not extend the ceiling, so the next unresolved lever is batch-1 old-window `nlm source content` command latency / source-age accumulation, not another same-shape projection repeat.
+- The batch-1 old-window design packet is now the current decision record for that hypothesis and it concludes `no patch candidate yet`; use [docs/operations/hot-path-throughput-next-test-plan.md](P://packages/yt-is/docs/operations/hot-path-throughput-next-test-plan.md) and [.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md](P://packages/yt-is/.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md) together before proposing any future work.
+- The sharded benchmark harness now records the primary-command projection/margin env knobs in `lane_process.json`, so future runs can prove whether the batch-1 old-window lever was actually enabled from the artifact alone.
+- The source-content retry queue now also skips retries whose projected retry-ready age plus primary-command projection would cross the cliff, with a margin-aware variant, so the local-retry branch has a narrower code-path gate instead of sleeping into old-window commands.
+- The retry-queue primary-command projection validation rerun has already been exercised once and closed as a negative smoke-gated branch; the new projected-primary-command skip reason did not appear in the live artifact, so there is no promoted branch here.
+- The retry-queue primary-command projection validation rerun finished as a negative smoke-gated branch at `2957.0` combined hot-path VPH on `795/5/800`; the new projected-primary-command skip reason did not show up in the live artifact, `retry_queue_skipped_reason` stayed `None` on all `895` fetch-completed rows, and soak did not run.
+- No further same-shape live benchmark is justified without a code or harness change and a fresh decision packet.
+- Offline ranking from the existing artifacts now points first at batch-1 old-window `nlm source content` latency, especially the Free-lane batch_01/batch_02 retry-heavy rows. Retry sleep and source-list probe cost are secondary signals, and lane/batch skew looks like a symptom rather than a separate ceiling lever.
+- Before any future throughput proposal, run the attribution helper in `scripts/analyze_command_latency_attribution.py` against the current control and candidate artifacts so the lever is explicit before any code review or live-run packet.
 - The current worker-owned notebook status and throughput conclusions are summarized in [docs/operations/worker-owned-notebooks-handoff.md](P://packages/yt-is/docs/operations/worker-owned-notebooks-handoff.md).
 - The benchmark run sheet is [docs/operations/worker-count-trial-run-sheet.md](P://packages/yt-is/docs/operations/worker-count-trial-run-sheet.md).
 - The routing split was changed so:
@@ -76,16 +88,11 @@ Last updated: 2026-04-25
 
 ## Next action for the new session
 
-1. Restart a worker run from `P://packages/yt-is` with:
-   - `python bin/csf-source fetch --workers 4`
-2. Watch the trace file under `P://packages/yt-is/.logs/term_*.jsonl`.
-3. Check whether the `notebooklm` lane now absorbs most `no_captions` items again.
-4. Compare:
-   - NotebookLM successes
-   - transcript-fallback successes
-   - negative-cache growth
-   - cache row growth in `P://.data/yt-is/transcripts.sqlite`
-5. Re-run the current failing cohort if you want to move more backlog through the now-fixed Whisper tail.
+1. Do not launch another same-shape throughput benchmark.
+2. Do not treat `3788.53` as proven optimal sustained VPH.
+3. If you continue the investigation, start from the current contract docs plus the raw artifacts for `run02`, `run03`, `margin20_run06`, `margin25_run05`, `post_scope_fix_run05`, and `margin15_run01`.
+4. Use the ranked offline evidence first: batch-1 old-window `nlm source content` latency is the leading hypothesis, with retry-heavy rows and Free batch_01/batch_02 as the main hotspots.
+5. Only consider a new live benchmark after a code or harness change, a completed decision packet, and a newer design packet that identifies a narrower mechanism than the current projection/retry guard path.
 
 ## Useful reminders
 
@@ -116,7 +123,10 @@ Last updated: 2026-04-25
   - [HANDOFF.md](P://packages/yt-is/HANDOFF.md)
   - [CODEX_MEMORY.md](P://packages/yt-is/CODEX_MEMORY.md)
   - [DEBUGGING_PLAYBOOK.md](P://packages/yt-is/DEBUGGING_PLAYBOOK.md)
+  - [Throughput Optimization LLM Contract](P://packages/yt-is/docs/operations/throughput-optimization-llm-contract.md) before any NotebookLM throughput benchmark decision
+  - [Throughput Decision Packet Template](P://packages/yt-is/docs/operations/templates/throughput-decision-packet.md) before any live throughput run
 - If you are touching NotebookLM throughput, check `P://packages/yt-is/csf/nlm_config.py` first for the shared NotebookLM defaults before grepping for magic numbers.
+- Fresh agents must not launch a live throughput benchmark from chat memory alone. They must read the current hot-path plan and registry, complete the decision packet, and prefer offline reducer/audit attribution unless the packet names a falsifier, early-abort gate, raw artifact path, and promotion rule.
 - Key files:
   - [bin/csf-source](P://packages/yt-is/bin/csf-source)
   - [csf/transcript.py](P://packages/yt-is/csf/transcript.py)

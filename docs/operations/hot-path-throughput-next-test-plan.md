@@ -4,7 +4,11 @@
 
 > Default observability guardrail: read [Observability Contract Checklist](observability-contract-checklist.md) before trusting any metric, reducer output, or interpretation in this plan.
 
+> LLM execution guardrail: read [Throughput Optimization LLM Contract](throughput-optimization-llm-contract.md) before proposing or launching a live throughput benchmark. A live run is not allowed until [Throughput Decision Packet](templates/throughput-decision-packet.md) is completed.
+
 > Action-status contract: any "next action" in this plan must be labeled `done`, `deferred`, or `blocked`. A recommendation is not execution unless the plan says it was completed. If an item is deferred, the reason and the missing evidence must be stated inline.
+
+> No-patch guardrail: if the current branch has a no-patch design packet, do not reopen it with another same-shape benchmark or a code patch request. Start from the design packet and the attribution helper instead.
 
 ## Goal
 
@@ -15,15 +19,40 @@ Find whether `yt-is` can exceed the current best proven sustained hot-path throu
 - Prior control artifact: `P://packages/yt-is/.logs/sharded_lane_series/pro_free_v2/sharded_lane_series_summary.json`
 - Prior control combined hot-path VPH: `4148.71`
 - Current best shape: Pro+Free lanes, no startup stagger, `4` workers per lane, `--limit 400` per lane, `--batch-size 200`, serial reusable pipeline
+- Do not treat the historical `5572.04` ceiling as the current control; it is only a prior high-water mark.
 - Fresh-state controls: `free_only_fresh_state_control_run01` reached `2825.29` on `400/0/400`; `two_plus_two_pressure_100_run01` reached `1474.74` on `800/800`; `fresh_worker_state_default_3plus3_run01` was actually `4+4`, not `3+3`, and the runner now publishes `worker_shape_signature` so future run labels can be checked against the real worker counts before they are trusted; `verified_3plus3_fresh_run01` completed as a clean true `3+3` run at `1452.24` combined lane-process throughput VPH on `800/800`, which is below the fresh-state solo controls, so the shape is now a negative control rather than an open question; pass `--expected-worker-shape` to the evidence check when you want mislabeled shapes to fail closed
 - Metric contract: use `combined.hot_path_videos_per_hour` from `sharded_lane_series_summary.json`; do not include Whisper fallback throughput; the throughput span excludes only parent-process Chrome reap and does not subtract per-batch worker cleanup
 - Extraction-status contract: do not use `too_short` as a NotebookLM metric. Use `nlm_content_below_threshold` for below-threshold NotebookLM source content, and record `nlm_content_chars` plus `usable_text_chars` when diagnosing sparse source content.
+
+## Current Status
+
+- The current best sustained current-contract result on disk is `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` at `3788.53` combined hot-path VPH. It is valid (`status=ok`, `throughput_valid=true`, `worker_shape_signature=3+3`, `run_environment_label=home_300mb`) but still a mixed diagnostic branch because the smoke promotion gate failed.
+- Do not treat `3788.53` as proven optimal sustained VPH; it is only the current observed leader on disk.
+- The next June reruns did not beat it: `run03` is `blocked_before_soak`, `margin20_run06` is `blocked_before_soak`, `margin25` is negative, `post_scope_fix_run05` is `blocked_before_soak`, and `margin15` is invalidated.
+- The local-retry projection branch is also closed now: `fresh_state_3plus3_extract_schema_source_age_cadence_local_retry_projection_run08_current` is a valid negative rerun, and the reducer points to batch-1 old-window `nlm source content` command latency / source-age accumulation as the unresolved pressure point.
+- The batch-1 old-window design packet at [.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md](P://packages/yt-is/.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md) concludes `no patch candidate yet`; use it before asking for any code change on this branch.
+- Do not create a code proposal for this branch until a narrower mechanism appears than the existing projection/retry guard path.
+- The sharded benchmark harness now snapshots `YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S` and `YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S` in `lane_process.json`, so a future live run can prove the knob was actually active from the artifact without reopening the code path.
+- The retry queue now also skips retries that would age into the cliff after the configured primary-command projection and margin, so the next live rerun should be a narrower code-path probe rather than another local-retry projection repeat.
+- The retry-queue primary-command projection validation rerun has already completed as negative smoke-gated evidence at `2957.0` combined hot-path VPH on `795/5/800`; the new projected-primary-command skip reason did not appear, so no further same-shape live benchmark is justified without a code or harness change.
+- The retry-queue primary-command projection validation rerun completed as a negative smoke-gated branch at `2957.0` combined hot-path VPH on `795/5/800`; the new projected-primary-command skip reason did not appear in the live artifact, and soak did not run because the smoke promotion gate failed.
+- No further same-shape live benchmark is justified unless a code or harness change activates a new lever and a completed decision packet says exactly why the run is worth the cost.
+- No future live benchmark is justified until a new code or harness mechanism exists that is narrower than the current projection/retry guard path and a completed decision packet names the raw artifacts, falsifier, early-abort gate, and promotion rule.
+- Before any future throughput proposal, run `scripts/analyze_command_latency_attribution.py` against the current control and candidate artifacts so the lever is explicit before any code review or live-run packet.
+- Ranked offline hypotheses from the current artifacts:
+  1. batch-1 old-window `nlm source content` latency, especially Free-lane batch_01/batch_02 retry-heavy rows
+  2. retry-heavy command attempts and retry sleep amplification
+  3. Free-lane batch_02 source-list probe/add-path overhead
+  4. worker/batch skew in smoke-stage staging
 
 ## Read First
 
 Before running anything, read:
 
 - `P://packages/yt-is/docs/operations/observability-contract-checklist.md`
+- `P://packages/yt-is/docs/operations/throughput-optimization-llm-contract.md`
+- `P://packages/yt-is/docs/operations/templates/throughput-decision-packet.md`
+- `P://packages/yt-is/.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md`
 - `P://packages/yt-is/docs/operations/test-registry.md`
 - `P://packages/yt-is/docs/operations/sharded-lane-artifact-audit.md`
 - `P://packages/yt-is/docs/operations/sharded-lane-series.md`

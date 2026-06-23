@@ -4,6 +4,18 @@
 
 `yt-is` (YouTube Intelligence System) is a high-throughput transcript ingestion pipeline. It has recently transitioned to an **Industrial Architecture** to handle a 140,000-video backlog.
 
+## Fresh Agent Throughput Gate
+
+Before proposing or launching any NotebookLM throughput benchmark, read:
+
+- `docs/operations/throughput-optimization-llm-contract.md`
+- `docs/operations/templates/throughput-decision-packet.md`
+- `docs/operations/hot-path-throughput-next-test-plan.md`
+- `docs/operations/test-registry.md`
+- `docs/operations/observability-contract-checklist.md`
+
+Do not launch a live throughput run from chat memory alone. Complete the decision packet first. If the packet cannot name the raw artifacts, current control, falsifier, early-abort gate, and promotion rule, do offline attribution, a harness fix, or a code fix instead.
+
 ### The Industrial Transition (April 2026)
 As of commit `bea672f`, the pipeline has been optimized for scale:
 - **Persistent Staging:** Uses `NLMIndustrialScraper` with a module-level singleton. A staging notebook is reused for up to 300 videos, reducing setup overhead by 99.7%.
