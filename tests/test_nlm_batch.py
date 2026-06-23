@@ -5104,6 +5104,144 @@ class TestNotebookCapRotation:
         assert completed[0]["projected_retry_ready_age_with_margin_s"] >= 200.0
         assert completed[0]["retry_queue_age_margin_s"] == 3.0
 
+    def test_source_content_retry_queue_skips_when_primary_command_projection_hits_age_cliff(self):
+        """Retry queue should not defer work that would age into the cliff before retry command time."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-retry-primary-command-age"
+        ingestor._last_materialization_ready_at_epoch = 1000.0
+        content_attempts = {"count": 0}
+        fake_clock = {"value": 1149.9}
+
+        def fake_time():
+            fake_clock["value"] += 0.1
+            return fake_clock["value"]
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""},
+                )()
+            if cmd[:2] == ["source", "content"]:
+                content_attempts["count"] += 1
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 1, "stdout": "", "stderr": "API error (code 5): NOT_FOUND"},
+                )()
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", False):
+                    with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 30.0):
+                        with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S", 40.0):
+                                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                                    with mock.patch(
+                                        "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                                        return_value={
+                                            "classification": "ok",
+                                            "available": True,
+                                            "availability": "public",
+                                            "live_status": "not_live",
+                                            "was_live": False,
+                                            "is_live": False,
+                                            "title": None,
+                                            "error": None,
+                                        },
+                                    ) as mock_ytdlp:
+                                        with mock.patch("csf.nlm_batch.time.time", side_effect=fake_time):
+                                            with mock.patch("csf.nlm_batch.time.sleep") as mock_sleep:
+                                                with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                                    results = ingestor.extract_transcripts(["vid1"])
+
+        assert results["vid1"][0] is False
+        assert content_attempts["count"] == 1
+        assert mock_ytdlp.call_count == 1
+        mock_sleep.assert_not_called()
+        assert not any(call.args[0] == "nlm_batch_source_content_retry_queued" for call in mock_log.call_args_list)
+        completed = [call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_completed"]
+        assert len(completed) == 1
+        assert completed[0]["retry_queue_skipped_reason"] == "projected_primary_command_age_cliff"
+        assert completed[0]["projected_retry_ready_age_s"] < 200.0
+        assert completed[0]["projected_retry_command_completion_age_s"] >= 200.0
+        summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
+        assert summary["retry_queue_deferred_count"] == 0
+        assert summary["retry_queue_recovered_count"] == 0
+        assert summary["retry_queue_final_failed_count"] == 0
+
+    def test_source_content_retry_queue_skips_when_primary_command_projection_margin_hits_age_cliff(self):
+        """Retry queue should respect the margin-adjusted primary-command cliff as well."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-retry-primary-command-margin"
+        ingestor._last_materialization_ready_at_epoch = 1000.0
+        content_attempts = {"count": 0}
+        fake_clock = {"value": 1149.9}
+
+        def fake_time():
+            fake_clock["value"] += 0.1
+            return fake_clock["value"]
+
+        def fake_run_cmd(cmd, timeout=300):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""},
+                )()
+            if cmd[:2] == ["source", "content"]:
+                content_attempts["count"] += 1
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {"returncode": 1, "stdout": "", "stderr": "API error (code 5): NOT_FOUND"},
+                )()
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", False):
+                    with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 20.0):
+                        with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S", 10.0):
+                                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S", 30.0):
+                                    with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                                        with mock.patch(
+                                            "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                                            return_value={
+                                                "classification": "ok",
+                                                "available": True,
+                                                "availability": "public",
+                                                "live_status": "not_live",
+                                                "was_live": False,
+                                                "is_live": False,
+                                                "title": None,
+                                                "error": None,
+                                            },
+                                        ) as mock_ytdlp:
+                                            with mock.patch("csf.nlm_batch.time.time", side_effect=fake_time):
+                                                with mock.patch("csf.nlm_batch.time.sleep") as mock_sleep:
+                                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                                        results = ingestor.extract_transcripts(["vid1"])
+
+        assert results["vid1"][0] is False
+        assert content_attempts["count"] == 1
+        assert mock_ytdlp.call_count == 1
+        mock_sleep.assert_not_called()
+        assert not any(call.args[0] == "nlm_batch_source_content_retry_queued" for call in mock_log.call_args_list)
+        completed = [call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_source_content_fetch_completed"]
+        assert len(completed) == 1
+        assert completed[0]["retry_queue_skipped_reason"] == "projected_primary_command_age_cliff_margin"
+        assert completed[0]["projected_retry_ready_age_s"] < 200.0
+        assert completed[0]["projected_retry_command_completion_age_s"] < 200.0
+        assert completed[0]["projected_retry_command_completion_age_with_margin_s"] >= 200.0
+        summary = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "nlm_batch_extract_completed")
+        assert summary["retry_queue_deferred_count"] == 0
+        assert summary["retry_queue_recovered_count"] == 0
+        assert summary["retry_queue_final_failed_count"] == 0
+
     def test_source_ready_age_exceeds_cliff_treats_threshold_as_cliff(self):
         """The age cliff helper should treat the configured threshold as inclusive."""
         with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):

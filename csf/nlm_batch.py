@@ -3692,12 +3692,26 @@ class NLMBatchIngestor:
             )
             projected_retry_ready_age_s: float | None = None
             projected_retry_ready_age_with_margin_s: float | None = None
+            projected_retry_command_completion_age_s: float | None = None
+            projected_retry_command_completion_age_with_margin_s: float | None = None
             if retry_queue_candidate and ready_reference_epoch:
                 projected_retry_ready_age_s = round(final_ready_age_s + _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S, 3)
                 projected_retry_ready_age_with_margin_s = round(
                     projected_retry_ready_age_s + _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                     3,
                 )
+                if (
+                    _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S > 0.0
+                    or _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S > 0.0
+                ):
+                    projected_retry_command_completion_age_s = round(
+                        projected_retry_ready_age_s + _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S,
+                        3,
+                    )
+                    projected_retry_command_completion_age_with_margin_s = round(
+                        projected_retry_command_completion_age_s + _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S,
+                        3,
+                    )
             if (
                 retry_queue_candidate
                 and not _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED
@@ -3719,6 +3733,21 @@ class NLMBatchIngestor:
                 and projected_retry_ready_age_with_margin_s >= _SOURCE_AGE_CLIFF_S
             ):
                 retry_queue_skipped_reason = "projected_source_age_cliff_margin"
+            elif (
+                retry_queue_candidate
+                and not _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED
+                and projected_retry_command_completion_age_s is not None
+                and projected_retry_command_completion_age_s >= _SOURCE_AGE_CLIFF_S
+            ):
+                retry_queue_skipped_reason = "projected_primary_command_age_cliff"
+            elif (
+                retry_queue_candidate
+                and not _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED
+                and projected_retry_command_completion_age_with_margin_s is not None
+                and _SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S > 0.0
+                and projected_retry_command_completion_age_with_margin_s >= _SOURCE_AGE_CLIFF_S
+            ):
+                retry_queue_skipped_reason = "projected_primary_command_age_cliff_margin"
             retry_queue_eligible = (
                 retry_queue_candidate
                 and retry_queue_skipped_reason is None
@@ -3814,6 +3843,8 @@ class NLMBatchIngestor:
                         "source_ready_age_s": final_ready_age_s,
                         "projected_retry_ready_age_s": projected_retry_ready_age_s,
                         "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                        "projected_retry_command_completion_age_s": projected_retry_command_completion_age_s,
+                        "projected_retry_command_completion_age_with_margin_s": projected_retry_command_completion_age_with_margin_s,
                         "local_retry_skipped_reason": local_retry_skipped_reason,
                         "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                         "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
@@ -3921,6 +3952,8 @@ class NLMBatchIngestor:
                     "retry_queue_skipped_reason": retry_queue_skipped_reason,
                     "projected_retry_ready_age_s": projected_retry_ready_age_s,
                     "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                    "projected_retry_command_completion_age_s": projected_retry_command_completion_age_s,
+                    "projected_retry_command_completion_age_with_margin_s": projected_retry_command_completion_age_with_margin_s,
                     "local_retry_skipped_reason": local_retry_skipped_reason,
                     "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                     "retry_attempts_limit": _SOURCE_CONTENT_RETRY_ATTEMPTS,
@@ -4007,6 +4040,8 @@ class NLMBatchIngestor:
                 "retry_queue_skipped_reason": retry_queue_skipped_reason,
                 "projected_retry_ready_age_s": projected_retry_ready_age_s,
                 "projected_retry_ready_age_with_margin_s": projected_retry_ready_age_with_margin_s,
+                "projected_retry_command_completion_age_s": projected_retry_command_completion_age_s,
+                "projected_retry_command_completion_age_with_margin_s": projected_retry_command_completion_age_with_margin_s,
                 "local_retry_skipped_reason": local_retry_skipped_reason,
                 "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                 "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,

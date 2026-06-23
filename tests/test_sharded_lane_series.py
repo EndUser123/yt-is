@@ -768,6 +768,8 @@ def test_lane_env_exports_run_environment_label(tmp_path):
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE": "25",
             "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S": "180",
             "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "true",
+            "YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S": "60",
+            "YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S": "20",
             "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": str(tmp_path / "shared.sqlite"),
         },
     )
@@ -786,11 +788,15 @@ def test_lane_env_exports_run_environment_label(tmp_path):
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_FIRST_WINDOW_SIZE"] == "25"
     assert env["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S"] == "180"
     assert env["YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED"] == "true"
+    assert env["YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S"] == "60"
+    assert env["YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S"] == "20"
     assert env["YTIS_NLM_SHARED_RETRY_POOL_DB_PATH"] == str(tmp_path / "shared.sqlite")
     snapshot = _lane_process_env_snapshot(env)
     assert env["YTIS_TRANSCRIPT_CACHE_DB_PATH"] == str(tmp_path / "lane" / "transcripts.sqlite")
     assert snapshot["YTIS_TRANSCRIPT_CACHE_DB_PATH"] == str(tmp_path / "lane" / "transcripts.sqlite")
     assert snapshot["YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S"] == "180"
+    assert snapshot["YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S"] == "60"
+    assert snapshot["YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S"] == "20"
     assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_NLM_WORKER_AUTH_USE_CDP"] == "0"
@@ -1225,6 +1231,8 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
         "YTIS_RUN_ENVIRONMENT_LABEL": "",
         "YTIS_NLM_WORKER_AUTH_USE_CDP": "",
         "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
+        "YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S": "",
+        "YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S": "",
         "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
         "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": "",
         "YTIS_TRANSCRIPT_CACHE_DB_PATH": "",
