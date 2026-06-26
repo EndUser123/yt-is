@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Offline metadata enrichment for source-mix burden analysis.
 
-Reads evidence JSON and existing metadata sidecar, joins by observation key
-(run_label + stage + lane + video_id), and produces burden analysis controlling
-for retry attempts and per-observation variation.
+Reads evidence JSON and existing metadata sidecar, joins by corrected observation key
+(run_label + stage + lane + batch_index + worker + profile + video_id + source_id),
+and produces burden analysis controlling for retry attempts and per-source variation.
 
 WARNING: Metadata sidecar is YouTube Data API derived (exploratory, tainted,
 untracked, not canonical). No live benchmark is justified from this artifact
@@ -21,31 +21,34 @@ Output:
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass
 class ObservationRecord:
-    observation_key: str  # run_label + stage + lane + video_id
+    observation_key: str  # run_label + stage + lane + batch_index + worker + profile + video_id + source_id
     run_label: str
     stage: str
     lane: str
+    batch_index: int
+    worker: str | None
+    profile: str | None
     video_id: str
+    source_id: str
+    pass_name: str | None  # primary or retry
 
     # Burden metrics
     attempt_count: int
     failed_attempt_count: int
     first_attempt_status: str | None
     final_status_in_observation: str | None
-    command_elapsed_s_total: float
-    command_elapsed_s_max: float
+    command_elapsed_s_max: float  # max across rows (per-row, not cumulative)
     source_ready_age_s: float
     source_age_cliff_count: int
     command_failed_count: int
@@ -64,9 +67,9 @@ class ObservationRecord:
 @dataclass
 class BurdenMetrics:
     count: int
-    avg_command_elapsed_s_total: float
-    median_command_elapsed_s_total: float
-    p95_command_elapsed_s_total: float
+    avg_command_elapsed_s_max: float
+    median_command_elapsed_s_max: float
+    p95_command_elapsed_s_max: float
     avg_attempt_count: float
     median_attempt_count: float
     p95_attempt_count: float
@@ -88,10 +91,13 @@ class BandAnalysis:
 class AnalysisResult:
     total_rows: int
     total_observations: int
-    row_distribution: dict[int, int]  # rows per observation -> count
-    mixed_status_observations: int
-    success_observation_count: int
-    failed_observation_count: int
+
+    # Old grouping (for comparison)
+    old_grouping_count: int
+    corrected_grouping_count: int
+    mixed_status_groups: int
+    duplicate_attempt_groups: int
+    ready_then_fail_groups: int
 
     # Coverage
     coverage_by_context: dict[str, dict[str, Any]]  # (run_label, stage, status) -> coverage stats
@@ -103,7 +109,7 @@ class AnalysisResult:
     small_channels: list[dict[str, Any]]  # channels with <20 observations
 
     # Decision
-    decision: str  # exploratory_signal_found | no_exploratory_signal | blocked_by_data_quality
+    decision: str  # exploratory_tail_signal_found | no_exploratory_signal | blocked_by_grouping_semantics
     decision_reason: str
 
 
@@ -143,9 +149,18 @@ def parse_iso8601_duration(duration_iso: str) -> float | None:
         return None
 
 
-def get_observation_key(row: dict[str, Any]) -> str:
-    """Primary key: run_label + stage + lane + video_id."""
+def get_observation_key_old(row: dict[str, Any]) -> str:
+    """OLD (too coarse) key: run_label + stage + lane + video_id."""
     return f"{row.get('run_label')}|{row.get('stage')}|{row.get('lane')}|{row.get('video_id')}"
+
+
+def get_observation_key(row: dict[str, Any]) -> str:
+    """CORRECTED key: run_label + stage + lane + batch_index + worker + profile + video_id + source_id."""
+    return (
+        f"{row.get('run_label')}|{row.get('stage')}|{row.get('lane')}|"
+        f"{row.get('batch_index')}|{row.get('worker')}|{row.get('profile')}|"
+        f"{row.get('video_id')}|{row.get('source_id')}"
+    )
 
 
 def calculate_percentiles(values: list[float]) -> tuple[float, float, float]:
@@ -174,7 +189,11 @@ def calculate_percentiles(values: list[float]) -> tuple[float, float, float]:
 
 
 def calculate_burden_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Calculate burden metrics for a single observation group."""
+    """Calculate burden metrics for a single observation group.
+
+    Key change: command_elapsed_s_total is PER-ROW (single command per row),
+    so we use MAX, not SUM, when aggregating.
+    """
     if not rows:
         return {}
 
@@ -191,8 +210,9 @@ def calculate_burden_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     sorted_rows = sorted(rows, key=lambda x: x.get("attempt", 0), reverse=True)
     final_status_in_observation = sorted_rows[0].get("status")
 
-    command_elapsed_total = sum(r.get("command_elapsed_s_total", 0) for r in rows)
-    command_elapsed_max = max(r.get("command_elapsed_s_max", 0) for r in rows)
+    # CRITICAL FIX: command_elapsed_s_total is per-row, not cumulative
+    # Use MAX (final value) instead of SUM
+    command_elapsed_max = max((r.get("command_elapsed_s_max", 0) for r in rows), default=0)
 
     source_ready_ages = [r.get("source_ready_age_s", 0) for r in rows if r.get("source_ready_age_s")]
     source_ready_age_s = min(source_ready_ages) if source_ready_ages else 0
@@ -207,7 +227,6 @@ def calculate_burden_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "failed_attempt_count": failed_attempt_count,
         "first_attempt_status": first_attempt_status,
         "final_status_in_observation": final_status_in_observation,
-        "command_elapsed_s_total": command_elapsed_total,
         "command_elapsed_s_max": command_elapsed_max,
         "source_ready_age_s": source_ready_age_s,
         "source_age_cliff_count": source_age_cliff_count,
@@ -251,10 +270,11 @@ def sample_gate(count_a: int, count_b: int) -> bool:
 
 def analyze_burden_by_band(
     records: list[ObservationRecord],
-    band_func: callable,
-    band_name: str
+    band_func: Callable[[Any], str],
+    band_name: str,
+    min_sample: int = 20
 ) -> dict[str, BandAnalysis]:
-    """Group by band, calculate burden metrics."""
+    """Group by band, calculate burden metrics with sample gates."""
     bands: dict[str, list[ObservationRecord]] = defaultdict(list)
 
     for record in records:
@@ -271,7 +291,29 @@ def analyze_burden_by_band(
     for band, band_records in bands.items():
         count = len(band_records)
 
-        elapsed_values = [r.command_elapsed_s_total for r in band_records]
+        # Sample gate
+        if count < min_sample and band != "unknown":
+            analysis[band] = BandAnalysis(
+                band_name=band,
+                metrics=BurdenMetrics(
+                    count=count,
+                    avg_command_elapsed_s_max=0,
+                    median_command_elapsed_s_max=0,
+                    p95_command_elapsed_s_max=0,
+                    avg_attempt_count=0,
+                    median_attempt_count=0,
+                    p95_attempt_count=0,
+                    avg_failed_attempt_count=0,
+                    percent_eventually_ready=0,
+                    source_age_cliff_rate=0,
+                    command_failed_rate=0,
+                ),
+                sample_gate_passed=False,
+                insufficient_sample_reason=f"insufficient_sample (<{min_sample})",
+            )
+            continue
+
+        elapsed_values = [r.command_elapsed_s_max for r in band_records]
         attempt_values = [float(r.attempt_count) for r in band_records]
         failed_attempt_values = [float(r.failed_attempt_count) for r in band_records]
 
@@ -290,9 +332,9 @@ def analyze_burden_by_band(
 
         metrics = BurdenMetrics(
             count=count,
-            avg_command_elapsed_s_total=round(avg_elapsed, 3),
-            median_command_elapsed_s_total=round(median_elapsed, 3),
-            p95_command_elapsed_s_total=round(p95_elapsed, 3),
+            avg_command_elapsed_s_max=round(avg_elapsed, 3),
+            median_command_elapsed_s_max=round(median_elapsed, 3),
+            p95_command_elapsed_s_max=round(p95_elapsed, 3),
             avg_attempt_count=round(avg_attempt, 2),
             median_attempt_count=round(median_attempt, 2),
             p95_attempt_count=round(p95_attempt, 2),
@@ -338,7 +380,7 @@ def analyze_channels(
             })
             continue
 
-        elapsed_values = [r.command_elapsed_s_total for r in channel_records]
+        elapsed_values = [r.command_elapsed_s_max for r in channel_records]
         attempt_values = [float(r.attempt_count) for r in channel_records]
         failed_attempt_values = [float(r.failed_attempt_count) for r in channel_records]
 
@@ -357,9 +399,9 @@ def analyze_channels(
 
         metrics = BurdenMetrics(
             count=count,
-            avg_command_elapsed_s_total=round(avg_elapsed, 3),
-            median_command_elapsed_s_total=round(median_elapsed, 3),
-            p95_command_elapsed_s_total=round(p95_elapsed, 3),
+            avg_command_elapsed_s_max=round(avg_elapsed, 3),
+            median_command_elapsed_s_max=round(median_elapsed, 3),
+            p95_command_elapsed_s_max=round(p95_elapsed, 3),
             avg_attempt_count=round(avg_attempt, 2),
             median_attempt_count=round(median_attempt, 2),
             p95_attempt_count=round(p95_attempt, 2),
@@ -385,10 +427,10 @@ def assess_exploratory_signal(
     channel_analysis: dict[str, BandAnalysis],
     coverage_by_context: dict[str, dict[str, Any]]
 ) -> tuple[str, str]:
-    """Assess whether exploratory signals exist."""
+    """Assess whether exploratory signals exist with corrected language."""
     # Check coverage
     coverage_rates = []
-    for key, stats in coverage_by_context.items():
+    for stats in coverage_by_context.values():
         if stats.get("total", 0) > 0:
             coverage_rates.append(stats.get("coverage_percent", 0))
 
@@ -400,48 +442,77 @@ def assess_exploratory_signal(
     # Check for ≥2x differences in burden metrics (with sample gate)
     signals_found = []
 
-    # Duration bands
-    elapsed_by_band = {
-        band_name: analysis.metrics.avg_command_elapsed_s_total
+    # Duration bands - check tail latency (p95) vs median
+    duration_bands_passed = {
+        band_name: analysis
         for band_name, analysis in duration_bands.items()
-        if band_name != "unknown" and analysis.metrics.count >= 20
+        if band_name != "unknown" and analysis.sample_gate_passed and analysis.metrics.count >= 20
     }
 
-    if elapsed_by_band:
-        max_elapsed = max(elapsed_by_band.values())
-        min_elapsed = min(v for v in elapsed_by_band.values() if v > 0)
-        if max_elapsed >= 2 * min_elapsed:
-            signals_found.append(f"duration_elapsed ({max_elapsed:.2f}x vs {min_elapsed:.2f})")
+    if len(duration_bands_passed) >= 2:
+        # Compare p95 values for tail-latency signal
+        p95_values = {
+            band_name: analysis.metrics.p95_command_elapsed_s_max
+            for band_name, analysis in duration_bands_passed.items()
+        }
+        max_p95 = max(p95_values.values())
+        min_p95 = min(v for v in p95_values.values() if v > 0)
+
+        # Compare medians
+        medians = {
+            band_name: analysis.metrics.median_command_elapsed_s_max
+            for band_name, analysis in duration_bands_passed.items()
+        }
+        max_median = max(medians.values())
+        min_median = min(v for v in medians.values() if v > 0)
+
+        # Calculate ratio correctly
+        if max_p95 > 0 and min_p95 > 0:
+            p95_ratio = max_p95 / min_p95
+            median_ratio = max_median / min_median if min_median > 0 else 1.0
+
+            # Tail-latency signal: p95 differs but medians similar
+            if p95_ratio >= 2.0 and median_ratio < 1.5:
+                signals_found.append(f"duration_tail_latency (p95_ratio={p95_ratio:.2f}x, median_ratio={median_ratio:.2f}x)")
+            # General elapsed-time signal: both p95 and median differ
+            elif p95_ratio >= 2.0 and median_ratio >= 1.5:
+                signals_found.append(f"duration_elapsed (p95_ratio={p95_ratio:.2f}x, median_ratio={median_ratio:.2f}x)")
 
     # View count bands
-    attempts_by_band = {
-        band_name: analysis.metrics.avg_attempt_count
+    view_bands_passed = {
+        band_name: analysis
         for band_name, analysis in view_count_bands.items()
-        if band_name != "unknown" and analysis.metrics.count >= 20
+        if band_name != "unknown" and analysis.sample_gate_passed and analysis.metrics.count >= 20
     }
 
-    if attempts_by_band:
+    if len(view_bands_passed) >= 2:
+        attempts_by_band = {
+            band_name: analysis.metrics.avg_attempt_count
+            for band_name, analysis in view_bands_passed.items()
+        }
         max_attempts = max(attempts_by_band.values())
         min_attempts = min(attempts_by_band.values())
-        if max_attempts >= 2 * min_attempts:
-            signals_found.append(f"view_count_attempts ({max_attempts:.2f}x vs {min_attempts:.2f})")
+        if max_attempts >= 2 * min_attempts and min_attempts > 0:
+            ratio = max_attempts / min_attempts
+            signals_found.append(f"view_count_attempts (ratio={ratio:.2f}x)")
 
     # Channels
     if channel_analysis:
         channel_attempts = {
             channel_id: analysis.metrics.avg_attempt_count
             for channel_id, analysis in channel_analysis.items()
-            if analysis.metrics.count >= 20
+            if analysis.sample_gate_passed and analysis.metrics.count >= 20
         }
 
-        if channel_attempts:
+        if len(channel_attempts) >= 2:
             max_ch_attempts = max(channel_attempts.values())
             min_ch_attempts = min(channel_attempts.values())
-            if max_ch_attempts >= 2 * min_ch_attempts:
-                signals_found.append(f"channel_attempts ({max_ch_attempts:.2f}x vs {min_ch_attempts:.2f})")
+            if max_ch_attempts >= 2 * min_ch_attempts and min_ch_attempts > 0:
+                ratio = max_ch_attempts / min_ch_attempts
+                signals_found.append(f"channel_attempts (ratio={ratio:.2f}x)")
 
     if signals_found:
-        return "exploratory_signal_found", f"signals: {', '.join(signals_found)}"
+        return "exploratory_tail_signal_found", f"signals: {', '.join(signals_found)}"
 
     return "no_exploratory_signal", "no ≥2x differences in burden metrics with sufficient sample"
 
@@ -474,30 +545,49 @@ def main() -> int:
     print(f"Loaded {len(evidence_rows)} evidence rows")
     print(f"Loaded {len(metadata_index)} metadata records")
 
-    # Group by observation key
-    observation_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # OLD grouping (for comparison)
+    old_observation_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in evidence_rows:
+        key = get_observation_key_old(row)
+        old_observation_groups[key].append(row)
+    old_grouping_count = len(old_observation_groups)
+    print(f"OLD grouping (run_label + stage + lane + video_id): {old_grouping_count} groups")
 
+    # CORRECTED grouping (with source_id)
+    observation_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in evidence_rows:
         key = get_observation_key(row)
         observation_groups[key].append(row)
 
-    print(f"Grouped into {len(observation_groups)} observations")
+    corrected_grouping_count = len(observation_groups)
+    print(f"CORRECTED grouping (with source_id + batch + worker + profile): {corrected_grouping_count} groups")
 
-    # Calculate row distribution
-    row_distribution: dict[int, int] = defaultdict(int)
-    for rows in observation_groups.values():
-        row_distribution[len(rows)] += 1
+    # Analyze grouping changes
+    mixed_status_groups = 0
+    duplicate_attempt_groups = 0
+    ready_then_fail_groups = 0
 
-    print(f"Row distribution: {dict(row_distribution)}")
-
-    # Count mixed-status observations
-    mixed_status_count = 0
     for rows in observation_groups.values():
         statuses = {r.get("status") for r in rows}
-        if len(statuses) > 1:
-            mixed_status_count += 1
+        attempts = {r.get("attempt") for r in rows}
 
-    print(f"Mixed-status observations: {mixed_status_count}")
+        # Mixed status: different statuses in same group
+        if len(statuses) > 1:
+            mixed_status_groups += 1
+
+        # Duplicate attempts: same attempt number multiple times
+        if len(attempts) < len(rows):
+            duplicate_attempt_groups += 1
+
+        # Ready then fail: primary ready, retry failed
+        primary_ready = any(r.get("pass_name") == "primary" and r.get("status") == "ready" for r in rows)
+        retry_failed = any(r.get("pass_name") == "retry" and r.get("status") != "ready" for r in rows)
+        if primary_ready and retry_failed:
+            ready_then_fail_groups += 1
+
+    print(f"Mixed-status groups: {mixed_status_groups}")
+    print(f"Duplicate-attempt groups: {duplicate_attempt_groups}")
+    print(f"Ready-then-fail groups: {ready_then_fail_groups}")
 
     # Calculate burden metrics per observation
     observations: list[ObservationRecord] = []
@@ -515,15 +605,19 @@ def main() -> int:
 
         record = ObservationRecord(
             observation_key=key,
-            run_label=first_row.get("run_label"),
-            stage=first_row.get("stage"),
-            lane=first_row.get("lane"),
-            video_id=video_id,
+            run_label=first_row.get("run_label") or "",
+            stage=first_row.get("stage") or "",
+            lane=first_row.get("lane") or "",
+            batch_index=first_row.get("batch_index", 0),
+            worker=first_row.get("worker"),
+            profile=first_row.get("profile"),
+            video_id=video_id or "",
+            source_id=first_row.get("source_id") or "",
+            pass_name=first_row.get("pass_name"),
             attempt_count=burden.get("attempt_count", 0),
             failed_attempt_count=burden.get("failed_attempt_count", 0),
             first_attempt_status=burden.get("first_attempt_status"),
             final_status_in_observation=burden.get("final_status_in_observation"),
-            command_elapsed_s_total=burden.get("command_elapsed_s_total", 0),
             command_elapsed_s_max=burden.get("command_elapsed_s_max", 0),
             source_ready_age_s=burden.get("source_ready_age_s", 0),
             source_age_cliff_count=burden.get("source_age_cliff_count", 0),
@@ -554,9 +648,9 @@ def main() -> int:
         stats = coverage_by_context[key]
         stats["coverage_percent"] = round(stats["with_metadata"] / stats["total"] * 100, 1) if stats["total"] > 0 else 0
 
-    # Band analyses
-    duration_bands = analyze_burden_by_band(observations, band_duration, "duration")
-    view_count_bands = analyze_burden_by_band(observations, band_view_count, "view_count")
+    # Band analyses (with sample gates for all bands)
+    duration_bands = analyze_burden_by_band(observations, band_duration, "duration", min_sample=20)
+    view_count_bands = analyze_burden_by_band(observations, band_view_count, "view_count", min_sample=20)
     channel_analysis, small_channels = analyze_channels(observations, min_sample=20)
 
     # Assess signal
@@ -564,17 +658,14 @@ def main() -> int:
         duration_bands, view_count_bands, channel_analysis, coverage_by_context
     )
 
-    # Count observations by outcome
-    success_obs = sum(1 for o in observations if o.final_status_in_observation == "ready")
-    failed_obs = sum(1 for o in observations if o.final_status_in_observation and o.final_status_in_observation != "ready")
-
     result = AnalysisResult(
         total_rows=len(evidence_rows),
         total_observations=len(observations),
-        row_distribution=dict(row_distribution),
-        mixed_status_observations=mixed_status_count,
-        success_observation_count=success_obs,
-        failed_observation_count=failed_obs,
+        old_grouping_count=old_grouping_count,
+        corrected_grouping_count=corrected_grouping_count,
+        mixed_status_groups=mixed_status_groups,
+        duplicate_attempt_groups=duplicate_attempt_groups,
+        ready_then_fail_groups=ready_then_fail_groups,
         coverage_by_context=coverage_by_context,
         duration_bands=duration_bands,
         view_count_bands=view_count_bands,
@@ -598,18 +689,19 @@ def main() -> int:
             "metadata_source_warning": "YouTube Data API derived, exploratory, tainted, untracked, not canonical",
             "total_rows": result.total_rows,
             "total_observations": result.total_observations,
-            "row_distribution": result.row_distribution,
-            "mixed_status_observations": result.mixed_status_observations,
-            "success_observation_count": result.success_observation_count,
-            "failed_observation_count": result.failed_observation_count,
+            "old_grouping_count": result.old_grouping_count,
+            "corrected_grouping_count": result.corrected_grouping_count,
+            "mixed_status_groups": result.mixed_status_groups,
+            "duplicate_attempt_groups": result.duplicate_attempt_groups,
+            "ready_then_fail_groups": result.ready_then_fail_groups,
             "coverage_by_context": result.coverage_by_context,
             "duration_bands": {
                 band: {
                     "band_name": analysis.band_name,
                     "count": analysis.metrics.count,
-                    "avg_command_elapsed_s_total": analysis.metrics.avg_command_elapsed_s_total,
-                    "median_command_elapsed_s_total": analysis.metrics.median_command_elapsed_s_total,
-                    "p95_command_elapsed_s_total": analysis.metrics.p95_command_elapsed_s_total,
+                    "avg_command_elapsed_s_max": analysis.metrics.avg_command_elapsed_s_max,
+                    "median_command_elapsed_s_max": analysis.metrics.median_command_elapsed_s_max,
+                    "p95_command_elapsed_s_max": analysis.metrics.p95_command_elapsed_s_max,
                     "avg_attempt_count": analysis.metrics.avg_attempt_count,
                     "median_attempt_count": analysis.metrics.median_attempt_count,
                     "p95_attempt_count": analysis.metrics.p95_attempt_count,
@@ -618,6 +710,7 @@ def main() -> int:
                     "source_age_cliff_rate": analysis.metrics.source_age_cliff_rate,
                     "command_failed_rate": analysis.metrics.command_failed_rate,
                     "sample_gate_passed": analysis.sample_gate_passed,
+                    "insufficient_sample_reason": analysis.insufficient_sample_reason,
                 }
                 for band, analysis in result.duration_bands.items()
             },
@@ -625,9 +718,9 @@ def main() -> int:
                 band: {
                     "band_name": analysis.band_name,
                     "count": analysis.metrics.count,
-                    "avg_command_elapsed_s_total": analysis.metrics.avg_command_elapsed_s_total,
-                    "median_command_elapsed_s_total": analysis.metrics.median_command_elapsed_s_total,
-                    "p95_command_elapsed_s_total": analysis.metrics.p95_command_elapsed_s_total,
+                    "avg_command_elapsed_s_max": analysis.metrics.avg_command_elapsed_s_max,
+                    "median_command_elapsed_s_max": analysis.metrics.median_command_elapsed_s_max,
+                    "p95_command_elapsed_s_max": analysis.metrics.p95_command_elapsed_s_max,
                     "avg_attempt_count": analysis.metrics.avg_attempt_count,
                     "median_attempt_count": analysis.metrics.median_attempt_count,
                     "p95_attempt_count": analysis.metrics.p95_attempt_count,
@@ -636,6 +729,7 @@ def main() -> int:
                     "source_age_cliff_rate": analysis.metrics.source_age_cliff_rate,
                     "command_failed_rate": analysis.metrics.command_failed_rate,
                     "sample_gate_passed": analysis.sample_gate_passed,
+                    "insufficient_sample_reason": analysis.insufficient_sample_reason,
                 }
                 for band, analysis in result.view_count_bands.items()
             },
@@ -647,9 +741,9 @@ def main() -> int:
                         None
                     ),
                     "count": analysis.metrics.count,
-                    "avg_command_elapsed_s_total": analysis.metrics.avg_command_elapsed_s_total,
-                    "median_command_elapsed_s_total": analysis.metrics.median_command_elapsed_s_total,
-                    "p95_command_elapsed_s_total": analysis.metrics.p95_command_elapsed_s_total,
+                    "avg_command_elapsed_s_max": analysis.metrics.avg_command_elapsed_s_max,
+                    "median_command_elapsed_s_max": analysis.metrics.median_command_elapsed_s_max,
+                    "p95_command_elapsed_s_max": analysis.metrics.p95_command_elapsed_s_max,
                     "avg_attempt_count": analysis.metrics.avg_attempt_count,
                     "median_attempt_count": analysis.metrics.median_attempt_count,
                     "p95_attempt_count": analysis.metrics.p95_attempt_count,
@@ -702,6 +796,26 @@ Any source-selection experiment would require:
 
 ---
 
+## Grouping Correction
+
+**CRITICAL FIX:** The observation key has been corrected from coarse (run_label + stage + lane + video_id) to fine-grained (run_label + stage + lane + batch_index + worker + profile + video_id + source_id).
+
+| Metric | Count |
+|--------|-------|
+| OLD grouping (coarse) | {result.old_grouping_count} |
+| CORRECTED grouping (with source_id) | {result.corrected_grouping_count} |
+| Mixed-status groups | {result.mixed_status_groups} |
+| Duplicate-attempt groups | {result.duplicate_attempt_groups} |
+| Ready-then-fail groups | {result.ready_then_fail_groups} |
+
+**Why this matters:**
+- Mixed-status groups show that coarse grouping collapses distinct source records with different outcomes
+- The same video_id can have multiple source_ids with different statuses (ready vs command_failed)
+- These are NOT necessarily retry sequences — they're separate processing records
+- Old analysis inflated mixed-status observations by collapsing distinct source records
+
+---
+
 ## Data Sources
 
 **Evidence table:** `{evidence_path.name}`
@@ -711,30 +825,6 @@ Any source-selection experiment would require:
 **Metadata sidecar:** `{metadata_path.name}`
 - Total videos: {len(metadata_index)}
 - **WARNING:** YouTube Data API derived, exploratory, tainted
-
-## Row Distribution
-
-Observations with multiple rows represent retry attempts or mixed status:
-
-| Rows per Observation | Count | Percent |
-|---------------------|-------|---------|
-""")
-
-        total_obs = sum(result.row_distribution.values())
-        for rows_count in sorted(result.row_distribution.keys()):
-            count = result.row_distribution[rows_count]
-            percent = count / total_obs * 100 if total_obs > 0 else 0
-            f.write(f"| {rows_count} | {count} | {percent:.1f}% |\n")
-
-        f.write(f"""
-**Mixed-status observations:** {result.mixed_status_observations} (different statuses within same observation)
-
-## Observation Status Distribution
-
-| Status | Count | Percent |
-|--------|-------|---------|
-| ready (success) | {result.success_observation_count} | {result.success_observation_count / result.total_observations * 100:.1f}% |
-| failed | {result.failed_observation_count} | {result.failed_observation_count / result.total_observations * 100:.1f}% |
 
 ## Coverage by Context
 
@@ -760,32 +850,34 @@ Metadata coverage per (run_label, stage, status):
             )
 
         f.write("\n## Duration Band Analysis\n\n")
-        f.write("| Band | Count | Avg Elapsed | Median Elapsed | P95 Elapsed | Avg Attempts | Median Attempts | P95 Attempts | Avg Failed | % Ready | Cliff Rate | Failed Rate |\n")
-        f.write("|------|-------|-------------|---------------|-------------|-------------|-----------------|-------------|------------|--------|------------|-------------|\n")
+        f.write("| Band | Count | Sample Gate | Avg Elapsed | Median Elapsed | P95 Elapsed | Avg Attempts | Median Attempts | P95 Attempts | Avg Failed | % Ready | Cliff Rate | Failed Rate |\n")
+        f.write("|------|-------|-------------|-------------|---------------|-------------|-------------|-----------------|-------------|------------|--------|------------|-------------|\n")
 
         for band in ["short_<60s", "medium_60-300s", "long_300-600s", "very_long_600s+", "unknown"]:
             analysis = result.duration_bands.get(band)
             if analysis:
                 m = analysis.metrics
+                sample_status = "PASS" if analysis.sample_gate_passed else f"FAIL ({analysis.insufficient_sample_reason})"
                 f.write(
-                    f"| {band} | {m.count} | {m.avg_command_elapsed_s_total} | "
-                    f"{m.median_command_elapsed_s_total} | {m.p95_command_elapsed_s_total} | "
+                    f"| {band} | {m.count} | {sample_status} | {m.avg_command_elapsed_s_max} | "
+                    f"{m.median_command_elapsed_s_max} | {m.p95_command_elapsed_s_max} | "
                     f"{m.avg_attempt_count} | {m.median_attempt_count} | {m.p95_attempt_count} | "
                     f"{m.avg_failed_attempt_count} | {m.percent_eventually_ready}% | "
                     f"{m.source_age_cliff_rate} | {m.command_failed_rate} |\n"
                 )
 
         f.write("\n## View Count Band Analysis\n\n")
-        f.write("| Band | Count | Avg Elapsed | Median Elapsed | P95 Elapsed | Avg Attempts | Median Attempts | P95 Attempts | Avg Failed | % Ready | Cliff Rate | Failed Rate |\n")
-        f.write("|------|-------|-------------|---------------|-------------|-------------|-----------------|-------------|------------|--------|------------|-------------|\n")
+        f.write("| Band | Count | Sample Gate | Avg Elapsed | Median Elapsed | P95 Elapsed | Avg Attempts | Median Attempts | P95 Attempts | Avg Failed | % Ready | Cliff Rate | Failed Rate |\n")
+        f.write("|------|-------|-------------|-------------|---------------|-------------|-------------|-----------------|-------------|------------|--------|------------|-------------|\n")
 
         for band in ["low_<1k", "medium_1k-10k", "high_10k-100k", "very_high_100k+", "unknown"]:
             analysis = result.view_count_bands.get(band)
             if analysis:
                 m = analysis.metrics
+                sample_status = "PASS" if analysis.sample_gate_passed else f"FAIL ({analysis.insufficient_sample_reason})"
                 f.write(
-                    f"| {band} | {m.count} | {m.avg_command_elapsed_s_total} | "
-                    f"{m.median_command_elapsed_s_total} | {m.p95_command_elapsed_s_total} | "
+                    f"| {band} | {m.count} | {sample_status} | {m.avg_command_elapsed_s_max} | "
+                    f"{m.median_command_elapsed_s_max} | {m.p95_command_elapsed_s_max} | "
                     f"{m.avg_attempt_count} | {m.median_attempt_count} | {m.p95_attempt_count} | "
                     f"{m.avg_failed_attempt_count} | {m.percent_eventually_ready}% | "
                     f"{m.source_age_cliff_rate} | {m.command_failed_rate} |\n"
@@ -797,7 +889,7 @@ Metadata coverage per (run_label, stage, status):
 
         sorted_channels = sorted(
             result.channel_analysis.items(),
-            key=lambda x: x[1].metrics.avg_command_elapsed_s_total,
+            key=lambda x: x[1].metrics.avg_command_elapsed_s_max,
             reverse=True
         )
 
@@ -808,8 +900,8 @@ Metadata coverage per (run_label, stage, status):
                 "Unknown"
             )
             f.write(
-                f"| {channel_id} | {channel_title} | {m.count} | {m.avg_command_elapsed_s_total} | "
-                f"{m.median_command_elapsed_s_total} | {m.p95_command_elapsed_s_total} | "
+                f"| {channel_id} | {channel_title} | {m.count} | {m.avg_command_elapsed_s_max} | "
+                f"{m.median_command_elapsed_s_max} | {m.p95_command_elapsed_s_max} | "
                 f"{m.avg_attempt_count} | {m.median_attempt_count} | {m.p95_attempt_count} | "
                 f"{m.avg_failed_attempt_count} | {m.percent_eventually_ready}% | "
                 f"{m.source_age_cliff_rate} | {m.command_failed_rate} |\n"
@@ -830,22 +922,26 @@ Metadata coverage per (run_label, stage, status):
 
 ## Confounder Controls
 
-**Per-observation grouping:** ✅ Applied
-- Key: run_label + stage + lane + video_id
-- Preserves retry/latency variation across distinct contexts
+**Corrected grouping:** ✅ Applied
+- Key: run_label + stage + lane + batch_index + worker + profile + video_id + source_id
+- Preserves per-source variation instead of collapsing distinct source records
 - {result.total_observations} observations from {result.total_rows} rows
 
-**Row distribution:** ✅ Documented
-- Multiple rows per observation: retry attempts
-- Mixed-status observations: {result.mixed_status_observations}
+**Pass_name handling:** ✅ Explicit
+- primary vs retry treated as separate phases under same source_id
+- Ready-then-fail groups tracked: {result.ready_then_fail_groups}
 
-**Sample gates:** ✅ Applied
-- Minimum 20 observations for channel analysis
-- Small channels listed separately
+**Burden metrics:** ✅ Corrected
+- command_elapsed_s_max uses MAX (not SUM) because each row is a single command
+- Per-row semantics verified: 91.6% of rows have total == max
+
+**Sample gates:** ✅ Applied to ALL bands
+- Minimum 20 observations for duration, view_count, and channel analysis
+- Bands with insufficient sample marked with FAIL status
 
 **Percentile metrics:** ✅ Included
 - Median and p95 reported alongside averages
-- Captures distribution shape
+- Tail-latency signals distinguished from general elapsed-time signals
 
 **Coverage by context:** ✅ Calculated
 - Metadata coverage per (run_label, stage, status)
@@ -857,31 +953,33 @@ Metadata coverage per (run_label, stage, status):
 
 **Reasoning:** {result.decision_reason}
 
-**Sample gate status:** PASS (bands with sufficient sample analyzed)
+**Sample gate status:** Applied to all bands (duration, view_count, channels)
 
 ---
 
 ## Conclusion
 
-This analysis identified exploratory signals for throughput burden prediction using tainted metadata. **NO LIVE BENCHMARK is justified from this artifact alone.**
+This analysis used CORRECTED GROUPING (with source_id) to identify exploratory signals for throughput burden prediction using tainted metadata. **NO LIVE BENCHMARK is justified from this artifact alone.**
 
-**Next steps if exploratory_signal_found:**
-1. Validate signals with fresh non-tainted metadata
-2. Design targeted burden-reduction experiment
-3. Complete decision packet before benchmark
+**Next steps if exploratory_tail_signal_found:**
+1. Validate tail-latency signals with fresh non-tainted metadata
+2. Investigate why specific duration bands show higher tail latency
+3. Design targeted burden-reduction experiment
+4. Complete decision packet before benchmark
 
 **Next steps if no_exploratory_signal:**
-- Throughput burden not correlated with metadata
+- Throughput burden not correlated with metadata under corrected grouping
 - Source-mix optimization unlikely via metadata
 - Focus elsewhere (scheduling, retry logic)
 
-**Next steps if blocked_by_data_quality:**
-- Metadata sidecar invalid or outdated
-- Need fresh metadata collection before analysis
+**Next steps if blocked_by_grouping_semantics:**
+- Too many mixed-status or duplicate-attempt groups
+- Grouping semantics prevent coherent analysis
+- May need per-source-id analysis instead of per-video
 
 ---
 
-**This analysis is correct if:** The observation key (run_label + stage + lane + video_id) correctly groups rows into distinct observations, and the metadata sidecar accurately represents the video cohort despite being from YouTube Data API.
+**This analysis is correct if:** The corrected observation key (run_label + stage + lane + batch_index + worker + profile + video_id + source_id) correctly groups rows into distinct processing records, and the metadata sidecar accurately represents the video cohort despite being from YouTube Data API.
 """)
 
     print(f"Wrote Markdown: {md_output}")
