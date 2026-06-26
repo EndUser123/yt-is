@@ -272,6 +272,17 @@ def inspect_youtube_watch_page_via_ytdlp(video_id: str, *, timeout_s: float = _Y
             if not isinstance(payload, dict):
                 raise ValueError("yt-dlp JSON payload was not an object")
             classified = classify_ytdlp_watch_info(payload)
+            # Preserve metadata fields for source mix analysis
+            metadata_fields = {
+                "duration": payload.get("duration"),
+                "view_count": payload.get("view_count"),
+                "like_count": payload.get("like_count"),
+                "comment_count": payload.get("comment_count"),
+                "channel_id": payload.get("channel_id"),
+                "channel": payload.get("channel"),
+                "uploader": payload.get("uploader"),
+                "upload_date": payload.get("upload_date"),
+            }
             classified.update(
                 {
                     "video_id": video_id,
@@ -281,6 +292,7 @@ def inspect_youtube_watch_page_via_ytdlp(video_id: str, *, timeout_s: float = _Y
                     "returncode": proc.returncode,
                     "checked_at_epoch": started_at_epoch,
                     "elapsed_s": round(time.perf_counter() - started_at_perf, 3),
+                    **metadata_fields,
                 }
             )
             return classified
