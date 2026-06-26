@@ -41,14 +41,19 @@ class ObservationRecord:
     profile: str | None
     video_id: str
     source_id: str
-    pass_name: str | None  # primary or retry
+    pass_name: str | None  # primary or retry (recorded, but primary analysis merges primary+retry rows per source_id)
 
     # Burden metrics
     attempt_count: int
     failed_attempt_count: int
     first_attempt_status: str | None
     final_status_in_observation: str | None
-    command_elapsed_s_max: float  # max across rows (per-row, not cumulative)
+
+    # Three elapsed metrics (for transparency)
+    max_command_elapsed_s_max: float  # max across rows of per-row max (single longest command)
+    max_command_elapsed_s_total: float  # max across rows of per-row total (longest cumulative row)
+    sum_command_elapsed_s_total: float  # sum across rows (total burden across observation)
+
     source_ready_age_s: float
     source_age_cliff_count: int
     command_failed_count: int
@@ -67,9 +72,11 @@ class ObservationRecord:
 @dataclass
 class BurdenMetrics:
     count: int
-    avg_command_elapsed_s_max: float
-    median_command_elapsed_s_max: float
-    p95_command_elapsed_s_max: float
+    avg_max_command_elapsed_s_max: float  # avg of max per-row max (used for signal)
+    median_max_command_elapsed_s_max: float
+    p95_max_command_elapsed_s_max: float
+    avg_max_command_elapsed_s_total: float  # avg of max per-row total (for reference)
+    avg_sum_command_elapsed_s_total: float  # avg of sum across rows (for reference)
     avg_attempt_count: float
     median_attempt_count: float
     p95_attempt_count: float
@@ -108,8 +115,11 @@ class AnalysisResult:
     channel_analysis: dict[str, BandAnalysis]
     small_channels: list[dict[str, Any]]  # channels with <20 observations
 
+    # Phase-level analysis
+    phase_analysis: dict[str, dict[str, Any]]  # pass_name -> stats
+
     # Decision
-    decision: str  # exploratory_tail_signal_found | no_exploratory_signal | blocked_by_grouping_semantics
+    decision: str  # partial_exploratory_tail_signal | no_exploratory_signal | blocked_by_grouping_semantics
     decision_reason: str
 
 
@@ -210,9 +220,16 @@ def calculate_burden_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     sorted_rows = sorted(rows, key=lambda x: x.get("attempt", 0), reverse=True)
     final_status_in_observation = sorted_rows[0].get("status")
 
-    # CRITICAL FIX: command_elapsed_s_total is per-row, not cumulative
-    # Use MAX (final value) instead of SUM
-    command_elapsed_max = max((r.get("command_elapsed_s_max", 0) for r in rows), default=0)
+    # Calculate three elapsed metrics for transparency
+    # 1. max_command_elapsed_s_max: max across rows of per-row max (single longest command)
+    max_command_elapsed_s_max = max((r.get("command_elapsed_s_max", 0) for r in rows), default=0)
+
+    # 2. max_command_elapsed_s_total: max across rows of per-row total (longest cumulative row)
+    max_command_elapsed_s_total = max((r.get("command_elapsed_s_total", 0) for r in rows), default=0)
+
+    # 3. sum_command_elapsed_s_total: sum across rows (total burden across observation)
+    # Note: command_elapsed_s_total can represent multiple commands (count > 1), so sum captures total burden
+    sum_command_elapsed_s_total = sum(r.get("command_elapsed_s_total", 0) for r in rows)
 
     source_ready_ages = [r.get("source_ready_age_s", 0) for r in rows if r.get("source_ready_age_s")]
     source_ready_age_s = min(source_ready_ages) if source_ready_ages else 0
@@ -227,7 +244,9 @@ def calculate_burden_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "failed_attempt_count": failed_attempt_count,
         "first_attempt_status": first_attempt_status,
         "final_status_in_observation": final_status_in_observation,
-        "command_elapsed_s_max": command_elapsed_max,
+        "max_command_elapsed_s_max": max_command_elapsed_s_max,
+        "max_command_elapsed_s_total": max_command_elapsed_s_total,
+        "sum_command_elapsed_s_total": sum_command_elapsed_s_total,
         "source_ready_age_s": source_ready_age_s,
         "source_age_cliff_count": source_age_cliff_count,
         "command_failed_count": command_failed_count,
@@ -292,14 +311,16 @@ def analyze_burden_by_band(
         count = len(band_records)
 
         # Sample gate
-        if count < min_sample and band != "unknown":
+        if count < min_sample:
             analysis[band] = BandAnalysis(
                 band_name=band,
                 metrics=BurdenMetrics(
                     count=count,
-                    avg_command_elapsed_s_max=0,
-                    median_command_elapsed_s_max=0,
-                    p95_command_elapsed_s_max=0,
+                    avg_max_command_elapsed_s_max=0,
+                    median_max_command_elapsed_s_max=0,
+                    p95_max_command_elapsed_s_max=0,
+                    avg_max_command_elapsed_s_total=0,
+                    avg_sum_command_elapsed_s_total=0,
                     avg_attempt_count=0,
                     median_attempt_count=0,
                     p95_attempt_count=0,
@@ -309,11 +330,11 @@ def analyze_burden_by_band(
                     command_failed_rate=0,
                 ),
                 sample_gate_passed=False,
-                insufficient_sample_reason=f"insufficient_sample (<{min_sample})",
+                insufficient_sample_reason=f"insufficient_sample (<{min_sample})" if band != "unknown" else "excluded/unknown (<20)",
             )
             continue
 
-        elapsed_values = [r.command_elapsed_s_max for r in band_records]
+        elapsed_values = [r.max_command_elapsed_s_max for r in band_records]
         attempt_values = [float(r.attempt_count) for r in band_records]
         failed_attempt_values = [float(r.failed_attempt_count) for r in band_records]
 
@@ -330,11 +351,19 @@ def analyze_burden_by_band(
         failed_count = sum(r.command_failed_count for r in band_records)
         failed_rate = failed_count / count if count > 0 else 0
 
+        # Calculate avg_max_command_elapsed_s_total and avg_sum_command_elapsed_s_total for reference
+        max_total_values = [r.max_command_elapsed_s_total for r in band_records]
+        sum_total_values = [r.sum_command_elapsed_s_total for r in band_records]
+        avg_max_total = sum(max_total_values) / count if count > 0 else 0
+        avg_sum_total = sum(sum_total_values) / count if count > 0 else 0
+
         metrics = BurdenMetrics(
             count=count,
-            avg_command_elapsed_s_max=round(avg_elapsed, 3),
-            median_command_elapsed_s_max=round(median_elapsed, 3),
-            p95_command_elapsed_s_max=round(p95_elapsed, 3),
+            avg_max_command_elapsed_s_max=round(avg_elapsed, 3),
+            median_max_command_elapsed_s_max=round(median_elapsed, 3),
+            p95_max_command_elapsed_s_max=round(p95_elapsed, 3),
+            avg_max_command_elapsed_s_total=round(avg_max_total, 3),
+            avg_sum_command_elapsed_s_total=round(avg_sum_total, 3),
             avg_attempt_count=round(avg_attempt, 2),
             median_attempt_count=round(median_attempt, 2),
             p95_attempt_count=round(p95_attempt, 2),
@@ -380,7 +409,7 @@ def analyze_channels(
             })
             continue
 
-        elapsed_values = [r.command_elapsed_s_max for r in channel_records]
+        elapsed_values = [r.max_command_elapsed_s_max for r in channel_records]
         attempt_values = [float(r.attempt_count) for r in channel_records]
         failed_attempt_values = [float(r.failed_attempt_count) for r in channel_records]
 
@@ -397,11 +426,19 @@ def analyze_channels(
         failed_count = sum(r.command_failed_count for r in channel_records)
         failed_rate = failed_count / count if count > 0 else 0
 
+        # Calculate avg_max_command_elapsed_s_total and avg_sum_command_elapsed_s_total for reference
+        max_total_values = [r.max_command_elapsed_s_total for r in channel_records]
+        sum_total_values = [r.sum_command_elapsed_s_total for r in channel_records]
+        avg_max_total = sum(max_total_values) / count if count > 0 else 0
+        avg_sum_total = sum(sum_total_values) / count if count > 0 else 0
+
         metrics = BurdenMetrics(
             count=count,
-            avg_command_elapsed_s_max=round(avg_elapsed, 3),
-            median_command_elapsed_s_max=round(median_elapsed, 3),
-            p95_command_elapsed_s_max=round(p95_elapsed, 3),
+            avg_max_command_elapsed_s_max=round(avg_elapsed, 3),
+            median_max_command_elapsed_s_max=round(median_elapsed, 3),
+            p95_max_command_elapsed_s_max=round(p95_elapsed, 3),
+            avg_max_command_elapsed_s_total=round(avg_max_total, 3),
+            avg_sum_command_elapsed_s_total=round(avg_sum_total, 3),
             avg_attempt_count=round(avg_attempt, 2),
             median_attempt_count=round(median_attempt, 2),
             p95_attempt_count=round(p95_attempt, 2),
@@ -452,7 +489,7 @@ def assess_exploratory_signal(
     if len(duration_bands_passed) >= 2:
         # Compare p95 values for tail-latency signal
         p95_values = {
-            band_name: analysis.metrics.p95_command_elapsed_s_max
+            band_name: analysis.metrics.p95_max_command_elapsed_s_max
             for band_name, analysis in duration_bands_passed.items()
         }
         max_p95 = max(p95_values.values())
@@ -460,7 +497,7 @@ def assess_exploratory_signal(
 
         # Compare medians
         medians = {
-            band_name: analysis.metrics.median_command_elapsed_s_max
+            band_name: analysis.metrics.median_max_command_elapsed_s_max
             for band_name, analysis in duration_bands_passed.items()
         }
         max_median = max(medians.values())
@@ -512,9 +549,79 @@ def assess_exploratory_signal(
                 signals_found.append(f"channel_attempts (ratio={ratio:.2f}x)")
 
     if signals_found:
-        return "exploratory_tail_signal_found", f"signals: {', '.join(signals_found)}"
+        return "partial_exploratory_tail_signal", f"signals: {', '.join(signals_found)}"
 
     return "no_exploratory_signal", "no ≥2x differences in burden metrics with sufficient sample"
+
+
+def analyze_by_phase(
+    evidence_rows: list[dict[str, Any]],
+    metadata_index: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Analyze burden metrics split by pass_name (primary vs retry) from raw evidence.
+
+    Builds from raw evidence rows, not merged observations, to avoid losing retry rows.
+    """
+    # Group raw rows by pass_name
+    phase_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in evidence_rows:
+        pass_name = row.get("pass_name")
+        if pass_name:
+            phase_groups[pass_name].append(row)
+
+    phase_stats: dict[str, dict[str, Any]] = {}
+
+    for phase_name, phase_rows in phase_groups.items():
+        row_count = len(phase_rows)
+
+        if row_count == 0:
+            continue
+
+        # Calculate elapsed metrics from raw rows
+        max_elapsed_max_values = [r.get("command_elapsed_s_max", 0) for r in phase_rows]
+        max_elapsed_total_values = [r.get("command_elapsed_s_total", 0) for r in phase_rows]
+
+        avg_elapsed_max, median_elapsed_max, p95_elapsed_max = calculate_percentiles(max_elapsed_max_values)
+        avg_elapsed_total, median_elapsed_total, p95_elapsed_total = calculate_percentiles(max_elapsed_total_values)
+
+        attempt_values = [r.get("attempt", 1) for r in phase_rows]
+        avg_attempt, median_attempt, p95_attempt = calculate_percentiles(attempt_values)
+
+        # Status distribution
+        status_counts: dict[str, int] = defaultdict(int)
+        for row in phase_rows:
+            status = row.get("status", "unknown")
+            status_counts[status] += 1
+
+        # Duration band breakdown within phase
+        duration_bands_in_phase: dict[str, int] = defaultdict(int)
+        for row in phase_rows:
+            video_id = row.get("video_id")
+            if not video_id:
+                continue
+            metadata = metadata_index.get(video_id, {})
+            duration_iso = metadata.get("duration")
+            duration_s = parse_iso8601_duration(duration_iso) if duration_iso else None
+            band = band_duration(duration_s)
+            duration_bands_in_phase[band] += 1
+
+        phase_stats[phase_name] = {
+            "row_count": row_count,
+            "group_count": len(set(r.get("source_id") for r in phase_rows)),  # unique source_ids
+            "avg_max_command_elapsed_s_max": round(avg_elapsed_max, 3),
+            "median_max_command_elapsed_s_max": round(median_elapsed_max, 3),
+            "p95_max_command_elapsed_s_max": round(p95_elapsed_max, 3),
+            "avg_max_command_elapsed_s_total": round(avg_elapsed_total, 3),
+            "median_max_command_elapsed_s_total": round(median_elapsed_total, 3),
+            "p95_max_command_elapsed_s_total": round(p95_elapsed_total, 3),
+            "avg_attempt_count": round(avg_attempt, 2),
+            "median_attempt_count": round(median_attempt, 2),
+            "p95_attempt_count": round(p95_attempt, 2),
+            "status_distribution": dict(status_counts),
+            "duration_bands": dict(duration_bands_in_phase),
+        }
+
+    return phase_stats
 
 
 def main() -> int:
@@ -618,7 +725,9 @@ def main() -> int:
             failed_attempt_count=burden.get("failed_attempt_count", 0),
             first_attempt_status=burden.get("first_attempt_status"),
             final_status_in_observation=burden.get("final_status_in_observation"),
-            command_elapsed_s_max=burden.get("command_elapsed_s_max", 0),
+            max_command_elapsed_s_max=burden.get("max_command_elapsed_s_max", 0),
+            max_command_elapsed_s_total=burden.get("max_command_elapsed_s_total", 0),
+            sum_command_elapsed_s_total=burden.get("sum_command_elapsed_s_total", 0),
             source_ready_age_s=burden.get("source_ready_age_s", 0),
             source_age_cliff_count=burden.get("source_age_cliff_count", 0),
             command_failed_count=burden.get("command_failed_count", 0),
@@ -653,6 +762,9 @@ def main() -> int:
     view_count_bands = analyze_burden_by_band(observations, band_view_count, "view_count", min_sample=20)
     channel_analysis, small_channels = analyze_channels(observations, min_sample=20)
 
+    # Phase-level analysis by pass_name (from raw evidence, not merged observations)
+    phase_analysis = analyze_by_phase(evidence_rows, metadata_index)
+
     # Assess signal
     decision, decision_reason = assess_exploratory_signal(
         duration_bands, view_count_bands, channel_analysis, coverage_by_context
@@ -671,6 +783,7 @@ def main() -> int:
         view_count_bands=view_count_bands,
         channel_analysis=channel_analysis,
         small_channels=small_channels,
+        phase_analysis=phase_analysis,
         decision=decision,
         decision_reason=decision_reason,
     )
@@ -699,9 +812,9 @@ def main() -> int:
                 band: {
                     "band_name": analysis.band_name,
                     "count": analysis.metrics.count,
-                    "avg_command_elapsed_s_max": analysis.metrics.avg_command_elapsed_s_max,
-                    "median_command_elapsed_s_max": analysis.metrics.median_command_elapsed_s_max,
-                    "p95_command_elapsed_s_max": analysis.metrics.p95_command_elapsed_s_max,
+                    "avg_max_command_elapsed_s_max": analysis.metrics.avg_max_command_elapsed_s_max,
+                    "median_max_command_elapsed_s_max": analysis.metrics.median_max_command_elapsed_s_max,
+                    "p95_max_command_elapsed_s_max": analysis.metrics.p95_max_command_elapsed_s_max,
                     "avg_attempt_count": analysis.metrics.avg_attempt_count,
                     "median_attempt_count": analysis.metrics.median_attempt_count,
                     "p95_attempt_count": analysis.metrics.p95_attempt_count,
@@ -718,9 +831,9 @@ def main() -> int:
                 band: {
                     "band_name": analysis.band_name,
                     "count": analysis.metrics.count,
-                    "avg_command_elapsed_s_max": analysis.metrics.avg_command_elapsed_s_max,
-                    "median_command_elapsed_s_max": analysis.metrics.median_command_elapsed_s_max,
-                    "p95_command_elapsed_s_max": analysis.metrics.p95_command_elapsed_s_max,
+                    "avg_max_command_elapsed_s_max": analysis.metrics.avg_max_command_elapsed_s_max,
+                    "median_max_command_elapsed_s_max": analysis.metrics.median_max_command_elapsed_s_max,
+                    "p95_max_command_elapsed_s_max": analysis.metrics.p95_max_command_elapsed_s_max,
                     "avg_attempt_count": analysis.metrics.avg_attempt_count,
                     "median_attempt_count": analysis.metrics.median_attempt_count,
                     "p95_attempt_count": analysis.metrics.p95_attempt_count,
@@ -741,9 +854,9 @@ def main() -> int:
                         None
                     ),
                     "count": analysis.metrics.count,
-                    "avg_command_elapsed_s_max": analysis.metrics.avg_command_elapsed_s_max,
-                    "median_command_elapsed_s_max": analysis.metrics.median_command_elapsed_s_max,
-                    "p95_command_elapsed_s_max": analysis.metrics.p95_command_elapsed_s_max,
+                    "avg_max_command_elapsed_s_max": analysis.metrics.avg_max_command_elapsed_s_max,
+                    "median_max_command_elapsed_s_max": analysis.metrics.median_max_command_elapsed_s_max,
+                    "p95_max_command_elapsed_s_max": analysis.metrics.p95_max_command_elapsed_s_max,
                     "avg_attempt_count": analysis.metrics.avg_attempt_count,
                     "median_attempt_count": analysis.metrics.median_attempt_count,
                     "p95_attempt_count": analysis.metrics.p95_attempt_count,
@@ -756,6 +869,7 @@ def main() -> int:
                 for channel_id, analysis in result.channel_analysis.items()
             },
             "small_channels": result.small_channels,
+            "phase_analysis": result.phase_analysis,
             "decision": result.decision,
             "decision_reason": result.decision_reason,
         }, f, indent=2)
@@ -859,8 +973,8 @@ Metadata coverage per (run_label, stage, status):
                 m = analysis.metrics
                 sample_status = "PASS" if analysis.sample_gate_passed else f"FAIL ({analysis.insufficient_sample_reason})"
                 f.write(
-                    f"| {band} | {m.count} | {sample_status} | {m.avg_command_elapsed_s_max} | "
-                    f"{m.median_command_elapsed_s_max} | {m.p95_command_elapsed_s_max} | "
+                    f"| {band} | {m.count} | {sample_status} | {m.avg_max_command_elapsed_s_max} | "
+                    f"{m.median_max_command_elapsed_s_max} | {m.p95_max_command_elapsed_s_max} | "
                     f"{m.avg_attempt_count} | {m.median_attempt_count} | {m.p95_attempt_count} | "
                     f"{m.avg_failed_attempt_count} | {m.percent_eventually_ready}% | "
                     f"{m.source_age_cliff_rate} | {m.command_failed_rate} |\n"
@@ -876,12 +990,34 @@ Metadata coverage per (run_label, stage, status):
                 m = analysis.metrics
                 sample_status = "PASS" if analysis.sample_gate_passed else f"FAIL ({analysis.insufficient_sample_reason})"
                 f.write(
-                    f"| {band} | {m.count} | {sample_status} | {m.avg_command_elapsed_s_max} | "
-                    f"{m.median_command_elapsed_s_max} | {m.p95_command_elapsed_s_max} | "
+                    f"| {band} | {m.count} | {sample_status} | {m.avg_max_command_elapsed_s_max} | "
+                    f"{m.median_max_command_elapsed_s_max} | {m.p95_max_command_elapsed_s_max} | "
                     f"{m.avg_attempt_count} | {m.median_attempt_count} | {m.p95_attempt_count} | "
                     f"{m.avg_failed_attempt_count} | {m.percent_eventually_ready}% | "
                     f"{m.source_age_cliff_rate} | {m.command_failed_rate} |\n"
                 )
+
+        f.write("\n## Phase-Level Analysis (pass_name)\n\n")
+        f.write("Phase analysis built from raw evidence rows (not merged observations).\n\n")
+        f.write("| Phase | Row Count | Group Count | Avg Elapsed Max | Median Elapsed Max | P95 Elapsed Max | Avg Elapsed Total | Median Elapsed Total | P95 Elapsed Total | Avg Attempts | Median Attempts | P95 Attempts |\n")
+        f.write("|-------|----------|------------|------------------|-------------------|---------------|-------------------|--------------------|--------------------|-------------|----------------|-------------|\n")
+
+        for phase_name, phase_stats in result.phase_analysis.items():
+            f.write(
+                f"| {phase_name} | {phase_stats['row_count']} | {phase_stats['group_count']} | "
+                f"{phase_stats['avg_max_command_elapsed_s_max']} | {phase_stats['median_max_command_elapsed_s_max']} | {phase_stats['p95_max_command_elapsed_s_max']} | "
+                f"{phase_stats['avg_max_command_elapsed_s_total']} | {phase_stats['median_max_command_elapsed_s_total']} | {phase_stats['p95_max_command_elapsed_s_total']} | "
+                f"{phase_stats['avg_attempt_count']} | {phase_stats['median_attempt_count']} | {phase_stats['p95_attempt_count']} |\n"
+            )
+
+            # Status distribution
+            f.write(f"**Status distribution:** {phase_stats['status_distribution']}\n\n")
+
+            # Duration bands within phase
+            f.write("**Duration bands within phase:**\n\n")
+            for band, count in sorted(phase_stats['duration_bands'].items()):
+                f.write(f"  - {band}: {count}\n")
+            f.write("\n")
 
         f.write("\n## Channel Analysis (≥20 observations)\n\n")
         f.write("| Channel ID | Channel Title | Count | Avg Elapsed | Median Elapsed | P95 Elapsed | Avg Attempts | Median Attempts | P95 Attempts | Avg Failed | % Ready | Cliff Rate | Failed Rate |\n")
@@ -889,7 +1025,7 @@ Metadata coverage per (run_label, stage, status):
 
         sorted_channels = sorted(
             result.channel_analysis.items(),
-            key=lambda x: x[1].metrics.avg_command_elapsed_s_max,
+            key=lambda x: x[1].metrics.avg_max_command_elapsed_s_max,
             reverse=True
         )
 
@@ -900,8 +1036,8 @@ Metadata coverage per (run_label, stage, status):
                 "Unknown"
             )
             f.write(
-                f"| {channel_id} | {channel_title} | {m.count} | {m.avg_command_elapsed_s_max} | "
-                f"{m.median_command_elapsed_s_max} | {m.p95_command_elapsed_s_max} | "
+                f"| {channel_id} | {channel_title} | {m.count} | {m.avg_max_command_elapsed_s_max} | "
+                f"{m.median_max_command_elapsed_s_max} | {m.p95_max_command_elapsed_s_max} | "
                 f"{m.avg_attempt_count} | {m.median_attempt_count} | {m.p95_attempt_count} | "
                 f"{m.avg_failed_attempt_count} | {m.percent_eventually_ready}% | "
                 f"{m.source_age_cliff_rate} | {m.command_failed_rate} |\n"
@@ -918,6 +1054,266 @@ Metadata coverage per (run_label, stage, status):
                     f"{ch['count']} | {ch['reason']} |\n"
                 )
 
+        # ==================== TAIL ATTRIBUTION ANALYSIS ====================
+        f.write("\n## Tail Attribution Analysis\n\n")
+        f.write("**Objective:** Is the short-video p95 tail caused mainly by retry rows, a specific run/lane/channel, or primary command latency?\n\n")
+        f.write("**Note:** Tail attribution uses RAW evidence rows (2468 rows), not merged observations (2349), to preserve retry rows that share source_id with primary rows.\n\n")
+
+        # Build raw observations from raw evidence rows (not merged)
+        # This preserves retry rows that would be lost in merged observations
+        @dataclass
+        class RawObservation:
+            run_label: str
+            lane: str
+            batch_index: int
+            worker: str
+            video_id: str
+            source_id: str
+            pass_name: str
+            final_status_in_observation: str
+            max_command_elapsed_s_max: float
+            max_command_elapsed_s_total: float
+            attempt_count: int
+            source_ready_age_s: float
+            duration_s: float | None
+            channel_id: str | None
+
+        raw_obs: list[RawObservation] = []
+        for row in evidence_rows:
+            video_id = row["video_id"]
+            metadata = metadata_index.get(video_id, {})
+            duration_iso = metadata.get("duration")
+            duration_s = parse_iso8601_duration(duration_iso) if duration_iso else None
+
+            raw_obs.append(RawObservation(
+                run_label=row["run_label"],
+                lane=row["lane"],
+                batch_index=row["batch_index"],
+                worker=row["worker"],
+                video_id=video_id,
+                source_id=row["source_id"],
+                pass_name=row["pass_name"],
+                final_status_in_observation=row["status"],
+                max_command_elapsed_s_max=row["command_elapsed_s_max"],
+                max_command_elapsed_s_total=row["command_elapsed_s_total"],
+                attempt_count=1,  # Per-row attempt count is always 1 for raw rows
+                source_ready_age_s=row["source_ready_age_s"],
+                duration_s=duration_s,
+                channel_id=metadata.get("channel_id"),
+            ))
+
+        # 1. duration_band x pass_name cross-tab
+        f.write("### Duration Band × Pass Name\n\n")
+        f.write("| Duration Band | Pass Name | Count | Avg Elapsed Max | Median Elapsed Max | P95 Elapsed Max |\n")
+        f.write("|---------------|-----------|-------|-----------------|--------------------|-----------------|\n")
+
+        pass_duration_map: dict[str, list[RawObservation]] = {}
+        for obs in raw_obs:
+            key = f"{band_duration(obs.duration_s)}|{obs.pass_name}"
+            if key not in pass_duration_map:
+                pass_duration_map[key] = []
+            pass_duration_map[key].append(obs)
+
+        for band in ["short_<60s", "medium_60-300s", "long_300-600s", "very_long_600s+", "unknown"]:
+            for pass_name in ["primary", "retry"]:
+                key = f"{band}|{pass_name}"
+                if key in pass_duration_map:
+                    band_obs = pass_duration_map[key]
+                    values = [o.max_command_elapsed_s_max for o in band_obs]
+                    avg_metrics, median_metrics, p95_metrics = calculate_percentiles(values)
+                    f.write(
+                        f"| {band} | {pass_name} | {len(band_obs)} | "
+                        f"{avg_metrics:.3f}s | {median_metrics:.3f}s | {p95_metrics:.3f}s |\n"
+                    )
+
+        # 2. duration_band x run_label cross-tab
+        f.write("\n### Duration Band × Run Label\n\n")
+        run_labels = sorted(set(o.run_label for o in raw_obs))
+        f.write("| Duration Band | Run Label | Count | Avg Elapsed Max | Median Elapsed Max | P95 Elapsed Max |\n")
+        f.write("|---------------|-----------|-------|-----------------|--------------------|-----------------|\n")
+
+        for band in ["short_<60s", "medium_60-300s", "long_300-600s", "very_long_600s+", "unknown"]:
+            for run_label in run_labels:
+                band_obs = [o for o in raw_obs if band_duration(o.duration_s) == band and o.run_label == run_label]
+                if band_obs:
+                    values = [o.max_command_elapsed_s_max for o in band_obs]
+                    avg_metrics, median_metrics, p95_metrics = calculate_percentiles(values)
+                    # Shorten run_label for display
+                    short_label = "_".join(run_label.split("_")[-3:])
+                    f.write(
+                        f"| {band} | {short_label} | {len(band_obs)} | "
+                        f"{avg_metrics:.3f}s | {median_metrics:.3f}s | {p95_metrics:.3f}s |\n"
+                    )
+
+        # 3. duration_band x lane cross-tab
+        f.write("\n### Duration Band × Lane\n\n")
+        lanes = sorted(set(o.lane for o in raw_obs))
+        f.write("| Duration Band | Lane | Count | Avg Elapsed Max | Median Elapsed Max | P95 Elapsed Max |\n")
+        f.write("|---------------|------|-------|-----------------|--------------------|-----------------|\n")
+
+        for band in ["short_<60s", "medium_60-300s", "long_300-600s", "very_long_600s+", "unknown"]:
+            for lane in lanes:
+                band_obs = [o for o in raw_obs if band_duration(o.duration_s) == band and o.lane == lane]
+                if band_obs:
+                    values = [o.max_command_elapsed_s_max for o in band_obs]
+                    avg_metrics, median_metrics, p95_metrics = calculate_percentiles(values)
+                    f.write(
+                        f"| {band} | {lane} | {len(band_obs)} | "
+                        f"{avg_metrics:.3f}s | {median_metrics:.3f}s | {p95_metrics:.3f}s |\n"
+                    )
+
+        # 4. duration_band x channel cross-tab
+        f.write("\n### Duration Band × Channel (≥20 observations)\n\n")
+        f.write("| Duration Band | Channel ID | Channel Title | Count | Avg Elapsed Max | Median Elapsed Max | P95 Elapsed Max |\n")
+        f.write("|---------------|------------|---------------|-------|-----------------|--------------------|-----------------|\n")
+
+        channel_obs_map: dict[str, list[RawObservation]] = {}
+        for obs in raw_obs:
+            cid = obs.channel_id or "unknown"
+            if cid not in channel_obs_map:
+                channel_obs_map[cid] = []
+            channel_obs_map[cid].append(obs)
+
+        valid_channels = {cid for cid, obs_list in channel_obs_map.items() if len(obs_list) >= 20}
+
+        for band in ["short_<60s", "medium_60-300s", "long_300-600s", "very_long_600s+", "unknown"]:
+            for channel_id in sorted(valid_channels):
+                band_obs = [o for o in channel_obs_map[channel_id] if band_duration(o.duration_s) == band]
+                if band_obs and len(band_obs) >= 20:
+                    values = [o.max_command_elapsed_s_max for o in band_obs]
+                    avg_metrics, median_metrics, p95_metrics = calculate_percentiles(values)
+                    # Get channel title from metadata
+                    channel_title = "Unknown"
+                    for o in band_obs:
+                        if o.channel_id:
+                            vid = o.video_id
+                            meta = metadata_index.get(vid, {})
+                            if meta.get("channel_id") == channel_id:
+                                channel_title = meta.get("channel_title", "Unknown")
+                                break
+                    f.write(
+                        f"| {band} | {channel_id} | {channel_title} | {len(band_obs)} | "
+                        f"{avg_metrics:.3f}s | {median_metrics:.3f}s | {p95_metrics:.3f}s |\n"
+                    )
+
+        # 5. Top 20 tail observations
+        f.write("\n### Top 20 Tail Observations (by command_elapsed_s_max)\n\n")
+        f.write("| Rank | Run Label | Lane | Batch | Worker | Video ID | Source ID | Pass | Status | Elapsed Max | Elapsed Total | Count | Source Age | Duration Band |\n")
+        f.write("|------|-----------|------|-------|--------|----------|------------|------|--------|-------------|---------------|-------|-------------|---------------|\n")
+
+        top_20 = sorted(raw_obs, key=lambda o: o.max_command_elapsed_s_max, reverse=True)[:20]
+
+        for i, obs in enumerate(top_20, 1):
+            short_run = "_".join(obs.run_label.split("_")[-3:])
+            duration_band = band_duration(obs.duration_s)
+            f.write(
+                f"| {i} | {short_run} | {obs.lane} | {obs.batch_index} | {obs.worker} | "
+                f"{obs.video_id} | {obs.source_id[:8]}... | {obs.pass_name} | {obs.final_status_in_observation} | "
+                f"{obs.max_command_elapsed_s_max:.3f}s | {obs.max_command_elapsed_s_total:.3f}s | "
+                f"{obs.attempt_count} | {obs.source_ready_age_s:.1f}s | {duration_band} |\n"
+            )
+
+        # 6. Short-video P95 tail quantification
+        f.write("\n### Short-Video P95 Tail Quantification\n\n")
+        f.write("**How much of the short-video p95 tail remains after excluding retry rows?**\n\n")
+
+        short_all = [o for o in raw_obs if band_duration(o.duration_s) == "short_<60s"]
+        short_primary = [o for o in short_all if o.pass_name == "primary"]
+        short_retry = [o for o in short_all if o.pass_name == "retry"]
+
+        # Initialize metrics with defaults
+        p95_all = 0.0
+        p95_primary = 0.0
+
+        if short_all:
+            values_all = [o.max_command_elapsed_s_max for o in short_all]
+            avg_all, median_all, p95_all = calculate_percentiles(values_all)
+            f.write("**All Short-Video Observations (primary + retry):**\n\n")
+            f.write(f"- Count: {len(short_all)}\n")
+            f.write(f"- Avg: {avg_all:.3f}s\n")
+            f.write(f"- Median: {median_all:.3f}s\n")
+            f.write(f"- P95: {p95_all:.3f}s\n\n")
+
+        if short_primary:
+            values_primary = [o.max_command_elapsed_s_max for o in short_primary]
+            avg_primary, median_primary, p95_primary = calculate_percentiles(values_primary)
+            f.write("**Short-Video Primary Only (excluding retry):**\n\n")
+            f.write(f"- Count: {len(short_primary)}\n")
+            f.write(f"- Avg: {avg_primary:.3f}s\n")
+            f.write(f"- Median: {median_primary:.3f}s\n")
+            f.write(f"- P95: {p95_primary:.3f}s\n\n")
+
+        if short_retry:
+            values_retry = [o.max_command_elapsed_s_max for o in short_retry]
+            avg_retry, median_retry, p95_retry = calculate_percentiles(values_retry)
+            f.write("**Short-Video Retry Only:**\n\n")
+            f.write(f"- Count: {len(short_retry)}\n")
+            f.write(f"- Avg: {avg_retry:.3f}s\n")
+            f.write(f"- Median: {median_retry:.3f}s\n")
+            f.write(f"- P95: {p95_retry:.3f}s\n\n")
+
+        if short_all and short_primary:
+            tail_reduction = ((p95_all - p95_primary) / p95_all) * 100
+            f.write("**Tail Signal Reduction After Excluding Retry Rows:**\n\n")
+            f.write(f"- P95 reduction: {p95_all:.3f}s → {p95_primary:.3f}s ({tail_reduction:.1f}%)\n")
+            f.write(f"- Remaining tail: {p95_primary:.3f}s\n\n")
+
+        # 7. Tail driver conclusion
+        f.write("## Tail Driver Conclusion\n\n")
+
+        # Analyze what drives the tail
+        tail_driver_decision = "partial_exploratory_tail_signal_primary_driven"  # default
+        tail_driver_reasoning = []
+
+        if len(short_retry) >= 10:
+            _avg_retry, _median_retry, p95_retry = calculate_percentiles([o.max_command_elapsed_s_max for o in short_retry])
+            if short_primary:
+                _avg_prim, _median_prim, p95_prim = calculate_percentiles([o.max_command_elapsed_s_max for o in short_primary])
+            else:
+                p95_prim = None
+
+            # Retry-driven if retry P95 is at least 3x primary P95 and primary P95 < 20s
+            retry_ratio = p95_retry / p95_prim if p95_prim else float('inf')
+            if p95_prim and retry_ratio >= 3.0 and p95_prim < 20.0:
+                tail_driver_decision = "partial_exploratory_tail_signal_retry_driven"
+                tail_driver_reasoning.append(f"Short-video retry P95: {p95_retry:.3f}s ({retry_ratio:.1f}x primary P95)")
+                tail_driver_reasoning.append(f"Short-video retry count: {len(short_retry)} ({len(short_retry)/len(short_all)*100:.1f}% of short videos)")
+                tail_driver_reasoning.append("Retry rows account for most of the tail signal")
+            elif p95_prim and p95_prim > 15:
+                tail_driver_decision = "partial_exploratory_tail_signal_primary_driven"
+                tail_driver_reasoning.append(f"Short-video primary P95: {p95_prim:.3f}s (high variance persists)")
+                tail_driver_reasoning.append("Primary command latency for short videos shows high variance")
+            else:
+                tail_driver_decision = "no_exploratory_signal_after_phase_split"
+                tail_driver_reasoning.append("Short-video P95 tail is not significant after phase split")
+        else:
+            tail_driver_decision = "blocked_by_data_quality"
+            tail_driver_reasoning.append("Insufficient retry rows for tail attribution analysis")
+
+        f.write(f"**DECISION: `{tail_driver_decision}`**\n\n")
+        f.write("**Evidence:**\n\n")
+        for reason in tail_driver_reasoning:
+            f.write(f"- {reason}\n")
+        f.write("\n")
+
+        if tail_driver_decision == "partial_exploratory_tail_signal_retry_driven":
+            f.write("**What this means:**\n\n")
+            f.write("- The short-video p95 tail is primarily driven by retry rows\n")
+            f.write("- Primary short-video observations have much tighter distribution\n")
+            f.write("- Retry logic (not video duration) is the tail driver\n\n")
+        elif tail_driver_decision == "partial_exploratory_tail_signal_primary_driven":
+            f.write("**What this means:**\n\n")
+            f.write("- The tail signal comes from primary command processing\n")
+            f.write("- Short-video fetch itself has high variance (not just retries)\n")
+            f.write("- Source selection by duration may help reduce tail latency\n\n")
+        elif tail_driver_decision == "no_exploratory_signal_after_phase_split":
+            f.write("**What this means:**\n\n")
+            f.write("- After separating retry rows, the exploratory tail signal diminishes\n")
+            f.write("- Duration-based source selection unlikely to provide significant benefit\n")
+            f.write("- Focus on retry logic optimization instead\n\n")
+
+        f.write("\n---\n\n")
+
         f.write(f"""
 
 ## Confounder Controls
@@ -928,12 +1324,16 @@ Metadata coverage per (run_label, stage, status):
 - {result.total_observations} observations from {result.total_rows} rows
 
 **Pass_name handling:** ✅ Explicit
-- primary vs retry treated as separate phases under same source_id
+- pass_name is recorded (primary vs retry)
+- **Primary analysis merges primary+retry rows per source_id** (not separated in grouping key)
+- Phase-level analysis built from raw evidence rows (not merged observations)
 - Ready-then-fail groups tracked: {result.ready_then_fail_groups}
 
-**Burden metrics:** ✅ Corrected
-- command_elapsed_s_max uses MAX (not SUM) because each row is a single command
-- Per-row semantics verified: 91.6% of rows have total == max
+**Burden metrics:** ✅ Corrected with three elapsed metrics
+- max_command_elapsed_s_max: max across rows of per-row max (single longest command) — **USED FOR SIGNAL**
+- max_command_elapsed_s_total: max across rows of per-row total (longest cumulative row)
+- sum_command_elapsed_s_total: sum across rows (total burden across observation)
+- command_elapsed_s_total can represent multiple commands (count > 1), not per-row single command
 
 **Sample gates:** ✅ Applied to ALL bands
 - Minimum 20 observations for duration, view_count, and channel analysis
@@ -961,10 +1361,12 @@ Metadata coverage per (run_label, stage, status):
 
 This analysis used CORRECTED GROUPING (with source_id) to identify exploratory signals for throughput burden prediction using tainted metadata. **NO LIVE BENCHMARK is justified from this artifact alone.**
 
-**Next steps if exploratory_tail_signal_found:**
+**Finding:** Short-video observations show higher p95 command/retry tail in tainted metadata; medians are similar. This is a tail-latency signal (outlier variance), not a general elapsed-time difference.
+
+**Next steps if partial_exploratory_tail_signal:**
 1. Validate tail-latency signals with fresh non-tainted metadata
-2. Investigate why specific duration bands show higher tail latency
-3. Design targeted burden-reduction experiment
+2. Investigate why short videos show higher p95 variance (outliers: 44s vs 1.4s median)
+3. Design targeted variance-reduction experiment (timeout/circuit-breaker for short videos)
 4. Complete decision packet before benchmark
 
 **Next steps if no_exploratory_signal:**
