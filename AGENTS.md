@@ -72,6 +72,24 @@ Final responses must include a `Self-review result` line:
 
 Do not outsource self-review to the user or parent agent. If a parent reviewer can find an obvious contradiction, stale count, missing semantic test, or unverified claim from the files you changed, your completion report was premature.
 
+## Parent Handoff Boundary
+
+When working as a delegated or target agent, do not decide to continue into the next goal yourself. Hand off to the parent reviewer when the assigned objective reaches any terminal state:
+
+- `ready_for_parent_review`: requested work is implemented or the requested decision packet is complete, self-review passed, and verification commands were run.
+- `needs_fix`: self-review found a blocker, contradiction, missing semantic coverage, or unproven requirement.
+- `blocked`: required data, credentials, environment, or user authorization is missing.
+- `decision_required`: the next action would change scope, launch a live run, fetch external data, delete/mutate raw artifacts, commit/stage changes, or choose between competing mechanisms.
+
+The final response must make the handoff state explicit:
+
+- `Parent handoff: ready_for_parent_review`
+- `Parent handoff: needs_fix`
+- `Parent handoff: blocked`
+- `Parent handoff: decision_required`
+
+Do not tell the user that parent review is unnecessary. If the delegated objective is complete, return the evidence packet and stop. The parent reviewer decides whether to re-verify, commit, launch another agent, approve a live benchmark, or assign the next goal.
+
 For instrumentation work:
 
 - Schema presence is not enough. If a field is expected to answer a question, tests must prove it is non-null or meaningfully populated on the relevant path.
