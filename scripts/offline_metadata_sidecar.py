@@ -50,7 +50,7 @@ class ObservationRecord:
     final_status_in_observation: str | None
 
     # Three elapsed metrics (for transparency)
-    max_command_elapsed_s_max: float  # max across rows of per-row max (single longest command)
+    max_command_elapsed_s_max: float  # max across rows of per-row command_elapsed_s_max (longest single _run_cmd wall-clock bucket)
     max_command_elapsed_s_total: float  # max across rows of per-row total (longest cumulative row)
     sum_command_elapsed_s_total: float  # sum across rows (total burden across observation)
 
@@ -201,8 +201,8 @@ def calculate_percentiles(values: list[float]) -> tuple[float, float, float]:
 def calculate_burden_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Calculate burden metrics for a single observation group.
 
-    Key change: command_elapsed_s_total is PER-ROW (single command per row),
-    so we use MAX, not SUM, when aggregating.
+    Key change: command_elapsed_s_total is PER-ROW (one fetch_completed row per source),
+    so we use MAX, not SUM, when aggregating across rows within an observation.
     """
     if not rows:
         return {}
@@ -221,7 +221,9 @@ def calculate_burden_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     final_status_in_observation = sorted_rows[0].get("status")
 
     # Calculate three elapsed metrics for transparency
-    # 1. max_command_elapsed_s_max: max across rows of per-row max (single longest command)
+    # 1. max_command_elapsed_s_max: max across rows of per-row command_elapsed_s_max.
+    #    Per-row command_elapsed_s_max is the wall-clock of ONE _run_cmd call (nlm_batch.py:3461),
+    #    which can exceed the 30s run_nlm timeout because _run_cmd has its own rate-limit/auth retry loop (nlm_batch.py:1907-1988).
     max_command_elapsed_s_max = max((r.get("command_elapsed_s_max", 0) for r in rows), default=0)
 
     # 2. max_command_elapsed_s_total: max across rows of per-row total (longest cumulative row)
@@ -1330,9 +1332,9 @@ Metadata coverage per (run_label, stage, status):
 - Ready-then-fail groups tracked: {result.ready_then_fail_groups}
 
 **Burden metrics:** ✅ Corrected with three elapsed metrics
-- max_command_elapsed_s_max: max across rows of per-row max (single longest command) — **USED FOR SIGNAL**
-- max_command_elapsed_s_total: max across rows of per-row total (longest cumulative row)
-- sum_command_elapsed_s_total: sum across rows (total burden across observation)
+- max_command_elapsed_s_max: max across rows of per-row command_elapsed_s_max (longest single `_run_cmd` wall-clock bucket; can exceed 30s) — used for signal with caution
+- max_command_elapsed_s_total: max across rows of per-row command_elapsed_s_total (longest cumulative row across that attempt's buckets)
+- sum_command_elapsed_s_total: sum across rows (total wall-clock burden across observation)
 - command_elapsed_s_total can represent multiple commands (count > 1), not per-row single command
 
 **Sample gates:** ✅ Applied to ALL bands
