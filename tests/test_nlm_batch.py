@@ -3704,7 +3704,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-fresh"
         ingestor._current_source_count = 45
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type("CompletedProcess", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": f"s{i}"} for i in range(46)]}), "stderr": ""})()
             if cmd[:2] == ["source", "add"]:
@@ -3772,7 +3772,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-wait"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -3802,7 +3802,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-wait"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -3837,7 +3837,7 @@ class TestNotebookCapRotation:
         monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Profile")
         monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -3916,7 +3916,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-windowed"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -3948,7 +3948,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-short"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4009,7 +4009,7 @@ class TestNotebookCapRotation:
         monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Default")
         monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4102,7 +4102,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-age-cliff"
         ingestor._last_materialization_ready_at_epoch = 1000.0
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4145,7 +4145,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-primary-projection"
         ingestor._last_materialization_ready_at_epoch = 1000.0
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4184,7 +4184,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-primary-projection-margin"
         ingestor._last_materialization_ready_at_epoch = 1000.0
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4230,7 +4230,7 @@ class TestNotebookCapRotation:
             fake_clock["value"] += 0.1
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4284,7 +4284,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-probe-absent"
         list_calls = {"count": 0}
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 list_calls["count"] += 1
                 sources = [{"id": "s1", "title": "https://www.youtube.com/watch?v=vid1"}]
@@ -4340,7 +4340,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-probe-once"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4396,7 +4396,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-a"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4470,7 +4470,7 @@ class TestNotebookCapRotation:
 
         ready_calls = {"content": 0, "list": 0}
 
-        def ready_run_cmd(cmd, timeout=300):
+        def ready_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 ready_calls["list"] += 1
                 return type(
@@ -4495,7 +4495,7 @@ class TestNotebookCapRotation:
 
         failure_calls = {"content": 0, "list": 0}
 
-        def failure_run_cmd(cmd, timeout=300):
+        def failure_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 failure_calls["list"] += 1
                 return type(
@@ -4571,7 +4571,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-retry"
         content_attempts = {"count": 0}
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4620,7 +4620,7 @@ class TestNotebookCapRotation:
         def fake_time():
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4680,7 +4680,7 @@ class TestNotebookCapRotation:
         ingestor._last_added_video_ids = ["vid1", "vid2"]
         recreate_calls = {"count": 0}
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 if ingestor._nb_id == "nb-old":
                     return type(
@@ -4780,7 +4780,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-budget"
         content_attempts = {"count": 0}
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4836,7 +4836,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-retry-queue"
         content_attempts = {"count": 0}
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4921,7 +4921,7 @@ class TestNotebookCapRotation:
             fake_clock["value"] += 0.1
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -4989,7 +4989,7 @@ class TestNotebookCapRotation:
             fake_clock["value"] += 0.1
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5051,7 +5051,7 @@ class TestNotebookCapRotation:
             fake_clock["value"] += 0.1
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5116,7 +5116,7 @@ class TestNotebookCapRotation:
             fake_clock["value"] += 0.1
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5184,7 +5184,7 @@ class TestNotebookCapRotation:
             fake_clock["value"] += 0.1
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5261,7 +5261,7 @@ class TestNotebookCapRotation:
         def fake_time():
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5343,7 +5343,7 @@ class TestNotebookCapRotation:
             fake_clock["value"] += 0.1
             return fake_clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5434,7 +5434,7 @@ class TestNotebookCapRotation:
         def fake_sleep(duration):
             clock["value"] += duration
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5523,7 +5523,7 @@ class TestNotebookCapRotation:
             clock["value"] += 0.01
             return clock["value"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5593,7 +5593,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-inspect"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5665,7 +5665,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-retry-queue"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5715,7 +5715,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-gate-reason"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5762,7 +5762,7 @@ class TestNotebookCapRotation:
         vid1 = "AAAAAAAAAAA"
         vid2 = "BBBBBBBBBBB"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5805,7 +5805,7 @@ class TestNotebookCapRotation:
         vid1 = "AAAAAAAAAAA"
         vid2 = "BBBBBBBBBBB"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5851,7 +5851,7 @@ class TestNotebookCapRotation:
         vid1 = "AAAAAAAAAAA"
         vid2 = "BBBBBBBBBBB"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5899,7 +5899,7 @@ class TestNotebookCapRotation:
         ingestor._previously_observed_source_ids = {"old-1"}
         vid = "AAAAAAAAAAA"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5939,7 +5939,7 @@ class TestNotebookCapRotation:
         vid1 = "AAAAAAAAAAA"
         vid2 = "BBBBBBBBBBB"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -5978,7 +5978,7 @@ class TestNotebookCapRotation:
         ingestor._nb_id = "nb-add-order"
         ingestor._last_added_source_ids = []
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "add"]:
                 return type(
                     "CompletedProcess",
@@ -6022,7 +6022,7 @@ class TestNotebookCapRotation:
         ingestor._last_added_video_ids = ["vid1", "vid2"]
         ingestor._last_added_source_ids = ["src-shared", "src-shared"]
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type(
                     "CompletedProcess",
@@ -6052,7 +6052,7 @@ class TestNotebookCapRotation:
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)
         ingestor._nb_id = "nb-123"
 
-        def fake_run_cmd(cmd, timeout=300):
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
             if cmd[:2] == ["source", "list"]:
                 return type("CompletedProcess", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": f"s{i}"} for i in range(100)]}), "stderr": ""})()
             if cmd[:2] == ["source", "add"]:
@@ -6302,3 +6302,827 @@ class TestAgeGuardRotatesBeforeCliff:
         assert len(check_events) >= 2
         assert check_events[1]["decision"] == "rotate_source_age_projected_cliff"
         assert check_events[1]["projected_oldest_source_age_s"] == 220.0
+
+
+class TestCandidate6Instrumentation:
+    """Candidate 6 instrumentation contract:
+    per_attempt_elapsed_s, per_attempt_internal_retry_count,
+    per_attempt_internal_breakdown_s, per_attempt_returncode,
+    run_cmd_overshoot_vs_timeout_s, retry_loop_elapsed_s,
+    retry_exit_reason, source_ready_age_s_breakdown,
+    retry_queue_entry_time_epoch, retry_queue_start_time_epoch,
+    retry_queue_wait_time_s.
+    Fields must be JSON-serializable and stable across success, command_failed,
+    source_age_cliff, and queued retry paths.
+    """
+
+    @staticmethod
+    def _fetch_completed_payload(mock_log):
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        assert completed, "expected at least one nlm_batch_source_content_fetch_completed"
+        return completed[-1]
+
+    @staticmethod
+    def _required_fields_present(payload):
+        required = [
+            "per_attempt_elapsed_s",
+            "per_attempt_internal_retry_count",
+            "per_attempt_internal_breakdown_s",
+            "per_attempt_returncode",
+            "run_cmd_overshoot_vs_timeout_s",
+            "retry_loop_elapsed_s",
+            "retry_exit_reason",
+            "source_ready_age_s_breakdown",
+            "retry_queue_entry_time_epoch",
+            "retry_queue_start_time_epoch",
+            "retry_queue_wait_time_s",
+        ]
+        for name in required:
+            assert name in payload, f"missing required Candidate-6 field: {name}"
+
+    def test_run_cmd_iteration_log_records_normal_return(self, monkeypatch):
+        """_run_cmd records a single normal_return iteration when run_nlm succeeds on first try."""
+        from csf import nlm_batch as nlm_batch_mod
+
+        monkeypatch.setattr(nlm_batch_mod, "run_nlm", lambda args, *, timeout_s, **kw: type(
+            "CP", (), {"returncode": 0, "stdout": "{}", "stderr": ""})())
+        monkeypatch.setattr(nlm_batch_mod, "_ensure_nlm_auth", lambda: True)
+        monkeypatch.setattr(nlm_batch_mod, "_get_tracker", lambda: type("T", (), {"apply_delay": lambda self: None, "record_success": lambda self: None, "record_failure": lambda self, is_rate_limit: None})())
+        monkeypatch.setattr(nlm_batch_mod, "_get_nlm_auth_context", lambda: type("A", (), {"profile": None, "has_profile": False})())
+        monkeypatch.setattr(nlm_batch_mod, "_reap_default_chrome_profile_for_auth", lambda *a, **kw: None)
+        monkeypatch.setattr(nlm_batch_mod, "_reap_default_chrome_profile_before_command", lambda *a, **kw: None)
+        monkeypatch.setattr(nlm_batch_mod, "_fail_closed_on_default_chrome_profile", lambda *a, **kw: None)
+
+        ingestor = nlm_batch_mod.NLMBatchIngestor(batch_size=1)
+        iteration_log: list[dict] = []
+        ingestor._run_cmd(["source", "content", "src-1", "--json"], timeout=30, iteration_log=iteration_log)
+        assert len(iteration_log) == 1
+        assert iteration_log[0]["branch"] == "normal_return"
+        assert iteration_log[0]["returncode"] == 0
+        assert iteration_log[0]["iteration"] == 1
+        assert "subprocess_elapsed_s" in iteration_log[0]
+
+    def test_run_cmd_iteration_log_records_rate_limit_then_normal(self, monkeypatch):
+        """_run_cmd records a rate_limit iteration followed by a normal_return iteration."""
+        from csf import nlm_batch as nlm_batch_mod
+
+        responses = [
+            type("CP", (), {"returncode": 1, "stdout": "", "stderr": "rate limit 429"})(),
+            type("CP", (), {"returncode": 0, "stdout": "{}", "stderr": ""})(),
+        ]
+        monkeypatch.setattr(nlm_batch_mod, "run_nlm", lambda args, *, timeout_s, **kw: responses.pop(0))
+        monkeypatch.setattr(nlm_batch_mod, "_ensure_nlm_auth", lambda: True)
+        monkeypatch.setattr(nlm_batch_mod, "_get_tracker", lambda: type("T", (), {"apply_delay": lambda self: None, "record_success": lambda self: None, "record_failure": lambda self, is_rate_limit: None})())
+        monkeypatch.setattr(nlm_batch_mod, "_get_nlm_auth_context", lambda: type("A", (), {"profile": None, "has_profile": False})())
+        monkeypatch.setattr(nlm_batch_mod, "_reap_default_chrome_profile_for_auth", lambda *a, **kw: None)
+        monkeypatch.setattr(nlm_batch_mod, "_reap_default_chrome_profile_before_command", lambda *a, **kw: None)
+        monkeypatch.setattr(nlm_batch_mod, "_fail_closed_on_default_chrome_profile", lambda *a, **kw: None)
+
+        ingestor = nlm_batch_mod.NLMBatchIngestor(batch_size=1)
+        iteration_log: list[dict] = []
+        ingestor._run_cmd(["source", "content", "src-1", "--json"], timeout=30, iteration_log=iteration_log)
+        assert len(iteration_log) == 2
+        assert iteration_log[0]["branch"] == "rate_limit"
+        assert iteration_log[0]["returncode"] == 1
+        assert iteration_log[1]["branch"] == "normal_return"
+        assert iteration_log[1]["returncode"] == 0
+        assert iteration_log[1]["iteration"] == 2
+
+    def test_run_cmd_iteration_log_records_timeout(self, monkeypatch):
+        """_run_cmd records a timeout iteration when run_nlm returns the timed-out sentinel."""
+        from csf import nlm_batch as nlm_batch_mod
+
+        monkeypatch.setattr(nlm_batch_mod, "run_nlm", lambda args, *, timeout_s, **kw: type(
+            "CP", (), {"returncode": 1, "stdout": "", "stderr": "NLM command timed out"})())
+        monkeypatch.setattr(nlm_batch_mod, "_ensure_nlm_auth", lambda: True)
+        monkeypatch.setattr(nlm_batch_mod, "_get_tracker", lambda: type("T", (), {"apply_delay": lambda self: None, "record_success": lambda self: None, "record_failure": lambda self, is_rate_limit: None})())
+        monkeypatch.setattr(nlm_batch_mod, "_get_nlm_auth_context", lambda: type("A", (), {"profile": None, "has_profile": False})())
+        monkeypatch.setattr(nlm_batch_mod, "_reap_default_chrome_profile_for_auth", lambda *a, **kw: None)
+        monkeypatch.setattr(nlm_batch_mod, "_reap_default_chrome_profile_before_command", lambda *a, **kw: None)
+        monkeypatch.setattr(nlm_batch_mod, "_fail_closed_on_default_chrome_profile", lambda *a, **kw: None)
+
+        ingestor = nlm_batch_mod.NLMBatchIngestor(batch_size=1)
+        iteration_log: list[dict] = []
+        ingestor._run_cmd(["source", "content", "src-1", "--json"], timeout=30, iteration_log=iteration_log)
+        assert len(iteration_log) == 1
+        assert iteration_log[0]["branch"] == "timeout"
+        assert iteration_log[0]["returncode"] == 1
+
+    def test_candidate6_fields_present_on_primary_success(self, monkeypatch):
+        """Primary pass single successful fetch must surface all Candidate-6 fields
+        with retry_exit_reason='success' and per_attempt_internal_retry_count==1."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-c6-success"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-02")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker02@example.com")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_ROOT", r"P:\.data\yt-is\browser\notebooklm-pro")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Profile")
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                # Faithfully simulate _run_cmd telemetry: one normal_return iteration.
+                if iteration_log is not None:
+                    iteration_log.append({"iteration": 1, "branch": "normal_return", "subprocess_elapsed_s": 1.0, "returncode": 0})
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "x" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        payload = self._fetch_completed_payload(mock_log)
+        self._required_fields_present(payload)
+        assert payload["retry_exit_reason"] == "success"
+        assert len(payload["per_attempt_elapsed_s"]) == 1
+        assert payload["per_attempt_internal_retry_count"] == [1]
+        assert len(payload["per_attempt_internal_breakdown_s"]) == 1
+        assert payload["per_attempt_internal_breakdown_s"][0][0]["branch"] == "normal_return"
+        assert payload["per_attempt_returncode"] == [0]
+        assert isinstance(payload["retry_loop_elapsed_s"], float)
+        assert payload["retry_loop_elapsed_s"] >= 0.0
+        assert isinstance(payload["source_ready_age_s_breakdown"], dict)
+        assert set(payload["source_ready_age_s_breakdown"].keys()) == {
+            "primary_batch_wait_time_s",
+            "retry_queue_wait_time_s",
+            "retry_loop_elapsed_s",
+        }
+        # All Candidate-6 values must be JSON-serializable.
+        json.dumps(payload)
+
+    def test_candidate6_fields_present_on_primary_failure_with_rate_limit_retries(self, monkeypatch):
+        """Primary pass with one rate_limit internal retry must surface per_attempt_internal_retry_count==2
+        and the breakdown must record a rate_limit iteration followed by a normal_return iteration."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-c6-rl"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-02")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker02@example.com")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_ROOT", r"P:\.data\yt-is\browser\notebooklm-pro")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Profile")
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            iteration_log = iteration_log if iteration_log is not None else getattr(fake_run_cmd, "_iteration_log_attr", None)
+            if iteration_log is not None:
+                # Simulate _run_cmd populating iteration_log when called from retry loop.
+                iteration_log.append({"iteration": 1, "branch": "rate_limit", "subprocess_elapsed_s": 0.5, "returncode": 1})
+                iteration_log.append({"iteration": 2, "branch": "normal_return", "subprocess_elapsed_s": 1.5, "returncode": 0})
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "y" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        # Wrap fake_run_cmd to capture the iteration_log each call.
+        original = fake_run_cmd
+        call_count = {"n": 0}
+
+        def wrapper(cmd, timeout=300, iteration_log=None):
+            iteration_log = iteration_log if iteration_log is not None else []
+            setattr(fake_run_cmd, "_iteration_log_attr", iteration_log)
+            try:
+                return original(cmd, timeout=timeout, iteration_log=iteration_log)
+            finally:
+                setattr(fake_run_cmd, "_iteration_log_attr", None)
+
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=wrapper):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        payload = self._fetch_completed_payload(mock_log)
+        self._required_fields_present(payload)
+        assert len(payload["per_attempt_internal_breakdown_s"]) >= 1
+        first_breakdown = payload["per_attempt_internal_breakdown_s"][0]
+        # The wrapper above simulated 2 internal iterations for the content call.
+        assert len(first_breakdown) == 2
+        branches = [item["branch"] for item in first_breakdown]
+        assert branches == ["rate_limit", "normal_return"]
+        assert payload["per_attempt_internal_retry_count"][0] == 2
+        assert payload["per_attempt_returncode"][0] == 0
+        assert payload["retry_exit_reason"] == "success"
+        json.dumps(payload)
+
+    def test_candidate6_fields_stable_across_paths(self, monkeypatch):
+        """Candidate-6 fields must appear on EVERY nlm_batch_source_content_fetch_completed
+        emission (success / command_failed / queued / no-command), preserving stable shape."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-c6-stable"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-02")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker02@example.com")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_ROOT", r"P:\.data\yt-is\browser\notebooklm-pro")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Profile")
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+        # Tight retry budget so attempts_exhausted fires.
+        monkeypatch.setenv("YTIS_NLM_SOURCE_CONTENT_RETRY_BUDGET_S", "60.0")
+        monkeypatch.setenv("YTIS_NLM_SOURCE_CONTENT_RETRY_ATTEMPTS", "1")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                if iteration_log is not None:
+                    iteration_log.append({"iteration": 1, "branch": "non_rate_limit_failure", "subprocess_elapsed_s": 1.0, "returncode": 1})
+                return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "command failed"})()
+            return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "command failed"})()
+
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        # Every fetch_completed emission must include the full Candidate-6 shape.
+        completed_payloads = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        assert len(completed_payloads) >= 1
+        required = (
+            "per_attempt_elapsed_s",
+            "per_attempt_internal_retry_count",
+            "per_attempt_internal_breakdown_s",
+            "per_attempt_returncode",
+            "run_cmd_overshoot_vs_timeout_s",
+            "retry_loop_elapsed_s",
+            "retry_exit_reason",
+            "source_ready_age_s_breakdown",
+            "retry_queue_entry_time_epoch",
+            "retry_queue_start_time_epoch",
+            "retry_queue_wait_time_s",
+        )
+        for payload in completed_payloads:
+            for name in required:
+                assert name in payload, f"missing Candidate-6 field {name} in path payload: status={payload.get('status')!r}"
+            # All values JSON-serializable.
+            json.dumps(payload)
+            # Lists must be lists; breakdown entries must be dicts.
+            assert isinstance(payload["per_attempt_elapsed_s"], list)
+            assert isinstance(payload["per_attempt_internal_breakdown_s"], list)
+            assert isinstance(payload["source_ready_age_s_breakdown"], dict)
+            assert set(payload["source_ready_age_s_breakdown"].keys()) == {
+                "primary_batch_wait_time_s",
+                "retry_queue_wait_time_s",
+                "retry_loop_elapsed_s",
+            }
+            # retry_exit_reason must be a string (any of the allowed values).
+            assert isinstance(payload["retry_exit_reason"], str)
+
+    def test_candidate6_fields_present_on_failed_attempt_paths(self, monkeypatch):
+        """Failure path must still surface Candidate-6 fields with retry_exit_reason in
+        {attempts_exhausted, budget_exhausted, not_retryable, local_retry_skipped_age_cliff}."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-c6-fail"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-02")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker02@example.com")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_ROOT", r"P:\.data\yt-is\browser\notebooklm-pro")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Profile")
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+        # Tight retry budget so attempts_exhausted fires.
+        monkeypatch.setenv("YTIS_NLM_SOURCE_CONTENT_RETRY_BUDGET_S", "60.0")
+        monkeypatch.setenv("YTIS_NLM_SOURCE_CONTENT_RETRY_ATTEMPTS", "2")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                # Two attempts, both fail. _run_cmd records each.
+                if iteration_log is not None:
+                    iteration_log.append({"iteration": 1, "branch": "non_rate_limit_failure", "subprocess_elapsed_s": 1.0, "returncode": 1})
+                return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "command failed"})()
+            return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "command failed"})()
+
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        # The post-loop (not_retryable_queued) emission should include Candidate-6 fields.
+        post_loop_payloads = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+            and "per_attempt_elapsed_s" in call.args[1]
+        ]
+        assert post_loop_payloads, "expected post-loop fetch_completed payload with Candidate-6 fields"
+        payload = post_loop_payloads[-1]
+        self._required_fields_present(payload)
+        assert payload["retry_exit_reason"] in {
+            "attempts_exhausted",
+            "budget_exhausted",
+            "not_retryable",
+            "local_retry_skipped_age_cliff",
+        }
+        assert len(payload["per_attempt_internal_breakdown_s"]) >= 1
+        # Each breakdown list should match per_attempt_internal_retry_count.
+        assert sum(payload["per_attempt_internal_retry_count"]) == sum(
+            len(b) for b in payload["per_attempt_internal_breakdown_s"]
+        )
+        json.dumps(payload)
+
+    def test_candidate6_fields_have_json_serializable_shapes(self, monkeypatch):
+        """All Candidate-6 field values must serialize via json.dumps without raising."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-c6-json"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-02")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker02@example.com")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_ROOT", r"P:\.data\yt-is\browser\notebooklm-pro")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Profile")
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "z" * 101}}), "stderr": ""})()
+
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        completed = self._fetch_completed_payload(mock_log)
+        for fld in (
+            "per_attempt_elapsed_s",
+            "per_attempt_internal_retry_count",
+            "per_attempt_internal_breakdown_s",
+            "per_attempt_returncode",
+            "run_cmd_overshoot_vs_timeout_s",
+            "source_ready_age_s_breakdown",
+        ):
+            assert fld in completed, f"missing field {fld}"
+            json.dumps(completed[fld])
+
+    def test_queue_timing_none_on_primary_success(self, monkeypatch):
+        """Primary success fetch_completed rows must have retry_queue_entry_time_epoch=None,
+        retry_queue_start_time_epoch=None, retry_queue_wait_time_s=None."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-qt-primary"
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-02")
+        monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "worker02@example.com")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_ROOT", r"P:\.data\yt-is\browser\notebooklm-pro")
+        monkeypatch.setenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "Profile")
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                if iteration_log is not None:
+                    iteration_log.append({"iteration": 1, "branch": "normal_return", "subprocess_elapsed_s": 1.0, "returncode": 0})
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "x" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        for entry in completed:
+            if entry.get("pass_name") == "primary":
+                assert entry["retry_queue_entry_time_epoch"] is None, f"primary {entry.get('status')} entry_time not None"
+                assert entry["retry_queue_start_time_epoch"] is None, f"primary {entry.get('status')} start_time not None"
+                assert entry["retry_queue_wait_time_s"] is None, f"primary {entry.get('status')} wait_time not None"
+                assert entry["source_ready_age_s_breakdown"]["retry_queue_wait_time_s"] is None
+                json.dumps(entry)
+
+    def test_queue_timing_records_retry_queue_queued_at_on_deferred_primary(self, monkeypatch):
+        """A primary failure that is queued for retry must record retry_queue_queued_at_epoch
+        on the primary-pass fetch_completed payload."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-qt-queued"
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "API error (code 5): NOT_FOUND"})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 0.1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                    with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                        with mock.patch(
+                            "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                            return_value={"classification": "ok", "available": True, "availability": "public", "live_status": "not_live"},
+                        ):
+                            with mock.patch.object(ingestor, "_recover_dead_notebook") as mock_recover:
+                                with mock.patch("csf.nlm_batch.time.sleep"):
+                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        primary_queued = [
+            e for e in completed
+            if e.get("pass_name") == "primary" and e.get("queued_for_retry") is True
+        ]
+        assert len(primary_queued) >= 1, "expected at least one primary queued entry"
+        for entry in primary_queued:
+            assert entry.get("retry_queue_queued_at_epoch") is not None, "primary queued entry missing retry_queue_queued_at_epoch"
+            assert isinstance(entry["retry_queue_queued_at_epoch"], float)
+            json.dumps(entry)
+
+    def test_queue_timing_nonnull_on_retry_pass(self, monkeypatch):
+        """Retry-pass fetch_completed rows must receive non-null
+        retry_queue_entry_time_epoch, retry_queue_start_time_epoch, and
+        retry_queue_wait_time_s."""
+        from csf import nlm_batch
+        import time
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-qt-retry"
+        content_calls = {"count": 0}
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                content_calls["count"] += 1
+                if content_calls["count"] == 1:
+                    return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "API error (code 5): NOT_FOUND"})()
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "x" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 0.1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                    with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                        with mock.patch(
+                            "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                            return_value={"classification": "ok", "available": True, "availability": "public", "live_status": "not_live"},
+                        ):
+                            with mock.patch.object(ingestor, "_recover_dead_notebook"):
+                                with mock.patch("csf.nlm_batch.time.sleep"):
+                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        retry_ok = [
+            e for e in completed
+            if e.get("pass_name") == "retry" and e.get("status") == "ready"
+        ]
+        assert len(retry_ok) >= 1, "expected at least one retry-ready entry"
+        for entry in retry_ok:
+            assert entry["retry_queue_entry_time_epoch"] is not None, "retry entry_time is None"
+            assert entry["retry_queue_start_time_epoch"] is not None, "retry start_time is None"
+            assert entry["retry_queue_wait_time_s"] is not None, "retry wait_time is None"
+            assert entry["retry_queue_wait_time_s"] >= 0.0, "retry wait_time is negative"
+            assert isinstance(entry["retry_queue_entry_time_epoch"], float)
+            assert isinstance(entry["retry_queue_start_time_epoch"], float)
+            assert isinstance(entry["retry_queue_wait_time_s"], float)
+            json.dumps(entry)
+
+    def test_queue_timing_json_serializable_and_non_negative(self, monkeypatch):
+        """All queue timing fields must serialize via json.dumps and be non-negative."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-qt-json"
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "API error (code 5): NOT_FOUND"})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 0.1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                    with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                        with mock.patch(
+                            "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                            return_value={"classification": "ok", "available": True},
+                        ):
+                            with mock.patch.object(ingestor, "_recover_dead_notebook"):
+                                with mock.patch("csf.nlm_batch.time.sleep"):
+                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        for entry in completed:
+            for fld in (
+                "retry_queue_entry_time_epoch",
+                "retry_queue_start_time_epoch",
+                "retry_queue_wait_time_s",
+            ):
+                assert fld in entry, f"missing {fld}"
+                json.dumps(entry[fld])
+            # source_ready_age_s_breakdown is a dict with retry_queue_wait_time_s.
+            bdown = entry.get("source_ready_age_s_breakdown", {})
+            assert "retry_queue_wait_time_s" in bdown
+            json.dumps(bdown)
+            # queue wait, if not None, must be >= 0
+            if entry["retry_queue_wait_time_s"] is not None:
+                assert entry["retry_queue_wait_time_s"] >= 0.0
+
+    def test_queue_timing_shape_stable_with_existing_fields(self, monkeypatch):
+        """Adding queue timing must not change the shape or type of any existing
+        Candidate-6 field. All 11 original fields must still be present and match
+        their prior types."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-qt-stable"
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "API error (code 5): NOT_FOUND"})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 0.1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                    with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                        with mock.patch("csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp", return_value={"classification": "ok"}):
+                            with mock.patch.object(ingestor, "_recover_dead_notebook"):
+                                with mock.patch("csf.nlm_batch.time.sleep"):
+                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        original_eleven = [
+            "per_attempt_elapsed_s",
+            "per_attempt_internal_retry_count",
+            "per_attempt_internal_breakdown_s",
+            "per_attempt_returncode",
+            "run_cmd_overshoot_vs_timeout_s",
+            "retry_loop_elapsed_s",
+            "retry_exit_reason",
+            "source_ready_age_s_breakdown",
+            "retry_queue_entry_time_epoch",
+            "retry_queue_start_time_epoch",
+            "retry_queue_wait_time_s",
+        ]
+        for entry in completed:
+            for fld in original_eleven:
+                assert fld in entry, f"missing {fld} on {entry.get('pass_name')} {entry.get('status')}"
+            # per-attempt lists must be lists (possibly empty).
+            assert isinstance(entry["per_attempt_elapsed_s"], list)
+            assert isinstance(entry["per_attempt_internal_breakdown_s"], list)
+            assert isinstance(entry["per_attempt_returncode"], list)
+            assert isinstance(entry["run_cmd_overshoot_vs_timeout_s"], list)
+            json.dumps(entry)
+
+    def test_semantic_primary_success_loop_elapsed_is_meaningful(self, monkeypatch):
+        """Regression: early `ready` returns must emit non-zero retry_loop_elapsed_s
+        and a populated source_ready_age_s_breakdown.
+
+        Uses a monotonic time.time() monkey-patch (0.05s per call) so the underlying
+        time.time() granularity on the test platform doesn't round 0-second mocked
+        attempts to 0.0 in the producer's round(.,3)."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-sem-primary-success"
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+
+        ticker = {"t": 1000.0}
+        def fake_time():
+            ticker["t"] += 0.05
+            return ticker["t"]
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                if iteration_log is not None:
+                    iteration_log.append({"iteration": 1, "branch": "normal_return", "subprocess_elapsed_s": 0.05, "returncode": 0})
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "x" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch.time, "time", side_effect=fake_time):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+                with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                    with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                        with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                            ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        primary_ready = [
+            e for e in completed
+            if e.get("pass_name") == "primary" and e.get("status") == "ready"
+        ]
+        assert len(primary_ready) >= 1, "expected a primary ready entry"
+        entry = primary_ready[0]
+        # THE FIX: success-path telemetry must be meaningful.
+        assert entry["retry_loop_elapsed_s"] > 0.0, f"retry_loop_elapsed_s must be > 0 on success, got {entry['retry_loop_elapsed_s']}"
+        breakdown = entry["source_ready_age_s_breakdown"]
+        assert breakdown["retry_loop_elapsed_s"] is not None, f"breakdown.retry_loop_elapsed_s must not be None on success, got {breakdown['retry_loop_elapsed_s']}"
+        assert breakdown["retry_loop_elapsed_s"] > 0.0, f"breakdown.retry_loop_elapsed_s must be > 0 on success, got {breakdown['retry_loop_elapsed_s']}"
+        # breakdown fields stay JSON-serializable.
+        json.dumps(breakdown)
+        # command_total also non-zero.
+        assert entry["content_fetch_command_elapsed_s_total"] > 0.0
+        json.dumps(entry)
+
+    def test_semantic_retry_success_loop_elapsed_is_meaningful(self, monkeypatch):
+        """Regression: retry-pass `ready` rows must emit non-zero retry_loop_elapsed_s
+        and a populated source_ready_age_s_breakdown."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-sem-retry-success"
+        content_calls = {"count": 0}
+
+        ticker = {"t": 1000.0}
+        def fake_time():
+            ticker["t"] += 0.05
+            return ticker["t"]
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                content_calls["count"] += 1
+                if content_calls["count"] == 1:
+                    if iteration_log is not None:
+                        iteration_log.append({"iteration": 1, "branch": "non_rate_limit_failure", "subprocess_elapsed_s": 0.05, "returncode": 1})
+                    return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "command failed"})()
+                if iteration_log is not None:
+                    iteration_log.append({"iteration": 1, "branch": "normal_return", "subprocess_elapsed_s": 0.05, "returncode": 0})
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "x" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch.time, "time", side_effect=fake_time):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 0.0):
+                    with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                            with mock.patch(
+                                "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                                return_value={"classification": "ok", "available": True, "availability": "public", "live_status": "not_live"},
+                            ):
+                                with mock.patch.object(ingestor, "_recover_dead_notebook"):
+                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        retry_ready = [
+            e for e in completed
+            if e.get("pass_name") == "retry" and e.get("status") == "ready"
+        ]
+        assert len(retry_ready) >= 1, "expected a retry ready entry"
+        entry = retry_ready[0]
+        # THE FIX: retry success path must emit meaningful loop elapsed.
+        assert entry["retry_loop_elapsed_s"] > 0.0, f"retry success retry_loop_elapsed_s must be > 0, got {entry['retry_loop_elapsed_s']}"
+        breakdown = entry["source_ready_age_s_breakdown"]
+        assert breakdown["retry_loop_elapsed_s"] is not None
+        assert breakdown["retry_loop_elapsed_s"] > 0.0
+        json.dumps(entry)
+
+    def test_semantic_breakdown_retry_queue_wait_matches_top_level_field(self, monkeypatch):
+        """The breakdown.retry_queue_wait_time_s field must match the top-level
+        retry_queue_wait_time_s field on retry-pass rows."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-sem-bkdn-match"
+        content_calls = {"count": 0}
+
+        ticker = {"t": 1000.0}
+        def fake_time():
+            ticker["t"] += 0.05
+            return ticker["t"]
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                content_calls["count"] += 1
+                if content_calls["count"] == 1:
+                    if iteration_log is not None:
+                        iteration_log.append({"iteration": 1, "branch": "non_rate_limit_failure", "subprocess_elapsed_s": 0.05, "returncode": 1})
+                    return type("CP", (), {"returncode": 1, "stdout": "", "stderr": "command failed"})()
+                if iteration_log is not None:
+                    iteration_log.append({"iteration": 1, "branch": "normal_return", "subprocess_elapsed_s": 0.05, "returncode": 0})
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "x" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch.time, "time", side_effect=fake_time):
+            with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_ATTEMPTS", 1):
+                with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_DELAY_S", 0.0):
+                    with mock.patch.object(nlm_batch, "_SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S", 30.0):
+                        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                            with mock.patch(
+                                "csf.nlm_batch.inspect_youtube_watch_page_via_ytdlp",
+                                return_value={"classification": "ok", "available": True, "availability": "public", "live_status": "not_live"},
+                            ):
+                                with mock.patch.object(ingestor, "_recover_dead_notebook"):
+                                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        retry_ready = [
+            e for e in completed
+            if e.get("pass_name") == "retry" and e.get("status") == "ready"
+        ]
+        assert len(retry_ready) >= 1
+        entry = retry_ready[0]
+        # Both fields must be present and equal on retry rows.
+        assert "retry_queue_wait_time_s" in entry
+        breakdown = entry["source_ready_age_s_breakdown"]
+        assert "retry_queue_wait_time_s" in breakdown
+        # On retry rows, the top-level and breakdown values must match.
+        assert entry["retry_queue_wait_time_s"] == breakdown["retry_queue_wait_time_s"], (
+            f"mismatch: top={entry['retry_queue_wait_time_s']} vs breakdown={breakdown['retry_queue_wait_time_s']}"
+        )
+        json.dumps(entry)
+
+    def test_semantic_breakdown_dict_is_json_serializable_on_all_paths(self, monkeypatch):
+        """source_ready_age_s_breakdown must serialize via json.dumps on primary success,
+        primary failure (queued), retry success, retry failure paths."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-sem-bkdn-json"
+        monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", r"P:\packages\yt-is\.logs\sharded_lane_series\worker_states")
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"value": {"content": "z" * 101}}), "stderr": ""})()
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_hit", return_value=(True, 12.345)):
+            with mock.patch.object(nlm_batch.nlm_auth_guard, "auth_check_cache_session_age", return_value=12.345):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        for entry in completed:
+            breakdown = entry.get("source_ready_age_s_breakdown")
+            assert isinstance(breakdown, dict), f"breakdown not dict on {entry.get('pass_name')}/{entry.get('status')}"
+            # Each value must be None or float.
+            for k, v in breakdown.items():
+                assert v is None or isinstance(v, (int, float)), f"breakdown[{k}] type: {type(v).__name__}"
+            json.dumps(breakdown)
