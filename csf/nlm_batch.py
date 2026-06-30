@@ -1904,10 +1904,35 @@ class NLMBatchIngestor:
         self._not_found_source_list_probe_nb_id: str | None = None
         self._not_found_source_list_probe_count: int = 0
 
-    def _run_cmd(self, args: List[str], timeout: int = 300) -> subprocess.CompletedProcess:
+    def _run_cmd(
+        self,
+        args: List[str],
+        timeout: int = 300,
+        iteration_log: list[dict[str, object]] | None = None,
+    ) -> subprocess.CompletedProcess:
         tracker = _get_tracker()
         pre_command_retry_attempted = False
+        iter_count = 0
+        iter_start = time.time()
+        iter_branch = "normal_return"
+        iter_returncode = -1
+
+        def _record_iter(branch: str, returncode: int) -> None:
+            if iteration_log is not None:
+                iteration_log.append(
+                    {
+                        "iteration": iter_count,
+                        "branch": branch,
+                        "subprocess_elapsed_s": round(time.time() - iter_start, 3),
+                        "returncode": int(returncode),
+                    }
+                )
+
         while True:
+            iter_count += 1
+            iter_start = time.time()
+            iter_branch = "normal_return"
+            iter_returncode = -1
             tracker.apply_delay()
             auth_context = _get_nlm_auth_context()
             cmd_args = nlm_auth_guard.add_profile_args(args, auth_context.profile if auth_context.has_profile else None)
@@ -1918,6 +1943,9 @@ class NLMBatchIngestor:
                 allow_reap=True,
             )
             if not _ensure_nlm_auth():
+                iter_branch = "auth_failed_pre_command"
+                iter_returncode = 1
+                _record_iter(iter_branch, iter_returncode)
                 return subprocess.CompletedProcess(["nlm"] + cmd_args, 1, "", "Auth failed")
             default_profile_pids = _reap_default_chrome_profile_before_command(
                 auth_context,
@@ -1927,12 +1955,18 @@ class NLMBatchIngestor:
             if default_profile_pids:
                 tracker.record_failure(is_rate_limit=False)
                 if pre_command_retry_attempted:
+                    iter_branch = "profile_reap_blocked"
+                    iter_returncode = 1
+                    _record_iter(iter_branch, iter_returncode)
                     return _default_profile_blocked_result(
                         auth_context,
                         args=cmd_args,
                         phase="pre_command",
                     )
+                iter_branch = "profile_reap_retry"
+                iter_returncode = 0
                 pre_command_retry_attempted = True
+                _record_iter(iter_branch, iter_returncode)
                 continue
             res = run_nlm(cmd_args, timeout_s=timeout)
             default_profile_block = _fail_closed_on_default_chrome_profile(
@@ -1945,6 +1979,9 @@ class NLMBatchIngestor:
                 command_succeeded=res.returncode == 0,
             )
             if default_profile_block is not None:
+                iter_branch = "default_profile_block"
+                iter_returncode = int(default_profile_block.returncode)
+                _record_iter(iter_branch, iter_returncode)
                 return default_profile_block
 
             # Check for rate limit indicators — require BOTH a status code AND rate-limit context
@@ -1956,13 +1993,20 @@ class NLMBatchIngestor:
                 for kw in ["rate limit", "RATE_LIMIT", "Too Many Requests"]
             )
             is_rate_limit = res.returncode != 0 and has_429_503 and has_rate_limit_context
+            is_timeout = "NLM command timed out" in (res.stderr or "")
 
             if res.returncode == 0:
                 tracker.record_success()
+                iter_branch = "normal_return"
+                iter_returncode = 0
+                _record_iter(iter_branch, iter_returncode)
                 return res
 
             if is_rate_limit:
                 tracker.record_failure(is_rate_limit=True)
+                iter_branch = "rate_limit"
+                iter_returncode = int(res.returncode)
+                _record_iter(iter_branch, iter_returncode)
                 continue
 
             # Auth-error patterns in stderr (expired between _ensure_nlm_auth and command execution)
@@ -1974,17 +2018,36 @@ class NLMBatchIngestor:
                 auth_context = _get_nlm_auth_context()
                 if auth_context.should_fail_closed:
                     tracker.record_failure(is_rate_limit=False)
+                    iter_branch = "auth_error_fail_closed"
+                    iter_returncode = int(res.returncode)
+                    _record_iter(iter_branch, iter_returncode)
                     return res
                 if _refresh_nlm_auth_session(auth_context, timeout_s=120):
                     res = run_nlm(cmd_args, timeout_s=timeout)
                     if res.returncode == 0:
                         tracker.record_success()
+                        iter_branch = "auth_error_refresh_success"
+                        iter_returncode = 0
+                        _record_iter(iter_branch, iter_returncode)
                         return res
                 tracker.record_failure(is_rate_limit=False)
+                iter_branch = "auth_error_refresh_failed"
+                iter_returncode = int(res.returncode)
+                _record_iter(iter_branch, iter_returncode)
                 return res
+
+            if is_timeout:
+                iter_branch = "timeout"
+                iter_returncode = int(res.returncode)
+                _record_iter(iter_branch, iter_returncode)
+                # fall through to non-rate-limit return below
 
             # Non-rate-limit failure — record but don't retry infinitely
             tracker.record_failure(is_rate_limit=False)
+            if iter_branch != "timeout":
+                iter_branch = "non_rate_limit_failure"
+                iter_returncode = int(res.returncode)
+                _record_iter(iter_branch, iter_returncode)
             return res
 
     def _wait_for_sources_ready(
@@ -3237,6 +3300,7 @@ class NLMBatchIngestor:
             *,
             pass_name: str,
             allow_retry_queue: bool,
+            retry_queue_entry_time_epoch: float | None = None,
         ) -> dict[str, object]:
             """Fetch source content with NotebookLM retries and optional second-pass queuing."""
             started_at_epoch = time.time()
@@ -3271,6 +3335,56 @@ class NLMBatchIngestor:
             projected_retry_ready_age_s: float | None = None
             local_retry_skipped_reason: str | None = None
             projected_local_retry_completion_age_s: float | None = None
+            # Candidate 6 instrumentation — per-attempt telemetry (in-loop accumulators).
+            per_attempt_elapsed_s_list: list[float] = []
+            per_attempt_internal_retry_count_list: list[int] = []
+            per_attempt_internal_breakdown_s_list: list[list[dict[str, object]]] = []
+            per_attempt_returncode_list: list[int] = []
+            per_attempt_overshoot_vs_timeout_s_list: list[float] = []
+            retry_exit_reason_value: str = "in_progress"
+            # Queue timing — compute once so all emission sites (including early success
+            # returns inside the retry loop) see the correct value.
+            retry_queue_entry_time_epoch_value = (
+                retry_queue_entry_time_epoch if pass_name == "retry" else None
+            )
+            retry_queue_start_time_epoch_value: float | None = (
+                started_at_epoch if pass_name == "retry" else None
+            )
+            retry_queue_wait_time_s_value: float | None = (
+                round(max(started_at_epoch - retry_queue_entry_time_epoch, 0.0), 3)
+                if pass_name == "retry" and retry_queue_entry_time_epoch is not None
+                else None
+            )
+            # snapshot state for the closure: bound to current accumulator/locals so each
+            # emission site sees live values even if the retry loop mutates them later.
+            _queue_wait_for_breakdown = retry_queue_wait_time_s_value
+
+            def _emit_breakdown_snapshot() -> dict[str, float | None]:
+                """Compute retry-loop + primary-batch-wait breakdown at emission time.
+                Called at every nlm_batch_source_content_fetch_completed site so all paths
+                (early success returns + post-loop paths) emit meaningful values.
+                """
+                # Retry-loop elapsed = total command wall-clock across all attempts in this
+                # fetch. Captures both the "ready on first attempt" path and the
+                # "ready after retries" path since it sums per_attempt_elapsed_s_list.
+                _loop_elapsed = round(content_fetch_command_elapsed_s_total, 3)
+                _primary_wait = (
+                    round(max(started_at_epoch - ready_reference_epoch, 0.0), 3)
+                    if ready_reference_epoch
+                    else None
+                )
+                return {
+                    "primary_batch_wait_time_s": _primary_wait,
+                    "retry_queue_wait_time_s": _queue_wait_for_breakdown,
+                    "retry_loop_elapsed_s": _loop_elapsed,
+                }
+
+            def _emit_retry_loop_elapsed() -> float:
+                return round(content_fetch_command_elapsed_s_total, 3)
+
+            source_ready_age_s_breakdown_value: dict[str, float | None] = _emit_breakdown_snapshot()
+            retry_loop_elapsed_s_value: float = _emit_retry_loop_elapsed()
+            _RETRY_COMMAND_TIMEOUT_S = 30
             log_action(
                 "nlm_batch_source_content_fetch_started",
                 {
@@ -3381,6 +3495,18 @@ class NLMBatchIngestor:
                         "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
                         "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
                         "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                        # Candidate 6: per-attempt telemetry (empty in no-command path)
+                        "per_attempt_elapsed_s": list(per_attempt_elapsed_s_list),
+                        "per_attempt_internal_retry_count": list(per_attempt_internal_retry_count_list),
+                        "per_attempt_internal_breakdown_s": [list(b) for b in per_attempt_internal_breakdown_s_list],
+                        "per_attempt_returncode": list(per_attempt_returncode_list),
+                        "run_cmd_overshoot_vs_timeout_s": list(per_attempt_overshoot_vs_timeout_s_list),
+                        "retry_loop_elapsed_s": _emit_retry_loop_elapsed(),
+                        "retry_exit_reason": retry_exit_reason_value,
+                        "source_ready_age_s_breakdown": _emit_breakdown_snapshot(),
+                        "retry_queue_entry_time_epoch": retry_queue_entry_time_epoch_value,
+                        "retry_queue_start_time_epoch": retry_queue_start_time_epoch_value,
+                        "retry_queue_wait_time_s": retry_queue_wait_time_s_value,
                         "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                         "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                         "source_list_probe_count": source_list_probe_count,
@@ -3456,13 +3582,26 @@ class NLMBatchIngestor:
                 attempt += 1
                 attempt_started_at_epoch = time.time()
                 attempt_ready_age_s = round(attempt_started_at_epoch - ready_reference_epoch, 3) if ready_reference_epoch else 0.0
-                res = self._run_cmd(["source", "content", source_id, "--json"], timeout=30)
+                attempt_iteration_log: list[dict[str, object]] = []
+                res = self._run_cmd(
+                    ["source", "content", source_id, "--json"],
+                    timeout=30,
+                    iteration_log=attempt_iteration_log,
+                )
                 attempt_completed_at_epoch = time.time()
                 attempt_elapsed_s = round(attempt_completed_at_epoch - attempt_started_at_epoch, 3)
                 _record_content_fetch_command_elapsed_metrics(attempt_elapsed_s)
                 content_fetch_command_elapsed_s_total += attempt_elapsed_s
                 content_fetch_command_elapsed_s_max = max(content_fetch_command_elapsed_s_max, attempt_elapsed_s)
                 content_fetch_command_elapsed_s_count += 1
+                # Candidate 6: per-attempt telemetry from _run_cmd's iteration_log
+                per_attempt_elapsed_s_list.append(attempt_elapsed_s)
+                per_attempt_returncode_list.append(int(res.returncode))
+                per_attempt_internal_retry_count_list.append(len(attempt_iteration_log))
+                per_attempt_internal_breakdown_s_list.append(list(attempt_iteration_log))
+                per_attempt_overshoot_vs_timeout_s_list.append(
+                    round(attempt_elapsed_s - _RETRY_COMMAND_TIMEOUT_S, 3)
+                )
                 content = ""
                 content_length = 0
                 status = "command_failed" if res.returncode != 0 else "parse_failed"
@@ -3484,6 +3623,7 @@ class NLMBatchIngestor:
                                 content_fetch_stats["ready_age_s_max"] = max(content_fetch_stats["ready_age_s_max"], attempt_ready_age_s)
                                 content_fetch_stats["attempts_total"] += attempt
                                 content_fetch_stats["attempts_max"] = max(content_fetch_stats["attempts_max"], attempt)
+                            retry_exit_reason_value = "success"
                             log_action(
                                 "nlm_source_content_command_completed",
                                 _build_source_content_command_completed_payload(
@@ -3525,6 +3665,18 @@ class NLMBatchIngestor:
                                     "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
                                     "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
                                     "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                                    # Candidate 6: per-attempt telemetry (success path)
+                                    "per_attempt_elapsed_s": list(per_attempt_elapsed_s_list),
+                                    "per_attempt_internal_retry_count": list(per_attempt_internal_retry_count_list),
+                                    "per_attempt_internal_breakdown_s": [list(b) for b in per_attempt_internal_breakdown_s_list],
+                                    "per_attempt_returncode": list(per_attempt_returncode_list),
+                                    "run_cmd_overshoot_vs_timeout_s": list(per_attempt_overshoot_vs_timeout_s_list),
+                                    "retry_loop_elapsed_s": _emit_retry_loop_elapsed(),
+                                    "retry_exit_reason": retry_exit_reason_value,
+                                    "source_ready_age_s_breakdown": _emit_breakdown_snapshot(),
+                                    "retry_queue_entry_time_epoch": retry_queue_entry_time_epoch_value,
+                                    "retry_queue_start_time_epoch": retry_queue_start_time_epoch_value,
+                                    "retry_queue_wait_time_s": retry_queue_wait_time_s_value,
                                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                                     "source_list_probe_count": source_list_probe_count,
@@ -3597,15 +3749,19 @@ class NLMBatchIngestor:
                     "content": None,
                 }
                 if retry_deadline is not None and time.time() >= retry_deadline:
+                    retry_exit_reason_value = "budget_exhausted"
                     break
                 if not retryable or attempt >= _SOURCE_CONTENT_RETRY_ATTEMPTS:
+                    retry_exit_reason_value = "attempts_exhausted" if attempt >= _SOURCE_CONTENT_RETRY_ATTEMPTS else "not_retryable"
                     break
                 if retry_deadline is not None:
                     remaining_budget_s = retry_deadline - time.time()
                     if remaining_budget_s <= 0:
+                        retry_exit_reason_value = "budget_exhausted"
                         break
                     delay_s = min(delay_s, remaining_budget_s)
                 if delay_s <= 0:
+                    retry_exit_reason_value = "delay_zero"
                     break
                 if ready_reference_epoch:
                     projected_local_retry_completion_age_s = round(
@@ -3614,6 +3770,7 @@ class NLMBatchIngestor:
                     )
                     if projected_local_retry_completion_age_s >= _SOURCE_AGE_CLIFF_S:
                         local_retry_skipped_reason = "projected_local_retry_completion_age_cliff"
+                        retry_exit_reason_value = "local_retry_skipped_age_cliff"
                         break
                 with status_lock:
                     content_fetch_stats["content_fetch_retry_sleep_elapsed_s_total"] += delay_s
@@ -3623,6 +3780,12 @@ class NLMBatchIngestor:
             final_completed_at_epoch = time.time()
             final_status = str(last_result["status"])
             final_ready_age_s = round(final_completed_at_epoch - ready_reference_epoch, 3) if ready_reference_epoch else 0.0
+            # Candidate 6: retry_loop_elapsed_s, retry_queue_wait_time_s, and the
+            # source_ready_age_s_breakdown dict are emitted in-call by the
+            # _emit_retry_loop_elapsed() / _emit_breakdown_snapshot() closures
+            # defined earlier in this fetch, so every
+            # nlm_batch_source_content_fetch_completed site (including early-return
+            # paths) already carries meaningful values.
             # Probe source list only when NOT_FOUND was seen in a failed outcome — avoids
             # unconditional overhead on every failure. Captures whether the source_id is
             # still present in the notebook, distinguishing stale-id failures from
@@ -3823,6 +3986,20 @@ class NLMBatchIngestor:
                         "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
                         "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
                         "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                        # Candidate 6: per-attempt telemetry (retry-queued path)
+                        "per_attempt_elapsed_s": list(per_attempt_elapsed_s_list),
+                        "per_attempt_internal_retry_count": list(per_attempt_internal_retry_count_list),
+                        "per_attempt_internal_breakdown_s": [list(b) for b in per_attempt_internal_breakdown_s_list],
+                        "per_attempt_returncode": list(per_attempt_returncode_list),
+                        "run_cmd_overshoot_vs_timeout_s": list(per_attempt_overshoot_vs_timeout_s_list),
+                        "retry_loop_elapsed_s": _emit_retry_loop_elapsed(),
+                        "retry_exit_reason": retry_exit_reason_value,
+                        "source_ready_age_s_breakdown": _emit_breakdown_snapshot(),
+                        "retry_queue_entry_time_epoch": retry_queue_entry_time_epoch_value,
+                        "retry_queue_start_time_epoch": retry_queue_start_time_epoch_value,
+                        "retry_queue_wait_time_s": retry_queue_wait_time_s_value,
+                        "retry_queue_queued_at_epoch": final_completed_at_epoch,
+                        "retry_queue_queued_ready_age_s": final_ready_age_s,
                         "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                         "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                         "source_list_probe_count": source_list_probe_count,
@@ -3869,6 +4046,7 @@ class NLMBatchIngestor:
                     "failure_reason": str(last_result["failure_reason"]),
                     "status": final_status,
                     "queued_for_retry": True,
+                    "retry_queue_queued_at_epoch": final_completed_at_epoch,
                     "attempts": int(last_result["attempts"]),
                     "returncode": int(last_result["returncode"]),
                     "content_length": int(last_result["content_length"]),
@@ -3877,6 +4055,18 @@ class NLMBatchIngestor:
                     "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
                     "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
                     "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                    # Candidate 6: per-attempt telemetry (queue-skip / not-retryable path)
+                    "per_attempt_elapsed_s": list(per_attempt_elapsed_s_list),
+                    "per_attempt_internal_retry_count": list(per_attempt_internal_retry_count_list),
+                    "per_attempt_internal_breakdown_s": [list(b) for b in per_attempt_internal_breakdown_s_list],
+                    "per_attempt_returncode": list(per_attempt_returncode_list),
+                    "run_cmd_overshoot_vs_timeout_s": list(per_attempt_overshoot_vs_timeout_s_list),
+                    "retry_loop_elapsed_s": _emit_retry_loop_elapsed(),
+                    "retry_exit_reason": retry_exit_reason_value,
+                    "source_ready_age_s_breakdown": _emit_breakdown_snapshot(),
+                    "retry_queue_entry_time_epoch": retry_queue_entry_time_epoch_value,
+                    "retry_queue_start_time_epoch": retry_queue_start_time_epoch_value,
+                    "retry_queue_wait_time_s": retry_queue_wait_time_s_value,
                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                     "source_list_probe_count": source_list_probe_count,
@@ -3989,6 +4179,18 @@ class NLMBatchIngestor:
                     "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
                     "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
                     "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                    # Candidate 6: per-attempt telemetry (failed / not-queued / queued-retry-final-fail path)
+                    "per_attempt_elapsed_s": list(per_attempt_elapsed_s_list),
+                    "per_attempt_internal_retry_count": list(per_attempt_internal_retry_count_list),
+                    "per_attempt_internal_breakdown_s": [list(b) for b in per_attempt_internal_breakdown_s_list],
+                    "per_attempt_returncode": list(per_attempt_returncode_list),
+                    "run_cmd_overshoot_vs_timeout_s": list(per_attempt_overshoot_vs_timeout_s_list),
+                    "retry_loop_elapsed_s": _emit_retry_loop_elapsed(),
+                    "retry_exit_reason": retry_exit_reason_value,
+                    "source_ready_age_s_breakdown": _emit_breakdown_snapshot(),
+                    "retry_queue_entry_time_epoch": retry_queue_entry_time_epoch_value,
+                    "retry_queue_start_time_epoch": retry_queue_start_time_epoch_value,
+                    "retry_queue_wait_time_s": retry_queue_wait_time_s_value,
                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                     "source_list_probe_count": source_list_probe_count,
@@ -4040,6 +4242,18 @@ class NLMBatchIngestor:
                 "content_fetch_command_elapsed_s_total": content_fetch_command_elapsed_s_total,
                 "content_fetch_command_elapsed_s_max": content_fetch_command_elapsed_s_max,
                 "content_fetch_command_elapsed_s_count": content_fetch_command_elapsed_s_count,
+                # Candidate 6: per-attempt telemetry (final fail / no-queued-retry path)
+                "per_attempt_elapsed_s": list(per_attempt_elapsed_s_list),
+                "per_attempt_internal_retry_count": list(per_attempt_internal_retry_count_list),
+                "per_attempt_internal_breakdown_s": [list(b) for b in per_attempt_internal_breakdown_s_list],
+                "per_attempt_returncode": list(per_attempt_returncode_list),
+                "run_cmd_overshoot_vs_timeout_s": list(per_attempt_overshoot_vs_timeout_s_list),
+                "retry_loop_elapsed_s": _emit_retry_loop_elapsed(),
+                "retry_exit_reason": retry_exit_reason_value,
+                "source_ready_age_s_breakdown": _emit_breakdown_snapshot(),
+                "retry_queue_entry_time_epoch": retry_queue_entry_time_epoch_value,
+                "retry_queue_start_time_epoch": retry_queue_start_time_epoch_value,
+                "retry_queue_wait_time_s": retry_queue_wait_time_s_value,
                 "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                 "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                 "source_list_probe_count": source_list_probe_count,
@@ -4063,7 +4277,7 @@ class NLMBatchIngestor:
             }
 
         def _run_fetch_round(
-            round_items: list[tuple[str, str]],
+            round_items: list[tuple[str, str, float | None]],
             *,
             pass_name: str,
             allow_retry_queue: bool,
@@ -4078,9 +4292,19 @@ class NLMBatchIngestor:
             if not round_items:
                 return round_results, round_retry_queue, round_outcomes
             print(f"[NLM-Batch] Fetching {len(round_items)} sources in parallel ({pass_name})...")
-            video_width = max(len(vid) for vid, _ in round_items) if round_items else 0
+            video_width = max(len(vid) for vid, _, _ in round_items) if round_items else 0
             with ThreadPoolExecutor(max_workers=10) as executor:
-                futures = [executor.submit(_fetch_content_round, source_id, vid, pass_name=pass_name, allow_retry_queue=allow_retry_queue) for vid, source_id in round_items]
+                futures = [
+                    executor.submit(
+                        _fetch_content_round,
+                        source_id,
+                        vid,
+                        pass_name=pass_name,
+                        allow_retry_queue=allow_retry_queue,
+                        retry_queue_entry_time_epoch=queued_at,
+                    )
+                    for vid, source_id, queued_at in round_items
+                ]
                 for future in as_completed(futures):
                     outcome = future.result()
                     vid = str(outcome["video_id"])
@@ -4104,11 +4328,11 @@ class NLMBatchIngestor:
                         print(format_result_row(vid, False, str(error) if error is not None else "unknown error", video_width))
             return round_results, round_retry_queue, round_outcomes
 
-        batch_items: list[tuple[str, str]] = []
+        batch_items: list[tuple[str, str, float | None]] = []
         for vid in batch_ids:
             source_id = source_id_by_video_id.get(vid)
             if source_id:
-                batch_items.append((vid, source_id))
+                batch_items.append((vid, source_id, None))
 
         retry_queue_deferred_count = 0
         retry_queue_recovered_count = 0
@@ -4317,6 +4541,22 @@ class NLMBatchIngestor:
                                 "content_fetch_command_elapsed_s_total": 0.0,
                                 "content_fetch_command_elapsed_s_max": 0.0,
                                 "content_fetch_command_elapsed_s_count": 0,
+                                # Candidate 6: drain-path summary (empty lists preserved for stable shape)
+                                "per_attempt_elapsed_s": [],
+                                "per_attempt_internal_retry_count": [],
+                                "per_attempt_internal_breakdown_s": [],
+                                "per_attempt_returncode": [],
+                                "run_cmd_overshoot_vs_timeout_s": [],
+                                "retry_loop_elapsed_s": 0.0,
+                                "retry_exit_reason": "drain_skipped",
+                                "source_ready_age_s_breakdown": {
+                                    "primary_batch_wait_time_s": None,
+                                    "retry_queue_wait_time_s": None,
+                                    "retry_loop_elapsed_s": None,
+                                },
+                                "retry_queue_entry_time_epoch": None,
+                                "retry_queue_start_time_epoch": None,
+                                "retry_queue_wait_time_s": None,
                                 "source_list_probe_elapsed_s_total": 0.0,
                                 "source_list_probe_elapsed_s_max": 0.0,
                                 "source_list_probe_count": 0,
@@ -4377,7 +4617,14 @@ class NLMBatchIngestor:
                             )
                             content_fetch_stats["retry_queue_wait_elapsed_s_count"] += retry_queue_wait_elapsed_s_count
                     retry_results, retry_queue, retry_outcomes = _run_fetch_round(
-                        [(vid, source_id) for vid, source_id, _queued_error in retry_queue],
+                        [
+                            (
+                                vid,
+                                source_id,
+                                round_outcomes.get(vid, {}).get("retry_queue_queued_at_epoch"),
+                            )
+                            for vid, source_id, _queued_error in retry_queue
+                        ],
                         pass_name="retry",
                         allow_retry_queue=False,
                     )
