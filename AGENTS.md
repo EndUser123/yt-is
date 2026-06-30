@@ -45,6 +45,48 @@ Useful next-step language:
 - "benchmark justified" requires canonical evidence plus a decision packet.
 - "ready" means tests/verification passed and stale packets/docs do not contradict the current result.
 
+## Completion and Handoff Discipline
+
+Do not call work complete because fields, files, packets, or tests exist. Completion requires the requested behavior or evidence contract to work on the rows, events, code paths, and artifacts where it is supposed to discriminate behavior.
+
+## Pre-Completion Self-Review Gate
+
+Before saying work is done, complete, fixed, ready, or safe to hand off, perform a self-review pass that tries to find what is wrong with your own work.
+
+Required checks:
+
+- Re-read the original objective and list each requested requirement.
+- Map each requirement to the exact file, test, artifact, or command output that proves it is satisfied.
+- Look for contradictions between final summary, docs, tests, packets, git status, and raw artifacts.
+- Search for stale claims, stale numbers, stale filenames, and old run IDs introduced or left behind by the work.
+- Check that tests prove behavior, not just schema, field presence, or JSON serializability.
+- Check edge cases around identity keys, grouping keys, retry paths, partial failures, empty data, and duplicated IDs.
+- Verify that no prohibited side effect occurred, such as an unapproved live benchmark, external metadata fetch, notebook deletion, or raw artifact mutation.
+- Run the required verification commands for the task type.
+- If any issue remains, do not report completion. Report `needs_fix` with the exact blocker and next action.
+
+Final responses must include a `Self-review result` line:
+
+- `Self-review result: no blocking issues found` only if the checks above were performed and passed.
+- `Self-review result: needs_fix` if any contradiction, missing verification, partial implementation, or unproven requirement remains.
+
+Do not outsource self-review to the user or parent agent. If a parent reviewer can find an obvious contradiction, stale count, missing semantic test, or unverified claim from the files you changed, your completion report was premature.
+
+For instrumentation work:
+
+- Schema presence is not enough. If a field is expected to answer a question, tests must prove it is non-null or meaningfully populated on the relevant path.
+- If a field is intentionally `None` on a path, state why. Mark the implementation partial if that path is required by the contract.
+- Tests must assert semantics, not only field shape or JSON serializability.
+- Do not narrow scope silently. If the requested contract includes queue timing, retry timing, and per-attempt breakdown, completing only one category is partial unless the parent explicitly approves the narrower scope.
+- Do not call a result "ready for live run" while any discriminator field remains unimplemented, always-null, or untested on the relevant path.
+
+For handoffs:
+
+- Do not say "committed", "staged", or "clean" unless verified with `git status --short` and `git log`.
+- If the worktree is dirty, list the exact modified and untracked files.
+- If a summary contains contradictions, resolve them before final output.
+- Prior LLM reports are claims, not evidence. Verify against current files, raw artifacts, tests, and git state.
+
 ### The Industrial Transition (April 2026)
 As of commit `bea672f`, the pipeline has been optimized for scale:
 - **Persistent Staging:** Uses `NLMIndustrialScraper` with a module-level singleton. A staging notebook is reused for up to 300 videos, reducing setup overhead by 99.7%.
