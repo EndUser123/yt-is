@@ -125,6 +125,35 @@ A blocked final response must include:
 
 Example: for NotebookLM auth/profile failures, check `docs/operations/notebooklm-auth-rerun-recipe.md` before claiming interactive auth is required.
 
+## Time-Sensitive Preflight
+
+If a preflight depends on expiring state such as auth, leases, browser sessions, locks, service health, temporary files, ports, or process state, do not treat an earlier pass as current.
+
+For time-sensitive preflights:
+
+- Record the exact check time.
+- State what can expire or drift.
+- Run the preflight immediately before the dependent action.
+- If too much time or a turn boundary has passed, re-run the preflight.
+- Do not report "ready to launch" unless the preflight was checked in the same execution window as the launch command.
+- If the preflight passes but the dependent action is not launched, report `Parent handoff: decision_required`, not `ready`.
+
+Example: NotebookLM worker auth can expire quickly. Run the documented auth sync and all `nlm login --check` commands immediately before the smoke run, not in an earlier turn.
+
+## Ignored Artifact Reporting
+
+`git status --short` is not enough when the task writes ignored paths such as `.logs/`.
+
+If you create or modify ignored artifacts, list them explicitly even when git status is clean. Include:
+
+- Exact path.
+- Whether it was created or modified.
+- Why it was written.
+- Whether it should remain untracked or ignored.
+- Whether a tracked doc or registry should point to it.
+
+Do not say "no files changed" if ignored artifacts were written. Say: "Tracked git status is clean; ignored artifacts changed: ..."
+
 For instrumentation work:
 
 - Schema presence is not enough. If a field is expected to answer a question, tests must prove it is non-null or meaningfully populated on the relevant path.
