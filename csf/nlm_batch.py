@@ -3368,6 +3368,10 @@ class NLMBatchIngestor:
                 # fetch. Captures both the "ready on first attempt" path and the
                 # "ready after retries" path since it sums per_attempt_elapsed_s_list.
                 _loop_elapsed = round(content_fetch_command_elapsed_s_total, 3)
+                # Fetch-task start age relative to batch materialization. This
+                # matches fetch-start source_ready_age_s, while completed rows may
+                # later emit attempt/final age after retries. It is not backend
+                # materialization latency.
                 _primary_wait = (
                     round(max(started_at_epoch - ready_reference_epoch, 0.0), 3)
                     if ready_reference_epoch
