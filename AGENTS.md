@@ -90,6 +90,28 @@ The final response must make the handoff state explicit:
 
 Do not tell the user that parent review is unnecessary. If the delegated objective is complete, return the evidence packet and stop. The parent reviewer decides whether to re-verify, commit, launch another agent, approve a live benchmark, or assign the next goal.
 
+## Bounded Branch Execution
+
+Delegated goals may include multi-step branches, but the allowed action budget must be explicit before work starts.
+
+For any goal that can run live systems, benchmarks, external fetches, migrations, deletes, or other costly actions:
+
+- State the exact number of authorized live or costly actions.
+- Use a fresh output root for every run or generated artifact unless overwrite is explicitly authorized.
+- Preserve prior run roots and raw artifacts.
+- Do not run adjacent experiments because the first result is interesting.
+- If a live run exposes a code or instrumentation bug, fix and verify the bug only if the goal allows code edits; do not automatically run another live validation unless the goal explicitly budgets it.
+- Keep verdict layers separate: instrumentation validity, throughput result, cohort effects, environment/tooling health, and decision readiness.
+- At each branch end, either continue only within the authorized branch or return `Parent handoff: decision_required`.
+
+A final response for a branched goal must state:
+
+- Authorized live or costly actions used vs allowed.
+- Output roots created or modified.
+- Which branch was taken and why.
+- Which branches were not taken.
+- Whether another live or costly action is needed and who must approve it.
+
 ## Blocker Triage
 
 Before reporting `blocked`, classify the blocker precisely:
