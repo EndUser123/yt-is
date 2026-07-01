@@ -7163,3 +7163,180 @@ class TestCandidate6Instrumentation:
             for k, v in breakdown.items():
                 assert v is None or isinstance(v, (int, float)), f"breakdown[{k}] type: {type(v).__name__}"
             json.dumps(breakdown)
+
+
+class _DummyTracker:
+    """Minimal stand-in for _RateLimitTracker used by _run_cmd phase-split tests."""
+
+    def apply_delay(self) -> None:
+        return None
+
+    def record_success(self) -> None:
+        return None
+
+    def record_failure(self, is_rate_limit: bool = False) -> None:
+        return None
+
+
+class TestRunCmdPhaseSplit:
+    """Candidate 6 per-attempt phase-split: _record_iter must emit per-phase
+    timing fields, and content_subprocess_elapsed_s must NOT fold in auth/reap time.
+
+    These tests drive NLMBatchIngestor._run_cmd directly with the module-level
+    phase helpers monkeypatched, so the phase-stamp boundaries are exercised
+    against the real _record_iter closure.
+    """
+
+    _PHASE_FIELDS = (
+        "iteration_elapsed_s",
+        "pre_reap_elapsed_s",
+        "auth_elapsed_s",
+        "pre_command_reap_elapsed_s",
+        "content_subprocess_elapsed_s",
+        "post_reap_elapsed_s",
+    )
+
+    def _patch_env(
+        self,
+        monkeypatch,
+        *,
+        auth_ok: bool = True,
+        auth_sleep: float = 0.0,
+        reap_sleep: float = 0.0,
+        run_nlm_sleep: float = 0.0,
+        run_nlm_result: subprocess.CompletedProcess | None = None,
+        reap_before_returns_pids: bool = False,
+    ) -> None:
+        monkeypatch.setattr(nlm_batch, "_get_tracker", lambda: _DummyTracker())
+        monkeypatch.setattr(
+            nlm_batch,
+            "_get_nlm_auth_context",
+            lambda: mock.MagicMock(has_profile=False, profile=None, should_fail_closed=False),
+        )
+        monkeypatch.setattr(nlm_batch.nlm_auth_guard, "add_profile_args", lambda args, profile: list(args))
+
+        def _reap(*a, **k):
+            if reap_sleep:
+                time.sleep(reap_sleep)
+            return None
+
+        monkeypatch.setattr(nlm_batch, "_reap_default_chrome_profile_for_auth", _reap)
+
+        def _reap_before(*a, **k):
+            if reap_sleep:
+                time.sleep(reap_sleep)
+            return ["pid"] if reap_before_returns_pids else None
+
+        monkeypatch.setattr(nlm_batch, "_reap_default_chrome_profile_before_command", _reap_before)
+        monkeypatch.setattr(nlm_batch, "_fail_closed_on_default_chrome_profile", lambda *a, **k: None)
+
+        def _ensure():
+            if auth_sleep:
+                time.sleep(auth_sleep)
+            return auth_ok
+
+        monkeypatch.setattr(nlm_batch, "_ensure_nlm_auth", _ensure)
+
+        def _run_nlm(cmd_args, timeout_s=300):
+            if run_nlm_sleep:
+                time.sleep(run_nlm_sleep)
+            return run_nlm_result
+
+        monkeypatch.setattr(nlm_batch, "run_nlm", _run_nlm)
+
+    def _ingestor(self) -> "nlm_batch.NLMBatchIngestor":
+        return nlm_batch.NLMBatchIngestor()
+
+    def test_success_path_emits_all_phase_fields(self, monkeypatch):
+        """normal_return iteration must populate every new phase field plus the legacy field."""
+        ok = subprocess.CompletedProcess(["nlm"], 0, '{"value":{"content":"x"}}', "")
+        self._patch_env(monkeypatch, auth_ok=True, run_nlm_result=ok)
+        log: list = []
+        res = self._ingestor()._run_cmd(["source", "content", "s1", "--json"], timeout=30, iteration_log=log)
+
+        assert res.returncode == 0
+        assert len(log) == 1
+        entry = log[0]
+        assert entry["branch"] == "normal_return"
+        assert entry["returncode"] == 0
+        # Legacy field preserved for existing reducers.
+        assert "subprocess_elapsed_s" in entry
+        # All new phase fields present.
+        for field in self._PHASE_FIELDS:
+            assert field in entry, f"missing phase field {field}"
+            assert isinstance(entry[field], float), f"{field} not float"
+        # iteration_elapsed_s equals the legacy field (both = full wall time).
+        assert entry["iteration_elapsed_s"] == entry["subprocess_elapsed_s"]
+
+    def test_content_subprocess_excludes_auth_time(self, monkeypatch):
+        """DISCRIMINATING TEST: a slow _ensure_nlm_auth must NOT inflate content_subprocess_elapsed_s."""
+        ok = subprocess.CompletedProcess(["nlm"], 0, '{"value":{"content":"x"}}', "")
+        # Auth sleeps 80ms; run_nlm returns instantly; reaps instant.
+        self._patch_env(monkeypatch, auth_ok=True, auth_sleep=0.08, run_nlm_result=ok)
+        log: list = []
+        self._ingestor()._run_cmd(["source", "content", "s1", "--json"], timeout=30, iteration_log=log)
+
+        entry = log[0]
+        # Auth time is captured in auth_elapsed_s (>= 0.07s).
+        assert entry["auth_elapsed_s"] >= 0.07, entry
+        # Content subprocess time must exclude the auth sleep: well under 0.07s.
+        assert entry["content_subprocess_elapsed_s"] < 0.03, entry
+        # And pre_auth reap must also exclude the auth sleep.
+        assert entry["pre_reap_elapsed_s"] < 0.03, entry
+
+    def test_auth_excludes_content_time(self, monkeypatch):
+        """Converse: a slow run_nlm must NOT inflate auth_elapsed_s."""
+        ok = subprocess.CompletedProcess(["nlm"], 0, '{"value":{"content":"x"}}', "")
+        self._patch_env(monkeypatch, auth_ok=True, run_nlm_sleep=0.08, run_nlm_result=ok)
+        log: list = []
+        self._ingestor()._run_cmd(["source", "content", "s1", "--json"], timeout=30, iteration_log=log)
+
+        entry = log[0]
+        assert entry["content_subprocess_elapsed_s"] >= 0.07, entry
+        assert entry["auth_elapsed_s"] < 0.03, entry
+
+    def test_auth_failed_path_content_zero(self, monkeypatch):
+        """auth_failed_pre_command exits before run_nlm -> content_subprocess_elapsed_s is 0.0."""
+        self._patch_env(monkeypatch, auth_ok=False, auth_sleep=0.05)
+        log: list = []
+        res = self._ingestor()._run_cmd(["source", "content", "s1", "--json"], timeout=30, iteration_log=log)
+
+        assert res.returncode == 1
+        entry = log[0]
+        assert entry["branch"] == "auth_failed_pre_command"
+        # Content phase never reached: must be exactly 0.0, NOT folded with auth time.
+        assert entry["content_subprocess_elapsed_s"] == 0.0, entry
+        assert entry["post_reap_elapsed_s"] == 0.0, entry
+        # Auth phase DID run on this iteration.
+        assert entry["auth_elapsed_s"] >= 0.04, entry
+        # Legacy field still reports full iteration wall (non-zero).
+        assert entry["subprocess_elapsed_s"] > 0.0
+
+    def test_timeout_path_records_content_time(self, monkeypatch):
+        """timeout branch: run_nlm ran, so content_subprocess_elapsed_s > 0; branch label = timeout."""
+        timeout_res = subprocess.CompletedProcess(["nlm"], 124, "", "NLM command timed out after 30s")
+        self._patch_env(monkeypatch, auth_ok=True, run_nlm_sleep=0.05, run_nlm_result=timeout_res)
+        log: list = []
+        self._ingestor()._run_cmd(["source", "content", "s1", "--json"], timeout=30, iteration_log=log)
+
+        entry = log[0]
+        assert entry["branch"] == "timeout"
+        assert entry["content_subprocess_elapsed_s"] >= 0.04, entry
+        assert entry["post_reap_elapsed_s"] >= 0.0
+
+    def test_iteration_log_json_roundtrip(self, monkeypatch):
+        """The emitted iteration dict must survive json.dumps/loads with all fields intact."""
+        ok = subprocess.CompletedProcess(["nlm"], 0, '{"value":{"content":"x"}}', "")
+        self._patch_env(monkeypatch, auth_ok=True, run_nlm_result=ok)
+        log: list = []
+        self._ingestor()._run_cmd(["source", "content", "s1", "--json"], timeout=30, iteration_log=log)
+
+        entry = log[0]
+        serialized = json.dumps([list(log)])
+        roundtripped = json.loads(serialized)
+        rt_entry = roundtripped[0][0]
+        for field in ("iteration", "branch", "returncode", "subprocess_elapsed_s", *self._PHASE_FIELDS):
+            assert field in rt_entry, f"field {field} lost in json round-trip"
+        # Phase deltas sum does not exceed iteration wall (no double-counting across phases).
+        phase_sum = sum(rt_entry[f] for f in self._PHASE_FIELDS[1:])  # exclude iteration_elapsed_s itself
+        assert phase_sum <= rt_entry["iteration_elapsed_s"] + 0.001, rt_entry
