@@ -1916,21 +1916,49 @@ class NLMBatchIngestor:
         iter_start = time.time()
         iter_branch = "normal_return"
         iter_returncode = -1
+        instrumented = iteration_log is not None
+        # Per-phase stamps reset each iteration; _record_iter reads them via
+        # closure over this dict (mutated in place, never rebound). Unreached
+        # phases report 0.0 so an early-return iteration never mis-attributes
+        # its exit time to a phase that did not run.
+        phase_stamps: dict[str, float] = {}
 
         def _record_iter(branch: str, returncode: int) -> None:
             if iteration_log is not None:
+                end = time.time()
+                start = phase_stamps.get("iter_start", end)
+
+                def _delta(a: str, b: str) -> float:
+                    if a in phase_stamps and b in phase_stamps:
+                        return round(phase_stamps[a] - phase_stamps[b], 3)
+                    return 0.0
+
+                iteration_elapsed_s = round(end - start, 3)
                 iteration_log.append(
                     {
                         "iteration": iter_count,
                         "branch": branch,
-                        "subprocess_elapsed_s": round(time.time() - iter_start, 3),
                         "returncode": int(returncode),
+                        # Legacy field (kept for existing reducers): full iteration
+                        # wall time from iter_start to record time.
+                        "subprocess_elapsed_s": iteration_elapsed_s,
+                        # Candidate 6 phase split. Each is 0.0 when the phase was
+                        # not reached on this iteration (early return / continue).
+                        "iteration_elapsed_s": iteration_elapsed_s,
+                        "pre_reap_elapsed_s": _delta("after_pre_auth_reap", "iter_start"),
+                        "auth_elapsed_s": _delta("after_auth", "after_pre_auth_reap"),
+                        "pre_command_reap_elapsed_s": _delta("after_pre_command_reap", "after_auth"),
+                        "content_subprocess_elapsed_s": _delta("after_content", "after_pre_command_reap"),
+                        "post_reap_elapsed_s": _delta("after_post_command", "after_content"),
                     }
                 )
 
         while True:
             iter_count += 1
             iter_start = time.time()
+            if instrumented:
+                phase_stamps.clear()
+                phase_stamps["iter_start"] = iter_start
             iter_branch = "normal_return"
             iter_returncode = -1
             tracker.apply_delay()
@@ -1942,7 +1970,12 @@ class NLMBatchIngestor:
                 phase="pre_auth",
                 allow_reap=True,
             )
-            if not _ensure_nlm_auth():
+            if instrumented:
+                phase_stamps["after_pre_auth_reap"] = time.time()
+            _auth_ok = _ensure_nlm_auth()
+            if instrumented:
+                phase_stamps["after_auth"] = time.time()
+            if not _auth_ok:
                 iter_branch = "auth_failed_pre_command"
                 iter_returncode = 1
                 _record_iter(iter_branch, iter_returncode)
@@ -1952,6 +1985,8 @@ class NLMBatchIngestor:
                 args=cmd_args,
                 phase="pre_command",
             )
+            if instrumented:
+                phase_stamps["after_pre_command_reap"] = time.time()
             if default_profile_pids:
                 tracker.record_failure(is_rate_limit=False)
                 if pre_command_retry_attempted:
@@ -1969,6 +2004,8 @@ class NLMBatchIngestor:
                 _record_iter(iter_branch, iter_returncode)
                 continue
             res = run_nlm(cmd_args, timeout_s=timeout)
+            if instrumented:
+                phase_stamps["after_content"] = time.time()
             default_profile_block = _fail_closed_on_default_chrome_profile(
                 auth_context,
                 args=cmd_args,
@@ -1978,6 +2015,8 @@ class NLMBatchIngestor:
                 allow_post_command_recovery=True,
                 command_succeeded=res.returncode == 0,
             )
+            if instrumented:
+                phase_stamps["after_post_command"] = time.time()
             if default_profile_block is not None:
                 iter_branch = "default_profile_block"
                 iter_returncode = int(default_profile_block.returncode)
