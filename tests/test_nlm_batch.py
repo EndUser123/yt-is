@@ -6674,6 +6674,43 @@ class TestCandidate6Instrumentation:
             assert fld in completed, f"missing field {fld}"
             json.dumps(completed[fld])
 
+    def test_candidate6_source_age_cliff_has_terminal_retry_exit_reason(self, monkeypatch):
+        """Regression: no-command source_age_cliff rows must not leak the
+        initial retry_exit_reason='in_progress' default."""
+        from csf import nlm_batch
+
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
+        ingestor._nb_id = "nb-c6-age-cliff"
+        ingestor._last_materialization_ready_at_epoch = 1000.0
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type("CP", (), {"returncode": 0, "stdout": json.dumps({"sources": [{"id": "s1"}]}), "stderr": ""})()
+            if cmd[:2] == ["source", "content"]:
+                raise AssertionError("source content should not run after source_age_cliff")
+            return type("CP", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(nlm_batch, "_SOURCE_AGE_CLIFF_S", 200.0):
+            with mock.patch("csf.nlm_batch.time.time", return_value=1301.0):
+                with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+                    with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                        ingestor.extract_transcripts(["vid1"])
+
+        completed = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_content_fetch_completed"
+        ]
+        assert completed, "expected source_age_cliff fetch_completed event"
+        payload = completed[-1]
+        self._required_fields_present(payload)
+        assert payload["status"] == "source_age_cliff"
+        assert payload["attempts"] == 0
+        assert payload["per_attempt_elapsed_s"] == []
+        assert payload["retry_exit_reason"] == "source_age_cliff"
+        assert payload["retry_exit_reason"] != "in_progress"
+        json.dumps(payload)
+
     def test_queue_timing_none_on_primary_success(self, monkeypatch):
         """Primary success fetch_completed rows must have retry_queue_entry_time_epoch=None,
         retry_queue_start_time_epoch=None, retry_queue_wait_time_s=None."""
