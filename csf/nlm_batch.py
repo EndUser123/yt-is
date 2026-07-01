@@ -3427,6 +3427,7 @@ class NLMBatchIngestor:
             if age_cliff_hit or primary_command_projection_hits_cliff:
                 status = "source_age_cliff"
                 failure_reason = f"Fetch failed for {source_id}: {status}"
+                retry_exit_reason_value = "source_age_cliff"
                 age_retry_queue_skipped_reason = (
                     "projected_primary_command_age_cliff"
                     if primary_command_projection_hits_cliff
