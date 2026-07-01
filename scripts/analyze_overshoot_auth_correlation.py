@@ -45,6 +45,12 @@ AUTH_ACTIONS = (
     "nlm_auth_checked",
     "nlm_auth_failed",
 )
+BLOCKING_AUTH_ACTIONS = (
+    "nlm_login_started",
+    "nlm_auth_refreshed",
+    "nlm_family_refresh_started",
+    "nlm_auth_recovered",
+)
 OVERSHOOT_S = 30.0
 
 
@@ -152,6 +158,7 @@ def analyze_root(root: Path) -> dict:
 
     rec["auth_counts"] = dict(auth_counts)
     rec["auth_family_total"] = sum(auth_counts.values())
+    rec["blocking_auth_total"] = sum(auth_counts.get(action, 0) for action in BLOCKING_AUTH_ACTIONS)
     rec["cmd_completed_total"] = cmd_total
     rec["cmd_overshoot_gt30"] = cmd_overshoot
     rec["cmd_overshoot_pct"] = (
@@ -181,19 +188,20 @@ def render_markdown(records: list[dict]) -> str:
     lines.append("# Overshoot <-> auth-churn cross-corpus reducer output")
     lines.append("")
     header = (
-        "| run | valid_3p3_home | vph | auth_family | login_started | auth_refreshed | "
+        "| run | valid_3p3_home | vph | blocking_auth | auth_family | login_started | auth_refreshed | "
         "cmd_total | cmd_>30s | cmd_>30s_% | cmd_max_s | cliff | cmd_failed | ready | precise_field |"
     )
-    sep = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    sep = "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
     lines.append(header)
     lines.append(sep)
     for r in records:
         sc = r.get("status_counts_summary", {}) or {}
         lines.append(
-            "| {root} | {v} | {vph} | {af} | {ls} | {ar} | {ct} | {co} | {cp} | {cm} | {cl} | {cf} | {rd} | {pf} |".format(
+            "| {root} | {v} | {vph} | {ba} | {af} | {ls} | {ar} | {ct} | {co} | {cp} | {cm} | {cl} | {cf} | {rd} | {pf} |".format(
                 root=r["root"],
                 v="yes" if is_valid_3plus3_home(r) else "NO",
                 vph=r.get("combined_hot_path_vph"),
+                ba=r.get("blocking_auth_total"),
                 af=r.get("auth_family_total"),
                 ls=r.get("auth_counts", {}).get("nlm_login_started", 0),
                 ar=r.get("auth_counts", {}).get("nlm_auth_refreshed", 0),
