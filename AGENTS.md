@@ -72,6 +72,25 @@ Final responses must include a `Self-review result` line:
 
 Do not outsource self-review to the user or parent agent. If a parent reviewer can find an obvious contradiction, stale count, missing semantic test, or unverified claim from the files you changed, your completion report was premature.
 
+## Claim Ledger for Throughput Decisions
+
+For non-trivial reviews, proposals, decision packets, benchmark interpretations, or mechanism investigations, include a compact claim ledger before final handoff. This is required for `yt-is` throughput work because previous branches have found real flaws and then overcorrected into new unverified causal stories.
+
+Use columns like:
+
+`Claim | Type | Evidence | Verification method | Confidence | Falsifier | Action allowed`
+
+Allowed claim types:
+
+- `verified_fact`: directly proven by code, artifact, or command output.
+- `measured_metric`: directly re-derived from raw artifacts.
+- `inference`: plausible explanation, not directly proven.
+- `hypothesis`: candidate mechanism needing a discriminating test.
+- `historical_context`: older result or prior decision, not current authority.
+- `unsupported`: must not drive action.
+
+Do not promote an `inference` or `hypothesis` into a decision as if it were verified. If adversarial review falsifies an old claim, correct that claim first. Any replacement explanation must be classified separately and given its own falsifier. If the replacement remains an inference, the allowed next action is evidence gathering, not implementation or live benchmark authorization.
+
 ## Parent Handoff Boundary
 
 When working as a delegated or target agent, do not decide to continue into the next goal yourself. Hand off to the parent reviewer when the assigned objective reaches any terminal state:

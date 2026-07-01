@@ -9,13 +9,26 @@ Last updated: 2026-07-01
   (`candidate6_telemetry_validation_run02_current`): Signals 1/2/3 PASS on 1070
   events, the source-age-cliff `in_progress` leak is fixed (169 → 0, verified by
   direct grep), and per-attempt reconciliation = 0.0000 across 660 events proves
-  the instrumentation adds zero overhead. The VPH guard failed (593.87) on a
-  fresh-cohort/source-age confound, classified separately from instrumentation.
+  Per-attempt reconciliation = 0.0000 across 660 events (NOTE: tautological by
+  construction — `nlm_batch.py:3595`/`:3599` accumulate the same `attempt_elapsed_s`,
+  so it is NOT proof of zero overhead; instrumentation runtime cost was not measured).
+  The VPH guard failed (593.87) on a degenerate fresh-cohort/source-age confound
+  (58% failure), classified separately from instrumentation.
   The Candidate 1-5 ranking derived from the run02 distribution
   ([`.logs/sharded_lane_series/candidate6_mechanism_ranking_after_run02.md`](P://packages/yt-is/.logs/sharded_lane_series/candidate6_mechanism_ranking_after_run02.md))
-  shows the retry path is a minority contributor — per source, `primary_batch_wait_time_s`
-  (median 57.5s) dominates the primary command loop (median 1.4s) by ~40× — so next
-  effort should target primary-materialization, not the retry tail. Analyzer:
+  shows the retry path is a minority contributor. NOTE: that ranking's headline
+  "primary-materialization dominates (median 57.5s)" is a metric artifact, corrected in
+  [`.logs/sharded_lane_series/design_packet_primary_batch_wait_run02_mechanism_no_patch_current.md`](P://packages/yt-is/.logs/sharded_lane_series/design_packet_primary_batch_wait_run02_mechanism_no_patch_current.md):
+  `primary_batch_wait_time_s` is a fetch-task start-age clock, not an independent
+  backend materialization metric; completed-row `source_ready_age_s` can later advance
+  to attempt/final age, so treating these fields as independent causal corroboration was
+  invalid. The 57.5s median is also inflated by mixing retry-pass rows (primary-only
+  median is 12.3s in the offline re-derivation). The current no-patch packet infers
+  auth-churn-driven `_run_cmd` iteration inflation (`_ensure_nlm_auth` blocking; run02
+  had 926 auth events) slot-hogging the 10-wide fetch pool and cascading queued sources
+  past the cliff; that inference still needs the planned cross-corpus overshoot/auth
+  correlation before it should authorize a live benchmark. Next effort routes to durable
+  auth (#965), not primary-materialization and not the retry tail. Analyzer:
   `scripts/analyze_candidate6_smoke.py --run-root <root>`.
 - The current worker run is stopped.
 - The current best sustained current-contract result on disk is `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` at `3788.53` combined hot-path VPH. It is valid (`status=ok`, `throughput_valid=true`, `3+3`, `home_300mb`) but still a mixed diagnostic branch because the smoke promotion gate failed.
