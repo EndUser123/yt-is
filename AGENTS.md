@@ -90,6 +90,41 @@ The final response must make the handoff state explicit:
 
 Do not tell the user that parent review is unnecessary. If the delegated objective is complete, return the evidence packet and stop. The parent reviewer decides whether to re-verify, commit, launch another agent, approve a live benchmark, or assign the next goal.
 
+## Blocker Triage
+
+Before reporting `blocked`, classify the blocker precisely:
+
+- `domain_blocked`: the target system or code failed after known recipes were tried.
+- `environment_blocked`: credentials, auth, network, filesystem, browser, process state, or service state is invalid.
+- `tool_blocked`: the agent shell, CLI, plugin, or command runner cannot execute or capture output reliably.
+- `decision_blocked`: the next action needs user or parent approval.
+- `data_blocked`: required artifacts, logs, inputs, or fixtures do not exist.
+- `scope_blocked`: the required fix is outside the allowed write or action scope.
+
+Do not report a broad blocker until you have:
+
+- Searched repo-local runbooks, handoffs, troubleshooting docs, and prior decision packets relevant to the failure.
+- Checked whether the same problem has a documented recipe or previous fix.
+- Captured the exact command, exit code, stdout/stderr, and expected artifact/log side effects.
+- Tried a minimal sanity command to determine whether the execution tool itself is working.
+- Tried the platform-native shell or command form when shell syntax may be the issue.
+- Separated "the task failed" from "my launcher/tooling failed."
+- Identified the smallest next action that would unblock progress.
+
+If the user says "this was solved before", stop the current diagnosis and search local docs and artifacts for the solved path before continuing.
+
+A blocked final response must include:
+
+- Blocker class.
+- Evidence inspected.
+- Known recipes checked.
+- Commands attempted with exit codes.
+- Why alternate explanations were rejected.
+- Smallest next unblock action.
+- `Parent handoff: blocked`.
+
+Example: for NotebookLM auth/profile failures, check `docs/operations/notebooklm-auth-rerun-recipe.md` before claiming interactive auth is required.
+
 For instrumentation work:
 
 - Schema presence is not enough. If a field is expected to answer a question, tests must prove it is non-null or meaningfully populated on the relevant path.
