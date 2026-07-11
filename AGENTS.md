@@ -14,6 +14,11 @@ Before proposing or launching any NotebookLM throughput benchmark, read:
 - `docs/operations/test-registry.md`
 - `docs/operations/observability-contract-checklist.md`
 
+Use the installed `evidence-driven-experiment-loop` skill to record the active
+authority, metric, claims, gates, verification, adversarial review, and next
+action. Run its validator before delegating throughput work, authorizing a live
+run, or reporting `ready_for_parent_review`.
+
 Do not launch a live throughput run from chat memory alone. Complete the decision packet first. If the packet cannot name the raw artifacts, current control, falsifier, early-abort gate, and promotion rule, do offline attribution, a harness fix, or a code fix instead.
 
 ## Throughput Reasoning Guardrails
