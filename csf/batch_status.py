@@ -25,6 +25,7 @@ from csf.channel_identity import (
     normalize_channel_url,
     resolve_channel_identity,
 )
+from csf.csf_logging import log_action
 
 # Type alias for batch entries - use dataclass for extensibility
 @dataclass
@@ -881,6 +882,43 @@ class _BatchStatusStorage:
             "expires_at": row[5],
         }
 
+    def _requeue_video(self, video_id: str, reason: str) -> bool:
+        """Reset a video to pending status.
+
+        Atomically clears failure_reason, last_stage, unavailable_reason,
+        updates updated_at, and logs the action.  Raises ValueError if
+        reason is empty or whitespace-only.
+
+        Returns True if a row was actually changed, False if video_id
+        was not found.
+        """
+        if not reason or not reason.strip():
+            raise ValueError("requeue reason must not be empty or whitespace-only")
+        conn = self._get_conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = conn.execute(
+                """UPDATE analysis_status
+                   SET status = ?,
+                       failure_reason = NULL,
+                       last_stage = NULL,
+                       unavailable_reason = NULL,
+                       updated_at = ?
+                   WHERE video_id = ?""",
+                (_STATUS_PENDING, now, video_id),
+            )
+            changed = cursor.rowcount > 0
+            conn.commit()
+            if changed:
+                log_action("requeue_video", {"video_id": video_id, "reason": reason})
+            return changed
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     # ---------------------------------------------------------------------------
     # channel_metadata table
     # ---------------------------------------------------------------------------
@@ -1325,25 +1363,24 @@ class _BatchStatusStorage:
                     break
         return [(r[0], r[1], r[2]) for r in rows]
 
-    def get_entries_for_source_details(self, channel_url: str) -> list[dict[str, object | None]]:
-        """Get all entries for a channel/source with classification metadata."""
+    def _query_entries_for_source_details(self, conn: sqlite3.Connection, channel_url: str) -> list[dict[str, object | None]]:
+        """Query entries for a channel using an existing connection."""
         candidates = _channel_lookup_candidates(channel_url)
-        with self._conn() as conn:
-            rows = []
-            for candidate in candidates:
-                cursor = conn.execute(
-                    """
-                    SELECT video_id, status, has_captions, title, description, duration,
-                           privacy_status, upload_status, is_live_content, unavailable_reason,
-                           source, channel_id
-                    FROM analysis_status
-                    WHERE source = ? OR channel_id = ?
-                    """,
-                    (candidate, candidate),
-                )
-                rows = cursor.fetchall()
-                if rows:
-                    break
+        rows = []
+        for candidate in candidates:
+            cursor = conn.execute(
+                """
+                SELECT video_id, status, has_captions, title, description, duration,
+                       privacy_status, upload_status, is_live_content, unavailable_reason,
+                       source, channel_id
+                FROM analysis_status
+                WHERE source = ? OR channel_id = ?
+                """,
+                (candidate, candidate),
+            )
+            rows = cursor.fetchall()
+            if rows:
+                break
         return [
             {
                 "video_id": row[0],
@@ -1361,6 +1398,11 @@ class _BatchStatusStorage:
             }
             for row in rows
         ]
+
+    def get_entries_for_source_details(self, channel_url: str) -> list[dict[str, object | None]]:
+        """Get all entries for a channel/source with classification metadata."""
+        with self._conn() as conn:
+            return self._query_entries_for_source_details(conn, channel_url)
 
     def set_status_batch(self, entries: Sequence[BatchEntry]) -> int:
         """Bulk insert/update status for multiple videos — best-effort.
@@ -1673,6 +1715,27 @@ def reset_all(db_path: Path | None = None) -> None:
         _get_batch_status_storage().clear_all()
     else:
         _BatchStatusStorage(db_path=db_path).clear_all()
+
+
+def requeue_video(video_id: str, reason: str, db_path: Path | None = None) -> bool:
+    """Requeue a video to pending status.
+
+    Atomically resets status to 'pending', clears failure_reason, last_stage,
+    and unavailable_reason, updates updated_at, and logs the action.
+
+    Raises ValueError if reason is empty or whitespace-only.
+
+    Args:
+        video_id: The YouTube video ID.
+        reason: Human-readable reason for the requeue.
+        db_path: Optional path to a non-default batch_status DB.
+
+    Returns:
+        True if a row was actually changed (video existed), False if not found.
+    """
+    if db_path is None:
+        return _get_batch_status_storage()._requeue_video(video_id, reason)
+    return _BatchStatusStorage(db_path=db_path)._requeue_video(video_id, reason)
 
 
 # ---------------------------------------------------------------------------
