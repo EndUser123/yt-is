@@ -1,0 +1,15 @@
+{
+  "title": "Guard set_status_batch against complete-row downgrade",
+  "status": "proposed",
+  "reuse_decision": "refactor",
+  "gaps": [
+    "set_status_batch uses INSERT OR REPLACE with no never-downgrade-complete guard",
+    "No regression test for the guard \u2014 existing test asserts the reverse",
+    "set_status (single-row) shares the same vulnerability"
+  ],
+  "affected_systems": [
+    "csf/batch_status.py",
+    "tests/test_batch_status.py"
+  ],
+  "contract_path": ".claude/design/contracts/set-status-batch-downgrade-guard.md"
+}
