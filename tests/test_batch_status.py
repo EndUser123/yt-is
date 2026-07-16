@@ -26,6 +26,7 @@ from csf.batch_status import (
     mark_complete,
     mark_failed,
     migrate_channel_state_to_channel_id,
+    requeue_video,
     reset_status,
     reset_all,
     set_negative_cache,
@@ -35,10 +36,17 @@ from csf.batch_status import (
     BatchEntry,
 )
 from csf.channel_identity import ChannelIdentity
+from csf.playlist_imports import (
+    import_video_batch,
+    record_import_run,
+    complete_import_run,
+    get_playlist_import_run,
+)
 
 
 # Shared DB path for testing
 _TEST_DB_PATH = Path(tempfile.gettempdir()) / "yt-is" / "batch_status" / "test_status.sqlite"
+_TEST_PLAYLIST_DB_PATH = Path(tempfile.gettempdir()) / "yt-is" / "batch_status" / "test_playlists.sqlite"
 
 
 class TestAnalysisStatusTable:
@@ -574,3 +582,203 @@ def test_migrate_channel_state_to_channel_id_backfills_live_rows(tmp_path, monke
     assert blocked == ("UCBLOCKED00000000000000", "https://www.youtube.com/@blocked")
     assert provider == ("UCPROVIDER0000000000000", "https://www.youtube.com/@provider")
     assert analysis == ("UCANALYSIS0000000000000", "https://www.youtube.com/@analysis")
+
+
+# ---------------------------------------------------------------------------
+# Requeue tests
+# ---------------------------------------------------------------------------
+
+
+class TestRequeueVideo:
+    """Test requeue_video resets videos to pending status."""
+
+    def setup_method(self):
+        reset_all(_TEST_DB_PATH)
+
+    def test_requeue_failed_video_clears_status_to_pending(self):
+        """requeue_video resets status from failed to pending."""
+        mark_failed("idxample_video", failure_reason="no_transcript", db_path=_TEST_DB_PATH)
+        result = requeue_video("idxample_video", reason="retry after fixing captions", db_path=_TEST_DB_PATH)
+        assert result is True
+        status = get_analysis_status("idxample_video", db_path=_TEST_DB_PATH)
+        assert status == "pending"
+
+    def test_requeue_rejects_empty_reason(self):
+        """requeue_video with empty reason raises ValueError."""
+        import pytest
+        mark_failed("idxample_video", failure_reason="timeout", db_path=_TEST_DB_PATH)
+        with pytest.raises(ValueError, match="empty or whitespace-only"):
+            requeue_video("idxample_video", reason="", db_path=_TEST_DB_PATH)
+        with pytest.raises(ValueError, match="empty or whitespace-only"):
+            requeue_video("idxample_video", reason="   ", db_path=_TEST_DB_PATH)
+
+    def test_requeue_clears_failure_fields(self):
+        """requeue_video clears failure_reason, last_stage, unavailable_reason."""
+        from csf.batch_status import _BatchStatusStorage
+        storage = _BatchStatusStorage(db_path=_TEST_DB_PATH)
+        storage.set_status(
+            "idxample_video", "failed",
+            failure_reason="no_transcript", last_stage="ytdlp",
+        )
+        requeue_video("idxample_video", reason="retry", db_path=_TEST_DB_PATH)
+        status = storage.get_status("idxample_video")
+        assert status == "pending"
+
+    def test_requeue_nonexistent_returns_false(self):
+        """requeue_video returns False for unknown video_id."""
+        result = requeue_video("nonexistent_video", reason="cleanup", db_path=_TEST_DB_PATH)
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# import_video_batch tests
+# ---------------------------------------------------------------------------
+
+
+class TestImportVideoBatch:
+    """Test import_video_batch SQL-level safe merge."""
+
+    def setup_method(self):
+        reset_all(_TEST_DB_PATH)
+
+    def test_import_video_batch_inserts_new(self):
+        """import_video_batch inserts new entries and returns 'inserted'."""
+        entries: list[BatchEntry] = [
+            BatchEntry(video_id="vid_new1", status="pending", source="https://youtube.com/channel/UC1"),
+            BatchEntry(video_id="vid_new2", status="pending", source="https://youtube.com/channel/UC1"),
+        ]
+        results = import_video_batch(entries)
+        assert results == {"vid_new1": "inserted", "vid_new2": "inserted"}
+        assert get_analysis_status("vid_new1", db_path=_TEST_DB_PATH) == "pending"
+
+    def test_import_video_batch_empty_returns_empty(self):
+        """import_video_batch with empty list returns empty dict."""
+        results = import_video_batch([])
+        assert results == {}
+
+    def test_import_video_batch_updates_existing(self):
+        """import_video_batch updates existing non-complete rows."""
+        mark_failed("vid_existing", failure_reason="timeout", db_path=_TEST_DB_PATH)
+        entries: list[BatchEntry] = [
+            BatchEntry(video_id="vid_existing", status="pending", source="https://youtube.com/channel/UC1"),
+        ]
+        results = import_video_batch(entries)
+        assert results == {"vid_existing": "updated"}
+        assert get_analysis_status("vid_existing", db_path=_TEST_DB_PATH) == "pending"
+
+    def test_import_video_batch_skips_complete(self):
+        """import_video_batch never downgrades a complete row."""
+        mark_complete("vid_complete", source="https://youtube.com/channel/UC1", db_path=_TEST_DB_PATH)
+        entries: list[BatchEntry] = [
+            BatchEntry(video_id="vid_complete", status="pending", source="https://youtube.com/channel/UC1"),
+        ]
+        results = import_video_batch(entries)
+        assert results == {"vid_complete": "skipped_complete"}
+        assert get_analysis_status("vid_complete", db_path=_TEST_DB_PATH) == "complete"
+
+    def test_import_video_batch_overwrites_transient_fields(self):
+        """import_video_batch overwrites unavailable_reason, last_stage, failure_reason."""
+        from csf.batch_status import _BatchStatusStorage
+        storage = _BatchStatusStorage(db_path=_TEST_DB_PATH)
+        storage.set_status(
+            "vid_transient", "failed",
+            failure_reason="old_error", last_stage="old_stage",
+        )
+        entries: list[BatchEntry] = [
+            BatchEntry(
+                video_id="vid_transient", status="pending",
+                failure_reason="new_error", last_stage="new_stage",
+                unavailable_reason="new_unavail",
+            ),
+        ]
+        import_video_batch(entries)
+        details = storage._get_entries_for_video_ids_details(["vid_transient"])
+        assert len(details) == 1
+        row = details[0]
+        assert row["failure_reason"] == "new_error"
+        assert row["last_stage"] == "new_stage"
+        assert row["unavailable_reason"] == "new_unavail"
+
+
+class TestImportVideoBatchMetadataPreservation:
+    """Test import_video_batch preserves metadata with COALESCE."""
+
+    def setup_method(self):
+        reset_all(_TEST_DB_PATH)
+
+    def test_sparse_update_preserves_existing_metadata(self):
+        """All 17 non-transient fields survive a sparse update."""
+        from csf.batch_status import _BatchStatusStorage
+        storage = _BatchStatusStorage(db_path=_TEST_DB_PATH)
+        storage.set_status_batch([
+            BatchEntry(
+                video_id="vid_full",
+                status="pending",
+                source="https://youtube.com/channel/UC1",
+                published_at="2026-01-01T00:00:00Z",
+                has_captions=True,
+                title="Original Title",
+                description="Original description text",
+                channel_id="UC1",
+                thumbnail="https://i.ytimg.com/vi/abc/default.jpg",
+                duration=300,
+                privacy_status="public",
+                upload_status="processed",
+                is_live_content=False,
+                unavailable_reason=None,
+                last_stage="ytdlp",
+                failure_reason=None,
+            ),
+        ], db_path=_TEST_DB_PATH)
+
+        # Sparse update: only video_id and status
+        sparse = [BatchEntry(video_id="vid_full", status="complete")]
+        import_video_batch(sparse)
+
+        details = storage._get_entries_for_video_ids_details(["vid_full"])
+        assert len(details) == 1
+        row = details[0]
+        assert row["title"] == "Original Title"
+        assert row["description"] == "Original description text"
+        assert row["channel_id"] == "UC1"
+        assert row["thumbnail"] == "https://i.ytimg.com/vi/abc/default.jpg"
+        assert row["duration"] == 300
+        assert row["privacy_status"] == "public"
+        assert row["upload_status"] == "processed"
+        assert row["is_live_content"] is False
+
+
+class TestProvenanceOrdering:
+    """Test record_import_run is callable before DB mutation (provenance-first)."""
+
+    def test_record_import_run_before_mutation(self):
+        """record_import_run works as a standalone provenance call."""
+        import os
+        monkeypatch = __import__("pytest").MonkeyPatch()
+        monkeypatch.setenv("YTIS_PLAYLIST_IMPORT_DB_PATH", str(_TEST_PLAYLIST_DB_PATH))
+        try:
+            import sqlite3
+            # Clean up before test
+            if _TEST_PLAYLIST_DB_PATH.exists():
+                _TEST_PLAYLIST_DB_PATH.unlink()
+
+            run_id = record_import_run(
+                video_ids=["vid_a", "vid_b"],
+                origin="test_provenance",
+                source_path="https://youtube.com/channel/UCTEST",
+            )
+            assert run_id is not None
+            assert len(run_id) > 0
+
+            run = get_playlist_import_run(run_id)
+            assert run is not None
+            assert run["status"] == "running"
+            assert run["playlist_kind"] == "video_import"
+
+            complete_import_run(run_id, status="completed")
+            run = get_playlist_import_run(run_id)
+            assert run["status"] == "completed"
+        finally:
+            monkeypatch.undo()
+            if _TEST_PLAYLIST_DB_PATH.exists():
+                _TEST_PLAYLIST_DB_PATH.unlink()
