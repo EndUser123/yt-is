@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Process custom source-labeled videos through NotebookLM batch ingest."""
 
-import concurrent.futures
 import multiprocessing
 import os, sys, time, sqlite3
 from pathlib import Path
@@ -38,6 +37,15 @@ def batch_ids(videos, n=BATCH_SIZE):
         yield [v[0] for v in videos[i:i + n]]
 
 
+def _batch_worker(vids: list[str], q: multiprocessing.Queue) -> None:
+    """Worker target for multiprocessing.Process (must be module-level for spawn)."""
+    try:
+        result = process_industrial_batch(vids)
+        q.put(result)
+    except Exception as e:
+        q.put(e)
+
+
 def _run_with_timeout(video_ids):
     """Run process_industrial_batch with a real process-level timeout.
 
@@ -46,14 +54,7 @@ def _run_with_timeout(video_ids):
     running threads).
     """
     queue: multiprocessing.Queue = multiprocessing.Queue()
-    def _target(vids, q):
-        try:
-            result = process_industrial_batch(vids)
-            q.put(result)
-        except Exception as e:
-            q.put(e)
-
-    proc = multiprocessing.Process(target=_target, args=(video_ids, queue))
+    proc = multiprocessing.Process(target=_batch_worker, args=(video_ids, queue))
     proc.start()
     proc.join(timeout=BATCH_TIMEOUT_S)
     if proc.is_alive():
@@ -110,6 +111,7 @@ def main():
             for vid in fetch:
                 ok_flag, tr, err = results.get(vid, (False, None, "unknown"))
                 if ok_flag and tr:
+                    # TODO: detect language from YouTube metadata instead of hardcoding "en"
                     set_cached_transcript(vid, lang="en", source="notebooklm", transcript=tr)
                     mark_complete(vid, source="notebooklm", last_stage="notebooklm")
                     ok += 1
