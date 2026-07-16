@@ -79,62 +79,63 @@ def main():
     ok = fail = skip = 0
     started = time.monotonic()
 
-    for idx, batch in enumerate(batch_list, 1):
-        bs = time.monotonic()
-        cached = [v for v in batch if has_cached_transcript(v)]
-        fetch = [v for v in batch if v not in cached]
-        skip += len(cached)
-        for v in cached:
-            mark_complete(v, source="cache", last_stage="cache")
+    try:
+        for idx, batch in enumerate(batch_list, 1):
+            bs = time.monotonic()
+            cached = [v for v in batch if has_cached_transcript(v)]
+            fetch = [v for v in batch if v not in cached]
+            skip += len(cached)
+            for v in cached:
+                mark_complete(v, source="cache", last_stage="cache")
 
-        if not fetch:
-            done = ok + fail + skip
-            elapsed = time.monotonic() - started
-            rate = done / elapsed * 3600 if elapsed > 0 else 0
-            bt = time.monotonic() - bs
-            print(f"  [{idx}/{len(batch_list)}] {done}/{total} ({rate:.0f} VPH) "
-                  f"ok={ok} fail={fail} cached={skip} batch={bt:.1f}s (all cached)")
-            continue
+            if not fetch:
+                done = ok + fail + skip
+                elapsed = time.monotonic() - started
+                rate = done / elapsed * 3600 if elapsed > 0 else 0
+                bt = time.monotonic() - bs
+                print(f"  [{idx}/{len(batch_list)}] {done}/{total} ({rate:.0f} VPH) "
+                      f"ok={ok} fail={fail} cached={skip} batch={bt:.1f}s (all cached)")
+                continue
 
-        print(f"\nBatch {idx}: {len(fetch)} fetch ({len(cached)} cached)")
+            print(f"\nBatch {idx}: {len(fetch)} fetch ({len(cached)} cached)")
 
-        try:
-            results = process_industrial_batch_reusable(fetch)
-        except Exception as e:
-            # Batch-level failure — log, mark failed, continue to next batch.
-            # The reusable ingestor auto-closes and re-creates on the next call.
-            print(f"  Batch {idx} failed: {e}")
+            try:
+                results = process_industrial_batch_reusable(fetch)
+            except Exception as e:
+                # Batch-level failure — log, mark failed, continue to next batch.
+                # The reusable ingestor auto-closes and re-creates on the next call.
+                print(f"  Batch {idx} failed: {e}")
+                for vid in fetch:
+                    mark_failed(vid, source="notebooklm", failure_reason=str(e))
+                    fail += 1
+                done = ok + fail + skip
+                elapsed = time.monotonic() - started
+                rate = done / elapsed * 3600 if elapsed > 0 else 0
+                bt = time.monotonic() - bs
+                print(f"  [{idx}/{len(batch_list)}] {done}/{total} ({rate:.0f} VPH) "
+                      f"ok={ok} fail={fail} cached={skip} batch={bt:.1f}s **FAILED**")
+                continue
+
             for vid in fetch:
-                mark_failed(vid, source="notebooklm", failure_reason=str(e))
-                fail += 1
+                ok_flag, tr, err = results.get(vid, (False, None, "unknown"))
+                if ok_flag and tr:
+                    # TODO: detect language from YouTube metadata instead of hardcoding "en"
+                    set_cached_transcript(vid, lang="en", source="notebooklm", transcript=tr)
+                    mark_complete(vid, source="notebooklm", last_stage="notebooklm")
+                    ok += 1
+                else:
+                    mark_failed(vid, source="notebooklm", failure_reason=err or "no_transcript")
+                    fail += 1
+
             done = ok + fail + skip
             elapsed = time.monotonic() - started
             rate = done / elapsed * 3600 if elapsed > 0 else 0
             bt = time.monotonic() - bs
             print(f"  [{idx}/{len(batch_list)}] {done}/{total} ({rate:.0f} VPH) "
-                  f"ok={ok} fail={fail} cached={skip} batch={bt:.1f}s **FAILED**")
-            continue
-
-        for vid in fetch:
-            ok_flag, tr, err = results.get(vid, (False, None, "unknown"))
-            if ok_flag and tr:
-                # TODO: detect language from YouTube metadata instead of hardcoding "en"
-                set_cached_transcript(vid, lang="en", source="notebooklm", transcript=tr)
-                mark_complete(vid, source="notebooklm", last_stage="notebooklm")
-                ok += 1
-            else:
-                mark_failed(vid, source="notebooklm", failure_reason=err or "no_transcript")
-                fail += 1
-
-        done = ok + fail + skip
-        elapsed = time.monotonic() - started
-        rate = done / elapsed * 3600 if elapsed > 0 else 0
-        bt = time.monotonic() - bs
-        print(f"  [{idx}/{len(batch_list)}] {done}/{total} ({rate:.0f} VPH) "
-              f"ok={ok} fail={fail} cached={skip} batch={bt:.1f}s")
-
-    # Final cleanup — delete the reusable notebook
-    close_reusable_ingestor(delete=True)
+                  f"ok={ok} fail={fail} cached={skip} batch={bt:.1f}s")
+    finally:
+        # Final cleanup — delete the reusable notebook (runs even on Ctrl-C)
+        close_reusable_ingestor(delete=True)
 
     wall = time.monotonic() - started
     vph = ok / (wall / 3600) if wall > 0 else 0
