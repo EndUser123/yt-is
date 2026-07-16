@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(r"P:\\\\\\packages\yt-is").absolute()))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from csf.batch_status import (
     backup_batch_status_db,
@@ -197,16 +197,16 @@ class TestSetStatusBatch:
         count = set_status_batch([], db_path=_TEST_DB_PATH)
         assert count == 0
 
-    def test_set_status_batch_replaces_existing(self):
-        """set_status_batch with INSERT OR REPLACE updates existing entries."""
+    def test_set_status_batch_does_not_downgrade_complete(self):
+        """set_status_batch with UPSERT guard does NOT downgrade complete rows."""
         mark_complete("vid1", db_path=_TEST_DB_PATH)
         entries: list[BatchEntry] = [
             ("vid1", "pending", "https://youtube.com/channel/UC1", "2026-01-01T00:00:00Z", None),
         ]
         count = set_status_batch(entries, db_path=_TEST_DB_PATH)
         assert count == 1
-        # Status was replaced to 'pending'
-        assert get_analysis_status("vid1", db_path=_TEST_DB_PATH) == "pending"
+        # Guard prevents downgrade — status stays 'complete', not 'pending'
+        assert get_analysis_status("vid1", db_path=_TEST_DB_PATH) == "complete"
 
     def test_set_status_batch_best_effort_skips_bad_entries(self):
         """set_status_batch skips entries that cause errors without rolling back good ones.
