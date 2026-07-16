@@ -647,13 +647,13 @@ class TestImportVideoBatch:
             BatchEntry(video_id="vid_new1", status="pending", source="https://youtube.com/channel/UC1"),
             BatchEntry(video_id="vid_new2", status="pending", source="https://youtube.com/channel/UC1"),
         ]
-        results = import_video_batch(entries)
+        results = import_video_batch(entries, batch_status_db_path=_TEST_DB_PATH)
         assert results == {"vid_new1": "inserted", "vid_new2": "inserted"}
         assert get_analysis_status("vid_new1", db_path=_TEST_DB_PATH) == "pending"
 
     def test_import_video_batch_empty_returns_empty(self):
         """import_video_batch with empty list returns empty dict."""
-        results = import_video_batch([])
+        results = import_video_batch([], batch_status_db_path=_TEST_DB_PATH)
         assert results == {}
 
     def test_import_video_batch_updates_existing(self):
@@ -662,7 +662,7 @@ class TestImportVideoBatch:
         entries: list[BatchEntry] = [
             BatchEntry(video_id="vid_existing", status="pending", source="https://youtube.com/channel/UC1"),
         ]
-        results = import_video_batch(entries)
+        results = import_video_batch(entries, batch_status_db_path=_TEST_DB_PATH)
         assert results == {"vid_existing": "updated"}
         assert get_analysis_status("vid_existing", db_path=_TEST_DB_PATH) == "pending"
 
@@ -672,7 +672,7 @@ class TestImportVideoBatch:
         entries: list[BatchEntry] = [
             BatchEntry(video_id="vid_complete", status="pending", source="https://youtube.com/channel/UC1"),
         ]
-        results = import_video_batch(entries)
+        results = import_video_batch(entries, batch_status_db_path=_TEST_DB_PATH)
         assert results == {"vid_complete": "skipped_complete"}
         assert get_analysis_status("vid_complete", db_path=_TEST_DB_PATH) == "complete"
 
@@ -691,7 +691,7 @@ class TestImportVideoBatch:
                 unavailable_reason="new_unavail",
             ),
         ]
-        import_video_batch(entries)
+        import_video_batch(entries, batch_status_db_path=_TEST_DB_PATH)
         details = storage._get_entries_for_video_ids_details(["vid_transient"])
         assert len(details) == 1
         row = details[0]
@@ -707,10 +707,10 @@ class TestImportVideoBatchMetadataPreservation:
         reset_all(_TEST_DB_PATH)
 
     def test_sparse_update_preserves_existing_metadata(self):
-        """All 17 non-transient fields survive a sparse update."""
+        """All non-transient fields survive a sparse update via COALESCE."""
         from csf.batch_status import _BatchStatusStorage
         storage = _BatchStatusStorage(db_path=_TEST_DB_PATH)
-        storage.set_status_batch([
+        set_status_batch([
             BatchEntry(
                 video_id="vid_full",
                 status="pending",
@@ -733,7 +733,7 @@ class TestImportVideoBatchMetadataPreservation:
 
         # Sparse update: only video_id and status
         sparse = [BatchEntry(video_id="vid_full", status="complete")]
-        import_video_batch(sparse)
+        import_video_batch(sparse, batch_status_db_path=_TEST_DB_PATH)
 
         details = storage._get_entries_for_video_ids_details(["vid_full"])
         assert len(details) == 1
@@ -745,40 +745,30 @@ class TestImportVideoBatchMetadataPreservation:
         assert row["duration"] == 300
         assert row["privacy_status"] == "public"
         assert row["upload_status"] == "processed"
-        assert row["is_live_content"] is False
+        assert row["is_live_content"] in (False, 0)
 
 
 class TestProvenanceOrdering:
     """Test record_import_run is callable before DB mutation (provenance-first)."""
 
-    def test_record_import_run_before_mutation(self):
+    def test_record_import_run_before_mutation(self, monkeypatch, tmp_path):
         """record_import_run works as a standalone provenance call."""
-        import os
-        monkeypatch = __import__("pytest").MonkeyPatch()
-        monkeypatch.setenv("YTIS_PLAYLIST_IMPORT_DB_PATH", str(_TEST_PLAYLIST_DB_PATH))
-        try:
-            import sqlite3
-            # Clean up before test
-            if _TEST_PLAYLIST_DB_PATH.exists():
-                _TEST_PLAYLIST_DB_PATH.unlink()
+        playlist_db = tmp_path / "test_playlists.sqlite"
+        monkeypatch.setenv("YTIS_PLAYLIST_IMPORT_DB_PATH", str(playlist_db))
 
-            run_id = record_import_run(
-                video_ids=["vid_a", "vid_b"],
-                origin="test_provenance",
-                source_path="https://youtube.com/channel/UCTEST",
-            )
-            assert run_id is not None
-            assert len(run_id) > 0
+        run_id = record_import_run(
+            video_ids=["vid_a", "vid_b"],
+            origin="test_provenance",
+            source_path="https://youtube.com/channel/UCTEST",
+        )
+        assert run_id is not None
+        assert len(run_id) > 0
 
-            run = get_playlist_import_run(run_id)
-            assert run is not None
-            assert run["status"] == "running"
-            assert run["playlist_kind"] == "video_import"
+        run = get_playlist_import_run(run_id)
+        assert run is not None
+        assert run["status"] == "running"
+        assert run["playlist_kind"] == "video_import"
 
-            complete_import_run(run_id, status="completed")
-            run = get_playlist_import_run(run_id)
-            assert run["status"] == "completed"
-        finally:
-            monkeypatch.undo()
-            if _TEST_PLAYLIST_DB_PATH.exists():
-                _TEST_PLAYLIST_DB_PATH.unlink()
+        complete_import_run(run_id, status="completed")
+        run = get_playlist_import_run(run_id)
+        assert run["status"] == "completed"
