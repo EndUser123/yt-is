@@ -1426,10 +1426,9 @@ class _BatchStatusStorage:
 
         Never downgrades a 'complete' row: the UPSERT guard preserves
         status='complete' even when the incoming entry has a different value.
-        All fields use COALESCE — existing values are preserved when incoming
-        values are null, including transient fields (last_stage, failure_reason,
-        unavailable_reason) and metadata fields (title, description,
-        channel_id, etc.).
+        Transient fields (last_stage, failure_reason, unavailable_reason) are
+        overwritten by incoming values; metadata fields (title, description,
+        channel_id, etc.) are preserved when incoming values are null via COALESCE.
 
         Args:
             entries: List of BatchEntry dataclass objects.
@@ -1507,9 +1506,9 @@ class _BatchStatusStorage:
                         "privacy_status = COALESCE(analysis_status.privacy_status, excluded.privacy_status), "
                         "upload_status = COALESCE(analysis_status.upload_status, excluded.upload_status), "
                         "is_live_content = COALESCE(analysis_status.is_live_content, excluded.is_live_content), "
-                        "unavailable_reason = COALESCE(analysis_status.unavailable_reason, excluded.unavailable_reason), "
-                        "last_stage = COALESCE(analysis_status.last_stage, excluded.last_stage), "
-                        "failure_reason = COALESCE(analysis_status.failure_reason, excluded.failure_reason)",
+                        "unavailable_reason = excluded.unavailable_reason, "
+                        "last_stage = excluded.last_stage, "
+                        "failure_reason = excluded.failure_reason",
                         (
                             video_id, status, now, source, published_at, has_captions,
                             title, description, channel_id, thumbnail, duration,
