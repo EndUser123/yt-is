@@ -86,7 +86,7 @@ def main():
             fetch = [v for v in batch if v not in cached]
             skip += len(cached)
             for v in cached:
-                mark_complete(v, source="cache", last_stage="cache")
+                mark_complete(v, source="cache", last_stage="cache", db_path=db_path)
 
             if not fetch:
                 done = ok + fail + skip
@@ -106,7 +106,7 @@ def main():
                 # The reusable ingestor auto-closes and re-creates on the next call.
                 print(f"  Batch {idx} failed: {e}")
                 for vid in fetch:
-                    mark_failed(vid, source="notebooklm", failure_reason=str(e))
+                    mark_failed(vid, source="notebooklm", failure_reason=str(e), db_path=db_path)
                     fail += 1
                 done = ok + fail + skip
                 elapsed = time.monotonic() - started
@@ -121,10 +121,10 @@ def main():
                 if ok_flag and tr:
                     # TODO: detect language from YouTube metadata instead of hardcoding "en"
                     set_cached_transcript(vid, lang="en", source="notebooklm", transcript=tr)
-                    mark_complete(vid, source="notebooklm", last_stage="notebooklm")
+                    mark_complete(vid, source="notebooklm", last_stage="notebooklm", db_path=db_path)
                     ok += 1
                 else:
-                    mark_failed(vid, source="notebooklm", failure_reason=err or "no_transcript")
+                    mark_failed(vid, source="notebooklm", failure_reason=err or "no_transcript", db_path=db_path)
                     fail += 1
 
             done = ok + fail + skip
