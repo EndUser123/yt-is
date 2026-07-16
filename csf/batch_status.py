@@ -909,6 +909,11 @@ class _BatchStatusStorage:
                 (_STATUS_PENDING, now, video_id),
             )
             changed = cursor.rowcount > 0
+            if changed:
+                conn.execute(
+                    "DELETE FROM negative_video_cache WHERE video_id = ?",
+                    (video_id,),
+                )
             conn.commit()
             if changed:
                 log_action("requeue_video", {"video_id": video_id, "reason": reason})

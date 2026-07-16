@@ -473,7 +473,7 @@ def import_video_batch(
                         unavailable_reason = excluded.unavailable_reason,
                         last_stage = excluded.last_stage,
                         failure_reason = excluded.failure_reason,
-                        quality_metrics = excluded.quality_metrics""",
+                        quality_metrics = COALESCE(analysis_status.quality_metrics, excluded.quality_metrics)""",
                     _row_values(entry),
                 )
 
