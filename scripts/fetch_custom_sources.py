@@ -2,6 +2,7 @@
 """Process custom source-labeled videos through NotebookLM batch ingest."""
 
 import concurrent.futures
+import multiprocessing
 import os, sys, time, sqlite3
 from pathlib import Path
 
@@ -11,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from csf.nlm_config import get_nlm_config
 from csf.nlm_batch import process_industrial_batch
 from csf.batch_status import mark_complete, mark_failed
-from csf.cache import has_cached_transcript
+from csf.cache import has_cached_transcript, set_cached_transcript
 
 SOURCE_LABELS = ["playlist:watch-later-temp", "history:2026-07-14"]
 BATCH_SIZE = get_nlm_config().notebook_batch_size
@@ -38,13 +39,34 @@ def batch_ids(videos, n=BATCH_SIZE):
 
 
 def _run_with_timeout(video_ids):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(process_industrial_batch, video_ids)
+    """Run process_industrial_batch with a real process-level timeout.
+
+    Uses multiprocessing.Process so the timeout actually kills the worker
+    (unlike ThreadPoolExecutor + future.cancel() which is a no-op on
+    running threads).
+    """
+    queue: multiprocessing.Queue = multiprocessing.Queue()
+    def _target(vids, q):
         try:
-            return future.result(timeout=BATCH_TIMEOUT_S)
-        except concurrent.futures.TimeoutError:
-            future.cancel()
-            return {vid: (False, None, "timeout") for vid in video_ids}
+            result = process_industrial_batch(vids)
+            q.put(result)
+        except Exception as e:
+            q.put(e)
+
+    proc = multiprocessing.Process(target=_target, args=(video_ids, queue))
+    proc.start()
+    proc.join(timeout=BATCH_TIMEOUT_S)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(timeout=5)
+        return {vid: (False, None, "timeout") for vid in video_ids}
+    try:
+        result = queue.get_nowait()
+        if isinstance(result, Exception):
+            return {vid: (False, None, str(result)) for vid in video_ids}
+        return result
+    except Exception:
+        return {vid: (False, None, "unknown") for vid in video_ids}
 
 
 def main():
@@ -88,6 +110,7 @@ def main():
             for vid in fetch:
                 ok_flag, tr, err = results.get(vid, (False, None, "unknown"))
                 if ok_flag and tr:
+                    set_cached_transcript(vid, lang="en", source="notebooklm", transcript=tr)
                     mark_complete(vid, source="notebooklm", last_stage="notebooklm")
                     ok += 1
                 else:
