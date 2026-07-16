@@ -2929,8 +2929,19 @@ def cmd_fetch(
     def _primary_pending_discovered_total() -> int:
         return max(0, pending_discovered_total - int(shared_retry_processed_count_total))
 
+    # Snapshot isolation: read all channel entries with a single DB connection
+    # so every channel sees the same database state under concurrent writes.
+    _snapshot_conn = storage._get_conn()
+    try:
+        _all_channel_entries: dict[str, list[dict[str, object | None]]] = {
+            _curl: storage._query_entries_for_source_details(_snapshot_conn, _curl)
+            for _curl, _ in channels
+        }
+    finally:
+        _snapshot_conn.close()
+
     for channel_index, (channel_url, playlist_id) in enumerate(channels, start=1):
-        pending_entries = get_entries_for_source_details(channel_url)
+        pending_entries = _all_channel_entries.get(channel_url, [])
         for entry in pending_entries:
             video_id = str(entry["video_id"])
             status = str(entry["status"])
