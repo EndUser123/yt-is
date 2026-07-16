@@ -1426,9 +1426,10 @@ class _BatchStatusStorage:
 
         Never downgrades a 'complete' row: the UPSERT guard preserves
         status='complete' even when the incoming entry has a different value.
-        Transient fields (last_stage, failure_reason, unavailable_reason) are
-        overwritten by incoming values; metadata fields (title, description,
-        channel_id, etc.) are preserved when incoming values are null.
+        All fields use COALESCE — existing values are preserved when incoming
+        values are null, including transient fields (last_stage, failure_reason,
+        unavailable_reason) and metadata fields (title, description,
+        channel_id, etc.).
 
         Args:
             entries: List of BatchEntry dataclass objects.
