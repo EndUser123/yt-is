@@ -807,7 +807,15 @@ class _BatchStatusStorage:
                     if failure_reason is None:
                         failure_reason = row[3]
             conn.execute(
-                "INSERT OR REPLACE INTO analysis_status (video_id, status, updated_at, source, published_at, last_stage, failure_reason, quality_metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO analysis_status (video_id, status, updated_at, source, published_at, last_stage, failure_reason, quality_metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(video_id) DO UPDATE SET "
+                "status = CASE WHEN analysis_status.status = 'complete' THEN 'complete' ELSE excluded.status END, "
+                "updated_at = excluded.updated_at, "
+                "source = COALESCE(analysis_status.source, excluded.source), "
+                "published_at = COALESCE(analysis_status.published_at, excluded.published_at), "
+                "last_stage = excluded.last_stage, "
+                "failure_reason = excluded.failure_reason, "
+                "quality_metrics = COALESCE(analysis_status.quality_metrics, excluded.quality_metrics)",
                 (video_id, status, now, source, published_at, last_stage, failure_reason, quality_metrics),
             )
             if status == _STATUS_COMPLETE:
@@ -1410,11 +1418,17 @@ class _BatchStatusStorage:
             return self._query_entries_for_source_details(conn, channel_url)
 
     def set_status_batch(self, entries: Sequence[BatchEntry]) -> int:
-        """Bulk insert/update status for multiple videos — best-effort.
+        """Bulk upsert status for multiple videos — best-effort.
 
         Uses a regular BEGIN (not IMMEDIATE) so readers are not blocked.
         Each entry is wrapped in try/except: if one fails, the others still
         succeed. Use busy_timeout PRAGMA to handle writer-writer contention.
+
+        Never downgrades a 'complete' row: the UPSERT guard preserves
+        status='complete' even when the incoming entry has a different value.
+        Transient fields (last_stage, failure_reason, unavailable_reason) are
+        overwritten by incoming values; metadata fields (title, description,
+        channel_id, etc.) are preserved when incoming values are null.
 
         Args:
             entries: List of BatchEntry dataclass objects.
@@ -1491,11 +1505,29 @@ class _BatchStatusStorage:
                                 failure_reason = row[4]
 
                     conn.execute(
-                        "INSERT OR REPLACE INTO analysis_status "
+                        "INSERT INTO analysis_status "
                         "(video_id, status, updated_at, source, published_at, has_captions, "
                         "title, description, channel_id, thumbnail, duration, privacy_status, upload_status, "
                         "is_live_content, unavailable_reason, last_stage, failure_reason) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(video_id) DO UPDATE SET "
+                        "status = CASE WHEN analysis_status.status = 'complete' "
+                        "THEN 'complete' ELSE excluded.status END, "
+                        "updated_at = excluded.updated_at, "
+                        "source = COALESCE(analysis_status.source, excluded.source), "
+                        "published_at = COALESCE(analysis_status.published_at, excluded.published_at), "
+                        "has_captions = COALESCE(analysis_status.has_captions, excluded.has_captions), "
+                        "title = COALESCE(analysis_status.title, excluded.title), "
+                        "description = COALESCE(analysis_status.description, excluded.description), "
+                        "channel_id = COALESCE(analysis_status.channel_id, excluded.channel_id), "
+                        "thumbnail = COALESCE(analysis_status.thumbnail, excluded.thumbnail), "
+                        "duration = COALESCE(analysis_status.duration, excluded.duration), "
+                        "privacy_status = COALESCE(analysis_status.privacy_status, excluded.privacy_status), "
+                        "upload_status = COALESCE(analysis_status.upload_status, excluded.upload_status), "
+                        "is_live_content = COALESCE(analysis_status.is_live_content, excluded.is_live_content), "
+                        "unavailable_reason = excluded.unavailable_reason, "
+                        "last_stage = excluded.last_stage, "
+                        "failure_reason = excluded.failure_reason",
                         (
                             video_id, status, now, source, published_at, has_captions,
                             title, description, channel_id, thumbnail, duration,
@@ -1503,6 +1535,9 @@ class _BatchStatusStorage:
                             last_stage, failure_reason,
                         ),
                     )
+                    # Delete negative cache when incoming status is 'complete'.
+                    # Negative cache is only set on 'failed' rows, so clearing on
+                    # complete is sufficient — a stale complete row has no cache entry.
                     if status == _STATUS_COMPLETE:
                         conn.execute(
                             "DELETE FROM negative_video_cache WHERE video_id = ?",
