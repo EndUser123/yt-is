@@ -1485,25 +1485,6 @@ class _BatchStatusStorage:
                         if resolved is not None:
                             channel_id = resolved.channel_id
 
-                    # Preserve existing values if not provided
-                    if (source is None or published_at is None or has_captions is None
-                            or last_stage is None or failure_reason is None):
-                        row = conn.execute(
-                            "SELECT source, published_at, has_captions, last_stage, failure_reason FROM analysis_status WHERE video_id = ?",
-                            (video_id,),
-                        ).fetchone()
-                        if row:
-                            if source is None:
-                                source = row[0]
-                            if published_at is None:
-                                published_at = row[1]
-                            if has_captions is None:
-                                has_captions = row[2]
-                            if last_stage is None:
-                                last_stage = row[3]
-                            if failure_reason is None:
-                                failure_reason = row[4]
-
                     conn.execute(
                         "INSERT INTO analysis_status "
                         "(video_id, status, updated_at, source, published_at, has_captions, "
@@ -1525,9 +1506,9 @@ class _BatchStatusStorage:
                         "privacy_status = COALESCE(analysis_status.privacy_status, excluded.privacy_status), "
                         "upload_status = COALESCE(analysis_status.upload_status, excluded.upload_status), "
                         "is_live_content = COALESCE(analysis_status.is_live_content, excluded.is_live_content), "
-                        "unavailable_reason = excluded.unavailable_reason, "
-                        "last_stage = excluded.last_stage, "
-                        "failure_reason = excluded.failure_reason",
+                        "unavailable_reason = COALESCE(analysis_status.unavailable_reason, excluded.unavailable_reason), "
+                        "last_stage = COALESCE(analysis_status.last_stage, excluded.last_stage), "
+                        "failure_reason = COALESCE(analysis_status.failure_reason, excluded.failure_reason)",
                         (
                             video_id, status, now, source, published_at, has_captions,
                             title, description, channel_id, thumbnail, duration,

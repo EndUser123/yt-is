@@ -31,6 +31,7 @@ from csf.batch_status import (
     reset_all,
     set_negative_cache,
     set_channel_metadata,
+    set_status,
     set_status_batch,
     get_status_batch,
     BatchEntry,
@@ -212,7 +213,7 @@ class TestSetStatusBatch:
         """set_status_batch skips entries that cause errors without rolling back good ones.
 
         This is a structural test: entries with valid video_ids succeed even if one
-        in the batch would fail. In practice INSERT OR REPLACE doesn't fail on
+        in the batch would fail. In practice the UPSERT doesn't fail on
         valid entries, so all succeed in the normal case.
         """
         # First insert some valid entries
@@ -224,6 +225,12 @@ class TestSetStatusBatch:
         assert count1 == 2
         assert get_analysis_status("vid_good1", db_path=_TEST_DB_PATH) == "pending"
         assert get_analysis_status("vid_good2", db_path=_TEST_DB_PATH) == "pending"
+
+    def test_set_status_single_row_does_not_downgrade_complete(self):
+        """set_status() single-row UPSERT guard does NOT downgrade complete rows."""
+        mark_complete("vid_single_guard", db_path=_TEST_DB_PATH)
+        set_status("vid_single_guard", "pending", db_path=_TEST_DB_PATH)
+        assert get_analysis_status("vid_single_guard", db_path=_TEST_DB_PATH) == "complete"
 
 
 class TestGetStatusBatch:
