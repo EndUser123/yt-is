@@ -31,6 +31,9 @@ From a live `/refactor yt-is` run + red-team of its own output:
 - **Misframed seam (A2):** Plan called the canonical bind at `nlm_batch.py:3042` ("uncorroborated"). Reality: `_last_added_source_ids` is set from add-stdout parse (`nlm_batch.py:2432`), so the positional correlation is **corroborated**. The *real* uncorroborated path is the fallback loop at `nlm_batch.py:3059-3063` (leftover source_ids zipped by list order).
   - Falsifier: `_last_added_source_ids` definition `:1894`, set by parsed stdout `:2432`, summed `:2852`/`:2915`.
 
+**A2 status note:** A2 was already fixed at commit 2b96382 on 
+efactor/yt-is-control-planes (fail-closed uncorroborated mapping). It is documented here to explain what the skill must catch, not what is open.
+
 **Read these two before touching the skill.** They define what "hallucination" and "misframe" mean here.
 
 ---
@@ -72,6 +75,10 @@ The proposal was itself critiqued. Hard constraints before building:
 - Enforce RED-phase gate as a hard block in execute.
 - *Falsifier:* re-run `/refactor yt-is`. B2-shape (symbol not in cited file) must be rejected structurally. (This half is deterministic and must pass.)
 
+**Wave 2
+
+> **BYOK warning:** mmx requires MINIMAX_API_KEY from P:/.env. If 401, load env first. See P:/.grok/skills/review/SKILL.md Step 5.5 for the BYOK protocol. If mmx is unavailable, Wave 1 alone still catches hallucinated seams (deterministic).
+
 **Wave 2 — blind second check:**
 - Wire `mmx --model minimax-m3` as a P0-only second check on ambiguous seams. Prompt = code excerpt + "locate defect / is label accurate", no author outcome. Parse structured verdict.
 - *Falsifier:* A2-shape must be caught blind (already proven once; re-confirm on re-run).
@@ -81,7 +88,9 @@ The proposal was itself critiqued. Hard constraints before building:
 - Mechanical structure close-gate (grep old path / single writer).
 - Health ratio in RESULT.md.
 
-**Final falsifier (all waves):** re-run `/refactor yt-is`. Pass iff: (a) zero hallucinated seams, (b) zero misframed seams, (c) discovery agents surface ≥1 real issue the single-author pass missed. The third condition is what "useful outcomes" means.
+****Rejected seams:** D1 (reduce line count) and E1 (collapse spec docs) are OUT OF SCOPE per the user constraint in section 6 (optimization target is NOT line count). Do not execute them.
+
+Final falsifier (all waves):** re-run `/refactor yt-is`. Pass iff: (a) zero hallucinated seams, (b) zero misframed seams, (c) discovery agents surface ≥1 real issue the single-author pass missed. The third condition is what "useful outcomes" means.
 
 ---
 
@@ -97,7 +106,7 @@ The proposal was itself critiqued. Hard constraints before building:
 ## 7. Open questions (answer before Wave 3)
 
 - How many discovery agents exactly (3 vs 4), and which lenses? Recommend: correctness, structure, scope-completeness.
-- Where does mmx prompt live — inline in SKILL.md or a `__lib/` script? Recommend `__lib/blind_verify.py` (reusable, testable).
+- Where does mmx prompt live -- inline in SKILL.md or a __lib/ script? **Answered:** P:/.grok/skills/refactor/__lib/blind_verify.py (reusable, testable, matches existing __lib/ pattern). — inline in SKILL.md or a `__lib/` script? Recommend `__lib/blind_verify.py` (reusable, testable).
 - Does the validator script live in `~/.grok/skills/refactor/__lib/` or `P:\.grok\skills\refactor\__lib\`? Match skill's own dir.
 
 ---

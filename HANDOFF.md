@@ -1,8 +1,21 @@
 # yt-is Handoff
 
-Last updated: 2026-07-01
+Last updated: 2026-07-17
 
 ## Current state
+
+## Industrial trust floor (2026-07-17)
+
+**Status:** C1+C2 implemented on branch trust-floor/phase-1. /check PASS (18/18 focused tests). **Not yet merged to main.**
+
+**Charter:** docs/operations/root-cause-program.md
+
+**What changed:** C1 shared-retry lease guards (enqueue/mark_complete/mark_permanent_failure claimant-aware, drain skips deferred). C2 cache write gate (bind_verified=True refuses synthetic keys; importer resolves real YouTube IDs). A2 fail-closed mapping already on refactor branch @ 2b96382.
+
+**Until merged:** Do not treat industrial shared cache or shared-retry as trustworthy for optimal VPH claims. C3 is next.
+
+**Pre-existing:** 40 failures in test_nlm_batch.py are from A1+A2 work, NOT C1+C2.
+
 
 - **Candidate 6 per-attempt telemetry is live-proven (2026-07-01).** The 11-field
   `nlm_batch_source_content_fetch_completed` contract was validated by run02
