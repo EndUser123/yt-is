@@ -60,13 +60,14 @@ git log -3 --oneline
 
 | ID | Item | Status |
 |----|------|--------|
-| **A2** | Mapping: fail-closed uncorroborated list-order pairing | **DONE in worktree (uncommitted)** — critic + commit next |
+| — | *(none required)* | Director: merge A2 to main, or start B1, or stop |
 
 ### Done
 
 | ID | Item | Status |
 |----|------|--------|
-| **A1** | `set_status_batch`: no silent `pass`; log + `fail_count` | **DONE on main** — `e7a8bbd` + merge `ccfb95b`. Do **not** re-implement. Do **not** rebase “for A1.” |
+| **A1** | `set_status_batch`: no silent `pass`; log + `fail_count` | **DONE on main** — `e7a8bbd` + merge `ccfb95b`. Do **not** re-implement. |
+| **A2** | Mapping: fail-closed uncorroborated list-order pairing | **DONE on branch** — `2b96382` (worktree). Merge to main when ready. |
 
 ### Next
 
@@ -136,9 +137,15 @@ python -m pytest tests/test_batch_status.py -q
 
 ## Log (newest first)
 
+### 2026-07-17 — Grok (builder, A2 committed)
+
+- **A2 committed** on `refactor/yt-is-control-planes` as `2b96382`.
+- Pre-commit gitleaks report path fixed for worktrees (`git-common-dir`) so secret scan works outside main checkout.
+- **Next ask:** Merge A2 to main when director ready; then B1 or stop. Do not re-implement A2.
+
 ### 2026-07-16 — Grok (builder, A2)
 
-- **A2 implemented** in worktree (uncommitted): remove source-list **order fallback** fills when title/url/video_id corroboration is incomplete.
+- **A2 implemented** in worktree (was uncommitted; now superseded by commit entry above): remove source-list **order fallback** fills when title/url/video_id corroboration is incomplete.
 - **Still allowed (Rank B):** same-length `_last_added_source_ids` from successful add, zipped to this batch’s `batch_ids` order (not notebook list order).
 - **Fail closed:** any remaining `missing_video_ids` without Rank B → `Source mapping failed` + `nlm_batch_source_mapping_failed` with `pairing_mode=fail_closed_uncorroborated`.
 - **Files:** `csf/nlm_batch.py`, `tests/test_nlm_batch.py`
