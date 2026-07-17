@@ -4,6 +4,22 @@
 
 `yt-is` (YouTube Intelligence System) is a high-throughput transcript ingestion pipeline. It has recently transitioned to an **Industrial Architecture** to handle a 140,000-video backlog.
 
+## Industrial trust floor (read before integrity/multi-worker work)
+
+**Implementation backlog (contracts):**  
+`docs/operations/root-cause-program.md`
+
+**Evidence / acceptance (finding IDs, not the plan):**  
+`docs/operations/review-2026-07-17-grok-deep2.md`  
+`docs/operations/critical-review-2026-07-17.md`
+
+| Rule | Detail |
+|------|--------|
+| Plan by **contract** (C1–C5) | Not by raw CON-/INT-/COR- ticket order alone |
+| Findings = acceptance | Each contract lists IDs; close under C# when falsifier tests pass |
+| Cache / shared-retry trust | Until **C1+C2** closed (or explicit waiver), do not treat industrial shared cache or multi-worker shared-retry as trustworthy for “optimal” claims |
+| Dual paths | Prefer path monopoly; do not leave serial vs shared outcome algebras diverging |
+
 ## Fresh Agent Throughput Gate
 
 Before proposing or launching any NotebookLM throughput benchmark, read:

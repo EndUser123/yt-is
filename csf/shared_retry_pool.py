@@ -122,15 +122,27 @@ def enqueue(
     delay_s: float = 30.0,
     last_error: str = "",
     status: str = "pending",
+    stale_claim_s: float = 900.0,
 ) -> bool:
-    """Insert or update a retryable item into the shared pool."""
+    """Insert or update a retryable item into the shared pool.
+
+    C1 trust-floor: do NOT steal a live non-stale claim. ON CONFLICT now only
+    refreshes rows that are pending or whose claim is stale; live claims and
+    terminal states (completed/permanent_failure) are left untouched. Returns
+    ``True`` when a row was inserted/updated, ``False`` when the row was
+    intentionally not touched (live claim or terminal) or the update matched
+    zero rows.
+    """
     if not video_id or len(video_id.strip()) != 11:
         return False
     queued_at = datetime.now()
     next_retry_at = queued_at + timedelta(seconds=max(0.0, float(delay_s)))
+    stale_cutoff = (
+        queued_at - timedelta(seconds=max(0.0, float(stale_claim_s)))
+    ).isoformat()
     conn = _connect()
     try:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO shared_retry_pool (
                 video_id, retry_count, next_retry_at, last_error,
@@ -144,6 +156,10 @@ def enqueue(
                 claimed_by=NULL,
                 claimed_at=NULL,
                 updated_at=excluded.updated_at
+            WHERE shared_retry_pool.status IN ('pending')
+               OR (shared_retry_pool.status = 'claimed'
+                   AND (shared_retry_pool.claimed_at IS NULL
+                        OR shared_retry_pool.claimed_at <= ?))
             """,
             (
                 video_id,
@@ -153,10 +169,13 @@ def enqueue(
                 queued_at.isoformat(),
                 status,
                 queued_at.isoformat(),
+                stale_cutoff,
             ),
         )
         conn.commit()
-        return True
+        # rowcount is 1 for INSERT, 1 for UPDATE that matched, 0 for UPDATE that
+        # matched zero rows because of the new WHERE guard.
+        return (cursor.rowcount or 0) >= 1
     finally:
         conn.close()
 
@@ -273,49 +292,88 @@ def reschedule(
         conn.close()
 
 
-def mark_complete(video_id: str) -> bool:
-    """Mark a retry item as completed successfully."""
+def mark_complete(video_id: str, *, claimant_id: str = "") -> bool:
+    """Mark a retry item as completed successfully.
+
+    C1 trust-floor: only the live claimant may finalize the row. When
+    ``claimant_id`` is supplied, the UPDATE is restricted to ``status='claimed'
+    AND claimed_by=?``. With empty/None claimant the prior unguarded behavior is
+    preserved for back-compat with callers that already lost claimant context.
+    Returns ``False`` (and does NOT clobber) on stale or wrong-claimant races.
+    """
     if not video_id:
         return False
     now = _now_iso()
     conn = _connect()
     try:
-        updated = conn.execute(
-            """
-            UPDATE shared_retry_pool
-            SET status='completed',
-                claimed_by=NULL,
-                claimed_at=NULL,
-                updated_at=?
-            WHERE video_id=?
-            """,
-            (now, video_id),
-        )
+        if claimant_id:
+            updated = conn.execute(
+                """
+                UPDATE shared_retry_pool
+                SET status='completed',
+                    claimed_by=NULL,
+                    claimed_at=NULL,
+                    updated_at=?
+                WHERE video_id=? AND status='claimed' AND claimed_by=?
+                """,
+                (now, video_id, claimant_id),
+            )
+        else:
+            updated = conn.execute(
+                """
+                UPDATE shared_retry_pool
+                SET status='completed',
+                    claimed_by=NULL,
+                    claimed_at=NULL,
+                    updated_at=?
+                WHERE video_id=? AND status='claimed'
+                """,
+                (now, video_id),
+            )
         conn.commit()
         return updated.rowcount == 1
     finally:
         conn.close()
 
 
-def mark_permanent_failure(video_id: str, last_error: str = "") -> bool:
-    """Mark a retry item as terminal."""
+def mark_permanent_failure(video_id: str, last_error: str = "", *, claimant_id: str = "") -> bool:
+    """Mark a retry item as terminal.
+
+    C1 trust-floor: same claimant guard as ``mark_complete``. Deferred work
+    must never reach this path; callers are expected to filter deferred
+    video_ids before invoking.
+    """
     if not video_id:
         return False
     now = _now_iso()
     conn = _connect()
     try:
-        updated = conn.execute(
-            """
-            UPDATE shared_retry_pool
-            SET status='permanent_failure',
-                last_error=?,
-                claimed_by=NULL,
-                claimed_at=NULL,
-                updated_at=?
-            WHERE video_id=?
-            """,
-            (str(last_error or ""), now, video_id),
-        )
+        if claimant_id:
+            updated = conn.execute(
+                """
+                UPDATE shared_retry_pool
+                SET status='permanent_failure',
+                    last_error=?,
+                    claimed_by=NULL,
+                    claimed_at=NULL,
+                    updated_at=?
+                WHERE video_id=? AND status='claimed' AND claimed_by=?
+                """,
+                (str(last_error or ""), now, video_id, claimant_id),
+            )
+        else:
+            updated = conn.execute(
+                """
+                UPDATE shared_retry_pool
+                SET status='permanent_failure',
+                    last_error=?,
+                    claimed_by=NULL,
+                    claimed_at=NULL,
+                    updated_at=?
+                WHERE video_id=? AND status='claimed'
+                """,
+                (str(last_error or ""), now, video_id),
+            )
         conn.commit()
         return updated.rowcount == 1
     finally:

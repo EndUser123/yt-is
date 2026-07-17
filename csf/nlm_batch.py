@@ -4378,6 +4378,11 @@ class NLMBatchIngestor:
         shared_retry_deferred_count = 0
         shared_retry_recovered_count = 0
         shared_retry_final_failed_count = 0
+        # C1 trust-floor: always-defined set of video IDs deferred to the
+        # shared retry pool. Empty when shared pool is disabled or no defer
+        # happened; the extract epilogue skips the "Source not found" fill-in
+        # for any vid in this set.
+        shared_retry_deferred_video_ids: frozenset[str] = frozenset()
         retry_queue_drain_ready_age_s: float | None = None
         retry_queue_wait_elapsed_s_total = 0.0
         retry_queue_wait_elapsed_s_max = 0.0
@@ -4411,6 +4416,13 @@ class NLMBatchIngestor:
                         "source_content_shared_retry_pool_enabled": _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED,
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
+                )
+                # C1 trust-floor: track which video IDs were deferred to the
+                # shared retry pool so the extract epilogue and downstream
+                # callers (worker_main drain) do not treat them as "Source not
+                # found" failures.
+                shared_retry_deferred_video_ids = frozenset(
+                    vid for vid, _src, _err in retry_queue
                 )
                 for vid, _source_id, queued_error in retry_queue:
                     enqueue_shared_retry(
@@ -4791,6 +4803,13 @@ class NLMBatchIngestor:
 
         for vid in batch_ids:
             if vid not in results:
+                # C1 trust-floor: do NOT fill deferred (shared-retry-pool
+                # re-queued) video IDs as "Source not found". The extract path
+                # enqueued them for the next drain attempt and that signal must
+                # survive to worker_main so the row stays claimable instead of
+                # being permanent-failed.
+                if vid in shared_retry_deferred_video_ids:
+                    continue
                 results[vid] = (False, None, "Source not found")
         succeeded = sum(1 for ok, _, _ in results.values() if ok)
         log_action(
@@ -4924,6 +4943,8 @@ class NLMBatchIngestor:
             "shared_retry_deferred_count": shared_retry_deferred_count,
             "shared_retry_recovered_count": shared_retry_recovered_count,
             "shared_retry_final_failed_count": shared_retry_final_failed_count,
+            # C1 trust-floor: deferred video_ids exposed for worker drain.
+            "shared_retry_deferred_video_ids": sorted(shared_retry_deferred_video_ids),
             "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
             "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
             "retry_queue_drain_ready_age_s": retry_queue_drain_ready_age_s,
@@ -6348,6 +6369,11 @@ class NLMReusableIngestor:
             "shared_retry_deferred_count": int(extract_metrics.get("shared_retry_deferred_count", 0) or 0),
             "shared_retry_recovered_count": int(extract_metrics.get("shared_retry_recovered_count", 0) or 0),
             "shared_retry_final_failed_count": int(extract_metrics.get("shared_retry_final_failed_count", 0) or 0),
+            # C1 trust-floor: expose the actual deferred video_ids so worker_main
+            # drain can skip permanent-fail for them. Frozenset for cheap membership.
+            "shared_retry_deferred_video_ids": list(
+                extract_metrics.get("shared_retry_deferred_video_ids", frozenset()) or frozenset()
+            ),
             "materialization_ready_at_epoch": float(extract_metrics.get("materialization_ready_at_epoch", 0) or 0.0),
         }
         return results

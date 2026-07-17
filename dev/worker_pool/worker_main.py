@@ -452,6 +452,9 @@ def main(argv: list[str] | None = None) -> int:
                 shared_results = process_industrial_batch_reusable(claimed_video_ids)
                 shared_metrics = get_last_reusable_process_metrics() or {}
                 deferred = int(shared_metrics.get("shared_retry_deferred_count") or 0)
+                shared_retry_deferred_video_ids = set(
+                    shared_metrics.get("shared_retry_deferred_video_ids") or []
+                )
                 success_in_round = sum(1 for ok, transcript, _ in shared_results.values() if ok and transcript)
                 final_failed = max(0, len(claimed_video_ids) - success_in_round - deferred)
                 shared_retry_deferred += deferred
@@ -463,9 +466,19 @@ def main(argv: list[str] | None = None) -> int:
                     if success and transcript:
                         set_cached_transcript(video_id, "en", "notebooklm", transcript)
                         mark_complete(video_id, last_stage="notebooklm")
-                        mark_shared_retry_complete(video_id)
+                        mark_shared_retry_complete(video_id, claimant_id=args.worker_id)
                     else:
-                        mark_shared_retry_permanent_failure(video_id, str(_error or "shared retry failed"))
+                        # C1 trust-floor: do NOT permanent-fail deferred video
+                        # IDs. They were enqueued to the shared retry pool for
+                        # a future claim window and the metrics layer already
+                        # counted them as deferred (not failed).
+                        if video_id in shared_retry_deferred_video_ids:
+                            continue
+                        mark_shared_retry_permanent_failure(
+                            video_id,
+                            str(_error or "shared retry failed"),
+                            claimant_id=args.worker_id,
+                        )
                 log_action(
                     "worker_shared_retry_drain_batch_completed",
                     {
