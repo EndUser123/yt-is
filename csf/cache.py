@@ -362,6 +362,65 @@ def _log_unbound_write_skip(video_id: str, lang: str, source: str) -> None:
         pass
 
 
+def replace_cached_transcript_if_better(
+    video_id: str,
+    lang: str,
+    source: str,
+    transcript: str,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+    min_length_delta: int = 0,
+) -> bool:
+    """C2 trust-floor: upgrade a cached transcript when new content is better.
+
+    INT-007 acceptance: if the new transcript is longer by at least
+    ``min_length_delta`` characters than the existing entry, replace it.
+    Otherwise keep the existing (first-write-wins preserved).
+
+    Returns True if the entry was upgraded, False if the existing was kept.
+    """
+    if not _validate_video_id(video_id):
+        return False
+
+    existing = get_cached_transcript(video_id, lang, source)
+    if existing is None:
+        # No existing entry; just write fresh.
+        set_cached_transcript(
+            video_id, lang, source, transcript, metadata=metadata, bind_verified=True
+        )
+        return True
+
+    existing_len = len(existing.transcript or "")
+    new_len = len(transcript or "")
+    if new_len > existing_len + min_length_delta:
+        # Upgrade: delete old entry, write new.
+        from csf.terminal_context import resolve_tid
+        terminal_id = resolve_tid()
+        cache_key = _make_cache_key(video_id, lang, source)
+        now = datetime.now()
+        metadata_json = _normalize_metadata(metadata)
+        storage = _get_storage(terminal_id)
+        # Direct UPDATE instead of INSERT OR IGNORE
+        with _db_access_lock:
+            conn = _connect_shared_db()
+            conn.execute("PRAGMA journal_mode=WAL")
+            try:
+                conn.execute(
+                    """
+                    UPDATE transcript_cache
+                    SET transcript=?, metadata_json=?, cached_at=?
+                    WHERE cache_key=?
+                    """,
+                    (transcript, metadata_json, now.isoformat(), cache_key),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return True
+    return False
+
+
+
 def delete_cached_transcripts(video_ids: list[str]) -> int:
     """Delete all cached transcript rows for the given video IDs.
 

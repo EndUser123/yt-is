@@ -144,3 +144,41 @@ def test_enqueue_rejects_non_video_id():
     """Defensive: 11-char validation still enforced."""
     assert enqueue("not-a-real-id", retry_count=0, delay_s=0.0) is False
     assert enqueue("", retry_count=0, delay_s=0.0) is False
+
+
+
+def test_crashed_claim_is_reclaimable_after_stale_timeout():
+    """C1 falsifier (GLM critique): worker crash mid-claim must be reclaimable.
+
+    Simulates: Worker A claims, crashes (no terminal call). After stale_claim_s,
+    Worker B must be able to claim_ready the same item. This proves the lease SM
+    does not permanently lose work on crash.
+    """
+    reset_pool()
+    enqueue("dQw4w9WgXcQ", retry_count=0, delay_s=0.0, last_error="first")
+    # Worker A claims
+    claimed = claim_ready(limit=5, claimant_id="worker-A", stale_claim_s=900.0)
+    assert len(claimed) == 1
+    # Worker A crashes -- no mark_complete, no mark_permanent_failure
+    # After stale timeout (simulated with stale_claim_s=0), Worker B reclaims
+    reclaimed = claim_ready(limit=5, claimant_id="worker-B", stale_claim_s=0.0)
+    assert len(reclaimed) == 1
+    assert reclaimed[0].video_id == "dQw4w9WgXcQ"
+    assert reclaimed[0].status == "claimed"
+    # Worker B can complete it
+    assert mark_complete("dQw4w9WgXcQ", claimant_id="worker-B") is True
+
+
+def test_enqueue_after_terminal_state_is_idempotent():
+    """Re-enqueuing a completed row must not resurrect it."""
+    reset_pool()
+    enqueue("dQw4w9WgXcQ", retry_count=0, delay_s=0.0, last_error="first")
+    claim_ready(limit=5, claimant_id="worker-A")
+    mark_complete("dQw4w9WgXcQ", claimant_id="worker-A")
+    # Late re-enqueue attempt
+    assert enqueue("dQw4w9WgXcQ", retry_count=9, delay_s=0.0) is False
+    # Row stays completed
+    from csf.shared_retry_pool import _connect
+    with _connect() as conn:
+        status, _, _ = _select(conn, "dQw4w9WgXcQ")
+    assert status == "completed"

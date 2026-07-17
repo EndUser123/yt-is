@@ -190,3 +190,35 @@ def test_ensure_auth_rejects_mismatched_expected_account(monkeypatch):
         ["login", "--check", "--profile", "worker-01"],
         ["login", "--force", "--profile", "worker-01"],
     ]
+
+
+
+def test_replace_cached_transcript_if_better_upgrades(monkeypatch, tmp_path):
+    """INT-007 acceptance: longer transcript replaces shorter one."""
+    from csf import cache
+
+    monkeypatch.setenv(
+        "YTIS_TRANSCRIPT_CACHE_DB_PATH", str(tmp_path / "cache.sqlite")
+    )
+    cache.clear_all_storages()
+    try:
+        # Write short transcript
+        cache.set_cached_transcript(
+            "dQw4w9WgXcQ", "en", "notebooklm", "short", bind_verified=True
+        )
+        assert cache.has_cached_transcript("dQw4w9WgXcQ")
+        # Upgrade with longer
+        upgraded = cache.replace_cached_transcript_if_better(
+            "dQw4w9WgXcQ", "en", "notebooklm", "much longer transcript content here"
+        )
+        assert upgraded is True
+        entry = cache.get_cached_transcript("dQw4w9WgXcQ", "en", "notebooklm")
+        assert entry is not None
+        assert "much longer" in entry.transcript
+        # Shorter replacement must be refused
+        refused = cache.replace_cached_transcript_if_better(
+            "dQw4w9WgXcQ", "en", "notebooklm", "x"
+        )
+        assert refused is False
+    finally:
+        cache.clear_all_storages()
