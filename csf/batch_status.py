@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NamedTuple
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -26,6 +26,18 @@ from csf.channel_identity import (
     resolve_channel_identity,
 )
 from csf.csf_logging import log_action
+
+
+class SetStatusBatchResult(NamedTuple):
+    """Outcome of a best-effort bulk status write.
+
+    ok_count: rows successfully upserted.
+    fail_count: rows that raised and were skipped (each is logged).
+    """
+
+    ok_count: int
+    fail_count: int
+
 
 # Type alias for batch entries - use dataclass for extensibility
 @dataclass
@@ -1417,12 +1429,13 @@ class _BatchStatusStorage:
         with self._conn() as conn:
             return self._query_entries_for_source_details(conn, channel_url)
 
-    def set_status_batch(self, entries: Sequence[BatchEntry]) -> int:
-        """Bulk upsert status for multiple videos — best-effort.
+    def set_status_batch(self, entries: Sequence[BatchEntry]) -> SetStatusBatchResult:
+        """Bulk upsert status for multiple videos — best-effort per row.
 
         Uses a regular BEGIN (not IMMEDIATE) so readers are not blocked.
         Each entry is wrapped in try/except: if one fails, the others still
-        succeed. Use busy_timeout PRAGMA to handle writer-writer contention.
+        succeed. Failures are logged and counted (never silent pass).
+        Use busy_timeout PRAGMA to handle writer-writer contention.
 
         Never downgrades a 'complete' row: the UPSERT guard preserves
         status='complete' even when the incoming entry has a different value.
@@ -1431,19 +1444,21 @@ class _BatchStatusStorage:
         channel_id, etc.) are preserved when incoming values are null via COALESCE.
 
         Args:
-            entries: List of BatchEntry dataclass objects.
+            entries: List of BatchEntry dataclass objects (or legacy tuples).
 
         Returns:
-            Number of rows inserted/updated.
+            SetStatusBatchResult(ok_count, fail_count).
         """
         if not entries:
-            return 0
+            return SetStatusBatchResult(ok_count=0, fail_count=0)
         conn = self._get_conn()
         conn.execute("BEGIN")
-        count = 0
+        ok_count = 0
+        fail_count = 0
         try:
             now = datetime.now(timezone.utc).isoformat()
             for entry in entries:
+                video_id: str | None = None
                 try:
                     # Handle both tuple (backward compat) and dataclass
                     if isinstance(entry, tuple):
@@ -1524,17 +1539,33 @@ class _BatchStatusStorage:
                             "DELETE FROM negative_video_cache WHERE video_id = ?",
                             (video_id,),
                         )
-                    count += 1
-                except Exception:
-                    # Best-effort: skip bad entries, continue with the rest
-                    pass
+                    ok_count += 1
+                except Exception as exc:
+                    fail_count += 1
+                    log_action(
+                        "set_status_batch_row_failed",
+                        {
+                            "video_id": video_id,
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+            if fail_count:
+                log_action(
+                    "set_status_batch_completed_with_failures",
+                    {
+                        "ok_count": ok_count,
+                        "fail_count": fail_count,
+                        "entry_count": len(entries),
+                    },
+                )
             conn.commit()
         except Exception:
             conn.rollback()
             raise
         finally:
             conn.close()
-        return count
+        return SetStatusBatchResult(ok_count=ok_count, fail_count=fail_count)
 
 
 # ---------------------------------------------------------------------------
@@ -2157,18 +2188,19 @@ def summarize_video_ids(
 def set_status_batch(
     entries: Sequence["BatchEntry"],
     db_path: Path | None = None,
-) -> int:
-    """Bulk insert/update status for multiple videos — best-effort.
+) -> SetStatusBatchResult:
+    """Bulk insert/update status for multiple videos — best-effort per row.
 
-    Each entry is tried individually; malformed entries are skipped without
+    Each entry is tried individually; failures are logged and counted without
     rolling back successful ones. Uses busy_timeout to handle writer contention.
 
     Args:
-        entries: Sequence of (video_id, status, source, published_at, has_captions) tuples.
+        entries: Sequence of BatchEntry (or legacy tuples).
         db_path: Optional path to a non-default batch_status DB.
 
     Returns:
-        Number of rows inserted/updated.
+        SetStatusBatchResult(ok_count, fail_count). Callers that care about
+        completeness must check fail_count (or treat fail_count > 0 as partial).
     """
     if db_path is None:
         return _get_batch_status_storage().set_status_batch(entries)

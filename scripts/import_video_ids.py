@@ -135,8 +135,10 @@ def main():
         return
 
     print("\n=== Importing to batch_status.sqlite ===")
-    count = set_status_batch(all_entries)
-    print(f"  Inserted/updated: {count} rows")
+    result = set_status_batch(all_entries)
+    print(f"  Inserted/updated: {result.ok_count} rows")
+    if result.fail_count:
+        print(f"  Failed rows:      {result.fail_count} (see set_status_batch_row_failed logs)")
     print("\n=== Done ===")
 
 

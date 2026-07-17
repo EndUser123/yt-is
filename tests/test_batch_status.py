@@ -33,6 +33,7 @@ from csf.batch_status import (
     set_channel_metadata,
     set_status,
     set_status_batch,
+    SetStatusBatchResult,
     get_status_batch,
     BatchEntry,
 )
@@ -181,22 +182,22 @@ class TestSetStatusBatch:
         reset_all(_TEST_DB_PATH)
 
     def test_set_status_batch_inserts_multiple(self):
-        """set_status_batch inserts multiple entries and returns correct count."""
+        """set_status_batch inserts multiple entries and returns ok/fail counts."""
         entries: list[BatchEntry] = [
             ("vid1", "pending", "https://youtube.com/channel/UC1", "2026-01-01T00:00:00Z", None),
             ("vid2", "pending", "https://youtube.com/channel/UC1", "2026-01-02T00:00:00Z", None),
             ("vid3", "pending", "https://youtube.com/channel/UC1", "2026-01-03T00:00:00Z", None),
         ]
-        count = set_status_batch(entries, db_path=_TEST_DB_PATH)
-        assert count == 3
+        result = set_status_batch(entries, db_path=_TEST_DB_PATH)
+        assert result == SetStatusBatchResult(ok_count=3, fail_count=0)
         assert get_analysis_status("vid1", db_path=_TEST_DB_PATH) == "pending"
         assert get_analysis_status("vid2", db_path=_TEST_DB_PATH) == "pending"
         assert get_analysis_status("vid3", db_path=_TEST_DB_PATH) == "pending"
 
     def test_set_status_batch_empty_returns_zero(self):
-        """set_status_batch with empty list returns 0 without error."""
-        count = set_status_batch([], db_path=_TEST_DB_PATH)
-        assert count == 0
+        """set_status_batch with empty list returns zero ok and fail without error."""
+        result = set_status_batch([], db_path=_TEST_DB_PATH)
+        assert result == SetStatusBatchResult(ok_count=0, fail_count=0)
 
     def test_set_status_batch_does_not_downgrade_complete(self):
         """set_status_batch with UPSERT guard does NOT downgrade complete rows."""
@@ -204,8 +205,9 @@ class TestSetStatusBatch:
         entries: list[BatchEntry] = [
             ("vid1", "pending", "https://youtube.com/channel/UC1", "2026-01-01T00:00:00Z", None),
         ]
-        count = set_status_batch(entries, db_path=_TEST_DB_PATH)
-        assert count == 1
+        result = set_status_batch(entries, db_path=_TEST_DB_PATH)
+        assert result.ok_count == 1
+        assert result.fail_count == 0
         # Guard prevents downgrade — status stays 'complete', not 'pending'
         assert get_analysis_status("vid1", db_path=_TEST_DB_PATH) == "complete"
 
@@ -221,10 +223,54 @@ class TestSetStatusBatch:
             ("vid_good1", "pending", "https://youtube.com/channel/UC1", "2026-01-01T00:00:00Z", None),
             ("vid_good2", "pending", "https://youtube.com/channel/UC1", "2026-01-02T00:00:00Z", None),
         ]
-        count1 = set_status_batch(good_entries, db_path=_TEST_DB_PATH)
-        assert count1 == 2
+        result = set_status_batch(good_entries, db_path=_TEST_DB_PATH)
+        assert result == SetStatusBatchResult(ok_count=2, fail_count=0)
         assert get_analysis_status("vid_good1", db_path=_TEST_DB_PATH) == "pending"
         assert get_analysis_status("vid_good2", db_path=_TEST_DB_PATH) == "pending"
+
+    def test_set_status_batch_logs_and_counts_row_failures(self, monkeypatch):
+        """Per-row failures are counted, logged, and do not drop successful siblings."""
+        from csf import batch_status as batch_status_mod
+
+        logged: list[tuple[str, dict]] = []
+
+        def _capture_log(action: str, payload: dict | None = None, **kwargs):
+            logged.append((action, payload or {}))
+
+        monkeypatch.setattr(batch_status_mod, "log_action", _capture_log)
+
+        class _BoomEntry:
+            @property
+            def video_id(self) -> str:
+                raise RuntimeError("simulated row failure")
+
+        entries: list[BatchEntry] = [
+            BatchEntry(
+                video_id="vid_ok_a",
+                status="pending",
+                source="https://youtube.com/channel/UC1",
+            ),
+            _BoomEntry(),  # type: ignore[list-item]
+            BatchEntry(
+                video_id="vid_ok_b",
+                status="pending",
+                source="https://youtube.com/channel/UC1",
+            ),
+        ]
+        result = set_status_batch(entries, db_path=_TEST_DB_PATH)
+        assert result == SetStatusBatchResult(ok_count=2, fail_count=1)
+        assert get_analysis_status("vid_ok_a", db_path=_TEST_DB_PATH) == "pending"
+        assert get_analysis_status("vid_ok_b", db_path=_TEST_DB_PATH) == "pending"
+
+        row_failed = [p for a, p in logged if a == "set_status_batch_row_failed"]
+        assert len(row_failed) == 1
+        assert row_failed[0].get("error_type") == "RuntimeError"
+        assert "simulated row failure" in str(row_failed[0].get("error", ""))
+
+        summary = [p for a, p in logged if a == "set_status_batch_completed_with_failures"]
+        assert len(summary) == 1
+        assert summary[0]["ok_count"] == 2
+        assert summary[0]["fail_count"] == 1
 
     def test_set_status_single_row_does_not_downgrade_complete(self):
         """set_status() single-row UPSERT guard does NOT downgrade complete rows."""
