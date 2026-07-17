@@ -5798,8 +5798,8 @@ class TestNotebookCapRotation:
         assert results[vid2][0] is True
         assert results[vid2][1] == "B" * 101
 
-    def test_extract_transcripts_uses_order_fallback_for_partial_matches_when_counts_align(self):
-        """A mixed title-match plus order-fallback batch should still resolve when counts align."""
+    def test_extract_transcripts_fail_closed_on_partial_title_match_without_add_ids(self):
+        """A2: partial title match must not fill the remainder by source-list order."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)
         ingestor._nb_id = "nb-partial-order"
         vid1 = "AAAAAAAAAAA"
@@ -5824,27 +5824,27 @@ class TestNotebookCapRotation:
                     },
                 )()
             if cmd[:2] == ["source", "content"]:
-                source_id = cmd[2]
-                content = "A" * 101 if source_id == "s1" else "B" * 101
-                return type(
-                    "CompletedProcess",
-                    (),
-                    {"returncode": 0, "stdout": json.dumps({"value": {"content": content}}), "stderr": ""},
-                )()
+                raise AssertionError("source content fetch should not run when mapping fails closed")
             return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
             with mock.patch("csf.nlm_batch.log_action") as mock_log:
                 results = ingestor.extract_transcripts([vid1, vid2])
 
-        assert results[vid1][0] is True
-        assert results[vid1][1] == "A" * 101
-        assert results[vid2][0] is True
-        assert results[vid2][1] == "B" * 101
-        assert not any(call.args[0] == "nlm_batch_source_mapping_failed" for call in mock_log.call_args_list)
+        assert results[vid1][0] is False
+        assert results[vid2][0] is False
+        assert results[vid1][2] == "Source mapping failed"
+        assert results[vid2][2] == "Source mapping failed"
+        failed_logs = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "nlm_batch_source_mapping_failed"
+        ]
+        assert failed_logs
+        assert failed_logs[0].get("pairing_mode") == "fail_closed_uncorroborated"
 
-    def test_extract_transcripts_excludes_previously_observed_sources_from_order_fallback(self):
-        """Cadence windows should order-map only sources added since the prior extraction."""
+    def test_extract_transcripts_fail_closed_when_cadence_gap_lacks_identity(self):
+        """A2: newly observed sources without video IDs are not order-mapped onto the batch."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)
         ingestor._nb_id = "nb-cadence"
         ingestor._previously_observed_source_ids = {"old-1", "old-2"}
@@ -5872,28 +5872,20 @@ class TestNotebookCapRotation:
                     },
                 )()
             if cmd[:2] == ["source", "content"]:
-                source_id = cmd[2]
-                content = "A" * 101 if source_id == "new-1" else "B" * 101
-                return type(
-                    "CompletedProcess",
-                    (),
-                    {"returncode": 0, "stdout": json.dumps({"value": {"content": content}}), "stderr": ""},
-                )()
+                raise AssertionError("source content fetch should not run when mapping fails closed")
             return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
             with mock.patch("csf.nlm_batch.log_action") as mock_log:
                 results = ingestor.extract_transcripts([vid1, vid2])
 
-        assert results[vid1][0] is True
-        assert results[vid1][1] == "A" * 101
-        assert results[vid2][0] is True
-        assert results[vid2][1] == "B" * 101
-        assert ingestor._previously_observed_source_ids == {"old-1", "old-2", "new-1", "new-2"}
-        assert not any(call.args[0] == "nlm_batch_source_mapping_failed" for call in mock_log.call_args_list)
+        assert results[vid1][0] is False
+        assert results[vid2][0] is False
+        assert results[vid1][2] == "Source mapping failed"
+        assert any(call.args[0] == "nlm_batch_source_mapping_failed" for call in mock_log.call_args_list)
 
-    def test_extract_transcripts_does_not_title_match_a_previously_observed_source(self):
-        """A repeated video must resolve within the newly observed cadence sources."""
+    def test_extract_transcripts_fail_closed_when_only_order_could_map_new_source(self):
+        """A2: previously observed title matches must not force order-map onto a new source."""
         ingestor = nlm_batch.NLMBatchIngestor(batch_size=1)
         ingestor._nb_id = "nb-cadence-repeat"
         ingestor._previously_observed_source_ids = {"old-1"}
@@ -5918,7 +5910,46 @@ class TestNotebookCapRotation:
                     },
                 )()
             if cmd[:2] == ["source", "content"]:
-                content = ("N" if cmd[2] == "new-1" else "O") * 101
+                raise AssertionError("source content fetch should not run when mapping fails closed")
+            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
+            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                result = ingestor.extract_transcripts([vid])
+
+        assert result[vid][0] is False
+        assert result[vid][2] == "Source mapping failed"
+        assert any(call.args[0] == "nlm_batch_source_mapping_failed" for call in mock_log.call_args_list)
+
+    def test_extract_transcripts_uses_add_response_source_ids_when_lengths_match(self):
+        """A2 Rank B: same-length add-response source IDs still pair by batch submit order."""
+        ingestor = nlm_batch.NLMBatchIngestor(batch_size=2)
+        ingestor._nb_id = "nb-add-map"
+        ingestor._last_added_source_ids = ["src-a", "src-b"]
+        vid1 = "AAAAAAAAAAA"
+        vid2 = "BBBBBBBBBBB"
+
+        def fake_run_cmd(cmd, timeout=300, iteration_log=None):
+            if cmd[:2] == ["source", "list"]:
+                return type(
+                    "CompletedProcess",
+                    (),
+                    {
+                        "returncode": 0,
+                        "stdout": json.dumps(
+                            {
+                                "sources": [
+                                    {"id": "src-b", "title": "no id in title"},
+                                    {"id": "src-a", "title": "also no id"},
+                                ]
+                            }
+                        ),
+                        "stderr": "",
+                    },
+                )()
+            if cmd[:2] == ["source", "content"]:
+                source_id = cmd[2]
+                content = ("A" if source_id == "src-a" else "B") * 101
                 return type(
                     "CompletedProcess",
                     (),
@@ -5927,10 +5958,14 @@ class TestNotebookCapRotation:
             return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         with mock.patch.object(ingestor, "_run_cmd", side_effect=fake_run_cmd):
-            result = ingestor.extract_transcripts([vid])
+            with mock.patch("csf.nlm_batch.log_action") as mock_log:
+                results = ingestor.extract_transcripts([vid1, vid2])
 
-        assert result[vid][0] is True
-        assert result[vid][1] == "N" * 101
+        assert results[vid1][0] is True
+        assert results[vid1][1] == "A" * 101
+        assert results[vid2][0] is True
+        assert results[vid2][1] == "B" * 101
+        assert not any(call.args[0] == "nlm_batch_source_mapping_failed" for call in mock_log.call_args_list)
 
     def test_extract_transcripts_rejects_partial_mapping_without_order_fallback(self):
         """Partial source-list matches should fail closed instead of guessing by position."""

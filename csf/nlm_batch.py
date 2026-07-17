@@ -3027,7 +3027,11 @@ class NLMBatchIngestor:
             if source_id and video_id and video_id not in source_id_by_video_id:
                 source_id_by_video_id[video_id] = source_id
         title_match_count = sum(1 for vid in batch_ids if vid in source_id_by_video_id)
-        order_fallback_count = max(0, len(batch_ids) - title_match_count)
+        # A2: uncorroborated list-order pairing is never used to "fill gaps."
+        # order_fallback_count is retained for telemetry as the gap size that would
+        # previously have been order-mapped (always 0 successful order fills).
+        uncorroborated_gap_count = max(0, len(batch_ids) - title_match_count)
+        order_fallback_count = 0
         canonical_source_ids = [
             str(source_id).strip()
             for source_id in getattr(self, "_last_added_source_ids", [])
@@ -3035,38 +3039,26 @@ class NLMBatchIngestor:
         ]
         missing_video_ids = [vid for vid in batch_ids if vid not in source_id_by_video_id]
         mapping_failure_reason = ""
+        pairing_mode = "title_url" if not missing_video_ids else ""
+        # Rank B: source IDs from a successful add for this batch, same length as
+        # submitted video list, aligned to that list order (not notebook list order).
         if canonical_source_ids:
             if len(canonical_source_ids) != len(batch_ids):
                 mapping_failure_reason = "Source mapping failed"
+                pairing_mode = "add_response_length_mismatch"
+                order_fallback_count = uncorroborated_gap_count
             else:
                 source_id_by_video_id = dict(zip(batch_ids, canonical_source_ids))
-                source_id_list = canonical_source_ids
-                title_match_count = len(batch_ids)
-                order_fallback_count = 0
+                source_id_list = list(canonical_source_ids)
                 missing_video_ids = []
+                pairing_mode = "add_response_order"
+                order_fallback_count = 0
         elif missing_video_ids:
-            fallback_candidate_source_ids = (
-                newly_observed_source_id_list
-                if previously_observed_source_ids and newly_observed_source_id_list
-                else source_id_list
-            )
-            if len(fallback_candidate_source_ids) == len(batch_ids):
-                fallback_video_ids = [vid for vid in batch_ids if vid not in source_id_by_video_id]
-                used_source_ids = {str(source_id).strip() for source_id in source_id_by_video_id.values() if str(source_id or "").strip()}
-                fallback_source_ids = [
-                    source_id
-                    for source_id in fallback_candidate_source_ids
-                    if source_id not in used_source_ids
-                ]
-                if len(fallback_source_ids) == len(fallback_video_ids):
-                    for vid, source_id in zip(fallback_video_ids, fallback_source_ids):
-                        source_id_by_video_id[vid] = source_id
-                    missing_video_ids = []
-                    order_fallback_count = len(fallback_video_ids)
-                else:
-                    mapping_failure_reason = "Source mapping failed"
-            else:
-                mapping_failure_reason = "Source mapping failed"
+            # Fail closed: do not zip remaining (or all) videos to source-list order
+            # without title/url/video_id corroboration or a same-length add-response map.
+            mapping_failure_reason = "Source mapping failed"
+            pairing_mode = "fail_closed_uncorroborated"
+            order_fallback_count = len(missing_video_ids)
         duplicate_source_ids = []
         if not mapping_failure_reason:
             seen_source_ids: dict[str, int] = {}
@@ -3075,6 +3067,7 @@ class NLMBatchIngestor:
             duplicate_source_ids = [source_id for source_id, count in seen_source_ids.items() if count > 1]
             if duplicate_source_ids:
                 mapping_failure_reason = "Source mapping failed"
+                pairing_mode = "duplicate_source_ids"
         if mapping_failure_reason:
             log_action(
                 "nlm_batch_source_mapping_failed",
@@ -3083,6 +3076,7 @@ class NLMBatchIngestor:
                     "batch_size": len(batch_ids),
                     "source_id_title_match_count": title_match_count,
                     "source_id_order_fallback_count": order_fallback_count,
+                    "pairing_mode": pairing_mode,
                     "duplicate_source_ids": duplicate_source_ids,
                     "canonical_source_id_count": len(canonical_source_ids),
                     "expected_source_id_count": len(batch_ids),
