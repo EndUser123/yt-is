@@ -45,8 +45,10 @@ with open(r"C:\Users\brsth\Downloads\playlist.json", encoding="utf-8") as f:
         entries.append(entry)
 
 print(f"Re-importing {len(entries)} playlist entries...")
-count = set_status_batch(entries)
-print(f"Inserted/updated: {count}")
+result = set_status_batch(entries)
+print(f"Inserted/updated: {result.ok_count}")
+if result.fail_count:
+    print(f"Failed rows: {result.fail_count}")
 
 import sqlite3
 conn = sqlite3.connect(r"P:\.data\yt-is\batch_status.sqlite")
