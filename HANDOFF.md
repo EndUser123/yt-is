@@ -1,20 +1,43 @@
 # yt-is Handoff
 
-Last updated: 2026-07-17
+Last updated: 2026-07-18 (worktree policy hook added)
 
 ## Current state
 
 ## Industrial trust floor (2026-07-17)
 
-**Status:** C1+C2 implemented on branch trust-floor/phase-1. /check PASS (18/18 focused tests). **Not yet merged to main.**
+**Status:** C1+C2 implemented on branch trust-floor/phase-1. /check PASS (18/18 focused tests). **Merged to main at `073c4ee` on 2026-07-18 01:18.**
 
 **Charter:** docs/operations/root-cause-program.md
 
 **What changed:** C1 shared-retry lease guards (enqueue/mark_complete/mark_permanent_failure claimant-aware, drain skips deferred). C2 cache write gate (bind_verified=True refuses synthetic keys; importer resolves real YouTube IDs). A2 fail-closed mapping already on refactor branch @ 2b96382.
 
-**Until merged:** Do not treat industrial shared cache or shared-retry as trustworthy for optimal VPH claims. C3 is next.
+**Merged (2026-07-18):** Industrial shared cache and shared-retry are now trustworthy for optimal VPH claims. C3 is next.
 
 **Pre-existing:** 40 failures in test_nlm_batch.py are from A1+A2 work, NOT C1+C2.
+
+## Worktree status (2026-07-18, after Phase C cleanup)
+
+Two worktrees remain. The two external stale worktree dirs (`trust-floor/phase-1`, `refactor/yt-is-control-planes`) were removed in Phase C; their branches are preserved as refs and protected by backup tags `backup/*-2026-07-18`. Both branch tips remain reachable from main.
+
+| Worktree | Branch | Behind main |
+|----------|--------|------------:|
+| `P:/packages/yt-is` | `main` (`073c4ee`) | — |
+| `P:/packages/yt-is/.claude/worktrees/ai-task-20260715-182239` | `ai/import-safe-upsert-20260715-182239` (`4181e27`) | 41 |
+
+The third worktree lives inside `P:/packages/yt-is/.claude/worktrees/` (a tracked path) — Phase D decision pending. A `merge-a2` branch (`250cf51`) also exists with 1 commit ahead of main; its tip is NOT reachable from main and is preserved by tag `backup/merge-a2-2026-07-18`.
+
+## Worktree policy hook (2026-07-18)
+
+A PreToolUse hook is installed at `P:/packages/yt-is/.claude/hooks/worktree_policy_PreToolUse.py` and registered via `P:/packages/yt-is/.claude/settings.json`. It **blocks** direct `git worktree` Bash invocations by default to enforce the managed worktree lifecycle (see `P:/docs/worktree-lifecycle-design.md`).
+
+| Invocation | Behavior |
+|------------|----------|
+| `git worktree <anything>` | BLOCKED with denial reason pointing to the managed CLI |
+| `git status`, `git commit`, etc. | Allowed (only `git worktree` is intercepted) |
+| `GO_WORKTREE_SAFETY_BYPASS=1 git worktree ...` | Allowed with stderr advisory |
+
+Scope is package-level (yt-is only); other packages are unaffected. This deviates from the design's recommended default of `warn-then-block-after-2-weeks` — yt-is is running block-by-default as the pilot implementation.
 
 
 - **Candidate 6 per-attempt telemetry is live-proven (2026-07-01).** The 11-field
