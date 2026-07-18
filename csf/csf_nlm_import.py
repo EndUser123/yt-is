@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -168,11 +169,37 @@ def extract_transcript(notebook_id: str, video_title: str) -> str | None:
     return answer
 
 
+def _extract_real_video_id_from_title(title: str) -> str | None:
+    """Find a real YouTube video_id (11 chars, [A-Za-z0-9_-]) embedded in title.
+
+    NotebookLM source titles frequently include the YouTube video id, e.g.
+    "Some Title (dQw4w9WgXcQ)" or "Some Title - dQw4w9WgXcQ". This is the
+    only safe bind the importer has; the NotebookLM ``source_id`` is opaque
+    and hashing it (MD5) produces synthetic keys that pollute the shared
+    transcript cache.
+    """
+    if not title:
+        return None
+    matches = re.findall(r"[A-Za-z0-9_-]{11}", title or "")
+    if not matches:
+        return None
+    candidate = matches[-1]
+    # Skip obviously all-uppercase hex (likely MD5 of source_id, not real id).
+    if re.fullmatch(r"[0-9A-F]{11}", candidate):
+        return None
+    return candidate
+
+
 def source_id_to_video_id(source_id: str) -> str:
     """Convert NotebookLM source ID to 11-char video ID.
 
     Uses MD5 hash truncated to 11 chars (alphanumeric only).
     This ensures compatibility with cache.py validation.
+
+    C2 trust-floor: this synthetic key MUST NOT be written to the shared
+    transcript cache. Callers that still need to dedupe by source_id should
+    use a local store; downstream cache writes must use a real YouTube
+    video_id obtained via ``_extract_real_video_id_from_title``.
     """
     # Hash the source ID
     hash_obj = hashlib.md5(source_id.encode())
@@ -211,16 +238,28 @@ def import_notebook_transcripts(
     videos = get_video_list(notebook_id)
     if not videos:
         print(f"  No videos found")
-        return {"total": 0, "imported": 0, "skipped": 0, "failed": 0}
+        return {"total": 0, "imported": 0, "skipped": 0, "refused": 0, "failed": 0}
 
     print(f"  Found {len(videos)} videos")
 
-    stats = {"total": len(videos), "imported": 0, "skipped": 0, "failed": 0}
+    stats = {"total": len(videos), "imported": 0, "skipped": 0, "refused": 0, "failed": 0}
 
     for i, video in enumerate(videos, 1):
         source_id = video["source_id"]
         title = video["title"]
-        video_id = source_id_to_video_id(source_id)
+        real_video_id = _extract_real_video_id_from_title(title)
+        if not real_video_id:
+            # C2 trust-floor: refuse to write a synthetic key. Record refusal
+            # distinctly so callers can fix titles / re-run with a separate
+            # bind pass instead of seeing the row silently dropped.
+            print(
+                f"  [{i}/{len(videos)}] REFUSED (no real video_id in title): "
+                f"{title[:50]}...",
+                flush=True,
+            )
+            stats["refused"] += 1
+            continue
+        video_id = real_video_id
 
         # Check if already cached
         if has_cached_transcript(video_id):
@@ -245,7 +284,7 @@ def import_notebook_transcripts(
             stats["failed"] += 1
             continue
 
-        # Cache the transcript
+        # Cache the transcript with a verified real video_id.
         try:
             set_cached_transcript(
                 video_id,
@@ -260,6 +299,7 @@ def import_notebook_transcripts(
                     "source_video_id": video_id,
                     "importer": "csf_nlm_import",
                 },
+                bind_verified=True,
             )
             print("OK", flush=True)
             stats["imported"] += 1

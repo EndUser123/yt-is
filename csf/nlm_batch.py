@@ -3027,7 +3027,11 @@ class NLMBatchIngestor:
             if source_id and video_id and video_id not in source_id_by_video_id:
                 source_id_by_video_id[video_id] = source_id
         title_match_count = sum(1 for vid in batch_ids if vid in source_id_by_video_id)
-        order_fallback_count = max(0, len(batch_ids) - title_match_count)
+        # A2: uncorroborated list-order pairing is never used to "fill gaps."
+        # order_fallback_count is retained for telemetry as the gap size that would
+        # previously have been order-mapped (always 0 successful order fills).
+        uncorroborated_gap_count = max(0, len(batch_ids) - title_match_count)
+        order_fallback_count = 0
         canonical_source_ids = [
             str(source_id).strip()
             for source_id in getattr(self, "_last_added_source_ids", [])
@@ -3035,38 +3039,26 @@ class NLMBatchIngestor:
         ]
         missing_video_ids = [vid for vid in batch_ids if vid not in source_id_by_video_id]
         mapping_failure_reason = ""
+        pairing_mode = "title_url" if not missing_video_ids else ""
+        # Rank B: source IDs from a successful add for this batch, same length as
+        # submitted video list, aligned to that list order (not notebook list order).
         if canonical_source_ids:
             if len(canonical_source_ids) != len(batch_ids):
                 mapping_failure_reason = "Source mapping failed"
+                pairing_mode = "add_response_length_mismatch"
+                order_fallback_count = uncorroborated_gap_count
             else:
                 source_id_by_video_id = dict(zip(batch_ids, canonical_source_ids))
-                source_id_list = canonical_source_ids
-                title_match_count = len(batch_ids)
-                order_fallback_count = 0
+                source_id_list = list(canonical_source_ids)
                 missing_video_ids = []
+                pairing_mode = "add_response_order"
+                order_fallback_count = 0
         elif missing_video_ids:
-            fallback_candidate_source_ids = (
-                newly_observed_source_id_list
-                if previously_observed_source_ids and newly_observed_source_id_list
-                else source_id_list
-            )
-            if len(fallback_candidate_source_ids) == len(batch_ids):
-                fallback_video_ids = [vid for vid in batch_ids if vid not in source_id_by_video_id]
-                used_source_ids = {str(source_id).strip() for source_id in source_id_by_video_id.values() if str(source_id or "").strip()}
-                fallback_source_ids = [
-                    source_id
-                    for source_id in fallback_candidate_source_ids
-                    if source_id not in used_source_ids
-                ]
-                if len(fallback_source_ids) == len(fallback_video_ids):
-                    for vid, source_id in zip(fallback_video_ids, fallback_source_ids):
-                        source_id_by_video_id[vid] = source_id
-                    missing_video_ids = []
-                    order_fallback_count = len(fallback_video_ids)
-                else:
-                    mapping_failure_reason = "Source mapping failed"
-            else:
-                mapping_failure_reason = "Source mapping failed"
+            # Fail closed: do not zip remaining (or all) videos to source-list order
+            # without title/url/video_id corroboration or a same-length add-response map.
+            mapping_failure_reason = "Source mapping failed"
+            pairing_mode = "fail_closed_uncorroborated"
+            order_fallback_count = len(missing_video_ids)
         duplicate_source_ids = []
         if not mapping_failure_reason:
             seen_source_ids: dict[str, int] = {}
@@ -3075,6 +3067,7 @@ class NLMBatchIngestor:
             duplicate_source_ids = [source_id for source_id, count in seen_source_ids.items() if count > 1]
             if duplicate_source_ids:
                 mapping_failure_reason = "Source mapping failed"
+                pairing_mode = "duplicate_source_ids"
         if mapping_failure_reason:
             log_action(
                 "nlm_batch_source_mapping_failed",
@@ -3083,6 +3076,7 @@ class NLMBatchIngestor:
                     "batch_size": len(batch_ids),
                     "source_id_title_match_count": title_match_count,
                     "source_id_order_fallback_count": order_fallback_count,
+                    "pairing_mode": pairing_mode,
                     "duplicate_source_ids": duplicate_source_ids,
                     "canonical_source_id_count": len(canonical_source_ids),
                     "expected_source_id_count": len(batch_ids),
@@ -4384,6 +4378,11 @@ class NLMBatchIngestor:
         shared_retry_deferred_count = 0
         shared_retry_recovered_count = 0
         shared_retry_final_failed_count = 0
+        # C1 trust-floor: always-defined set of video IDs deferred to the
+        # shared retry pool. Empty when shared pool is disabled or no defer
+        # happened; the extract epilogue skips the "Source not found" fill-in
+        # for any vid in this set.
+        shared_retry_deferred_video_ids: frozenset[str] = frozenset()
         retry_queue_drain_ready_age_s: float | None = None
         retry_queue_wait_elapsed_s_total = 0.0
         retry_queue_wait_elapsed_s_max = 0.0
@@ -4417,6 +4416,13 @@ class NLMBatchIngestor:
                         "source_content_shared_retry_pool_enabled": _SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED,
                         "materialization_ready_at_epoch": ready_reference_epoch,
                     },
+                )
+                # C1 trust-floor: track which video IDs were deferred to the
+                # shared retry pool so the extract epilogue and downstream
+                # callers (worker_main drain) do not treat them as "Source not
+                # found" failures.
+                shared_retry_deferred_video_ids = frozenset(
+                    vid for vid, _src, _err in retry_queue
                 )
                 for vid, _source_id, queued_error in retry_queue:
                     enqueue_shared_retry(
@@ -4797,6 +4803,13 @@ class NLMBatchIngestor:
 
         for vid in batch_ids:
             if vid not in results:
+                # C1 trust-floor: do NOT fill deferred (shared-retry-pool
+                # re-queued) video IDs as "Source not found". The extract path
+                # enqueued them for the next drain attempt and that signal must
+                # survive to worker_main so the row stays claimable instead of
+                # being permanent-failed.
+                if vid in shared_retry_deferred_video_ids:
+                    continue
                 results[vid] = (False, None, "Source not found")
         succeeded = sum(1 for ok, _, _ in results.values() if ok)
         log_action(
@@ -4930,6 +4943,8 @@ class NLMBatchIngestor:
             "shared_retry_deferred_count": shared_retry_deferred_count,
             "shared_retry_recovered_count": shared_retry_recovered_count,
             "shared_retry_final_failed_count": shared_retry_final_failed_count,
+            # C1 trust-floor: deferred video_ids exposed for worker drain.
+            "shared_retry_deferred_video_ids": sorted(shared_retry_deferred_video_ids),
             "retry_queue_delay_s": _SOURCE_CONTENT_RETRY_QUEUE_DELAY_S,
             "retry_queue_budget_s": _SOURCE_CONTENT_RETRY_QUEUE_BUDGET_S,
             "retry_queue_drain_ready_age_s": retry_queue_drain_ready_age_s,
@@ -6354,6 +6369,11 @@ class NLMReusableIngestor:
             "shared_retry_deferred_count": int(extract_metrics.get("shared_retry_deferred_count", 0) or 0),
             "shared_retry_recovered_count": int(extract_metrics.get("shared_retry_recovered_count", 0) or 0),
             "shared_retry_final_failed_count": int(extract_metrics.get("shared_retry_final_failed_count", 0) or 0),
+            # C1 trust-floor: expose the actual deferred video_ids so worker_main
+            # drain can skip permanent-fail for them. Frozenset for cheap membership.
+            "shared_retry_deferred_video_ids": list(
+                extract_metrics.get("shared_retry_deferred_video_ids", frozenset()) or frozenset()
+            ),
             "materialization_ready_at_epoch": float(extract_metrics.get("materialization_ready_at_epoch", 0) or 0.0),
         }
         return results

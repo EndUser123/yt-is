@@ -292,6 +292,7 @@ def set_cached_transcript(
     transcript: str,
     *,
     metadata: Mapping[str, Any] | None = None,
+    bind_verified: bool = True,
 ) -> None:
     """Cache a transcript entry.
 
@@ -303,11 +304,24 @@ def set_cached_transcript(
         source: Transcript source ('cli', 'youtube_transcript_api', 'youtubei', 'sdk')
         transcript: The transcript text to cache
         metadata: Optional structured metadata payload to persist losslessly as JSON.
+        bind_verified: C2 trust-floor. When False, refuse the write — the caller
+            has not bound the video_id to a real YouTube video (e.g. MD5 of a
+            NotebookLM source id) and writing to the shared cache would poison
+            downstream lookups. Defaults to True for back-compat with the
+            validated industrial pipeline; the importer MUST pass False (or, better,
+            refuse to write synthetic keys).
 
     Raises:
         Silently ignored for invalid video_id (no exception raised).
+        Silently refused when bind_verified is False (logs a structured warning).
     """
     if not _validate_video_id(video_id):
+        return
+
+    if not bind_verified:
+        # C2 trust-floor: refuse unbound writes to the shared cache. This is the
+        # gate that keeps MD5-source-id keys out of transcripts.sqlite.
+        _log_unbound_write_skip(video_id, lang, source)
         return
 
     from csf.terminal_context import resolve_tid
@@ -327,6 +341,84 @@ def set_cached_transcript(
         cached_at=now,
         metadata_json=metadata_json,
     )
+
+
+def _log_unbound_write_skip(video_id: str, lang: str, source: str) -> None:
+    """Log (don't raise) when a caller tries to write a non-bound key."""
+    try:
+        from csf.csf_logging import log_action
+
+        log_action(
+            "transcript_cache_unbound_write_skipped",
+            {
+                "video_id": video_id,
+                "lang": lang,
+                "source": source,
+                "reason": "bind_verified_false",
+            },
+        )
+    except Exception:
+        # Logging must never raise from this gate.
+        pass
+
+
+def replace_cached_transcript_if_better(
+    video_id: str,
+    lang: str,
+    source: str,
+    transcript: str,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+    min_length_delta: int = 0,
+) -> bool:
+    """C2 trust-floor: upgrade a cached transcript when new content is better.
+
+    INT-007 acceptance: if the new transcript is longer by at least
+    ``min_length_delta`` characters than the existing entry, replace it.
+    Otherwise keep the existing (first-write-wins preserved).
+
+    Returns True if the entry was upgraded, False if the existing was kept.
+    """
+    if not _validate_video_id(video_id):
+        return False
+
+    existing = get_cached_transcript(video_id, lang, source)
+    if existing is None:
+        # No existing entry; just write fresh.
+        set_cached_transcript(
+            video_id, lang, source, transcript, metadata=metadata, bind_verified=True
+        )
+        return True
+
+    existing_len = len(existing.transcript or "")
+    new_len = len(transcript or "")
+    if new_len > existing_len + min_length_delta:
+        # Upgrade: delete old entry, write new.
+        from csf.terminal_context import resolve_tid
+        terminal_id = resolve_tid()
+        cache_key = _make_cache_key(video_id, lang, source)
+        now = datetime.now()
+        metadata_json = _normalize_metadata(metadata)
+        storage = _get_storage(terminal_id)
+        # Direct UPDATE instead of INSERT OR IGNORE
+        with _db_access_lock:
+            conn = _connect_shared_db()
+            conn.execute("PRAGMA journal_mode=WAL")
+            try:
+                conn.execute(
+                    """
+                    UPDATE transcript_cache
+                    SET transcript=?, metadata_json=?, cached_at=?
+                    WHERE cache_key=?
+                    """,
+                    (transcript, metadata_json, now.isoformat(), cache_key),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return True
+    return False
+
 
 
 def delete_cached_transcripts(video_ids: list[str]) -> int:

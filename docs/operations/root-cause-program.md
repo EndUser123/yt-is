@@ -192,8 +192,7 @@ When a contract ships:
 
 | Date | Contract | Closed findings | Notes |
 |------|----------|-----------------|-------|
-| 2026-07-17 | **C1** Work outcomes + shared-retry lease | CON-001, CON-002, CON-003, CON-004, CON-005 (CON-006 / CON-008 risk items not closed by C1) | Closed on `trust-floor/phase-1 @ 50be8d9`. `enqueue` claim-guard + claimant-aware `mark_*` + extract epilogue skip for deferred + `shared_retry_deferred_video_ids` exposed to worker drain. 8/8 `test_shared_retry_pool.py` green; no new regressions in broader sweep (40 pre-existing A1+A2 failures confirmed unrelated). Multi-worker crash + WAL falsifier (GLM critique) deferred to hardening pass. |
-| 2026-07-17 | **C2** Identity + cache write gate | INT-005 (MD5 keys refused), INT-006 (A2 fail-closed mapping carried via refactor branch `2b96382`), INT-007 (first-write still frozen — **partial**; quality upgrade deferred) | Closed on `trust-floor/phase-1 @ 50be8d9`. `cache.set_cached_transcript(..., bind_verified=True)` refuses unbound writes; `csf_nlm_import` resolves real YouTube id from title, counts unbound as `refused` (never synthetic). 10/10 `test_csf_nlm_import.py` green. **Remaining:** INT-007 quality upgrade (`replace_cached_transcript_if_better`) deferred to follow-up. |
+| — | — | — | none closed yet |
 
 ---
 

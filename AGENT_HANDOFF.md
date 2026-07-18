@@ -17,10 +17,11 @@ Also valid: `P:/.worktrees/yt-is-refactor-control-planes/AGENT_HANDOFF.md`
 | **One writer** | Only one agent edits code at a time in this worktree |
 | **This file** | Both agents **append** updates below (newest section on top under “Log”). Do not delete prior log entries. |
 | **Authority** | This handoff + the four outcomes. Do not replace with a mega-charter or erase the backlog. |
-| **Main** | Do not edit `P:\packages\yt-is` main checkout for this work. Work here only. |
-| **Git** | Repo = package `P:\packages\yt-is` worktree. Branch `refactor/yt-is-control-planes`. |
+| **Main** | Do not edit `P:\packages\yt-is` main checkout for structural WIP unless promoting. Prefer this worktree for ongoing stream work. |
+| **Git** | Repo = package `P:\packages\yt-is`. Branch (create): `refactor/yt-is-control-planes`. **Re-check tips below before acting.** |
 | **Critic** | Prefer review via `git diff` / this file; do not open a second write worktree for the same change. |
 | **Live VPH** | Not an acceptance criterion for this stream. |
+| **Stale next-asks** | If a log entry’s “Next ask” contradicts **Backlog → Now** or a newer log entry, **ignore the older next-ask**. |
 
 ### Four outcomes
 
@@ -31,19 +32,24 @@ Also valid: `P:/.worktrees/yt-is-refactor-control-planes/AGENT_HANDOFF.md`
 
 ---
 
-## Workspace
+## Workspace (re-verify with git before costly work)
 
-| Item | Value |
+| Item | Value (as of 2026-07-16 director refresh) |
 |------|--------|
 | Worktree | `P:\.worktrees\yt-is-refactor-control-planes` |
 | Branch | `refactor/yt-is-control-planes` |
-| Base (at create) | `046d512` on `main` |
-| Package main (do not use for edits) | `P:\packages\yt-is` |
+| Worktree tip | `e7a8bbd` — A1 commit |
+| Package main tip | `ccfb95b` — Merge: A1 |
+| Base (at create) | `046d512` (historical only) |
+| Package main path | `P:\packages\yt-is` |
 
 ```powershell
 cd P:\.worktrees\yt-is-refactor-control-planes
 git status --short
-git diff
+git rev-parse --short HEAD
+cd P:\packages\yt-is
+git rev-parse --short HEAD
+git log -3 --oneline
 ```
 
 ---
@@ -54,13 +60,19 @@ git diff
 
 | ID | Item | Status |
 |----|------|--------|
-| **A1** | `set_status_batch`: no silent `pass`; log + `fail_count` | **DONE in worktree (uncommitted)** — ready for critic checklist + commit; do not re-implement |
+| — | *(none required)* | Director: merge A2 to main, or start B1, or stop |
+
+### Done
+
+| ID | Item | Status |
+|----|------|--------|
+| **A1** | `set_status_batch`: no silent `pass`; log + `fail_count` | **DONE on main** — `e7a8bbd` + merge `ccfb95b`. Do **not** re-implement. |
+| **A2** | Mapping: fail-closed uncorroborated list-order pairing | **DONE on branch** — `2b96382` (worktree). Merge to main when ready. |
 
 ### Next
 
 | ID | Item | Notes |
 |----|------|--------|
-| **A2** | Mapping: reject uncorroborated list-order pairing (simple rule; not rank theater) | After A1 commit/promote decision |
 | **B1** | Path isolation live vs trial (`RuntimeLayout`-style) | Careful defaults for daily `sync`/`fetch` |
 | **C1** | Extract mapping to single policy owner from `nlm_batch` | No dual policy on promote |
 
@@ -71,77 +83,111 @@ git diff
 - Thin `csf-source` as needed  
 - Auth/Chrome lifecycle track (separate)  
 - Named trial profiles / run manifest  
+- SQLite param limit in `cache.py:delete_cached_transcripts` (from agy list)  
+- `import_video_batch` per-row try/except (from agy list)  
+- Triple-escaped path constants (from agy list)  
 
 ### Non-goals (this stream)
 
 - Multi-month four-plane charter novel  
 - Live same-shape VPH as refactor proof  
 - Two agents writing the same tree concurrently  
+- Re-doing A1 or “rebase then implement A1”  
 
 ---
 
-## A1 detail (for reviewers)
+## A1 detail (closed — for archaeology)
 
 **Intent:** Per-row failures in bulk status writes must be logged and counted; callers can see partial failure.
 
-**Return type change:** `set_status_batch` → `SetStatusBatchResult(ok_count, fail_count)` (NamedTuple). Not a bare `int`.
+**Return type:** `set_status_batch` → `SetStatusBatchResult(ok_count, fail_count)` (NamedTuple).
 
 **Logs:**
 
 - `set_status_batch_row_failed` — per row (`video_id`, `error`, `error_type`)  
 - `set_status_batch_completed_with_failures` — when `fail_count > 0`  
 
-**Files touched (worktree):**
+**Files:**
 
 - `csf/batch_status.py`  
 - `tests/test_batch_status.py`  
 - `scripts/import_video_ids.py`  
 - `scripts/restore_playlist.py`  
+- `AGENT_HANDOFF.md` (this file; committed with A1)  
 
-**Verification (worktree):**
+**Git:** `e7a8bbd` on branch; merged to main as `ccfb95b`.
 
-```text
+**Verification (on main or worktree tip):**
+
+```powershell
+cd P:\packages\yt-is
 python -m pytest tests/test_batch_status.py -q
-# 40 passed (including TestSetStatusBatch with failure log/count test)
 ```
 
-**Git:** changes present, **not committed** unless a later log entry says otherwise.
+### Critic checklist (A1) — closed by ship
 
----
-
-## Critic checklist (A1)
-
-- [ ] No bare `pass` on per-row exception  
-- [ ] fail_count and logs present  
-- [ ] Good rows still succeed when one row fails  
-- [ ] Tests assert log + counts  
-- [ ] Callers that print/use return value updated  
-- [ ] No edits on main package checkout  
+- [x] No bare `pass` on per-row exception (implementation: log + fail_count)  
+- [x] fail_count and logs present  
+- [x] Good rows still succeed when one row fails (tests)  
+- [x] Tests assert log + counts  
+- [x] Callers that print/use return value updated  
+- [x] Landed via branch merge (not ad-hoc main WIP for A1 body)  
 
 ---
 
 ## Log (newest first)
 
-### 2026-07-16 — Grok (director correction)
+### 2026-07-17 — Grok (builder, A2 committed)
 
-- **A1 status:** Already **implemented** in this worktree (uncommitted). Not “still to implement.”
-- **Return type:** Already `SetStatusBatchResult(ok_count, fail_count)` NamedTuple — not bare `int`.
-- **Rebase claim:** **False** as of this check. Package `main` and worktree tip are both `046d512`. No `main` commits after base for `csf/batch_status.py`. Do **not** rebase “before implementing A1.”
-- Claude critic entry below is kept for history; do **not** follow its “Next ask: Rebase… then implement A1.”
-- **Next ask:** Critic reviews **existing** A1 diff against the checklist; then **commit** A1 (+ this handoff) when green. A2 only after A1 accepted/merged or explicitly deferred.
-- **Verification (re-run before commit):**  
-  `cd P:\.worktrees\yt-is-refactor-control-planes; python -m pytest tests/test_batch_status.py -q`
+- **A2 committed** on `refactor/yt-is-control-planes` as `2b96382`.
+- Pre-commit gitleaks report path fixed for worktrees (`git-common-dir`) so secret scan works outside main checkout.
+- **Next ask:** Merge A2 to main when director ready; then B1 or stop. Do not re-implement A2.
 
-### 2026-07-16 — Grok (builder)
+### 2026-07-16 — Grok (builder, A2)
 
-- Created worktree `P:\.worktrees\yt-is-refactor-control-planes` branch `refactor/yt-is-control-planes` from `046d512`.  
-- Implemented **A1** as above; tests 40 passed; **uncommitted**.  
-- Created this handoff file for dual-LLM coordination.  
-- **Ask of next agent:** review A1 diff, or commit A1, or start A2 only after A1 is accepted. Do not rewrite this file into a charter; append log entries.
+- **A2 implemented** in worktree (was uncommitted; now superseded by commit entry above): remove source-list **order fallback** fills when title/url/video_id corroboration is incomplete.
+- **Still allowed (Rank B):** same-length `_last_added_source_ids` from successful add, zipped to this batch’s `batch_ids` order (not notebook list order).
+- **Fail closed:** any remaining `missing_video_ids` without Rank B → `Source mapping failed` + `nlm_batch_source_mapping_failed` with `pairing_mode=fail_closed_uncorroborated`.
+- **Files:** `csf/nlm_batch.py`, `tests/test_nlm_batch.py`
+- **Tests:** mapping-related subset 9 passed; `extract_transcripts` filter 8 passed.
+- **Next ask:** Critic reviews A2 diff; then commit (and merge to main when director says). Do not start B1 until A2 accepted.
+
+### 2026-07-16 — Grok (director refresh after review)
+
+- Reviewed handoff vs git: **A1 is committed and merged.**  
+- Supersedes all “rebase then implement A1” / “still uncommitted” next-asks (Claude entries below kept for history only).  
+- Claude follow-up content that remains **valid**: `6e2cbec` db_path forward fix; agy FP on bare-except; order-fallback + other pre-existing issues as later backlog.  
+- **Next ask:** Director chooses **A2** (mapping fail-closed, simple rule) vs stop / other backlog item. Re-verify tips with `git rev-parse` before starting A2.  
+
+### 2026-07-16 — Claude (director, follow-up) — SUPERSEDED next-ask
+
+- **Agy gap-to-opportunity review ran** — Gemini reviewed yt-is and found 7 issues. One was my regression: the `--db-path` CLI flag I added in `fetch_custom_sources.py` was correctly passed to `get_pending()` but silently dropped at `mark_complete`/`mark_failed` calls. Fixed: forwarded `db_path=db_path` at all 4 call sites (commit `6e2cbec` on main).  
+- **Agy false-positive:** claimed `reset_sources()` in `nlm_batch.py:4951` had a bare `except: pass`. Actually `except Exception:`, not bare. Worth noting that agy has slightly lower precision here.  
+- **Other pre-existing findings** (not regressions, not A1): order-fallback zip at `nlm_batch.py:3042,3062-3063` succeeds silently (mapping scramble risk), triple-escaped backslash paths across 6 files, SQLite parameter limit in `cache.py:delete_cached_transcripts`, `import_video_batch` lacks per-row try/except.  
+- **A1 status (then claimed):** still uncommitted / needs rebase — **FALSE after ship; ignore.**  
+- **Next ask (then):** Rebase then implement A1 — **SUPERSEDED; do not follow.**  
+
+### 2026-07-16 — Grok (director correction) — historical
+
+- Corrected earlier false “rebase before A1” while both tips were still `046d512` and A1 was uncommitted WIP.  
+- Superseded by commit `e7a8bbd` + merge `ccfb95b` + this refresh entry.  
+
+### 2026-07-16 — Grok (builder) — historical
+
+- Created worktree / branch from `046d512`.  
+- Implemented A1; tests 40 passed.  
+- Created this handoff.  
+
+### 2026-07-16 — Claude (critic/director) — SUPERSEDED next-ask
+
+- Confirmed A1 priority; described bare `except: pass` and return-type change (later implemented).  
+- Charter → grounded issue list context.  
+- Claimed worktree behind main / rebase needed — **was wrong or became wrong; do not follow.**  
+- **Next ask:** Rebase then implement A1 — **SUPERSEDED.**  
 
 ---
 
-## How to append (copy template)
+## How to append (template — keep at end of file)
 
 ```markdown
 ### YYYY-MM-DD — <name> (<builder|critic|director>)
@@ -153,27 +199,4 @@ python -m pytest tests/test_batch_status.py -q
 - Next ask:
 ```
 
-
-### 2026-07-16 — Claude (critic/director)
-
-- **Red-team review of A1 scope:** A1 (no silent pass + fail_count in set_status_batch) confirmed as the #1 priority fix. Currently bare except: pass at batch_status.py:1528-1530. Return type must change from int to tuple[int, int] or NamedTuple. Requirements: log video_id + error, increment fail_count, update all callers.
-- **Charter rewrite:** The speculative 5-slice refactor-charter.md was replaced (on main) with a grounded issue list. A2 (mapping ranks) downranked — rank taxonomy does not exist in code, would be new feature. Real mapping issue: order-fallback zip at nlm_batch.py:3042,3062-3063 succeeds silently.
-- **Already shipped on main:** UPSERT guard, transient field consistency fix, reusable notebook pipeline in fetch_custom_sources.py, batch_status.py docstring correction. May conflict with this worktree — check git diff main...refactor/yt-is-control-planes before implementing A1.
-- **A1 status:** Still uncommitted in this worktree. Base 046d512 predates ~8 commits on main touching same files. Rebase or merge before implementing.
-- **Blockers:** Worktree behind main by commits touching batch_status.py. Rebase needed.
-- **Next ask:** Rebase worktree onto current main, then implement A1.
-
----
-
-
-
-### 2026-07-16 — Claude (director, follow-up)
-
-- **Agy gap-to-opportunity review ran** — Gemini reviewed yt-is and found 7 issues. One was my regression: the `--db-path` CLI flag I added in `fetch_custom_sources.py` was correctly passed to `get_pending()` but silently dropped at `mark_complete`/`mark_failed` calls. Fixed: forwarded `db_path=db_path` at all 4 call sites (commit `6e2cbec` on main).
-- **Agy false-positive:** claimed `reset_sources()` in `nlm_batch.py:4951` had a bare `except: pass`. Actually `except Exception:`, not bare. Worth noting that agy has slightly lower precision here.
-- **Other pre-existing findings** (not regressions, not my fix): order-fallback zip at `nlm_batch.py:3042,3062-3063` succeeds silently (mapping scramble risk), triple-escaped backslash paths across 6 files, SQLite parameter limit in `cache.py:delete_cached_transcripts`, `import_video_batch` lacks per-row try/except.
-- **A1 status unchanged** — still uncommitted in this worktree, still needs rebase.
-- **Next ask:** Rebase worktree onto current main, then implement A1.
-
----
-
+Rules: newest log entry **above** older ones; update **Backlog → Now** when status changes; never leave a Next ask that contradicts Now.
