@@ -47,12 +47,14 @@ Tests: 31 passed, 2 skipped. New `test_16_unreachable_branch_preserved_without_a
 
 | # | PR | Dependency | Status | Notes |
 |---|----|-----------:|--------|-------|
-| **2** | `worktree_lifecycle.py` + `RepoPolicy` (pure refactor; extract `safe_delete_branch`) | PR 1 ✅ | not started | Smallest unit; pure library; **safe to do regardless of hook-in-production verification** |
-| **3** | `preflight.py` (locks + Win32 process + reachability) | PR 2 | not started | |
-| **4** | `worktree_cleanup.py` CLI + `handoff_sync.py` (closes PR 1's `--force`+rmtree residual risk) | PR 2 + PR 3 | not started | **Combine with PR 3** — splitting creates a window where `worktree_cleanup.py remove` runs without preflight gating it |
-| **5** | `worktree-policy.toml` + automated HANDOFF.md sync (sentinel block) | PR 4 | not started | **YAGNI for solo dev** — multi-agent coordination machinery may be over-engineered; consider demoting to optional or deferring until C3 lands |
+| **2** | `worktree_lifecycle.py` + `RepoPolicy` (pure refactor; extract `safe_delete_branch`) | PR 1 ✅ | **DONE** (`07d2da3`) | Smallest unit; pure library; safe to do regardless of hook-in-production verification |
+| **3** | `preflight.py` (locks + Win32 process + reachability) | PR 2 | **DONE** (`7db70a0`) | Includes Windows `Get-CimInstance Win32_Process` scan with path-injection hardening |
+| **4** | `worktree_cleanup.py` CLI + `handoff_sync.py` (closes PR 1's `--force`+rmtree residual risk) | PR 2 + PR 3 | **DONE** (`8617d0b`) | Combined with PR 3 per Claude review. CLI surface + HANDOFF.md sentinel sync |
+| **5** | `worktree-policy.toml` + automated HANDOFF.md sync (sentinel block) | PR 4 | **DONE** (`2506eef`) | Policy file shipped on yt-is; AGENTS.md link; `docs/operations/worktrees.md` generated doc; HANDOFF.md has the sentinel block |
 
-**Alternative priority — C3 (durable row-merge policy).** Per `docs/operations/root-cause-program.md` ship order, Phase 2 (C3) is the documented next PRODUCT priority (unblocks throughput claims on a 140K-video backlog). The worktree PRs above are operational hygiene, not product work. C3 is the alternative this handoff should have surfaced earlier.
+All worktree lifecycle PRs landed. State below is now: hook installed (block-by-default), CLI surface available (`worktree_cleanup.py list|preflight|remove`), policy file in repo (`worktree-policy.toml`), HANDOFF.md syncable via `handoff_sync.sync`. Pilot implementation complete on yt-is; same shape can land in other packages by copying the policy file and the cc-skills-sdlc scripts.
+
+**Alternative priority — C3 (durable row-merge policy).** Per `docs/operations/root-cause-program.md` ship order, Phase 2 (C3) is the documented next PRODUCT priority (unblocks throughput claims on a 140K-video backlog). Now that worktree lifecycle is done, C3 is the natural next direction.
 
 ## Worktree policy hook (2026-07-18)
 
