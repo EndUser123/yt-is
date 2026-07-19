@@ -192,7 +192,7 @@ When a contract ships:
 
 | Date | Contract | Closed findings | Notes |
 |------|----------|-----------------|-------|
-| — | — | — | none closed yet |
+| 2026-07-19 | C3 | INT-001, INT-002, INT-003, INT-004, INT-008 | 5 row-merge fixes (None-wipe, SELECT omit, promote REPLACE, sticky complete, hard-delete block); 10 falsifier tests pass; commit `2e2fa88` |
 
 ---
 
