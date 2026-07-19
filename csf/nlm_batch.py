@@ -36,6 +36,16 @@ from csf.youtube_page_inspector import inspect_youtube_watch_page, inspect_youtu
 run_nlm = nlm_auth_guard.run_nlm
 
 
+def _is_noninteractive_auth_env() -> bool:
+    """Check if noninteractive auth mode is enabled.
+
+    Mirrors nlm_worker_auth._is_noninteractive_auth() but kept local to
+    avoid a circular import path during the C4 refactor.
+    """
+    value = os.getenv("YTIS_NLM_AUTH_NONINTERACTIVE", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 _DEFAULT_OWNER_NOTEBOOK_STATE_PATH = Path("P:\\\\\\.data/yt-is/owner_nlm_notebook.json")
 _DEFAULT_OWNER_NOTEBOOK_TITLE = "yt-is-worker-01"
 _DEFAULT_INDUSTRIAL_WORKER_STATE_ROOT = Path("P:\\\\\\.data/yt-is/industrial-worker-states")
@@ -348,6 +358,22 @@ def _refresh_nlm_auth_session(
             family,
             timeout_s=timeout_s,
         )
+
+    # C4 fail-closed: if noninteractive mode is set and no CDP family path
+    # is configured, refuse to open a browser. Previous code fell through
+    # directly to `nlm login --force` which opens a browser page —
+    # unacceptable in background/worker contexts.
+    if _is_noninteractive_auth_env():
+        log_action(
+            "nlm_auth_failed",
+            {
+                "component": "nlm_batch",
+                "status": "noninteractive_no_cdp_family",
+                "notebooklm_profile": auth_context.profile,
+                "expected_email": expected_email or None,
+            },
+        )
+        return False
 
     try:
         login = run_nlm(
