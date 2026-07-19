@@ -41,10 +41,9 @@ def get_browser_cookies(browser: str = "firefox") -> list[str]:
     return ["--cookies-from-browser", browser]
 
 
-def validate_auth() -> bool:
-    """Validate that YouTube authentication is available.
-
-    Returns:
-        True if authentication is configured
-    """
-    return True
+# NOTE: `validate_auth()` was a permanent no-op (returned ``True`` unconditionally)
+# and was removed under C4-B (yt-is trust floor). The previous contract advertised
+# "validate that YouTube authentication is available" but did not probe anything,
+# so callers could not trust it. Real auth validation lives in
+# ``csf.nlm_batch._ensure_nlm_auth`` (which probes ``nlm login --check`` and
+# refuses cache hits that don't match the verified account fingerprint).

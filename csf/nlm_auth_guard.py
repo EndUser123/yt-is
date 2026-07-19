@@ -23,9 +23,11 @@ from csf.nlm_bootstrap import ensure_latest_nlm_cli, get_nlm_executable as _boot
 
 DEFAULT_NLM_CHROME_PROFILE_ROOT = Path.home() / ".notebooklm-mcp-cli" / "chrome-profile"
 _AUTH_CHECK_CACHE_LOCK = threading.Lock()
-# Maps (profile_lower, email_lower) -> (checked_at, session_established_at)
-# session_established_at is None until first successful login after the checked_at time
-_AUTH_CHECK_CACHE: dict[tuple[str, str], tuple[float, float | None]] = {}
+# Maps (profile_lower, email_lower) -> (checked_at, session_established_at, verified_account_lower)
+# session_established_at is None until first successful login after the checked_at time.
+# verified_account is the Account: line parsed from the last successful `nlm login --check`
+# (C4-B: the cache is bound to this fingerprint; cache hits must match it).
+_AUTH_CHECK_CACHE: dict[tuple[str, str], tuple[float, float | None, str]] = {}
 _DEFAULT_CHROME_PROFILE_PIDS_CACHE_LOCK = threading.Lock()
 _DEFAULT_CHROME_PROFILE_PIDS_CACHE: tuple[float, set[int]] | None = None
 
@@ -581,7 +583,14 @@ def auth_check_cache_key(context: NLMAuthContext) -> tuple[str, str]:
 
 
 def auth_check_cache_hit(context: NLMAuthContext, *, ttl_s: float | None = None) -> tuple[bool, float | None]:
-    """Return (is_hit, session_established_at_or_none)."""
+    """Return (is_hit, session_established_at_or_none).
+
+    A hit is only reported when (a) the entry is within TTL **and** (b) the
+    stored verified-account fingerprint matches the context's expected
+    email (when one is configured). See C4-B: the auth cache is bound to
+    a verified account fingerprint; a session swap / cookie wipe must
+    not let a stale entry authorize the worker path.
+    """
     ttl = auth_check_cache_ttl_seconds() if ttl_s is None else max(0.0, float(ttl_s))
     if ttl <= 0:
         return False, None
@@ -590,16 +599,37 @@ def auth_check_cache_hit(context: NLMAuthContext, *, ttl_s: float | None = None)
         cached = _AUTH_CHECK_CACHE.get(key)
     if cached is None:
         return False, None
-    checked_at, session_established_at = cached
-    return (time.monotonic() - checked_at) <= ttl, session_established_at
+    checked_at, session_established_at, verified_account = cached
+    if (time.monotonic() - checked_at) > ttl:
+        return False, session_established_at
+    if context.expected_email and verified_account != context.expected_email.strip().lower():
+        # Fingerprint mismatch — refuse the cache hit so the caller
+        # re-runs login --check. We keep the entry around for diagnostics
+        # but do not let it satisfy the auth contract.
+        return False, session_established_at
+    return True, session_established_at
 
 
-def auth_check_cache_store(context: NLMAuthContext, *, session_established_at: float | None = None) -> None:
+def auth_check_cache_store(
+    context: NLMAuthContext,
+    *,
+    session_established_at: float | None = None,
+    verified_account: str | None = None,
+) -> None:
+    """Persist a verified session entry bound to a real account fingerprint.
+
+    ``verified_account`` must be the Account: line from the successful
+    ``nlm login --check`` probe that proved the session. When omitted,
+    the entry uses the context's expected_email as a *best-effort*
+    fingerprint — sufficient for legacy callers that have not yet been
+    updated, but a stronger signal is to pass the actual parsed account.
+    """
     now = time.monotonic()
     if session_established_at is None:
         session_established_at = now
+    fingerprint = (verified_account or context.expected_email or "").strip().lower()
     with _AUTH_CHECK_CACHE_LOCK:
-        _AUTH_CHECK_CACHE[auth_check_cache_key(context)] = (now, session_established_at)
+        _AUTH_CHECK_CACHE[auth_check_cache_key(context)] = (now, session_established_at, fingerprint)
 
 
 def auth_check_cache_session_age(context: NLMAuthContext) -> float | None:
@@ -609,10 +639,28 @@ def auth_check_cache_session_age(context: NLMAuthContext) -> float | None:
         cached = _AUTH_CHECK_CACHE.get(key)
     if cached is None:
         return None
-    _checked_at, session_established_at = cached
+    _checked_at, session_established_at, _verified_account = cached
     if session_established_at is None:
         return None
     return time.monotonic() - session_established_at
+
+
+def auth_check_cache_verified_account(context: NLMAuthContext) -> str | None:
+    """Return the stored verified-account fingerprint for the cache key, or None."""
+    key = auth_check_cache_key(context)
+    with _AUTH_CHECK_CACHE_LOCK:
+        cached = _AUTH_CHECK_CACHE.get(key)
+    if cached is None:
+        return None
+    _checked_at, _session_established_at, verified_account = cached
+    return verified_account or None
+
+
+def auth_check_cache_clear(context: NLMAuthContext) -> None:
+    """Drop the cache entry for this context (used after a failed verification)."""
+    key = auth_check_cache_key(context)
+    with _AUTH_CHECK_CACHE_LOCK:
+        _AUTH_CHECK_CACHE.pop(key, None)
 
 
 def _ps_single_quote(value: str) -> str:

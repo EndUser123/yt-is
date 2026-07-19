@@ -205,7 +205,10 @@ class TestAuthAutoLogin:
         assert result is True
         assert refresh_calls == ["ytis-pro-worker-01"]
         assert sync_calls and sync_calls[0]["families"][0].source_profile == "ytis-pro-worker-01"
-        assert sync_calls[0]["source_session_checker"]("ytis-pro-worker-01") is True
+        # C4-B: family refresh must use a live session check (no
+        # ``lambda: True``). Passing None lets sync_worker_profiles fall
+        # back to profile_session_matches_expected as the default.
+        assert sync_calls[0]["source_session_checker"] is None
 
     def test_ensure_nlm_auth_noninteractive_without_profile_fails_closed(self, monkeypatch):
         """Noninteractive benchmark workers must not launch default-profile login flows."""
@@ -298,7 +301,8 @@ class TestAuthAutoLogin:
         assert result is True
         assert source_refresh_calls == ["ytis-free1-worker-01"]
         assert sync_calls and sync_calls[0]["families"][0].source_profile == "ytis-free1-worker-01"
-        assert sync_calls[0]["source_session_checker"]("ytis-free1-worker-01") is True
+        # C4-B: live session check, not the previous lambda: True.
+        assert sync_calls[0]["source_session_checker"] is None
 
     def test_ensure_nlm_auth_uses_profile_pinned_refresh_when_cdp_is_disabled(self, monkeypatch):
         """Hotel runs should bypass family refresh and use profile-pinned auth when CDP is disabled."""
@@ -352,6 +356,9 @@ class TestAuthAutoLogin:
         assert mock_store.call_count == 1
         assert mock_store.call_args.args[0] is auth_context
         assert mock_store.call_args.kwargs["session_established_at"] is not None
+        # C4-B: family refresh must bind the cache to the verified
+        # family account so a later cache hit cannot authorize a swap.
+        assert mock_store.call_args.kwargs["verified_account"] == family.expected_email
 
     def test_ensure_nlm_auth_family_refresh_fails_closed_when_source_refresh_rejects_default_chrome(self, monkeypatch):
         """A family refresh must fail closed if the dedicated source path refuses to recover."""
@@ -841,7 +848,8 @@ class TestAuthAutoLogin:
         assert stop_calls == [{24680}]
         assert refresh_calls == ["ytis-free1-worker-01"]
         assert sync_calls and sync_calls[0]["families"][0].source_profile == "ytis-free1-worker-01"
-        assert sync_calls[0]["source_session_checker"]("ytis-free1-worker-01") is True
+        # C4-B: live session check, not the previous lambda: True.
+        assert sync_calls[0]["source_session_checker"] is None
 
     def test_ensure_nlm_auth_family_refresh_fails_closed_when_source_refresh_fails(self, monkeypatch):
         """Family-backed auth should fail closed if the dedicated source refresh cannot recover."""

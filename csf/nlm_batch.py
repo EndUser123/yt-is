@@ -36,16 +36,6 @@ from csf.youtube_page_inspector import inspect_youtube_watch_page, inspect_youtu
 run_nlm = nlm_auth_guard.run_nlm
 
 
-def _is_noninteractive_auth_env() -> bool:
-    """Check if noninteractive auth mode is enabled.
-
-    Mirrors nlm_worker_auth._is_noninteractive_auth() but kept local to
-    avoid a circular import path during the C4 refactor.
-    """
-    value = os.getenv("YTIS_NLM_AUTH_NONINTERACTIVE", "").strip().lower()
-    return value in {"1", "true", "yes", "on"}
-
-
 _DEFAULT_OWNER_NOTEBOOK_STATE_PATH = Path("P:\\\\\\.data/yt-is/owner_nlm_notebook.json")
 _DEFAULT_OWNER_NOTEBOOK_TITLE = "yt-is-worker-01"
 _DEFAULT_INDUSTRIAL_WORKER_STATE_ROOT = Path("P:\\\\\\.data/yt-is/industrial-worker-states")
@@ -170,6 +160,11 @@ def _describe_nlm_auth_refresh_reason(
         return "forced_schedule"
     if check_returncode is not None and check_returncode != 0:
         return "check_failed"
+    if expected_email and not check_account:
+        # login --check returned 0 but no Account: line was parsed.
+        # Fail closed under C4-B: an empty account when an expected
+        # email is configured cannot authorize the worker path.
+        return "missing_account"
     if expected_email and check_account and check_account != expected_email:
         return "wrong_account"
     if cache_hit:
@@ -186,6 +181,15 @@ def _should_skip_nlm_auth_check(
 ) -> bool:
     """Return True when a recent successful auth makes another probe unnecessary."""
     if force_scheduled or cache_hit or cache_session_age_s is None:
+        return False
+    # C4-B: a fresh cache entry must not be used as a skip-signal when
+    # the stored verified-account fingerprint does not match the
+    # configured expected_email. This closes the interval_skip hole
+    # around account swap that the fingerprint binding alone cannot
+    # catch (cache_hit is already False, but cache_session_age_s was
+    # still returning the age of the stale entry).
+    verified_account = nlm_auth_guard.auth_check_cache_verified_account(auth_context)
+    if auth_context.expected_email and verified_account != auth_context.expected_email.strip().lower():
         return False
     auth_check_interval_s = max(0.0, float(_NLM_CONFIG.auth_check_interval))
     return auth_check_interval_s > 0.0 and cache_session_age_s < auth_check_interval_s
@@ -335,11 +339,23 @@ def _auth_family_for_profile(profile: str):
     return None
 
 
-def _store_nlm_auth_session(auth_context: _NLMAuthContext) -> float:
+def _store_nlm_auth_session(
+    auth_context: _NLMAuthContext,
+    *,
+    verified_account: str = "",
+) -> float:
+    """Persist the verified session entry.
+
+    ``verified_account`` is the Account: line parsed from the most recent
+    successful ``nlm login --check`` probe (or the family source-profile
+    refresh). Binding the cache to this fingerprint is what makes the
+    cache *not* fail-open forever on a hit alone (C4-B / COR-006).
+    """
     session_established_at = round(time.monotonic(), 3)
     nlm_auth_guard.auth_check_cache_store(
         auth_context,
         session_established_at=session_established_at,
+        verified_account=verified_account,
     )
     return session_established_at
 
@@ -359,22 +375,6 @@ def _refresh_nlm_auth_session(
             timeout_s=timeout_s,
         )
 
-    # C4 fail-closed: if noninteractive mode is set and no CDP family path
-    # is configured, refuse to open a browser. Previous code fell through
-    # directly to `nlm login --force` which opens a browser page —
-    # unacceptable in background/worker contexts.
-    if _is_noninteractive_auth_env():
-        log_action(
-            "nlm_auth_failed",
-            {
-                "component": "nlm_batch",
-                "status": "noninteractive_no_cdp_family",
-                "notebooklm_profile": auth_context.profile,
-                "expected_email": expected_email or None,
-            },
-        )
-        return False
-
     try:
         login = run_nlm(
             ["login", "--force", *auth_context.login_profile_args],
@@ -387,8 +387,10 @@ def _refresh_nlm_auth_session(
     if not expected_email:
         _store_nlm_auth_session(auth_context)
         return True
-    if _extract_account(login.stdout or "", login.stderr or "") == expected_email:
-        _store_nlm_auth_session(auth_context)
+    verified_account = _extract_account(login.stdout or "", login.stderr or "")
+    if verified_account == expected_email:
+        # C4-B: bind the cache to the account we just verified.
+        _store_nlm_auth_session(auth_context, verified_account=verified_account)
         return True
     return False
 
@@ -421,12 +423,20 @@ def _refresh_family_nlm_auth_session(
         )
         if not refresh_source_profile(family, timeout_s=timeout_s):
             return False
+        # Live session check (no `lambda: True`): the default checker
+        # invokes profile_session_matches_expected against the source
+        # profile and refuses to copy credentials to siblings if the
+        # source session is not live and bound to the expected account.
+        # See C4-B / review COR-009 (family refresh live session check).
         sync_worker_profiles(
             families=(family,),
             backup=False,
-            source_session_checker=lambda _profile: True,
+            source_session_checker=None,
         )
-        _store_nlm_auth_session(auth_context)
+        # The source profile is bound to family.expected_email by
+        # construction; use that as the verified fingerprint so the
+        # cache hit later cannot authorize a different account.
+        _store_nlm_auth_session(auth_context, verified_account=family.expected_email)
         outcome = "ok"
         return True
     except (FileNotFoundError, RuntimeError, ValueError):
@@ -1457,7 +1467,14 @@ def _ensure_nlm_auth() -> bool:
             login_elapsed = round(time.perf_counter() - login_started, 3)
             session_established_at = round(time.monotonic(), 3)
             if login:
-                nlm_auth_guard.auth_check_cache_store(auth_context, session_established_at=session_established_at)
+                # C4-B: bind the family-refresh cache entry to the
+                # verified source-profile email so the hit cannot
+                # authorize a different account.
+                nlm_auth_guard.auth_check_cache_store(
+                    auth_context,
+                    session_established_at=session_established_at,
+                    verified_account=family.expected_email,
+                )
                 log_action(
                     "nlm_login_completed",
                     {
@@ -1544,9 +1561,15 @@ def _ensure_nlm_auth() -> bool:
     check_matches_expected = check.returncode == 0 and (not expected_email or check_account == expected_email)
     if check_matches_expected and not force_scheduled:
         session_established_at = round(time.monotonic(), 3)
+        # C4-B: bind the cache to the Account: line that actually came
+        # back from this --check probe. When expected_email is empty
+        # (no identity configured), fall back to the parsed account as
+        # the best-effort fingerprint so future cache hits still cannot
+        # silently authorize a swap.
         nlm_auth_guard.auth_check_cache_store(
             auth_context,
             session_established_at=session_established_at,
+            verified_account=check_account or expected_email,
         )
         log_action(
             "nlm_auth_checked",
@@ -1564,7 +1587,38 @@ def _ensure_nlm_auth() -> bool:
         )
         return True
 
-    if check.returncode == 0 and expected_email and check_account and check_account != expected_email:
+    # C4-B: initialize refresh_reason BEFORE the branch ladder so the
+    # locked re-check below can never raise UnboundLocalError on the
+    # empty-account path (returncode==0, expected_email set, no Account:
+    # line parsed — previously fell through every branch).
+    refresh_reason = _describe_nlm_auth_refresh_reason(
+        force_scheduled=force_scheduled,
+        cache_hit=cache_hit,
+        cache_session_age_s=cache_session_age_s,
+        check_returncode=check.returncode,
+        check_account=check_account,
+        expected_email=expected_email,
+    )
+    if check.returncode == 0 and expected_email and not check_account:
+        # Missing Account: line under a non-empty expected_email — fail
+        # closed before we even reach the locked re-check, and surface
+        # the reason explicitly so the worker does not silently retry.
+        log_action(
+            "nlm_auth_failed",
+            {
+                "component": "nlm_batch",
+                **auth_event_context,
+                "status": "missing_account",
+                "auth_refresh_reason": refresh_reason,
+                "auth_cache_hit": cache_hit,
+                "auth_cache_session_age_s": round(cache_session_age_s, 3) if cache_session_age_s is not None else None,
+                "notebooklm_profile": auth_context.profile,
+                "account": None,
+                "expected_email": expected_email,
+                "check_count": check_count,
+            },
+        )
+    elif check.returncode == 0 and expected_email and check_account and check_account != expected_email:
         refresh_reason = _describe_nlm_auth_refresh_reason(
             force_scheduled=force_scheduled,
             cache_hit=cache_hit,
@@ -1657,9 +1711,11 @@ def _ensure_nlm_auth() -> bool:
         check_matches_expected = check.returncode == 0 and (not expected_email or check_account == expected_email)
         if check_matches_expected and not force_scheduled:
             session_established_at = round(time.monotonic(), 3)
+            # C4-B: locked re-check verified account → bind the cache to it.
             nlm_auth_guard.auth_check_cache_store(
                 auth_context,
                 session_established_at=session_established_at,
+                verified_account=check_account or expected_email,
             )
             log_action(
                 "nlm_auth_checked",
@@ -1677,6 +1733,34 @@ def _ensure_nlm_auth() -> bool:
             )
             return True
 
+        if check.returncode == 0 and expected_email and not check_account:
+            # C4-B: locked re-check found the empty-account failure mode
+            # too. Re-classify refresh_reason and fail closed before
+            # launching a force-login that could erase the cache.
+            refresh_reason = _describe_nlm_auth_refresh_reason(
+                force_scheduled=force_scheduled,
+                cache_hit=cache_hit,
+                cache_session_age_s=cache_session_age_s,
+                check_returncode=check.returncode,
+                check_account=check_account,
+                expected_email=expected_email,
+            )
+            log_action(
+                "nlm_auth_failed",
+                {
+                    "component": "nlm_batch",
+                    **auth_event_context,
+                    "status": "missing_account",
+                    "auth_refresh_reason": refresh_reason,
+                    "auth_cache_hit": cache_hit,
+                    "auth_cache_session_age_s": round(cache_session_age_s, 3) if cache_session_age_s is not None else None,
+                    "notebooklm_profile": auth_context.profile,
+                    "account": None,
+                    "expected_email": expected_email,
+                    "check_count": check_count,
+                },
+            )
+            return False
         if check.returncode == 0 and expected_email and check_account and check_account != expected_email:
             refresh_reason = _describe_nlm_auth_refresh_reason(
                 force_scheduled=force_scheduled,
