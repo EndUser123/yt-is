@@ -1,6 +1,8 @@
 # yt-is Handoff
 
-Last updated: 2026-07-18 (Phase D cleanup + merge-a2 deletion + PR 1 cross-package fix)
+**This is the single canonical handoff for `yt-is`.** Future agents: read this first.
+
+Last updated: 2026-07-19 (three-reviewer consensus + PR 1 verified-on-main correction + ahead counts refreshed)
 
 ## Current state
 
@@ -22,7 +24,7 @@ All cleanup phases complete. Only the main worktree remains.
 
 | Worktree | Branch | Behind main |
 |----------|--------|------------:|
-| `P:/packages/yt-is` | `main` (`bad5e43`) | — |
+| `P:/packages/yt-is` | `main` (`68baaa8`) | — |
 
 **Removed worktrees (all preserved as backup-tagged refs):**
 - `trust-floor/phase-1` (`88ce7c6`, 7 behind) — removed in Phase C
@@ -41,12 +43,16 @@ All cleanup phases complete. Only the main worktree remains.
 
 Tests: 31 passed, 2 skipped. New `test_16_unreachable_branch_preserved_without_auto_tag` is the PR 1 falsifier.
 
-**Remaining design work:**
-- PR 2: `worktree_lifecycle.py` + `RepoPolicy` (not started)
-- PR 3: `preflight.py` (not started)
-- PR 4: `worktree_cleanup.py` CLI + `handoff_sync.py` (not started)
-- PR 5: `worktree-policy.toml` for yt-is + automated HANDOFF.md sync (not started — would supersede the manual HANDOFF.md sync done today)
-- PR 6: yt-is-specific PreToolUse hook (already implemented as pilot, see above)
+**Remaining design work** (corrected dependency order per three-reviewer consensus):
+
+| # | PR | Dependency | Status | Notes |
+|---|----|-----------:|--------|-------|
+| **2** | `worktree_lifecycle.py` + `RepoPolicy` (pure refactor; extract `safe_delete_branch`) | PR 1 ✅ | not started | Smallest unit; pure library; **safe to do regardless of hook-in-production verification** |
+| **3** | `preflight.py` (locks + Win32 process + reachability) | PR 2 | not started | |
+| **4** | `worktree_cleanup.py` CLI + `handoff_sync.py` (closes PR 1's `--force`+rmtree residual risk) | PR 2 + PR 3 | not started | **Combine with PR 3** — splitting creates a window where `worktree_cleanup.py remove` runs without preflight gating it |
+| **5** | `worktree-policy.toml` + automated HANDOFF.md sync (sentinel block) | PR 4 | not started | **YAGNI for solo dev** — multi-agent coordination machinery may be over-engineered; consider demoting to optional or deferring until C3 lands |
+
+**Alternative priority — C3 (durable row-merge policy).** Per `docs/operations/root-cause-program.md` ship order, Phase 2 (C3) is the documented next PRODUCT priority (unblocks throughput claims on a 140K-video backlog). The worktree PRs above are operational hygiene, not product work. C3 is the alternative this handoff should have surfaced earlier.
 
 ## Worktree policy hook (2026-07-18)
 
@@ -60,8 +66,36 @@ A PreToolUse hook is installed at `P:/packages/yt-is/.claude/hooks/worktree_poli
 
 Scope is package-level (yt-is only); other packages are unaffected. This deviates from the design's recommended default of `warn-then-block-after-2-weeks` — yt-is is running block-by-default as the pilot implementation.
 
+## Three-reviewer consensus (2026-07-19)
 
-- **Candidate 6 per-attempt telemetry is live-proven (2026-07-01).** The 11-field
+Three independent reviews were conducted (agy via Gemini, external Claude review, glm-5-2 via Grok). All three agreed on:
+
+- **My PR ordering was wrong.** Correct dependency order: **PR 2 → PR 3 → PR 4 → PR 5**. PR 5 lists "Dependencies: PR 4 (handoff_sync.py)" — putting PR 5 before PR 4 violates that. The corrected order is reflected in the table above.
+- **Hook is unverified in production.** Registered but not yet live-tested in a Grok session. This is the load-bearing assumption of the entire "clean state" claim. Should be verified before committing to PR 2–5 sequence.
+- **Push accumulated commits** before more divergence accumulates (force-push math gets worse every session).
+
+**Material disagreements:**
+
+| Issue | agy | Claude | glm-5-2 | Resolution |
+|-------|-----|--------|---------|------------|
+| Stop vs. continue | keep going | stop | false binary (C3 is alternative) | Push first, pause, verify hook, then choose between PRs 2–5, C3, or stop |
+| Plugin version bump | bump | skip is fine | rule is ambiguous | Skipped (scripts aren't in strict mutation-checklist scope); can revisit if cached-version risk materializes |
+| PR 5 for solo dev | (didn't address) | YAGNI | YAGNI | Demoted to optional; multi-agent coordination machinery may be over-engineered |
+
+**Earlier false claim corrected:** Two previous versions of this file (and the deleted state file) said PR 1 (`96c146a`) was "NOT yet merged to main" of cc-skills-sdlc. **This was wrong.** PR 1 IS on cc-skills-sdlc main (verified 2026-07-19 via `git branch --contains 96c146a` → `* main`).
+
+## Current Git state (live 2026-07-19)
+
+- **yt-is main:** `68baaa8` (ahead of `origin/main` by 25 commits)
+- **cc-skills-sdlc main:** (PR 1 `96c146a` is on main; ahead of `origin/main` by 6 commits)
+- **Working trees:** 1 (only `P:/packages/yt-is`); no locks; clean working tree
+- **Backup tags:** 4 (`backup/trust-floor-phase-1-2026-07-18`, `backup/refactor-control-planes-2026-07-18`, `backup/ai-import-safe-upsert-2026-07-18`, `backup/merge-a2-2026-07-18`) — all verified to point at the correct commits via `git for-each-ref --format='%(refname:short) tag=%(objectname:short) commit=%(*objectname:short)'`
+
+## Outstanding user decisions
+
+1. **Push now?** Force-push math gets worse every session; pushing while ahead count is small is the lowest-risk window.
+2. **Next direction:** PRs 2–5 (operational hygiene) vs. C3 (product trust floor) vs. stop. Three reviewers all flagged this as a real choice, not a default.
+3. **PR 5 for solo dev:** keep as designed, demote to optional, or drop entirely?
   `nlm_batch_source_content_fetch_completed` contract was validated by run02
   (`candidate6_telemetry_validation_run02_current`): Signals 1/2/3 PASS on 1070
   events, the source-age-cliff `in_progress` leak is fixed (169 → 0, verified by
