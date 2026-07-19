@@ -4,6 +4,17 @@
 
 `yt-is` (YouTube Intelligence System) is a high-throughput transcript ingestion pipeline. It has recently transitioned to an **Industrial Architecture** to handle a 140,000-video backlog.
 
+## Worktree lifecycle policy
+
+`worktree-policy.toml` at the package root defines the worktree lifecycle
+settings (main branch, naming pattern, worktree root, backup tag prefix).
+Loaded by `cc-skills-sdlc/skills/go/scripts/worktree_lifecycle.py::load_policy`.
+The PreToolUse hook (`P:/packages/yt-is/.claude/hooks/worktree_policy_PreToolUse.py`)
+blocks raw `git worktree` Bash invocations by default — bypass with
+`GO_WORKTREE_SAFETY_BYPASS=1`. For the policy-validated CLI, see
+`P:/packages/.claude-marketplace/plugins/cc-skills-sdlc/skills/go/scripts/worktree_cleanup.py`
+(PR 4 of `P:/docs/worktree-lifecycle-design.md`).
+
 ## Industrial trust floor (read before integrity/multi-worker work)
 
 **Implementation backlog (contracts):**  

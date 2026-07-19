@@ -1,0 +1,28 @@
+# yt-is worktree lifecycle policy
+#
+# PR 5 of P:/docs/worktree-lifecycle-design.md. Loaded by
+# cc-skills-sdlc/skills/go/scripts/worktree_lifecycle.py::load_policy
+# (which falls back to defaults if this file is absent).
+#
+# Edits here are picked up by the next `python -m worktree_cleanup sync`
+# (or whatever orchestration layer PRs 3-4 land). Manual edits to the
+# [worktree] block are safe — only the values are read.
+
+[package]
+name = "yt-is"
+
+[worktree]
+# Branch treated as "main" for reachability checks (safe-delete and preflight).
+main_branch = "main"
+
+# Naming regex enforced for new worktree/branch names. The default pattern
+# accepts alphanumeric, dots, dashes, underscores. Tighten per-package if needed.
+naming_pattern = "^[a-zA-Z0-9_.-]+$"
+
+# Where new worktrees are created by `git worktree add` (relative to repo root).
+# Keep inside-repo so worktrees travel with the clone.
+worktree_root = ".worktrees"
+
+# Prefix for backup tags created by safe_delete_branch when auto_tag=True.
+# Tags are formatted: backup/<branch-with-slashes-replaced>-<timestamp>
+backup_tag_prefix = "backup"
