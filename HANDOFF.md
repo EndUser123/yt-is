@@ -1,6 +1,6 @@
 # yt-is Handoff
 
-Last updated: 2026-07-18 (Phase D cleanup complete)
+Last updated: 2026-07-18 (Phase D cleanup + merge-a2 deletion + PR 1 cross-package fix)
 
 ## Current state
 
@@ -29,7 +29,24 @@ All cleanup phases complete. Only the main worktree remains.
 - `refactor/yt-is-control-planes` (`0d22eb4`, 9 behind) — removed in Phase C
 - `ai/import-safe-upsert-20260715-182239` (`4181e27`, 41 behind) — removed in Phase D; tracked gitdir pointer untracked; `.claude/worktrees/*` added to `.gitignore` with `!.claude/worktrees/.gitkeep` negation so future worktrees under that path don't get their pointers committed.
 
-**Outstanding ref (not deleted):** `merge-a2` (`250cf51`, 1 ahead of main, NOT reachable from main) is preserved by tag `backup/merge-a2-2026-07-18`. Branch stays as a ref; tag is the only thing preserving the commit if the branch is ever deleted.
+**Outstanding ref (not deleted):** none — `merge-a2` (`250cf51`, was unreachable from main) was deleted via `git branch -D` on 2026-07-18. The commit is preserved by tag `backup/merge-a2-2026-07-18`; tag remains discoverable and is the only way to recover the unreachable commit.
+
+## Cross-package fixes (2026-07-18)
+
+**`worktree_safety.py` bugfix** (commit `96c146a` in `cc-skills-sdlc` plugin, NOT yet merged to `main` of that plugin — verify before relying on it across packages). Three fixes per `P:/docs/worktree-lifecycle-design.md` PR 1:
+
+1. `import shutil` added (was missing — `shutil.rmtree(wt, ignore_errors=True)` at line 606 would have raised `NameError` if the rm-fallback ever ran)
+2. Unconditional `git branch -D` replaced with reachability check + safe-delete; new `auto_tag=False` kwarg for opt-in backup-tag-then-delete behavior
+3. `git worktree remove --force` at line 599 documented as residual risk (full fix lands in PR 4's `cmd_remove`)
+
+Tests: 31 passed, 2 skipped. New `test_16_unreachable_branch_preserved_without_auto_tag` is the PR 1 falsifier.
+
+**Remaining design work:**
+- PR 2: `worktree_lifecycle.py` + `RepoPolicy` (not started)
+- PR 3: `preflight.py` (not started)
+- PR 4: `worktree_cleanup.py` CLI + `handoff_sync.py` (not started)
+- PR 5: `worktree-policy.toml` for yt-is + automated HANDOFF.md sync (not started — would supersede the manual HANDOFF.md sync done today)
+- PR 6: yt-is-specific PreToolUse hook (already implemented as pilot, see above)
 
 ## Worktree policy hook (2026-07-18)
 
