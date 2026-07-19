@@ -1,6 +1,6 @@
 # yt-is Handoff
 
-Last updated: 2026-07-18 (worktree policy hook added)
+Last updated: 2026-07-18 (Phase D cleanup complete)
 
 ## Current state
 
@@ -16,16 +16,20 @@ Last updated: 2026-07-18 (worktree policy hook added)
 
 **Pre-existing:** 40 failures in test_nlm_batch.py are from A1+A2 work, NOT C1+C2.
 
-## Worktree status (2026-07-18, after Phase C cleanup)
+## Worktree status (2026-07-18, after Phase D cleanup)
 
-Two worktrees remain. The two external stale worktree dirs (`trust-floor/phase-1`, `refactor/yt-is-control-planes`) were removed in Phase C; their branches are preserved as refs and protected by backup tags `backup/*-2026-07-18`. Both branch tips remain reachable from main.
+All cleanup phases complete. Only the main worktree remains.
 
 | Worktree | Branch | Behind main |
 |----------|--------|------------:|
-| `P:/packages/yt-is` | `main` (`073c4ee`) | — |
-| `P:/packages/yt-is/.claude/worktrees/ai-task-20260715-182239` | `ai/import-safe-upsert-20260715-182239` (`4181e27`) | 41 |
+| `P:/packages/yt-is` | `main` (`bad5e43`) | — |
 
-The third worktree lives inside `P:/packages/yt-is/.claude/worktrees/` (a tracked path) — Phase D decision pending. A `merge-a2` branch (`250cf51`) also exists with 1 commit ahead of main; its tip is NOT reachable from main and is preserved by tag `backup/merge-a2-2026-07-18`.
+**Removed worktrees (all preserved as backup-tagged refs):**
+- `trust-floor/phase-1` (`88ce7c6`, 7 behind) — removed in Phase C
+- `refactor/yt-is-control-planes` (`0d22eb4`, 9 behind) — removed in Phase C
+- `ai/import-safe-upsert-20260715-182239` (`4181e27`, 41 behind) — removed in Phase D; tracked gitdir pointer untracked; `.claude/worktrees/*` added to `.gitignore` with `!.claude/worktrees/.gitkeep` negation so future worktrees under that path don't get their pointers committed.
+
+**Outstanding ref (not deleted):** `merge-a2` (`250cf51`, 1 ahead of main, NOT reachable from main) is preserved by tag `backup/merge-a2-2026-07-18`. Branch stays as a ref; tag is the only thing preserving the commit if the branch is ever deleted.
 
 ## Worktree policy hook (2026-07-18)
 
