@@ -825,8 +825,8 @@ class _BatchStatusStorage:
                 "updated_at = excluded.updated_at, "
                 "source = COALESCE(analysis_status.source, excluded.source), "
                 "published_at = COALESCE(analysis_status.published_at, excluded.published_at), "
-                "last_stage = excluded.last_stage, "
-                "failure_reason = excluded.failure_reason, "
+                "last_stage = CASE WHEN analysis_status.status = 'complete' THEN analysis_status.last_stage ELSE excluded.last_stage END, "
+                "failure_reason = CASE WHEN analysis_status.status = 'complete' THEN analysis_status.failure_reason ELSE excluded.failure_reason END, "
                 "quality_metrics = COALESCE(analysis_status.quality_metrics, excluded.quality_metrics)",
                 (video_id, status, now, source, published_at, last_stage, failure_reason, quality_metrics),
             )
@@ -1008,7 +1008,10 @@ class _BatchStatusStorage:
         Delegates to upsert_channel to preserve existing fields on partial updates.
         """
         now = datetime.now(timezone.utc).isoformat()
-        kwargs: dict[str, str | int | None] = {
+        # C3 INT-001 fix: only include non-None values. Previous code packed
+        # all params (including None) into kwargs, causing upsert_channel to
+        # overwrite existing fields with NULL on partial updates.
+        all_fields: dict[str, str | int | None] = {
             "channel_id": channel_id,
             "playlist_id": playlist_id,
             "last_checked": last_checked or now,
@@ -1025,6 +1028,10 @@ class _BatchStatusStorage:
             "keywords": keywords,
             "custom_url": custom_url,
         }
+        kwargs: dict[str, str | int | None] = {
+            k: v for k, v in all_fields.items() if v is not None
+        }
+        kwargs["last_checked"] = last_checked or now  # always set
         if next_page_token is not None:
             kwargs["next_page_token"] = next_page_token
         if quota_exhausted_at is not None:
@@ -1049,7 +1056,8 @@ class _BatchStatusStorage:
                 "SELECT channel_url, channel_id, playlist_id, video_count_estimate, last_checked, "
                 "last_full_enumeration, next_page_token, quota_exhausted_at, "
                 "channel_title, thumbnail_url, subscriber_count, view_count, "
-                "description, published_at, country, topic_categories, category "
+                "description, published_at, country, keywords, custom_url, "
+                "topic_categories, category "
                 "FROM channel_metadata WHERE channel_id = ? OR channel_url = ?",
                 (resolved_channel_id, canonical_url),
             )
@@ -1128,8 +1136,10 @@ class _BatchStatusStorage:
                     "description": row[12],
                     "published_at": row[13],
                     "country": row[14],
-                    "topic_categories": row[15],
-                    "category": row[16],
+                    "keywords": row[15],
+                    "custom_url": row[16],
+                    "topic_categories": row[17],
+                    "category": row[18],
                 }
                 for key in (
                     "playlist_id",
@@ -1150,7 +1160,9 @@ class _BatchStatusStorage:
                     "topic_categories",
                     "category",
                 ):
-                    if key in kwargs:
+                    # C3 INT-002 fix: skip None values to preserve existing fields.
+                    if key in kwargs and kwargs[key] is not None:
+                        existing[key] = kwargs[key]
                         existing[key] = kwargs[key]
                 existing["channel_id"] = resolved_channel_id
                 existing["channel_url"] = canonical_url
@@ -1263,7 +1275,13 @@ class _BatchStatusStorage:
             )
 
     def block_channel(self, channel_url: str) -> None:
-        """Add a channel to the blocklist and remove from active metadata."""
+        """Add a channel to the blocklist (soft block; does not destroy metadata).
+
+        C3 INT-008 fix: previous version hard-deleted channel_metadata and
+        analysis_status rows. Now we only insert into the blocklist table,
+        preserving all data for audit trail and unblock recovery.
+        Use a separate purge API if intentional data destruction is needed.
+        """
         self._ensure_channel_blocklist()
         self._ensure_channel_metadata()
         channel_id, channel_url = _require_channel_identity(channel_url)
@@ -1274,14 +1292,6 @@ class _BatchStatusStorage:
             conn.execute(
                 "INSERT OR REPLACE INTO channel_blocklist (channel_url, channel_id, blocked_at) VALUES (?, ?, ?)",
                 (channel_url, channel_id, now),
-            )
-            conn.execute(
-                "DELETE FROM channel_metadata WHERE channel_url = ? OR channel_id = ?",
-                (channel_url, channel_id),
-            )
-            conn.execute(
-                "DELETE FROM analysis_status WHERE source = ? OR channel_id = ?",
-                (channel_url, channel_id),
             )
             conn.commit()
         except Exception:
@@ -2019,7 +2029,14 @@ def _copy_table_rows(
 
 
 def promote_batch_status_db(source_db: Path, dest_db: Path | None = None) -> int:
-    """Promote channel metadata and blocklist rows from staging into live state."""
+    """Promote channel metadata and blocklist rows from staging into live state.
+
+    C3 INT-003 fix: channel_metadata now uses COALESCE-based field merge
+    instead of INSERT OR REPLACE. Staging NULLs do not overwrite existing
+    non-NULL values; staging non-NULL values DO overwrite. This prevents
+    sparse staging rows from clobbering live channel metadata (keywords,
+    subscriber_count, etc.).
+    """
     if not source_db.exists():
         raise FileNotFoundError(f"source batch_status DB missing: {source_db}")
     destination = dest_db or _get_default_db_path()
@@ -2032,7 +2049,7 @@ def promote_batch_status_db(source_db: Path, dest_db: Path | None = None) -> int
     dest_conn = dest_storage._get_conn()
     promoted = 0
     try:
-        promoted += _copy_table_rows(source_conn, dest_conn, "channel_metadata")
+        promoted += _merge_channel_metadata(source_conn, dest_conn)
         promoted += _copy_table_rows(source_conn, dest_conn, "channel_blocklist")
         dest_conn.commit()
     except Exception:
@@ -2042,6 +2059,42 @@ def promote_batch_status_db(source_db: Path, dest_db: Path | None = None) -> int
         source_conn.close()
         dest_conn.close()
     return promoted
+
+
+def _merge_channel_metadata(source_conn, dest_conn) -> int:
+    """Promote channel_metadata rows with COALESCE-based field merge.
+
+    C3 INT-003: replaces INSERT OR REPLACE which would clobber live rows
+    with sparse staging data. Now staging NULLs preserve existing values.
+    """
+    # Get columns from source
+    pragma = source_conn.execute("PRAGMA table_info(channel_metadata)").fetchall()
+    if not pragma:
+        return 0
+    columns = [row[1] for row in pragma]
+    # channel_url is the PK (conflict target)
+    conflict_target = "channel_url"
+    non_pk_cols = [c for c in columns if c != conflict_target]
+
+    rows = source_conn.execute(
+        f"SELECT {', '.join(columns)} FROM channel_metadata"
+    ).fetchall()
+    if not rows:
+        return 0
+
+    placeholders = ", ".join("?" for _ in columns)
+    column_list = ", ".join(columns)
+    # Build COALESCE SET clause for non-PK columns
+    set_clauses = ", ".join(
+        f"{col} = COALESCE(excluded.{col}, channel_metadata.{col})"
+        for col in non_pk_cols
+    )
+    sql = (
+        f"INSERT INTO channel_metadata ({column_list}) VALUES ({placeholders}) "
+        f"ON CONFLICT({conflict_target}) DO UPDATE SET {set_clauses}"
+    )
+    dest_conn.executemany(sql, rows)
+    return len(rows)
 
 
 def _resolve_migration_identity(
