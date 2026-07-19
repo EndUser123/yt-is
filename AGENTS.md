@@ -9,9 +9,21 @@
 `worktree-policy.toml` at the package root defines the worktree lifecycle
 settings (main branch, naming pattern, worktree root, backup tag prefix).
 Loaded by `cc-skills-sdlc/skills/go/scripts/worktree_lifecycle.py::load_policy`.
-The PreToolUse hook (`P:/packages/yt-is/.claude/hooks/worktree_policy_PreToolUse.py`)
-blocks raw `git worktree` Bash invocations by default — bypass with
-`GO_WORKTREE_SAFETY_BYPASS=1`. For the policy-validated CLI, see
+
+The PreToolUse hook that enforces the managed worktree root lives at the
+**user level**, not in this package:
+`P:/.claude/hooks/worktree_root_policy_PreToolUse.py`, wired in
+`~/.claude/settings.json` (`hooks.PreToolUse` matcher `Bash`). It blocks
+`git worktree add` whose target is not under the configured
+`WORKTREE_ALLOWED_ROOT` (default `P:/.worktrees/`) — bypass with
+`GO_WORKTREE_SAFETY_BYPASS=1`. The user-level home defeats upstream #79111
+(subdirectory launches fail-open for project-root settings.json), which is
+exactly when worktree ops happen. See
+`P:/.data/wiki/concepts/worktree-root-policy-hook-design-2026-07` for the
+design rationale, and `claude-code-hooks-bug-landscape-2026-07` for the
+upstream-gap snapshot.
+
+For the policy-validated CLI, see
 `P:/packages/.claude-marketplace/plugins/cc-skills-sdlc/skills/go/scripts/worktree_cleanup.py`
 (PR 4 of `P:/docs/worktree-lifecycle-design.md`).
 

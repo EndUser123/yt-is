@@ -56,17 +56,25 @@ All worktree lifecycle PRs landed. State below is now: hook installed (block-by-
 
 **Alternative priority — C3 (durable row-merge policy).** Per `docs/operations/root-cause-program.md` ship order, Phase 2 (C3) is the documented next PRODUCT priority (unblocks throughput claims on a 140K-video backlog). Now that worktree lifecycle is done, C3 is the natural next direction.
 
-## Worktree policy hook (2026-07-18)
+## Worktree policy hook (2026-07-19, relocated 2026-07-19)
 
-A PreToolUse hook is installed at `P:/packages/yt-is/.claude/hooks/worktree_policy_PreToolUse.py` and registered via `P:/packages/yt-is/.claude/settings.json`. It **blocks** direct `git worktree` Bash invocations by default to enforce the managed worktree lifecycle (see `P:/docs/worktree-lifecycle-design.md`).
+The PreToolUse hook enforcing the managed worktree root is now **user-level**, not package-local. It lives at `P:/.claude/hooks/worktree_root_policy_PreToolUse.py` and is wired in `~/.claude/settings.json` (`hooks.PreToolUse` matcher `Bash`).
 
 | Invocation | Behavior |
 |------------|----------|
-| `git worktree <anything>` | BLOCKED with denial reason pointing to the managed CLI |
-| `git status`, `git commit`, etc. | Allowed (only `git worktree` is intercepted) |
-| `GO_WORKTREE_SAFETY_BYPASS=1 git worktree ...` | Allowed with stderr advisory |
+| `git worktree add <path-under-P:/.worktrees/...>` | Allowed |
+| `git worktree add /tmp/x`, `git worktree add ../foo`, etc. | DENIED with redirect hint to the managed path |
+| `git worktree add -b my-branch <path>` | Path arg correctly parsed (flag's arg skipped) |
+| `git worktree add` (no path arg) | DENIED with parse-failure reason |
+| `git worktree list` / `remove` / `prune` / `move` / `lock` / `unlock` | Allowed (hook only gates `add`) |
+| `GO_WORKTREE_SAFETY_BYPASS=1 git worktree add <anywhere>` | Allowed with stderr advisory |
+| Any non-worktree Bash command | Allowed (hook only intercepts `git worktree add`) |
 
-Scope is package-level (yt-is only); other packages are unaffected. This deviates from the design's recommended default of `warn-then-block-after-2-weeks` — yt-is is running block-by-default as the pilot implementation.
+**Why relocated from package-local (2026-07-18 → 2026-07-19)**: the predecessor hook at `P:/packages/yt-is/.claude/hooks/worktree_policy_PreToolUse.py` was defeated by upstream #79111 — subdirectory launches fail-open for project-root settings.json hooks, which is exactly when worktree operations happen. User-level settings always load regardless of cwd. The package-local hook file and its settings.json entry are deleted. Design rationale: `P:/.data/wiki/concepts/worktree-root-policy-hook-design-2026-07`; bug snapshot: `claude-code-hooks-bug-landscape-2026-07`.
+
+**Known threat-model bound**: upstream #78970 — this hook does **not** fire for subagent tool calls (main thread only). Documented in the wiki page.
+
+**Smoke test**: `P:/tmp/test_worktree_root_policy.py` (13 cases, all passing). Delete after live verification lands.
 
 ## Three-reviewer consensus (2026-07-19)
 
