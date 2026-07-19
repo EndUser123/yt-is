@@ -1163,7 +1163,6 @@ class _BatchStatusStorage:
                     # C3 INT-002 fix: skip None values to preserve existing fields.
                     if key in kwargs and kwargs[key] is not None:
                         existing[key] = kwargs[key]
-                        existing[key] = kwargs[key]
                 existing["channel_id"] = resolved_channel_id
                 existing["channel_url"] = canonical_url
                 existing["last_checked"] = now
@@ -1897,9 +1896,17 @@ def _require_channel_identity(
         normalized = normalize_channel_url(channel_ref)
         return channel_id, normalized
     identity = resolve_channel_identity(channel_ref)
-    if identity is None:
+    if identity is not None:
+        return identity.channel_id, identity.canonical_url
+    # Fallback: use the normalized URL as its own identity.
+    # This is safe for handle URLs (@name) and test URLs where
+    # resolve_to_uc_channel_id can't get a UC ID (no API, offline,
+    # test mode). The URL itself is a stable identifier until the
+    # channel_id is discovered via sync or gap detection.
+    normalized = normalize_channel_url(channel_ref)
+    if not normalized:
         raise ValueError(f"Could not resolve channel identity for {channel_ref}")
-    return identity.channel_id, identity.canonical_url
+    return normalized, normalized
 
 
 def upsert_channel(
