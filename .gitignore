@@ -55,3 +55,7 @@ config/local.yml
 .claude/state/
 .browser/
 *.jsonl
+
+# Worktree pointer files: prevent worktree gitdir pointers from being tracked
+.claude/worktrees/*
+!.claude/worktrees/.gitkeep
