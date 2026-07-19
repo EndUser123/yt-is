@@ -33,7 +33,7 @@ All cleanup phases complete. Only the main worktree remains.
 
 ## Cross-package fixes (2026-07-18)
 
-**`worktree_safety.py` bugfix** (commit `96c146a` in `cc-skills-sdlc` plugin, NOT yet merged to `main` of that plugin — verify before relying on it across packages). Three fixes per `P:/docs/worktree-lifecycle-design.md` PR 1:
+**`worktree_safety.py` bugfix** (commit `96c146a` in `cc-skills-sdlc` plugin, **verified on `main` of that plugin** as of 2026-07-19 via `git branch --contains 96c146a` → `* main`). Three fixes per `P:/docs/worktree-lifecycle-design.md` PR 1:
 
 1. `import shutil` added (was missing — `shutil.rmtree(wt, ignore_errors=True)` at line 606 would have raised `NameError` if the rm-fallback ever ran)
 2. Unconditional `git branch -D` replaced with reachability check + safe-delete; new `auto_tag=False` kwarg for opt-in backup-tag-then-delete behavior
