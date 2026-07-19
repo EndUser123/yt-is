@@ -2,7 +2,7 @@
 
 **This is the single canonical handoff for `yt-is`.** Future agents: read this first.
 
-Last updated: 2026-07-19 (three-reviewer consensus + PR 1 verified-on-main correction + ahead counts refreshed)
+Last updated: 2026-07-19 (C3 closed + auth fail-closed fix + hook re-enabled)
 
 ## Current state
 
