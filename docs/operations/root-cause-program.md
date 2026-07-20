@@ -193,6 +193,8 @@ When a contract ships:
 | Date | Contract | Closed findings | Notes |
 |------|----------|-----------------|-------|
 | 2026-07-19 | C3 | INT-001, INT-002, INT-003, INT-004, INT-008 | 5 row-merge fixes (None-wipe, SELECT omit, promote REPLACE, sticky complete, hard-delete block); 10 falsifier tests pass; commit `2e2fa88` |
+| 2026-07-19 | C4 | COR-001, COR-006, COR-007, COR-008, COR-009 | Fail-closed auth: email enforcement + cache fingerprint binding + deleted no-op validate_auth + UnboundLocalError fix + interactive auth bootstrap; commits `8ce29a5` + C4-B worktree |
+| 2026-07-19 | C5 | CON-002 (path split) | Collapse 5 permanent-fail fill-in sites into _finalize_batch_outcomes helper; commit `56a7445` |
 | 2026-07-19 | **C4-B** | COR-007, COR-008, COR-009 (also binds COR-006 fingerprint) | Real auth validation: `validate_auth()` deleted (no always-True contract); family refresh/sync passes `source_session_checker=None` so the default live checker runs (no `lambda: True`); `_ensure_nlm_auth` initializes `refresh_reason` before both branch ladders and adds explicit `missing_account` branches so the empty-account path cannot raise `UnboundLocalError`; auth cache now bound to the verified-account fingerprint from the probe that wrote it (cache hit refused on fingerprint mismatch). 14 falsifier tests pass; commit `5969b96` |
 
 ---
