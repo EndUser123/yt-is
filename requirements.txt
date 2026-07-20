@@ -1,6 +1,9 @@
 yt-dlp>=2024.0.0
 requests>=2.31.0
 pyyaml>=6.0
-google-genai>=0.8.0
-youtube-transcript-api>=0.6.0
+# google-genai >=2.0 required: legacy response schema removed 2026-06-08.
+# yt-is uses genai.Client + client.models.generate_content().response.text
+google-genai>=2.0.0
+# youtube-transcript-api >=1.0 required: yt-is uses api.fetch().snippets (1.x API).
+youtube-transcript-api>=1.0.0
 fasteners>=0.19
