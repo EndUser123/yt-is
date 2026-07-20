@@ -454,3 +454,68 @@ class TestEnsureNlmAuthCacheFailClosedOnAccountSwap:
         # was wrong. If the cache had not been bound, the swap would have
         # been invisible and this assertion would have failed.
         assert ["login", "--check", "--profile", "worker-swap-test"] in calls
+
+
+class TestC4AEmailEnforcement:
+    """C4-A: Empty expected_email cannot authorize industrial worker path.
+
+    COR-001 falsifier: when noninteractive mode is set and expected_email
+    is empty, _ensure_nlm_auth must fail closed (return False) without
+    attempting any auth commands.
+    """
+
+    def test_empty_email_fails_closed_in_noninteractive_mode(self):
+        """should_fail_closed is True when requires_profile AND no expected_email."""
+        from csf.nlm_batch import _NLMAuthContext
+
+        ctx = _NLMAuthContext(
+            profile="worker-01",
+            login_profile_args=["--profile", "worker-01"],
+            requires_profile=True,
+            expected_email="",
+        )
+        assert ctx.should_fail_closed, (
+            "noninteractive + empty expected_email should fail closed (COR-001)"
+        )
+
+    def test_empty_email_allowed_in_interactive_mode(self):
+        """should_fail_closed is False when NOT noninteractive (interactive OK without email)."""
+        from csf.nlm_batch import _NLMAuthContext
+
+        ctx = _NLMAuthContext(
+            profile="worker-01",
+            login_profile_args=["--profile", "worker-01"],
+            requires_profile=False,
+            expected_email="",
+        )
+        assert not ctx.should_fail_closed, (
+            "interactive mode + empty expected_email should NOT fail closed"
+        )
+
+    def test_nonempty_email_passes_in_noninteractive_mode(self):
+        """should_fail_closed is False when noninteractive AND has expected_email."""
+        from csf.nlm_batch import _NLMAuthContext
+
+        ctx = _NLMAuthContext(
+            profile="worker-01",
+            login_profile_args=["--profile", "worker-01"],
+            requires_profile=True,
+            expected_email="user@example.com",
+        )
+        assert not ctx.should_fail_closed, (
+            "noninteractive + valid expected_email should NOT fail closed"
+        )
+
+    def test_no_profile_fails_closed_regardless_of_email(self):
+        """should_fail_closed is True when no profile even with email."""
+        from csf.nlm_batch import _NLMAuthContext
+
+        ctx = _NLMAuthContext(
+            profile="",
+            login_profile_args=[],
+            requires_profile=True,
+            expected_email="user@example.com",
+        )
+        assert ctx.should_fail_closed, (
+            "noninteractive + no profile should fail closed even with email"
+        )

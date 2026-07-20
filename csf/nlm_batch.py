@@ -473,7 +473,13 @@ class _NLMAuthContext:
 
     @property
     def should_fail_closed(self) -> bool:
-        return self.requires_profile and not self.has_profile
+        """C4-A: fail closed when noninteractive AND (no profile OR no expected_email).
+
+        COR-001: Empty expected_email cannot authorize industrial worker path.
+        Without expected_email, auth cache cannot be fingerprint-bound (C4-B),
+        and there's no way to verify the correct account is logged in.
+        """
+        return self.requires_profile and (not self.has_profile or not self.expected_email)
 
 
 class NotebookSourceMaterializationTimeout(RuntimeError):
