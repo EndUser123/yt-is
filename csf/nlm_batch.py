@@ -2391,27 +2391,56 @@ class NLMBatchIngestor:
             },
         )
         self._last_materialization_ready_at_epoch = 0.0
-        add_args = ["source", "add", self._nb_id, "--wait"]
-        for vid in batch_ids:
-            add_args.extend(["--url", f"https://www.youtube.com/watch?v={vid}"])
+        # notebooklm-py migration (Phase 2): per-video typed source adds via
+        # NLMSyncClient instead of the nlm CLI batch shell-out. Each video is
+        # added with a single retry on SourceAddError/SourceTimeoutError.
+        # Local imports avoid module-level import cycles.
+        from csf.nlm_client import get_sync_client
+        from notebooklm import SourceAddError, SourceTimeoutError
+
+        client = get_sync_client()
         self._last_added_source_ids = []
-        res = self._run_cmd(add_args, timeout=600)
-        add_cmd_elapsed_s = round(time.monotonic() - chunk_started_at, 3)
+        add_results: list[tuple[str, str | None, str | None]] = []  # (video_id, source_id, error)
+        add_started_at = time.monotonic()
+        for vid in batch_ids:
+            url = f"https://www.youtube.com/watch?v={vid}"
+            source_id: str | None = None
+            error_msg: str | None = None
+            for attempt_idx in range(2):  # initial + 1 retry
+                try:
+                    src = client.run(client.sources.add_url(self._nb_id, url, wait=True, wait_timeout=120.0))
+                    source_id = str(src.id)
+                    error_msg = None
+                    break
+                except (SourceAddError, SourceTimeoutError) as e:
+                    error_msg = f"{type(e).__name__}: {e}"
+                    if attempt_idx == 0:
+                        log_action("nlm_batch_source_add_retry", {"video_id": vid, "error": error_msg})
+                        continue
+                    break
+                except Exception as e:
+                    error_msg = f"{type(e).__name__}: {e}"
+                    break
+            add_results.append((vid, source_id, error_msg))
+        add_cmd_elapsed_s = round(time.monotonic() - add_started_at, 3)
         self._last_add_cmd_elapsed_s = add_cmd_elapsed_s
-        self._last_add_returncode = res.returncode
-        # Probe source count after add — key diagnostic for capacity correlation
+        successful_adds = [r for r in add_results if r[1] is not None]
+        failed_adds = [r for r in add_results if r[1] is None]
+        added_count = len(successful_adds)
+        # Compute a synthetic "returncode" for log compatibility: 0 if any add
+        # succeeded, 1 otherwise. Telemetry downstream keys off this field.
+        synthetic_returncode = 0 if successful_adds else 1
+        self._last_add_returncode = synthetic_returncode
+        # Source-count probe retained as a sanity check (not the primary signal).
         source_count_after = self._get_current_source_count()
         source_count_after_known = bool(self._last_source_count_probe_ok)
         source_count_after_error = self._last_source_count_probe_error
-        add_recovered = (
-            res.returncode != 0
-            and source_count_after_known
-            and source_count_after >= source_count_before + len(batch_ids)
-        )
-        added_count = len(batch_ids) if (res.returncode == 0 or add_recovered) else 0
-        count_probe_failed = res.returncode != 0 and (not source_count_before_known or not source_count_after_known)
+        # Typed per-video results carry their own signal; CLI-era recovery and
+        # probe-failed classifications are no longer relevant for the add path.
+        add_recovered = False
+        count_probe_failed = False
         dead_notebook_probe_after_success = (
-            res.returncode == 0
+            added_count > 0
             and not source_count_after_known
             and _source_count_probe_indicates_dead_notebook(source_count_after_error)
         )
@@ -2426,7 +2455,7 @@ class NLMBatchIngestor:
                 "retry_depth": retry_depth,
                 "reset_depth": reset_depth,
                 "dead_notebook_recreate_depth": dead_notebook_recreate_depth,
-                "returncode": res.returncode,
+                "returncode": synthetic_returncode,
                 "added_count": added_count,
                 "recovered": add_recovered,
                 "elapsed_s": add_cmd_elapsed_s,
@@ -2437,8 +2466,9 @@ class NLMBatchIngestor:
                 "source_count_after": source_count_after,
                 "source_count_probe_ok_after": source_count_after_known,
                 "failure_reason": self._last_add_failure_reason,
-                "stdout": (res.stdout or "")[:500],
-                "stderr": (res.stderr or "")[:500],
+                "stdout": "",
+                "stderr": "",
+                "per_video_results": [{"video_id": v, "source_id": s, "error": e} for v, s, e in add_results],
                 "started_at_epoch": chunk_started_at_epoch,
                 "completed_at_epoch": time.time(),
             },
@@ -2462,8 +2492,9 @@ class NLMBatchIngestor:
                     "source_count_probe_ok_after": source_count_after_known,
                     "source_count_probe_error": source_count_after_error,
                     "failure_reason": "source_count_probe_failed",
-                    "stdout": (res.stdout or "")[:500],
-                    "stderr": (res.stderr or "")[:500],
+                    "stdout": "",
+                    "stderr": "",
+                    "per_video_results": [{"video_id": v, "source_id": s, "error": e} for v, s, e in add_results],
                 },
             )
             print(
@@ -2483,7 +2514,37 @@ class NLMBatchIngestor:
                 )
             self._last_add_failure_reason = "dead_notebook_recreate_failed"
             return []
-        if res.returncode == 0 or add_recovered:
+        # Success gate: any successful add proceeds to materialization wait.
+        # Partial failures (some succeeded, some failed) do NOT trigger
+        # notebook reset — the successful adds already landed. Full failure
+        # (added_count == 0) falls through to the retry/reset/dead-notebook
+        # recovery path below.
+        if added_count > 0:
+            if 0 < added_count < len(batch_ids):
+                # Partial success: log a warning so partial failures are
+                # observable, but do not reset the notebook.
+                log_action(
+                    "nlm_batch_subbatch_add_partial_success",
+                    {
+                        "nb_id": self._nb_id,
+                        "subbatch_index": subbatch_index,
+                        "subbatch_size": len(batch_ids),
+                        "expected_total": expected_total,
+                        "attempt": attempt,
+                        "retry_depth": retry_depth,
+                        "reset_depth": reset_depth,
+                        "succeeded": added_count,
+                        "failed": len(failed_adds),
+                        "failed_videos": [v for v, _, e in add_results if e is not None],
+                        "source_profile": source_profile,
+                        "notebooklm_profile": notebooklm_profile,
+                        "per_video_results": [{"video_id": v, "source_id": s, "error": e} for v, s, e in add_results],
+                    },
+                )
+                print(
+                    f"[NLM-Batch]   Sub-batch {subbatch_index} partial success: "
+                    f"{added_count}/{len(batch_ids)} added; continuing without reset"
+                )
             wait_started_at = time.monotonic()
             wait_started_at_epoch = time.time()
             log_action(
@@ -2565,27 +2626,28 @@ class NLMBatchIngestor:
                 )
             self._last_materialization_ready_at_epoch = wait_completed_at_epoch
             self._source_age_cadence_notebook_ready_at_epoch = wait_completed_at_epoch
-            parsed_source_ids = _extract_source_ids_from_add_stdout(res.stdout)
-            if len(parsed_source_ids) == len(batch_ids):
-                self._last_added_source_ids = parsed_source_ids
-            else:
-                self._last_added_source_ids = []
-                log_action(
-                    "nlm_batch_subbatch_add_source_id_parse_mismatch",
-                    {
-                        "nb_id": self._nb_id,
-                        "subbatch_index": subbatch_index,
-                        "subbatch_size": len(batch_ids),
-                        "parsed_source_id_count": len(parsed_source_ids),
-                        "expected_source_id_count": len(batch_ids),
-                        "attempt": attempt,
-                        "retry_depth": retry_depth,
-                        "reset_depth": reset_depth,
-                        "source_profile": source_profile,
-                        "notebooklm_profile": notebooklm_profile,
-                    },
-                )
-            for vid in batch_ids:
+            # Typed Source.id values from notebooklm-py — no stdout parsing.
+            # Preserves submission order: video N's source_id is add_results[N][1].
+            self._last_added_source_ids = [
+                sid for _, sid, _ in add_results if sid is not None
+            ]
+            # Log per-video outcome for observability
+            log_action(
+                "nlm_batch_subbatch_add_typed_results",
+                {
+                    "nb_id": self._nb_id,
+                    "subbatch_index": subbatch_index,
+                    "subbatch_size": len(batch_ids),
+                    "succeeded": len(successful_adds),
+                    "failed": len(failed_adds),
+                    "results": [{"video_id": v, "source_id": s, "error": e} for v, s, e in add_results],
+                    "attempt": attempt,
+                    "retry_depth": retry_depth,
+                    "reset_depth": reset_depth,
+                    "notebooklm_profile": notebooklm_profile,
+                },
+            )
+            for vid, _, _ in add_results:
                 self._video_ready_epoch_by_id[vid] = wait_completed_at_epoch
             # Track the oldest source materialization epoch so the age guard can
             # compute how long the oldest source in the notebook has been aging.
@@ -2595,8 +2657,22 @@ class NLMBatchIngestor:
                 self._oldest_source_materialization_epoch = min(
                     self._oldest_source_materialization_epoch, wait_completed_at_epoch
                 )
-            return list(batch_ids)
+            return [vid for vid, sid, _ in add_results if sid is not None]
 
+        # Failure path: reached only when added_count == 0 (all per-video adds
+        # failed). Build a synthetic CompletedProcess from the typed error
+        # messages so the existing _classify_subbatch_add_failure classifier
+        # and log_action event payloads (which key off res.returncode/stdout/
+        # stderr) continue to work without modification.
+        failure_stderr = "\n".join(
+            f"{v}: {e}" for v, _, e in add_results if e is not None
+        )
+        res = subprocess.CompletedProcess(
+            args=["notebooklm-py", "sources.add_url"],
+            returncode=synthetic_returncode,
+            stdout="",
+            stderr=failure_stderr,
+        )
         print(
             f"[NLM-Batch]   Sub-batch {subbatch_index} add rc={res.returncode}"
             f" (retry_depth={retry_depth})"
