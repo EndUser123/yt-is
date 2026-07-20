@@ -4,6 +4,28 @@
 
 `yt-is` (YouTube Intelligence System) is a high-throughput transcript ingestion pipeline. It has recently transitioned to an **Industrial Architecture** to handle a 140,000-video backlog.
 
+## NLM authentication — READ BEFORE TOUCHING ANY NLM-AUTH CODE
+
+**Canonical doc:** `docs/operations/nlm-auth-architecture.md` (read this first).
+
+The auth model is a single `storage_state.json` at `P:/.data/yt-is/nlm-auth/`,
+backed up to a local bare repo at `C:\Users\brsth\.ytis-nlm-auth-backup\`
+(no remote, pre-push hook blocks any push). The preflight at
+`csf/nlm_auth_check.py` auto-restores from backup if the live file is missing.
+
+**Do NOT** touch the following thinking you are "fixing" auth without reading
+the canonical doc first:
+- The CDP family-refresh machinery in `csf/nlm_worker_auth.py` (deprecated)
+- The nlm CLI cookie store at `~/.notebooklm-mcp-cli/` (no longer primary)
+- Browser profile directories under `P:/.data/yt-is/browser/` (deprecated)
+
+**Do NOT** delete `P:/.data/yt-is/nlm-auth/storage_state.json` or its backup.
+If you see a login prompt, the cause is almost always a deleted/empty storage
+file; the preflight restores it automatically. Only re-bootstrap if the
+session truly expired (Google-side):
+
+    python -m notebooklm login --storage P:/.data/yt-is/nlm-auth/storage_state.json --browser chrome
+
 ## Worktree lifecycle policy
 
 `worktree-policy.toml` at the package root defines the worktree lifecycle

@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -20,11 +21,69 @@ CSF_SOURCE = Path(__file__).parent / "csf-source"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from csf.csf_logging import log_action
+from csf.deps_check import run_check as _run_deps_check
+from csf.nlm_auth_check import ensure_storage as _ensure_nlm_storage, skip_env_set as _nlm_skip_env_set
+
+
+def _resolve_deps_flags(argv: list[str]) -> tuple[bool, bool, bool]:
+    """Pre-scan argv for deps flags before argparse claims subcommand args.
+
+    Returns (skip, strict, check_only). Env vars act as defaults.
+    Also skips the check when --help/-h is present so help output stays clean.
+    """
+    help_requested = any(a in ("--help", "-h") for a in argv)
+    skip = (
+        "--skip-deps-check" in argv
+        or help_requested
+        or os.environ.get("YTIS_SKIP_DEPS_CHECK", "").lower() in ("1", "true", "yes", "on")
+    )
+    strict = "--strict-deps" in argv or os.environ.get(
+        "YTIS_STRICT_DEPS", ""
+    ).lower() in ("1", "true", "yes", "on")
+    check_only = "--check-deps" in argv
+    return skip, strict, check_only
 
 
 def main() -> None:
+    # Startup dependency check — non-blocking by default.
+    # Pre-scan argv because top-level flags must precede the subcommand,
+    # and skip when --help/-h is present so help output stays clean.
+    _skip_deps, _strict_deps, _check_deps_only = _resolve_deps_flags(sys.argv[1:])
+
+    if _check_deps_only:
+        # User asked only for the deps report; exit after.
+        sys.exit(_run_deps_check(strict=True, skip=False))
+
+    if not _skip_deps:
+        _run_deps_check(strict=_strict_deps)
+
+    # NLM auth storage preflight. Skip only for non-NLM commands or explicit env override.
+    # Always runs before subcommand dispatch so every fetch/sync gets the check.
+    if not _nlm_skip_env_set() and not any(a in ("--help", "-h") for a in sys.argv[1:]):
+        if not _ensure_nlm_storage():
+            print(
+                "[yt-is] NLM auth storage unavailable. Halting to avoid silent auth failures.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     parser = argparse.ArgumentParser(
         description="YouTube channel management — check for new videos and manage tracked channels."
+    )
+    parser.add_argument(
+        "--check-deps",
+        action="store_true",
+        help="Check library versions against requirements.txt and exit",
+    )
+    parser.add_argument(
+        "--skip-deps-check",
+        action="store_true",
+        help="Skip the startup dependency version check",
+    )
+    parser.add_argument(
+        "--strict-deps",
+        action="store_true",
+        help="Exit nonzero if any library is outdated or missing",
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
