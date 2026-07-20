@@ -482,6 +482,28 @@ class _NLMAuthContext:
         return self.requires_profile and (not self.has_profile or not self.expected_email)
 
 
+def _finalize_batch_outcomes(
+    results: dict[str, tuple[bool, str | None, str | None]],
+    batch_ids: list[str],
+    *,
+    shared_retry_deferred: frozenset[str] | set[str] | None = None,
+    error_message: str = "Source not found",
+) -> None:
+    """C5a: unified fill-in for missing batch outcomes.
+
+    Replaces 5 duplicated permanent-fail fill-in sites. Honors the C1
+    deferred-set contract: deferred video IDs are never filled as
+    terminal-failed. The extract epilogue (path A) and all caller-side
+    fill-ins (paths B1-B5) now use this single function.
+
+    Modifies `results` in-place.
+    """
+    deferred = shared_retry_deferred or frozenset()
+    for vid in batch_ids:
+        if vid not in results and vid not in deferred:
+            results[vid] = (False, None, error_message)
+
+
 class NotebookSourceMaterializationTimeout(RuntimeError):
     """Raised when NotebookLM sources never become ready within the wait window."""
 
@@ -4927,6 +4949,8 @@ class NLMBatchIngestor:
                 if vid in shared_retry_deferred_video_ids:
                     continue
                 results[vid] = (False, None, "Source not found")
+        # C5a: unified via _finalize_batch_outcomes (the loop above IS the
+        # canonical fill-in; B1-B5 sites below now delegate to the same helper).
         succeeded = sum(1 for ok, _, _ in results.values() if ok)
         log_action(
             "nlm_batch_extract_completed",
@@ -5938,7 +5962,10 @@ class NLMReusableIngestor:
                     "completed_at_epoch": time.time(),
                 },
             )
-            return {vid: (False, None, "Source add failed") for vid in video_ids}
+            # C5a B1: unified fill-in (was inline dict comprehension)
+            _failed_results = {}
+            _finalize_batch_outcomes(_failed_results, video_ids, error_message="Source add failed")
+            return _failed_results
         add_sources_elapsed_s = 0.0
         if window_mode == "extract_window":
             setup_mode = "reuse_extract_window" if not created_new_notebook else "create_extract_window"
@@ -6045,9 +6072,7 @@ class NLMReusableIngestor:
                     if window_metrics:
                         extract_metric_snapshots.append(dict(window_metrics))
                     if len(added_video_ids) != len(window_video_ids):
-                        for vid in window_video_ids:
-                            if vid not in window_results:
-                                window_results[vid] = (False, None, "Source add failed")
+                        _finalize_batch_outcomes(window_results, window_video_ids, error_message="Source add failed")
                     results.update(window_results)
                     window_cleanup_started_at = time.monotonic()
                     window_cleanup_elapsed_s = 0.0
@@ -6212,9 +6237,7 @@ class NLMReusableIngestor:
                     if window_metrics:
                         extract_metric_snapshots.append(dict(window_metrics))
                     if len(added_video_ids) != len(window_video_ids):
-                        for vid in window_video_ids:
-                            if vid not in window_results:
-                                window_results[vid] = (False, None, "Source add failed")
+                        _finalize_batch_outcomes(window_results, window_video_ids, error_message="Source add failed")
                     results.update(window_results)
                     window_total_elapsed_s = round(time.monotonic() - window_started_at, 3)
                     self._last_source_age_cadence_window_elapsed_s = window_total_elapsed_s
@@ -6260,9 +6283,7 @@ class NLMReusableIngestor:
                 if window_metrics:
                     extract_metric_snapshots.append(dict(window_metrics))
                 if len(added_video_ids) != len(video_ids):
-                    for vid in video_ids:
-                        if vid not in results:
-                            results[vid] = (False, None, "Source add failed")
+                    _finalize_batch_outcomes(results, video_ids, error_message="Source add failed")
             extract_elapsed_s = round(time.monotonic() - extract_started_at, 3)
         finally:
             cleanup_started_at = time.monotonic()
@@ -6698,9 +6719,7 @@ def process_industrial_batch(video_ids: List[str]) -> Dict[str, Tuple[bool, Opti
         added_video_ids = ingestor._last_added_video_ids if ingestor._last_added_video_ids is not None else list(video_ids)
         results = ingestor.extract_transcripts(added_video_ids)
         if len(added_video_ids) != len(video_ids):
-            for vid in video_ids:
-                if vid not in results:
-                    results[vid] = (False, None, "Source add failed")
+            _finalize_batch_outcomes(results, video_ids, error_message="Source add failed")
         return results
     finally:
         ingestor.cleanup()
