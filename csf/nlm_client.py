@@ -112,8 +112,13 @@ async def _open_storage_context(account: str, profile: str) -> NotebookLMClient:
     ``storage_state.json`` surfaces as :class:`FileNotFoundError` from the
     library; we translate it into a clear domain error naming the yt-is
     profile and the recovery command for the resolved account.
+
+    Uses the yt-is-managed storage path at ``P:/.data/yt-is/nlm-auth/``
+    (shared with ``csf.nlm_auth_check`` and ``csf.nlm_keepalive``) rather
+    than the notebooklm-py default at ``~/.notebooklm/profiles/<account>/``.
     """
-    ctx = NotebookLMClient.from_storage(profile=account)
+    from csf.nlm_auth_check import STORAGE_PATH  # avoid import cycle at module load
+    ctx = NotebookLMClient.from_storage(path=str(STORAGE_PATH))
     try:
         return await ctx.__aenter__()
     except FileNotFoundError as exc:
