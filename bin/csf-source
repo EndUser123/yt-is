@@ -526,11 +526,17 @@ def _ensure_nlm_auth() -> bool:
                 "check_count": check_count,
             },
         )
-    force_arg = "--force" if _is_nlm_auth_noninteractive() else ""
-    mode = "force" if force_arg else "interactive"
-    print(f"[source] NLM auth expired, re-authenticating with nlm login ({mode})...", file=sys.stderr)
+    force_arg = ""
+    mode = "interactive"
+    # The initial auth check in csf-source is ALWAYS interactive (one-time
+    # bootstrap). After this succeeds, YTIS_NLM_AUTH_NONINTERACTIVE is set
+    # so worker-level auth checks in nlm_batch.py never open browsers.
+    # Previous code checked _is_nlm_auth_noninteractive() here, which meant
+    # the initial auth tried --force (non-interactive CDP) instead of
+    # letting the user log in interactively. The result was: expired sessions
+    # couldn't be refreshed without manual `nlm login` before fetch.
     family = family_for_profile(profile)
-    if family is not None and _is_nlm_auth_noninteractive():
+    if family is not None:
         refresh_started = time.perf_counter()
         session_established_at = round(time.monotonic(), 3)
         log_action(
@@ -600,6 +606,10 @@ def _ensure_nlm_auth() -> bool:
         print("[source] FATAL: NLM auth refresh did not produce the expected profile session.", file=sys.stderr)
         sys.exit(1)
     print("[source] NLM re-authenticated.", file=sys.stderr)
+    # Switch to non-interactive mode for all subsequent worker auth checks.
+    # The initial interactive login above established the session; workers
+    # should use the cached session/cookies without opening browsers.
+    os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
     return True
 
 
@@ -3342,9 +3352,17 @@ def cmd_fetch(
     print()
 
     # Ensure NLM is authenticated before any live fetch run.
+    # The initial auth check is ALWAYS interactive (one-time bootstrap).
+    # Temporarily clear YTIS_NLM_AUTH_NONINTERACTIVE so the auth functions
+    # (refresh_source_profile, refresh_profile_session) can open a browser
+    # if needed. After success, _ensure_nlm_auth sets it back to "1" for
+    # all subsequent worker-level auth checks.
+    _saved_noninteractive = os.environ.pop("YTIS_NLM_AUTH_NONINTERACTIVE", None)
     try:
         _ensure_nlm_auth()
     except BaseException as exc:
+        if _saved_noninteractive is not None:
+            os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = _saved_noninteractive
         _log_fetch_terminal_failure(_format_fetch_terminal_failure_reason(exc))
         raise
 
