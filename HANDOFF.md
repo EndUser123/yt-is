@@ -4,6 +4,39 @@
 
 Last updated: 2026-07-19 (C3 closed + auth fail-closed fix + hook re-enabled)
 
+## Cross-package data source: wiki transcripts (2026-07-27)
+
+`P:/.data/wiki/sources/transcripts/` now contains **full verbatim YouTube
+transcripts** exported by the `nlm-to-wiki` skill via `nlm source content`.
+yt-is may be able to import/digest/ingest these instead of re-fetching from
+NotebookLM.
+
+**Format:** one `.md` file per source, named `<source_id>.md` (NotebookLM UUID).
+Each file has frontmatter (`source_id`, `title`, `notebook_id`, `url`, `type`,
+`exported`) followed by the complete transcript text — no truncation, no
+summarization. YouTube source `url` is `null` (NotebookLM doesn't expose it);
+title-based matching via `match_uuids_to_urls.py` closes the provenance gap.
+
+**Scale (as of 2026-07-27):** 102 transcripts from pilot notebook
+`23bf4931-d0cb-4550-9d11-f9b38843254a` (WL-Pilot: Claude Skills & Code, 188
+sources total). Growing as `nlm-to-wiki sync` runs across more notebooks.
+Sizes range 380 bytes (YouTube Shorts) to 55KB, median ~13KB.
+
+**Integration path:** yt-is already has `register_external_transcript_provider`
+(see `AGENTS.md:427`). A provider that reads `wiki/sources/transcripts/*.md`,
+parses the frontmatter, and feeds the body into `transcripts.sqlite` would
+skip re-fetching from NotebookLM for any source already exported. The
+`source_id` field in the frontmatter maps directly to NotebookLM source IDs;
+title-based matching (or the `match_uuids_to_urls.py` script) can resolve to
+YouTube video IDs.
+
+**Caveat:** these transcripts are keyed by NotebookLM `source_id`, not YouTube
+`video_id`. yt-is's cache uses `video_id` as the key. The existing
+`source_id_to_video_id` hash in `csf_nlm_import.py:171-195` is a known
+INT-005 issue (synthetic IDs pollute the cache). A clean import path should
+resolve real YouTube video IDs via title matching before inserting, not
+reuse the hash.
+
 ## Current state
 
 ## Industrial trust floor (2026-07-17)
