@@ -54,20 +54,3 @@ def extract_video_metadata(clusters: list[dict]) -> dict[str, dict]:
                     "cluster": cname,
                 }
     return meta
-
-    """Build {normalized_title: [video_id, ...]} from parsed clusters.
-
-    Note: normalization is done by the caller (import_nlm_transcripts.py owns
-    normalize_title). This function returns raw titles — the caller normalizes
-    and indexes them. This avoids coupling the shared module to a specific
-    normalization strategy.
-    """
-    index: dict[str, list[str]] = {}
-    for cl in clusters:
-        for v in cl.get("videos", []):
-            title = v.get("title", "")
-            url = v.get("url", "")
-            vid = extract_video_id(url)
-            if vid and title:
-                index.setdefault(title, []).append(vid)
-    return index
