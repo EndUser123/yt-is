@@ -1,0 +1,4 @@
+# gitleaks allowlist — pre-existing keys already in git history
+# Format: <rule>:<fingerprint>
+# Add one entry per finding that gitleaks flags as a false positive.
+gcp-api-key:backfill_channel_metadata.py:YT_API_KEY_3
