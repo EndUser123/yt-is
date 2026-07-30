@@ -306,6 +306,13 @@ def main() -> int:
     print(f"  merged bridge: {sum(len(v) for v in bridge.values())} video_ids, "
           f"{len(bridge)} unique titles")
 
+    # Warn if bridge is empty — likely a sign of broken inputs, not a valid empty result
+    if not bridge:
+        print("\nWARNING: title->video_id bridge is empty. This usually means clusters.json"
+              "\nwas not found or could not be parsed, and analysis_status has no entries."
+              "\nNo transcripts can be matched. Check the warnings above.",
+              file=sys.stderr)
+
     # --- Scan .md files ---
     source_dir = args.source_dir
     if not source_dir.exists():
