@@ -1,5 +1,6 @@
 """Fixup: import remaining history videos from full CSV."""
 import csv
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,7 +46,6 @@ for row in all_rows:
 print(f"Total unique from full history: {len(entries)}")
 
 # Check what's already in DB
-import sqlite3
 conn = sqlite3.connect(str(get_batch_db_path()))
 existing = {r[0] for r in conn.execute("SELECT video_id FROM analysis_status WHERE source = 'history:2026-07-14'").fetchall()}
 conn.close()

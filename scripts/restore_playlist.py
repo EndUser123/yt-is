@@ -1,4 +1,6 @@
-import json, sys
+import json
+import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,7 +53,6 @@ print(f"Inserted/updated: {result.ok_count}")
 if result.fail_count:
     print(f"Failed rows: {result.fail_count}")
 
-import sqlite3
 conn = sqlite3.connect(str(get_batch_db_path()))
 pc = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE source = 'playlist:watch-later-temp'").fetchone()[0]
 hc = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE source = 'history:2026-07-14'").fetchone()[0]

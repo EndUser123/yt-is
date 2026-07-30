@@ -6,24 +6,24 @@ Usage:
 """
 
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
 # Set the new key 3 BEFORE importing the module (it caches keys on first call)
 os.environ["YT_API_KEY_3"] = "AIzaSyAIpCVh8oamSk8-637T08ru0P4mNwv-VL0"
 
 # Force reload with fresh key state
-import csf.source_enumerator as se
+import csf.source_enumerator as se  # noqa: E402
 se._YOUTUBE_API_KEYS = None
 se._key_state = {}
 
-from csf.source_enumerator import get_upload_playlist_id, parse_channel_url
-from csf.batch_status import upsert_channel
-from csf.paths import get_batch_db_path
+from csf.source_enumerator import get_upload_playlist_id, parse_channel_url  # noqa: E402
+from csf.batch_status import upsert_channel  # noqa: E402
+from csf.paths import get_batch_db_path  # noqa: E402
 
-import sqlite3
 conn = sqlite3.connect(str(get_batch_db_path()))
 c = conn.cursor()
 c.execute("""
