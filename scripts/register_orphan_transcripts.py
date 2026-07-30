@@ -13,8 +13,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
-import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -25,6 +23,7 @@ sys.path.insert(0, str(_PKG_ROOT))
 from csf.batch_status import BatchEntry, set_status_batch
 from csf.urls import extract_video_id
 from csf.paths import get_batch_db_path, get_transcript_db_path
+from csf.clusters import load_clusters_json, extract_video_metadata
 
 YTIS_TRANSCRIPT_DB = get_transcript_db_path()
 YTIS_BATCH_DB = get_batch_db_path()
@@ -58,25 +57,8 @@ def find_orphans() -> list[str]:
 
 def load_cluster_metadata() -> dict[str, dict]:
     """Build {video_id: {title, channel, ...}} from clusters.json."""
-    try:
-        clusters = json.loads(CLUSTERS_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        print(f"  Warning: could not load clusters.json ({e}); metadata will be empty")
-        return {}
-    meta = {}
-    for cl in clusters:
-        cname = cl.get("name", cl.get("cluster_id", ""))
-        for v in cl.get("videos", []):
-            url = v.get("url", "")
-            vid = extract_video_id(url)
-            if vid:
-                meta[vid] = {
-                    "title": v.get("title", ""),
-                    "channel": v.get("channel", ""),
-                    "published_at": v.get("published_at", v.get("date", "")),
-                    "cluster": cname,
-                }
-    return meta
+    clusters = load_clusters_json(CLUSTERS_PATH)
+    return extract_video_metadata(clusters)
 
 
 def build_entries(orphans: list[str], meta: dict[str, dict]) -> list[BatchEntry]:

@@ -29,7 +29,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sqlite3
 import sys
@@ -43,6 +42,7 @@ sys.path.insert(0, str(_PKG_ROOT))
 
 from csf.urls import extract_video_id
 from csf.paths import get_batch_db_path, get_transcript_db_path
+from csf.clusters import load_clusters_json
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -122,17 +122,11 @@ def parse_md_file(path: Path) -> dict | None:
 def build_bridge_from_clusters(clusters_paths: list[Path]) -> dict[str, list[str]]:
     """Build {normalized_title: [video_id, ...]} from clusters.json files.
 
-    Each cluster has a 'videos' list with {title, url}. We extract video_id
-    from the URL.
+    Uses the shared load_clusters_json() loader with consistent error handling.
     """
     index: dict[str, list[str]] = {}
     for cpath in clusters_paths:
-        if not cpath.exists():
-            continue
-        try:
-            clusters = json.loads(cpath.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
+        clusters = load_clusters_json(cpath)
         for cl in clusters:
             for v in cl.get("videos", []):
                 title = v.get("title", "")
