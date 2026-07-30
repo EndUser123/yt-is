@@ -8,7 +8,6 @@ Multi-terminal safe: all terminals share the same DB with WAL mode.
 """
 
 import os
-import re
 import sqlite3
 import time
 import threading
