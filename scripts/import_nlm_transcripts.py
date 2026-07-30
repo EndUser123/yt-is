@@ -38,11 +38,11 @@ from pathlib import Path
 
 # yt-is package root (this script lives in scripts/)
 _PKG_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_PKG_ROOT))
+sys.path.insert(0, str(_PKG_ROOT))  # noqa: E402
 
-from csf.urls import extract_video_id
-from csf.paths import get_batch_db_path, get_transcript_db_path
-from csf.clusters import load_clusters_json
+from csf.urls import extract_video_id  # noqa: E402
+from csf.paths import get_batch_db_path, get_transcript_db_path  # noqa: E402
+from csf.clusters import load_clusters_json  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -362,7 +362,7 @@ def main() -> int:
         if args.verbose:
             print(f"  [{mtype}] {vid} <- {entry['title'][:60]}")
 
-    print(f"\n=== Match results ===")
+    print("\n=== Match results ===")
     for mtype, count in match_types.most_common():
         print(f"  {mtype}: {count}")
     print(f"  already cached (skip): {already}")
@@ -395,13 +395,13 @@ def main() -> int:
             errors += 1
             print(f"  ERROR writing {vid}: {e}", file=sys.stderr)
 
-    print(f"\n=== Done ===")
+    print("\n=== Done ===")
     print(f"  written: {written}")
     print(f"  errors:  {errors}")
 
     # --- Verify ---
     new_cached = get_cached_video_ids()
-    print(f"\n=== Verification ===")
+    print("\n=== Verification ===")
     print(f"  transcript_cache before: {len(already_cached)}")
     print(f"  transcript_cache after:  {len(new_cached)}")
     print(f"  delta:                   {len(new_cached) - len(already_cached)}")

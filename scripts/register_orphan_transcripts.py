@@ -18,12 +18,11 @@ import sys
 from pathlib import Path
 
 _PKG_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_PKG_ROOT))
+sys.path.insert(0, str(_PKG_ROOT))  # noqa: E402
 
-from csf.batch_status import BatchEntry, set_status_batch
-from csf.urls import extract_video_id
-from csf.paths import get_batch_db_path, get_transcript_db_path
-from csf.clusters import load_clusters_json, extract_video_metadata
+from csf.batch_status import BatchEntry, set_status_batch  # noqa: E402
+from csf.paths import get_batch_db_path, get_transcript_db_path  # noqa: E402
+from csf.clusters import load_clusters_json, extract_video_metadata  # noqa: E402
 
 YTIS_TRANSCRIPT_DB = get_transcript_db_path()
 YTIS_BATCH_DB = get_batch_db_path()
@@ -108,7 +107,7 @@ def main() -> int:
 
     entries = build_entries(orphans, meta)
 
-    print(f"\n=== Entries to register ===")
+    print("\n=== Entries to register ===")
     print(f"  Total: {len(entries)}")
     sample = entries[:3]
     for e in sample:
@@ -125,7 +124,7 @@ def main() -> int:
         print(f"  Failed: {result.fail_count}")
 
     # Verify
-    print(f"\n=== Verification ===")
+    print("\n=== Verification ===")
     batch = sqlite3.connect(str(YTIS_BATCH_DB))
     try:
         ph = ",".join("?" for _ in orphans)
