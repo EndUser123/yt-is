@@ -34,8 +34,17 @@ def find_orphans() -> list[str]:
     """Return video_ids in transcript_cache (nlm-to-wiki tagged) but NOT in analysis_status."""
     cache = sqlite3.connect(str(YTIS_TRANSCRIPT_DB))
     try:
+        # Use json_extract for structured source match instead of LIKE substring.
+        # This avoids false positives from any text containing 'nlm-to-wiki'.
         imported = [r[0] for r in cache.execute(
-            "SELECT DISTINCT video_id FROM transcript_cache WHERE metadata_json LIKE '%nlm-to-wiki%'"
+            "SELECT DISTINCT video_id FROM transcript_cache "
+            "WHERE json_extract(metadata_json, '$.source') = 'notebooklm:nlm-to-wiki'"
+        ).fetchall()]
+    except sqlite3.OperationalError:
+        # Fallback for older SQLite without json1 extension
+        imported = [r[0] for r in cache.execute(
+            "SELECT DISTINCT video_id FROM transcript_cache "
+            "WHERE metadata_json LIKE '%\"source\": \"notebooklm:nlm-to-wiki\"\"%'"
         ).fetchall()]
     finally:
         cache.close()
