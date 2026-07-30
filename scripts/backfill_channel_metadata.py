@@ -2,16 +2,17 @@
 """Backfill channel metadata (description, published_at, country) for existing channels.
 
 Usage:
-    python3 P:\\\\\\packages/yt-is/scripts/backfill_channel_metadata.py [--batch=100]
+    python3 scripts/backfill_channel_metadata.py [--batch=100]
 """
 
 import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Set the new key 3 BEFORE importing the module (it caches keys on first call)
 os.environ["YT_API_KEY_3"] = "AIzaSyAIpCVh8oamSk8-637T08ru0P4mNwv-VL0"
-
-sys.path.insert(0, "P:\\\\\\packages/yt-is")
 
 # Force reload with fresh key state
 import csf.source_enumerator as se
