@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from csf.cache import get_shared_db_path as _get_transcript_db_path
-from csf.batch_status import _get_default_db_path as _get_batch_db_path_raw
+from csf.batch_status import get_batch_db_path as _get_batch_db_path_raw
 
 
 def get_transcript_db_path() -> Path:

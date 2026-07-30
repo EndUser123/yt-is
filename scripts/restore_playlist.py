@@ -2,7 +2,7 @@ import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, "P:\\packages\\yt-is")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from csf.batch_status import BatchEntry, set_status_batch
 from csf.paths import get_batch_db_path
 

@@ -16,17 +16,17 @@ from csf.urls import extract_video_id
 def load_clusters_json(path: Path) -> list[dict]:
     """Load and parse a clusters.json file.
 
-    Returns the list of cluster dicts. On missing file or malformed JSON,
-    prints a warning to stderr and returns an empty list — never raises.
-    This ensures a broken input is distinguishable from an empty-but-valid
-    result at the caller level (see YTIS-005).
+    Returns the list of cluster dicts. On missing file, malformed JSON, or
+    encoding errors, prints a warning to stderr and returns an empty list.
+    Never raises. Note: a broken input and a valid-but-empty file both return
+    []; they are distinguishable only via the stderr warning (see YTIS-005).
     """
     if not path.exists():
         print(f"  Warning: clusters file not found: {path}", file=sys.stderr)
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
+    except (json.JSONDecodeError, OSError, ValueError) as e:
         print(f"  Warning: could not parse clusters file ({e}): {path}", file=sys.stderr)
         return []
     if not isinstance(data, list):
@@ -55,8 +55,6 @@ def extract_video_metadata(clusters: list[dict]) -> dict[str, dict]:
                 }
     return meta
 
-
-def build_title_index(clusters: list[dict]) -> dict[str, list[str]]:
     """Build {normalized_title: [video_id, ...]} from parsed clusters.
 
     Note: normalization is done by the caller (import_nlm_transcripts.py owns

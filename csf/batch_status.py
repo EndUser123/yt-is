@@ -130,6 +130,10 @@ def _get_default_db_path() -> Path:
     return _DEFAULT_DB_PATH
 
 
+# Public alias for external callers (csf.paths imports this)
+get_batch_db_path = _get_default_db_path
+
+
 def _get_batch_status_storage() -> "_BatchStatusStorage":
     """Get or create the batch status storage singleton."""
     global _batch_status_storage

@@ -61,7 +61,6 @@ else:
     print("Nothing to import")
 
 # Final count
-import sqlite3
 conn = sqlite3.connect(str(get_batch_db_path()))
 total = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE source = 'history:2026-07-14'").fetchone()[0]
 print(f"Total history entries in DB: {total}")
