@@ -40,33 +40,22 @@ from pathlib import Path
 _PKG_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PKG_ROOT))  # noqa: E402
 
-from csf.urls import extract_video_id  # noqa: E402
+# Import shared title-bridge functions from the extracted module
+from title_bridge import (  # noqa: E402
+    normalize_title,
+    build_bridge_from_clusters,
+    build_bridge_from_analysis,
+    merge_bridges,
+    match_title,
+    DEFAULT_CLUSTERS_FILES,
+)
 from csf.paths import get_batch_db_path, get_transcript_db_path  # noqa: E402
-from csf.clusters import load_clusters_json  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 
 NLM_TRANSCRIPTS_DIR = Path("P:/.data/wiki/sources/transcripts")
-
-DEFAULT_CLUSTERS_FILES = [
-    Path("C:/Users/brsth/Downloads/watch-later-1784999007767-deduped-clusters.json"),
-]
-
-# ---------------------------------------------------------------------------
-# Title normalization (mirrors match_uuids_to_urls.py)
-# ---------------------------------------------------------------------------
-
-def normalize_title(t: str) -> str:
-    """Aggressive normalization: lowercase, strip punctuation, collapse whitespace.
-
-    Preserves Unicode letters/digits so non-English titles can still match.
-    """
-    t = (t or "").lower().strip()
-    t = re.sub(r"[^\w\s]", " ", t, flags=re.UNICODE)
-    t = re.sub(r"\s+", " ", t).strip()
-    return t
 
 
 # ---------------------------------------------------------------------------
@@ -113,112 +102,6 @@ def parse_md_file(path: Path) -> dict | None:
         "transcript_body": body,
         "file": path.name,
     }
-
-
-# ---------------------------------------------------------------------------
-# Bridge: build title -> video_id index
-# ---------------------------------------------------------------------------
-
-def build_bridge_from_clusters(clusters_paths: list[Path]) -> dict[str, list[str]]:
-    """Build {normalized_title: [video_id, ...]} from clusters.json files.
-
-    Uses the shared load_clusters_json() loader with consistent error handling.
-    """
-    index: dict[str, list[str]] = {}
-    for cpath in clusters_paths:
-        clusters = load_clusters_json(cpath)
-        for cl in clusters:
-            for v in cl.get("videos", []):
-                title = v.get("title", "")
-                url = v.get("url", "")
-                vid = extract_video_id(url)
-                if not vid:
-                    continue
-                norm = normalize_title(title)
-                if norm:
-                    index.setdefault(norm, []).append(vid)
-    return index
-
-
-def build_bridge_from_analysis() -> dict[str, list[str]]:
-    """Build {normalized_title: [video_id, ...]} from yt-is analysis_status."""
-    index: dict[str, list[str]] = {}
-    batch_db = get_batch_db_path()
-    if not batch_db.exists():
-        return index
-    conn = sqlite3.connect(str(batch_db))
-    try:
-        rows = conn.execute("SELECT video_id, title FROM analysis_status").fetchall()
-    except sqlite3.OperationalError:
-        conn.close()
-        return index
-    conn.close()
-    for vid, title in rows:
-        if not title:
-            continue
-        norm = normalize_title(title)
-        if norm:
-            index.setdefault(norm, []).append(vid)
-    return index
-
-
-def merge_bridges(*bridges: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Merge multiple title->video_id indices, deduplicating video_ids."""
-    merged: dict[str, list[str]] = {}
-    for bridge in bridges:
-        for norm, vids in bridge.items():
-            existing = merged.setdefault(norm, [])
-            for v in vids:
-                if v not in existing:
-                    existing.append(v)
-    return merged
-
-
-# ---------------------------------------------------------------------------
-# Matching
-# ---------------------------------------------------------------------------
-
-def match_title(
-    title: str,
-    index: dict[str, list[str]],
-    fuzzy_threshold: float = 0.0,
-) -> tuple[str | None, str]:
-    """Match a transcript title to a video_id.
-
-    Returns (video_id | None, match_type) where match_type is one of:
-    exact, fuzzy, unmatched, ambiguous.
-
-    Fuzzy matching is O(unmatched * len(index)) — disabled by default
-    (threshold=0.0). Enable only for small index sizes or targeted runs.
-    """
-    norm = normalize_title(title)
-    if not norm:
-        return None, "unmatched"
-
-    # Exact match
-    if norm in index:
-        vids = index[norm]
-        if len(vids) == 1:
-            return vids[0], "exact"
-        return None, "ambiguous"  # title collision — can't resolve safely
-
-    # Fuzzy match (only if threshold > 0 — expensive at scale)
-    if fuzzy_threshold <= 0.0:
-        return None, "unmatched"
-
-    best_score = 0.0
-    best_vids: list[str] | None = None
-    for key, vids in index.items():
-        score = SequenceMatcher(None, norm, key).ratio()
-        if score > best_score:
-            best_score = score
-            best_vids = vids
-    if best_score >= fuzzy_threshold and best_vids:
-        if len(best_vids) == 1:
-            return best_vids[0], "fuzzy"
-        return None, "ambiguous"
-
-    return None, "unmatched"
 
 
 # ---------------------------------------------------------------------------

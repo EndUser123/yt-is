@@ -285,6 +285,54 @@ def get_cached_transcript(
     return storage.get(cache_key)
 
 
+def get_cached_transcript_by_video_id(video_id: str) -> TranscriptCache | None:
+    """Get cached transcript by video_id alone (no lang/source needed).
+
+    Queries the shared SQLite DB directly by video_id, bypassing the
+    cache_key hash. Returns the first match (currently the cache is
+    effectively 1:1 per video_id). Used by the nlm-to-wiki forward-sync
+    provider to check whether a transcript already exists before
+    calling NotebookLM.
+
+    Args:
+        video_id: YouTube video ID (must be 11 chars)
+
+    Returns:
+        TranscriptCache if found, None otherwise.
+        Returns None for invalid video_id without raising.
+    """
+    if not _validate_video_id(video_id):
+        return None
+    with _db_access_lock:
+        db_path = get_shared_db_path()
+        if not db_path.exists():
+            return None
+        conn = _connect_shared_db()
+        conn.execute("PRAGMA journal_mode=WAL")
+        cursor = conn.execute(
+            """
+            SELECT video_id, lang, source, transcript, cached_at, terminal_id, metadata_json
+            FROM transcript_cache
+            WHERE video_id = ?
+            LIMIT 1
+            """,
+            (video_id,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return None
+        return TranscriptCache(
+            video_id=row[0],
+            lang=row[1],
+            source=row[2],
+            transcript=row[3],
+            cached_at=datetime.fromisoformat(row[4]),
+            terminal_id=row[5],
+            metadata_json=row[6] if len(row) > 6 and row[6] is not None else "{}",
+        )
+
+
 def set_cached_transcript(
     video_id: str,
     lang: str,
