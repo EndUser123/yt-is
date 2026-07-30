@@ -9,8 +9,6 @@ from csf.batch_status import BatchEntry, set_status_batch
 from csf.paths import get_batch_db_path
 from csf.urls import extract_video_id
 
-from csf.urls import extract_video_id
-
 all_rows = []
 with open(r"C:\Users\brsth\Downloads\history.csv", encoding="utf-8-sig") as f:
     reader = csv.DictReader(f)

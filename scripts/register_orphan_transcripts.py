@@ -44,7 +44,7 @@ def find_orphans() -> list[str]:
         # Fallback for older SQLite without json1 extension
         imported = [r[0] for r in cache.execute(
             "SELECT DISTINCT video_id FROM transcript_cache "
-            "WHERE metadata_json LIKE '%\"source\": \"notebooklm:nlm-to-wiki\"\"%'"
+            "WHERE metadata_json LIKE '%\"source\": \"notebooklm:nlm-to-wiki\"%'"
         ).fetchall()]
     finally:
         cache.close()
