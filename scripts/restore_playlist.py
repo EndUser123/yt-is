@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, "P:\\packages\\yt-is")
 from csf.batch_status import BatchEntry, set_status_batch
+from csf.paths import get_batch_db_path
 
 entries = []
 seen = set()
@@ -51,7 +52,7 @@ if result.fail_count:
     print(f"Failed rows: {result.fail_count}")
 
 import sqlite3
-conn = sqlite3.connect(r"P:\.data\yt-is\batch_status.sqlite")
+conn = sqlite3.connect(str(get_batch_db_path()))
 pc = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE source = 'playlist:watch-later-temp'").fetchone()[0]
 hc = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE source = 'history:2026-07-14'").fetchone()[0]
 print(f"Playlist: {pc}")

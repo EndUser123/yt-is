@@ -4,10 +4,13 @@
 Removes /channel/ prefix from @handle URLs for consistency.
 """
 
-import sqlite3
+import sqlite3, sys
 from pathlib import Path
 
-DB_PATH = Path("P:\\\\\\.data/yt-is/batch_status/batch_status.sqlite")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from csf.paths import get_batch_db_path
+
+DB_PATH = get_batch_db_path()
 
 print(f"Migrating: {DB_PATH}")
 

@@ -20,11 +20,10 @@ se._key_state = {}
 
 from csf.source_enumerator import get_upload_playlist_id, parse_channel_url
 from csf.batch_status import upsert_channel
-
-DB = "P:\\\\\\.data/yt-is/batch_status.sqlite"
+from csf.paths import get_batch_db_path
 
 import sqlite3
-conn = sqlite3.connect(DB)
+conn = sqlite3.connect(str(get_batch_db_path()))
 c = conn.cursor()
 c.execute("""
     SELECT cm.channel_url

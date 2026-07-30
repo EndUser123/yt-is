@@ -22,9 +22,9 @@ from csf.nlm_batch import (
 )
 from csf.batch_status import mark_complete, mark_failed
 from csf.cache import has_cached_transcript, set_cached_transcript
+from csf.paths import get_batch_db_path
 
 _DEFAULT_LABELS = ["playlist:watch-later-temp", "history:2026-07-14"]
-_DEFAULT_DB_PATH = Path(r"P:\.data\yt-is\batch_status.sqlite")
 
 
 def get_pending(source_labels, db_path):
@@ -56,7 +56,7 @@ def main():
     args = parser.parse_args()
 
     source_labels = [x.strip() for x in args.labels.split(",")] if args.labels else _DEFAULT_LABELS
-    db_path = args.db_path or _DEFAULT_DB_PATH
+    db_path = args.db_path or get_batch_db_path()
 
     pending = get_pending(source_labels, db_path)
     if not pending:
