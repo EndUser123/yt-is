@@ -41,6 +41,8 @@ from pathlib import Path
 _PKG_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PKG_ROOT))
 
+from csf.urls import extract_video_id
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -73,10 +75,6 @@ def normalize_title(t: str) -> str:
 # ---------------------------------------------------------------------------
 
 _FM_FIELD_RE = re.compile(r"^(\w+):\s*(.*)$", re.MULTILINE)
-_YT_RE = re.compile(
-    r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/v/|youtube\.com/embed/"
-    r"|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})"
-)
 
 
 def parse_md_file(path: Path) -> dict | None:
@@ -140,10 +138,9 @@ def build_bridge_from_clusters(clusters_paths: list[Path]) -> dict[str, list[str
             for v in cl.get("videos", []):
                 title = v.get("title", "")
                 url = v.get("url", "")
-                m = _YT_RE.search(url)
-                if not m:
+                vid = extract_video_id(url)
+                if not vid:
                     continue
-                vid = m.group(1)
                 norm = normalize_title(title)
                 if norm:
                     index.setdefault(norm, []).append(vid)

@@ -23,15 +23,11 @@ _PKG_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PKG_ROOT))
 
 from csf.batch_status import BatchEntry, set_status_batch
+from csf.urls import extract_video_id
 
 YTIS_TRANSCRIPT_DB = Path("P:/.data/yt-is/transcripts.sqlite")
 YTIS_BATCH_DB = Path("P:/.data/yt-is/batch_status.sqlite")
 CLUSTERS_PATH = Path("C:/Users/brsth/Downloads/watch-later-1784999007767-deduped-clusters.json")
-
-YT_RE = re.compile(
-    r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/v/|youtube\.com/embed/"
-    r"|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})"
-)
 
 
 def find_orphans() -> list[str]:
@@ -71,9 +67,8 @@ def load_cluster_metadata() -> dict[str, dict]:
         cname = cl.get("name", cl.get("cluster_id", ""))
         for v in cl.get("videos", []):
             url = v.get("url", "")
-            m = YT_RE.search(url)
-            if m:
-                vid = m.group(1)
+            vid = extract_video_id(url)
+            if vid:
                 meta[vid] = {
                     "title": v.get("title", ""),
                     "channel": v.get("channel", ""),
