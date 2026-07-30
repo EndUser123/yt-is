@@ -42,14 +42,13 @@ _PKG_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PKG_ROOT))
 
 from csf.urls import extract_video_id
+from csf.paths import get_batch_db_path, get_transcript_db_path
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 
 NLM_TRANSCRIPTS_DIR = Path("P:/.data/wiki/sources/transcripts")
-YTIS_BATCH_DB = Path("P:/.data/yt-is/batch_status.sqlite")
-YTIS_TRANSCRIPT_DB = Path("P:/.data/yt-is/transcripts.sqlite")
 
 DEFAULT_CLUSTERS_FILES = [
     Path("C:/Users/brsth/Downloads/watch-later-1784999007767-deduped-clusters.json"),
@@ -150,9 +149,10 @@ def build_bridge_from_clusters(clusters_paths: list[Path]) -> dict[str, list[str
 def build_bridge_from_analysis() -> dict[str, list[str]]:
     """Build {normalized_title: [video_id, ...]} from yt-is analysis_status."""
     index: dict[str, list[str]] = {}
-    if not YTIS_BATCH_DB.exists():
+    batch_db = get_batch_db_path()
+    if not batch_db.exists():
         return index
-    conn = sqlite3.connect(str(YTIS_BATCH_DB))
+    conn = sqlite3.connect(str(batch_db))
     try:
         rows = conn.execute("SELECT video_id, title FROM analysis_status").fetchall()
     except sqlite3.OperationalError:
@@ -233,9 +233,10 @@ def match_title(
 
 def get_cached_video_ids() -> set[str]:
     """Return the set of video_ids already in transcript_cache."""
-    if not YTIS_TRANSCRIPT_DB.exists():
+    transcript_db = get_transcript_db_path()
+    if not transcript_db.exists():
         return set()
-    conn = sqlite3.connect(str(YTIS_TRANSCRIPT_DB))
+    conn = sqlite3.connect(str(transcript_db))
     try:
         rows = conn.execute("SELECT DISTINCT video_id FROM transcript_cache").fetchall()
     except sqlite3.OperationalError:

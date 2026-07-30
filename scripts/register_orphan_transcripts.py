@@ -24,9 +24,10 @@ sys.path.insert(0, str(_PKG_ROOT))
 
 from csf.batch_status import BatchEntry, set_status_batch
 from csf.urls import extract_video_id
+from csf.paths import get_batch_db_path, get_transcript_db_path
 
-YTIS_TRANSCRIPT_DB = Path("P:/.data/yt-is/transcripts.sqlite")
-YTIS_BATCH_DB = Path("P:/.data/yt-is/batch_status.sqlite")
+YTIS_TRANSCRIPT_DB = get_transcript_db_path()
+YTIS_BATCH_DB = get_batch_db_path()
 CLUSTERS_PATH = Path("C:/Users/brsth/Downloads/watch-later-1784999007767-deduped-clusters.json")
 
 
