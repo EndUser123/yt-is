@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Register orphan video_ids into analysis_status.
 
-These video_ids have transcripts in transcript_cache (imported from nlm-to-wiki)
+These video_ids have transcripts in transcript_cache (imported from wiki-yt)
 but were never registered in analysis_status — the tracking table yt-is uses for
 video metadata (title, channel, source, status). This script registers them
 with metadata from clusters.json so they're not orphan cache rows.
 
 Usage:
-  python scripts/register_orphan_transcripts.py --dry-run
-  python scripts/register_orphan_transcripts.py
+  python scripts/register_orphan_transcripts.py --clusters-json path/to/clusters.json
+  python scripts/register_orphan_transcripts.py --clusters-json path/to/clusters.json --dry-run
 """
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ from csf.clusters import load_clusters_json, extract_video_metadata  # noqa: E40
 
 YTIS_TRANSCRIPT_DB = get_transcript_db_path()
 YTIS_BATCH_DB = get_batch_db_path()
-CLUSTERS_PATH = Path("C:/Users/brsth/Downloads/watch-later-1784999007767-deduped-clusters.json")
 
 
 def find_orphans() -> list[str]:
@@ -63,9 +62,9 @@ def find_orphans() -> list[str]:
     return [v for v in imported if v not in present]
 
 
-def load_cluster_metadata() -> dict[str, dict]:
+def load_cluster_metadata(clusters_path: Path) -> dict[str, dict]:
     """Build {video_id: {title, channel, ...}} from clusters.json."""
-    clusters = load_clusters_json(CLUSTERS_PATH)
+    clusters = load_clusters_json(clusters_path)
     return extract_video_metadata(clusters)
 
 
@@ -81,7 +80,8 @@ def build_entries(orphans: list[str], meta: dict[str, dict]) -> list[BatchEntry]
             published_at=m.get("published_at") or None,
             has_captions=True,  # we know they have transcripts — just imported them
             title=m.get("title") or None,
-            last_stage="notebooklm",  # the transcript came from NotebookLM
+            # last_stage intentionally NOT set — it's a pipeline stage, not source provenance.
+            # The source field already records provenance.
         ))
     return entries
 
@@ -89,6 +89,8 @@ def build_entries(orphans: list[str], meta: dict[str, dict]) -> list[BatchEntry]
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="No writes — report only")
+    ap.add_argument("--clusters-json", type=Path, required=True,
+                    help="Path to clusters.json file for metadata lookup")
     args = ap.parse_args()
 
     print("=== Finding orphans ===")
@@ -99,8 +101,8 @@ def main() -> int:
         print("\nNo orphans to register.")
         return 0
 
-    print("\n=== Loading metadata from clusters.json ===")
-    meta = load_cluster_metadata()
+    print(f"\n=== Loading metadata from {args.clusters_json.name} ===")
+    meta = load_cluster_metadata(args.clusters_json)
     with_meta = [v for v in orphans if v in meta]
     print(f"  Have clusters.json metadata: {len(with_meta)}")
     print(f"  No metadata (will register with title=None): {len(orphans) - len(with_meta)}")

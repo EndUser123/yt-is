@@ -56,6 +56,8 @@ def parse_playlist_jsonl(path):
                 source="playlist:watch-later-temp",
                 published_at=published_at, title=title,
                 channel_id=channel_id, duration=duration,
+                description=obj.get("description"),
+                thumbnail=(obj.get("thumbnail") or obj.get("thumbnails", [{}])[0].get("url") if obj.get("thumbnails") else None),
             )
             entries.append(entry)
     return entries
@@ -111,15 +113,15 @@ def main():
     history_entries = parse_history_csv(args.history, limit=5000)
     print(f"  YouTube watch URLs found: {len(history_entries)}")
 
-    playlist_ids = {e.video_id for e in playlist_entries}
-    deduped_history = [e for e in history_entries if e.video_id not in playlist_ids]
-    print(f"  After dedup: {len(deduped_history)}")
-
-    all_entries = playlist_entries + deduped_history
+    # Don't pre-filter history against playlist — let COALESCE in the UPSERT
+    # merge them. This allows history's published_at to enrich playlist entries
+    # that might be missing it, and vice versa.
+    all_entries = playlist_entries + history_entries
+    overlap = len(playlist_entries) + len(history_entries) - len({e.video_id for e in all_entries})
     print(f"\n=== Total to import: {len(all_entries)} ===")
     print(f"  Playlist:  {len(playlist_entries)}")
-    print(f"  History:   {len(deduped_history)} (unique)")
-    print(f"  Overlap:   {len(history_entries) - len(deduped_history)}")
+    print(f"  History:   {len(history_entries)}")
+    print(f"  Overlap:   {overlap} (COALESCE will merge)")
 
     existing = get_status_batch([e.video_id for e in all_entries])
     existing_vids = {k for k, v in existing.items() if v is not None}
