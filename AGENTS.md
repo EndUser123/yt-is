@@ -298,7 +298,7 @@ Check all tracked YouTube channels for new videos and manage your channel list.
 **Entry point**: `bin/yt-is` (wraps `bin/csf-source`)
 
 **Commands:**
-- `sync` — Check all tracked channels for new videos (RSS + gap detection + API)
+- `sync` — Check all tracked channels for new videos (RSS + gap detection + API). **Long-running: ~1-2s per channel.** For 1,298 channels this is 20-40 minutes. Set `timeout: 1800000` (30 min) on `run_terminal_command`, or run in background with no timeout. Never use the default 120s timeout — it kills a working process mid-sync.
 - `list` — List all tracked channels with metadata
 - `add <url>` — Add a new channel or playlist to track
 - `fetch` — Download pending transcripts via the full fallback chain (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper)
