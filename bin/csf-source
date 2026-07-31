@@ -1342,19 +1342,59 @@ def cmd_check(source_id_or_url: str) -> None:
         print(f"[source] Marked {new_count} new videos as pending")
 
     elif rss_ids:
-        # Normal RSS processing - only add videos that aren't in database at all
+        # Normal RSS processing - use rich RSS data for metadata
+        from csf.source_enumerator import check_rss_rich, enrich_videos_by_id
+        rss_rich = check_rss_rich(parse_channel_url(channel_url))
         rss_ids_set = set(rss_ids)
         new_videos = rss_ids_set - all_video_ids  # Only truly new videos
-        entries = [
-            BatchEntry(
-                video_id=vid,
-                status="pending",
-                source=channel_url,
-                published_at=None,
-                has_captions=None,
-            )
-            for vid in new_videos
-        ]
+
+        if new_videos:
+            # Enrich new RSS video IDs with API metadata (1 unit per 50 videos — very cheap)
+            new_video_list = list(new_videos)
+            enriched = []
+            try:
+                enriched = enrich_videos_by_id(new_video_list)
+            except Exception:
+                pass  # API enrichment fails gracefully — fall back to bare entries
+
+            if enriched:
+                entries = [
+                    BatchEntry(
+                        video_id=video["video_id"],
+                        status="pending",
+                        source=channel_url,
+                        published_at=video.get("published_at"),
+                        has_captions=video.get("has_captions"),
+                        title=video.get("title"),
+                        description=video.get("description"),
+                        channel_id=video.get("channel_id"),
+                        thumbnail=video.get("thumbnail"),
+                        duration=video.get("duration"),
+                        privacy_status=video.get("privacy_status"),
+                        upload_status=video.get("upload_status"),
+                        is_live_content=video.get("is_live_content"),
+                        unavailable_reason=video.get("unavailable_reason"),
+                    )
+                    for video in enriched
+                    if video["video_id"] in new_videos
+                ]
+            else:
+                # Fallback: use RSS-extracted metadata (title, published_at, channel_id)
+                rss_rich_map = {v["video_id"]: v for v in rss_rich}
+                entries = [
+                    BatchEntry(
+                        video_id=vid,
+                        status="pending",
+                        source=channel_url,
+                        published_at=rss_rich_map.get(vid, {}).get("published_at"),
+                        title=rss_rich_map.get(vid, {}).get("title"),
+                        channel_id=rss_rich_map.get(vid, {}).get("channel_id"),
+                        has_captions=None,
+                    )
+                    for vid in new_videos
+                ]
+        else:
+            entries = []
         if entries:
             set_status_batch(entries)
         new_count = len(entries)
@@ -3352,19 +3392,43 @@ def cmd_fetch(
     print()
 
     # Ensure NLM is authenticated before any live fetch run.
-    # The initial auth check is ALWAYS interactive (one-time bootstrap).
-    # Temporarily clear YTIS_NLM_AUTH_NONINTERACTIVE so the auth functions
-    # (refresh_source_profile, refresh_profile_session) can open a browser
-    # if needed. After success, _ensure_nlm_auth sets it back to "1" for
-    # all subsequent worker-level auth checks.
-    _saved_noninteractive = os.environ.pop("YTIS_NLM_AUTH_NONINTERACTIVE", None)
-    try:
-        _ensure_nlm_auth()
-    except BaseException as exc:
-        if _saved_noninteractive is not None:
-            os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = _saved_noninteractive
-        _log_fetch_terminal_failure(_format_fetch_terminal_failure_reason(exc))
-        raise
+    # When YTIS_NLM_WORKER_AUTH_USE_CDP=0 (the current recommended setting),
+    # bypass the deprecated CLI-based _ensure_nlm_auth() and probe
+    # storage_state.json directly. The CLI path (nlm login --check +
+    # refresh_source_profile) opens Chrome windows and uses separate cookie
+    # storage that drifts from the canonical storage_state.json. The new path
+    # (NLMSyncClient.from_storage) reads storage_state.json directly and does
+    # not invoke the CLI at all.
+    _use_cdp = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower() not in {"0", "false", "no", "off"}
+    if not _use_cdp:
+        # New path: probe storage_state.json directly via keepalive's logic.
+        import asyncio as _asyncio
+        from csf.nlm_auth_check import STORAGE_PATH as _STORAGE_PATH
+        from csf.nlm_keepalive import _probe_session as _probe
+        if not _STORAGE_PATH.exists() or _STORAGE_PATH.stat().st_size == 0:
+            print(f"[source] FATAL: storage_state.json missing or empty at {_STORAGE_PATH}", file=sys.stderr)
+            print(f"  Re-bootstrap with: python -m notebooklm login --storage {_STORAGE_PATH} --browser chrome", file=sys.stderr)
+            sys.exit(1)
+        _probe_ok = _asyncio.run(_probe())
+        if not _probe_ok:
+            print(f"[source] FATAL: storage_state.json session expired or invalid.", file=sys.stderr)
+            print(f"  Re-bootstrap with: python -m notebooklm login --storage {_STORAGE_PATH} --browser chrome", file=sys.stderr)
+            sys.exit(1)
+        # Session is alive. Set noninteractive for workers.
+        os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
+        log_action("nlm_auth_storage_probe_ok", {"component": "source", "storage_path": str(_STORAGE_PATH)})
+    else:
+        # Legacy path: CLI-based interactive bootstrap. Opens Chrome if the
+        # CLI's per-profile cookies are stale. Kept for backward compat when
+        # YTIS_NLM_WORKER_AUTH_USE_CDP is not 0.
+        _saved_noninteractive = os.environ.pop("YTIS_NLM_AUTH_NONINTERACTIVE", None)
+        try:
+            _ensure_nlm_auth()
+        except BaseException as exc:
+            if _saved_noninteractive is not None:
+                os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = _saved_noninteractive
+            _log_fetch_terminal_failure(_format_fetch_terminal_failure_reason(exc))
+            raise
 
     industrial_run_id = uuid.uuid4().hex
     os.environ["YTIS_INDUSTRIAL_RUN_ID"] = industrial_run_id
@@ -4309,6 +4373,38 @@ def main() -> None:
     elif args.command == "quota":
         cmd_quota()
     elif args.command == "fetch":
+        # Scope guardrail: refuse unbounded fetch when backlog is large.
+        # Prevents the scope-blowout incident (2026-07-20) where an unbounded
+        # `fetch` attempted all 51k pending videos instead of the intended
+        # ~5.7k recent-scope subset. See README.md "Scope rule (mandatory)".
+        if args.limit is None and not args.dry_run:
+            try:
+                import sqlite3 as _sql
+                from csf.batch_status import _get_default_db_path as _get_bs_path
+                _bs_path = _get_bs_path()
+                _conn = _sql.connect(_bs_path)
+                _pending = _conn.execute(
+                    "SELECT COUNT(*) FROM analysis_status WHERE status = 'pending'"
+                ).fetchone()[0]
+                _conn.close()
+                if _pending > 1000:
+                    print(
+                        f"[scope-guard] REFUSING unbounded fetch: {_pending} pending videos in backlog.\n"
+                        f"  This guard prevents accidental scope blowout. Either:\n"
+                        f"    (a) pass --limit <N> with the intended scope, or\n"
+                        f"    (b) recompute the recent-window scope with:\n"
+                        f"        SELECT COUNT(*) FROM analysis_status\n"
+                        f"        WHERE status='pending' AND has_captions IS NULL\n"
+                        f"          AND updated_at >= strftime('%Y-%m-%dT%H:%M:%SZ','now','-6 days');\n"
+                        f"  See README.md \"Production fetch operations\" for the validated config and scope rule.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(2)
+            except Exception as _e:
+                # Fail open: if the guardrail can't query the DB, let cmd_fetch run.
+                # Don't block production on a guardrail infra failure.
+                print(f"[scope-guard] pre-check skipped: {_e}", file=sys.stderr)
+
         cmd_fetch(
             source_filter=args.source,
             dry_run=args.dry_run,

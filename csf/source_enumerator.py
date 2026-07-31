@@ -607,6 +607,81 @@ def enumerate_videos_api(
     return videos, next_token
 
 
+def enrich_videos_by_id(video_ids: list[str]) -> list[dict]:
+    """Fetch video metadata by ID via videos.list API.
+
+    Cost: 1 unit per 50 videos (cheapest metadata API call).
+    Returns the same dict shape as enumerate_videos_api items.
+
+    Args:
+        video_ids: List of YouTube video IDs (11 chars each)
+
+    Returns:
+        List of dicts with keys: video_id, title, description, channel_id,
+        published_at, thumbnail, duration, has_captions, privacy_status,
+        upload_status, is_live_content, unavailable_reason.
+        Returns [] on any error.
+    """
+    if not video_ids:
+        return []
+
+    all_videos = []
+    for i in range(0, len(video_ids), 50):
+        batch = video_ids[i:i + 50]
+        params = {
+            "part": "snippet,contentDetails,status",
+            "id": ",".join(batch),
+            "maxResults": 50,
+        }
+        result = _api_request("videos", params, unit_cost=1)
+        if not result or "items" not in result:
+            continue
+
+        for item in result["items"]:
+            snippet = item.get("snippet", {})
+            content_details = item.get("contentDetails", {})
+            status = item.get("status", {})
+            thumbnails = snippet.get("thumbnails", {})
+
+            caption_str = content_details.get("caption", "false")
+            definition = content_details.get("definition", "sd")
+
+            # Parse ISO 8601 duration (PT1H2M3S → seconds)
+            duration_str = content_details.get("duration", "PT0S")
+            try:
+                import re as _re
+                dur_match = _re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration_str)
+                if dur_match:
+                    hours = int(dur_match.group(1) or 0)
+                    minutes = int(dur_match.group(2) or 0)
+                    seconds = int(dur_match.group(3) or 0)
+                    duration = hours * 3600 + minutes * 60 + seconds
+                else:
+                    duration = 0
+            except Exception:
+                duration = 0
+
+            all_videos.append({
+                "video_id": item["id"],
+                "title": snippet.get("title", ""),
+                "description": snippet.get("description", ""),
+                "channel_id": snippet.get("channelId", ""),
+                "published_at": snippet.get("publishedAt", ""),
+                "thumbnail": (
+                    thumbnails.get("medium", {}).get("url", "")
+                    or thumbnails.get("default", {}).get("url", "")
+                ),
+                "duration": duration,
+                "has_captions": 1 if caption_str == "true" else 0,
+                "privacy_status": status.get("privacyStatus", "public"),
+                "upload_status": status.get("uploadStatus", "processed"),
+                "is_live_content": 1 if content_details.get("isLiveContent", False) else 0,
+                "unavailable_reason": None,
+            })
+
+    return all_videos
+
+
 def enumerate_full(playlist_id: str) -> list[dict]:
     """Fully enumerate all videos in a playlist via pagination.
 
@@ -713,6 +788,60 @@ def check_rss(channel_id: str) -> list[str]:
                 video_ids.append(video_id_elem.text)
 
         return video_ids
+    except Exception:
+        return []
+
+
+def check_rss_rich(channel_id: str) -> list[dict]:
+    """Check RSS feed for recent videos, returning full metadata from the feed.
+
+    YouTube RSS XML entries contain: videoId, title, published (ISO datetime),
+    channel name, and a link to the video. This extracts all of them.
+
+    Args:
+        channel_id: YouTube channel ID (UC...)
+
+    Returns:
+        List of dicts with keys: video_id, title, published_at, channel_id.
+        Falls back to [] on any error.
+    """
+    if not _CHANNEL_ID_PATTERN.match(channel_id):
+        return []
+
+    url = _RSS_TEMPLATE.format(channel_id=channel_id)
+
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            xml_content = resp.read().decode("utf-8")
+    except Exception:
+        return []
+
+    try:
+        root = ET.fromstring(xml_content)
+        ns = {
+            "atom": "http://www.w3.org/2005/Atom",
+            "yt": "http://www.youtube.com/xml/schemas/2015",
+            "media": "http://search.yahoo.com/mrss/",
+        }
+
+        videos = []
+        for entry in root.findall(".//atom:entry", ns):
+            video_id_elem = entry.find("yt:videoId", ns)
+            if video_id_elem is None or not video_id_elem.text:
+                continue
+
+            title_elem = entry.find("atom:title", ns)
+            published_elem = entry.find("atom:published", ns)
+
+            videos.append({
+                "video_id": video_id_elem.text,
+                "title": title_elem.text if title_elem is not None and title_elem.text else None,
+                "published_at": published_elem.text if published_elem is not None and published_elem.text else None,
+                "channel_id": channel_id,
+            })
+
+        return videos
     except Exception:
         return []
 
