@@ -1344,7 +1344,7 @@ def cmd_check(source_id_or_url: str) -> None:
     elif rss_ids:
         # Normal RSS processing - use rich RSS data for metadata
         from csf.source_enumerator import check_rss_rich, enrich_videos_by_id
-        rss_rich = check_rss_rich(parse_channel_url(channel_url))
+        rss_rich = check_rss_rich(channel_id)  # use resolved UC channel_id, not raw URL
         rss_ids_set = set(rss_ids)
         new_videos = rss_ids_set - all_video_ids  # Only truly new videos
 
@@ -1356,6 +1356,8 @@ def cmd_check(source_id_or_url: str) -> None:
                 enriched = enrich_videos_by_id(new_video_list)
             except Exception:
                 pass  # API enrichment fails gracefully — fall back to bare entries
+
+            enriched_ids = {v["video_id"] for v in enriched}
 
             if enriched:
                 entries = [
@@ -1379,20 +1381,23 @@ def cmd_check(source_id_or_url: str) -> None:
                     if video["video_id"] in new_videos
                 ]
             else:
-                # Fallback: use RSS-extracted metadata (title, published_at, channel_id)
-                rss_rich_map = {v["video_id"]: v for v in rss_rich}
-                entries = [
-                    BatchEntry(
-                        video_id=vid,
-                        status="pending",
-                        source=channel_url,
-                        published_at=rss_rich_map.get(vid, {}).get("published_at"),
-                        title=rss_rich_map.get(vid, {}).get("title"),
-                        channel_id=rss_rich_map.get(vid, {}).get("channel_id"),
-                        has_captions=None,
-                    )
-                    for vid in new_videos
-                ]
+                entries = []
+
+            # Union: append RSS-fallback entries for any new_videos ID not covered
+            # by enrichment (handles deleted-between-fetch and partial results)
+            rss_rich_map = {v["video_id"]: v for v in rss_rich}
+            uncovered = new_videos - enriched_ids
+            for vid in uncovered:
+                rss_meta = rss_rich_map.get(vid, {})
+                entries.append(BatchEntry(
+                    video_id=vid,
+                    status="pending",
+                    source=channel_url,
+                    published_at=rss_meta.get("published_at"),
+                    title=rss_meta.get("title"),
+                    channel_id=rss_meta.get("channel_id", channel_id),
+                    has_captions=None,
+                ))
         else:
             entries = []
         if entries:

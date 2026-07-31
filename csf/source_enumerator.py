@@ -638,46 +638,41 @@ def enrich_videos_by_id(video_ids: list[str]) -> list[dict]:
             continue
 
         for item in result["items"]:
-            snippet = item.get("snippet", {})
-            content_details = item.get("contentDetails", {})
-            status = item.get("status", {})
-            thumbnails = snippet.get("thumbnails", {})
-
-            caption_str = content_details.get("caption", "false")
-            definition = content_details.get("definition", "sd")
-
-            # Parse ISO 8601 duration (PT1H2M3S → seconds)
-            duration_str = content_details.get("duration", "PT0S")
             try:
-                import re as _re
-                dur_match = _re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration_str)
-                if dur_match:
-                    hours = int(dur_match.group(1) or 0)
-                    minutes = int(dur_match.group(2) or 0)
-                    seconds = int(dur_match.group(3) or 0)
-                    duration = hours * 3600 + minutes * 60 + seconds
-                else:
-                    duration = 0
-            except Exception:
-                duration = 0
+                snippet = item.get("snippet", {})
+                content_details = item.get("contentDetails", {})
+                status = item.get("status", {})
+                thumbnails = snippet.get("thumbnails", {})
 
-            all_videos.append({
-                "video_id": item["id"],
-                "title": snippet.get("title", ""),
-                "description": snippet.get("description", ""),
-                "channel_id": snippet.get("channelId", ""),
-                "published_at": snippet.get("publishedAt", ""),
-                "thumbnail": (
-                    thumbnails.get("medium", {}).get("url", "")
-                    or thumbnails.get("default", {}).get("url", "")
-                ),
-                "duration": duration,
-                "has_captions": 1 if caption_str == "true" else 0,
-                "privacy_status": status.get("privacyStatus", "public"),
-                "upload_status": status.get("uploadStatus", "processed"),
-                "is_live_content": 1 if content_details.get("isLiveContent", False) else 0,
-                "unavailable_reason": None,
-            })
+                caption_str = content_details.get("caption", "false")
+
+                # Parse ISO 8601 duration via isodate (handles P1DT2H3M4S, P0D, etc.)
+                duration_str = content_details.get("duration", "PT0S")
+                try:
+                    import isodate
+                    duration = int(isodate.parse_duration(duration_str).total_seconds())
+                except Exception:
+                    duration = 0
+
+                all_videos.append({
+                    "video_id": item["id"],
+                    "title": snippet.get("title", ""),
+                    "description": snippet.get("description", ""),
+                    "channel_id": snippet.get("channelId", ""),
+                    "published_at": snippet.get("publishedAt", ""),
+                    "thumbnail": (
+                        thumbnails.get("medium", {}).get("url", "")
+                        or thumbnails.get("default", {}).get("url", "")
+                    ),
+                    "duration": duration,
+                    "has_captions": 1 if caption_str == "true" else 0,
+                    "privacy_status": status.get("privacyStatus", "public"),
+                    "upload_status": status.get("uploadStatus", "processed"),
+                    "is_live_content": 1 if content_details.get("isLiveContent", False) else 0,
+                    "unavailable_reason": None,
+                })
+            except (KeyError, TypeError, ValueError):
+                continue  # skip malformed items, don't abort the batch
 
     return all_videos
 
