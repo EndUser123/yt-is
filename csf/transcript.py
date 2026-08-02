@@ -2027,6 +2027,65 @@ def _finalize_success(
     return result
 
 
+def _check_oembed(video_id: str, prefer_lang: str, chain_started_at: float) -> TranscriptResult | None:
+    """Run the oEmbed reachability probe. Returns a failure result if the video
+    is unavailable, or None to continue the chain."""
+    oembed_enabled = os.getenv("YTIS_OEMBED_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not oembed_enabled:
+        return None
+    oembed_started_at = time.perf_counter()
+    oembed_ok, oembed_error = _probe_oembed(video_id)
+    _log_transcript_chain_event(
+        "transcript_oembed_checked",
+        video_id,
+        enabled=True,
+        ok=oembed_ok,
+        error=oembed_error,
+        elapsed_s=round(time.perf_counter() - oembed_started_at, 3),
+    )
+    if not oembed_ok and oembed_error and "oembed unavailable" in oembed_error.lower():
+        _log_transcript_chain_event(
+            "transcript_chain_failed",
+            video_id,
+            last_stage="oembed",
+            failure_reason="unavailable",
+            error=oembed_error,
+            elapsed_s=round(time.perf_counter() - chain_started_at, 3),
+        )
+        _persist_terminal_failure(video_id, oembed_error, "oembed")
+        return _build_none_result(video_id, prefer_lang, oembed_error, "oembed")
+    return None
+
+
+def _check_whisper_admission(
+    video_id: str,
+    prefer_lang: str,
+    admission_metadata: dict[str, object] | None,
+) -> TranscriptResult | None:
+    """Check Whisper admission policy. Returns a failure result to abort the chain,
+    or None to proceed with the Whisper stage."""
+    should_attempt, failure_reason, error = _whisper_admission_check(admission_metadata)
+    if should_attempt:
+        return None
+    _log_transcript_chain_event(
+        "transcript_whisper_admission_skipped",
+        video_id,
+        last_stage="whisper_admission",
+        failure_reason=failure_reason,
+        error=error,
+    )
+    if failure_reason == "unavailable":
+        _persist_terminal_failure(video_id, error, "whisper_admission")
+    else:
+        _record_soft_negative(
+            video_id,
+            "no_transcript",
+            last_stage="whisper_admission",
+            error=error,
+        )
+    return _build_none_result(video_id, prefer_lang, error, "whisper_admission")
+
+
 def fetch_transcript_chain(
     video_id: str,
     config: LanguageConfig,
@@ -2096,31 +2155,9 @@ def fetch_transcript_chain(
 
     whisper_enabled = os.getenv("YTIS_WHISPER_ENABLED", "true").lower() == "true"
 
-    oembed_enabled = os.getenv("YTIS_OEMBED_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-    if oembed_enabled:
-        oembed_started_at = time.perf_counter()
-        oembed_ok, oembed_error = _probe_oembed(video_id)
-        _log_transcript_chain_event(
-            "transcript_oembed_checked",
-            video_id,
-            enabled=True,
-            ok=oembed_ok,
-            error=oembed_error,
-            elapsed_s=round(time.perf_counter() - oembed_started_at, 3),
-        )
-        if not oembed_ok and oembed_error:
-            oembed_error_lower = oembed_error.lower()
-            if "oembed unavailable" in oembed_error_lower:
-                _log_transcript_chain_event(
-                    "transcript_chain_failed",
-                    video_id,
-                    last_stage="oembed",
-                    failure_reason="unavailable",
-                    error=oembed_error,
-                    elapsed_s=round(time.perf_counter() - chain_started_at, 3),
-                )
-                _persist_terminal_failure(video_id, oembed_error, "oembed")
-                return _build_none_result(video_id, prefer_lang, oembed_error, "oembed")
+    oembed_result = _check_oembed(video_id, prefer_lang, chain_started_at)
+    if oembed_result is not None:
+        return oembed_result
 
     # Language fallback order: prefer_lang → en → None (any available)
     lang_fallbacks: list[str | None] = [prefer_lang]
@@ -2163,27 +2200,9 @@ def fetch_transcript_chain(
         if source == _SOURCE_WHISPER:
             if not whisper_enabled:
                 continue
-            should_attempt_whisper, whisper_failure_reason, whisper_error = _whisper_admission_check(
-                admission_metadata
-            )
-            if not should_attempt_whisper:
-                _log_transcript_chain_event(
-                    "transcript_whisper_admission_skipped",
-                    video_id,
-                    last_stage="whisper_admission",
-                    failure_reason=whisper_failure_reason,
-                    error=whisper_error,
-                )
-                if whisper_failure_reason == "unavailable":
-                    _persist_terminal_failure(video_id, whisper_error, "whisper_admission")
-                else:
-                    _record_soft_negative(
-                        video_id,
-                        "no_transcript",
-                        last_stage="whisper_admission",
-                        error=whisper_error,
-                    )
-                return _build_none_result(video_id, prefer_lang, whisper_error, "whisper_admission")
+            whisper_result = _check_whisper_admission(video_id, prefer_lang, admission_metadata)
+            if whisper_result is not None:
+                return whisper_result
 
         last_stage_reached = source  # Track the last stage we actually tried
 
