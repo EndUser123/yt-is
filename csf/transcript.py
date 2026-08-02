@@ -1832,6 +1832,140 @@ def _log_transcript_chain_event(action: str, video_id: str, **data: object) -> N
     log_action(action, payload)
 
 
+_EXPENSIVE_SOURCES = frozenset({_SOURCE_SELENIUM, _SOURCE_WHISPER})
+
+
+def _classify_failure(error: str | None, stage: str) -> str:
+    """Classify an error string into a structured failure reason.
+
+    Extracted from fetch_transcript_chain so it can be unit-tested independently.
+    """
+    if not error:
+        return "unknown"
+    err_lower = error.lower()
+    if "429" in err_lower or "rate limit" in err_lower or "quota" in err_lower:
+        return "quota_exceeded"
+    if "region" in err_lower or "not available" in err_lower or "geo" in err_lower:
+        return "region_block"
+    if "auth" in err_lower or "login" in err_lower or "credential" in err_lower:
+        return "auth_failed"
+    if "captcha" in err_lower or "bot detection" in err_lower:
+        return "captcha"
+    if "timeout" in err_lower or "timed out" in err_lower:
+        return "timeout"
+    if "no transcript" in err_lower or "transcript unavailable" in err_lower:
+        return "no_transcript"
+    if "source add failed" in err_lower or "could not add url source" in err_lower:
+        return "source_add_failed"
+    if "no speech detected" in err_lower or "likely music or silence" in err_lower:
+        return "no_transcript"
+    if "whisper produced empty transcript" in err_lower:
+        return "no_transcript"
+    if "unavailable" in err_lower or "deleted" in err_lower or "private" in err_lower:
+        return "unavailable"
+    if "not found" in err_lower or "404" in err_lower:
+        return "unavailable"
+    return "unknown"
+
+
+def _build_none_result(
+    video_id: str,
+    prefer_lang: str,
+    last_err: str | None = None,
+    last_stage: str | None = None,
+) -> TranscriptResult:
+    """Build a standard 'no transcript' TranscriptResult."""
+    return TranscriptResult(
+        video_id=video_id,
+        lang=prefer_lang,
+        raw_lang=None,
+        was_translated=False,
+        transcript="",
+        source="none",
+        source_stage=None,
+        detected_lang=None,
+        error=last_err,
+        last_stage=last_stage,
+        failure_reason=_classify_failure(last_err, last_stage or ""),
+    )
+
+
+def _archive_failed_result(
+    video_id: str,
+    prefer_lang: str,
+    chain_started_at: float,
+    last_err: str | None,
+    last_stage: str | None,
+) -> TranscriptResult:
+    """Log the chain failure, persist negative outcome, and return a none result."""
+    failure_reason = _classify_failure(last_err, last_stage or "")
+    _log_transcript_chain_event(
+        "transcript_chain_failed",
+        video_id,
+        last_stage=last_stage,
+        failure_reason=failure_reason,
+        error=last_err,
+        elapsed_s=round(time.perf_counter() - chain_started_at, 3),
+    )
+    if failure_reason == "unavailable":
+        _persist_terminal_failure(video_id, last_err, last_stage)
+    else:
+        _record_soft_negative(
+            video_id,
+            failure_reason,
+            last_stage=last_stage,
+            error=last_err,
+        )
+    return _build_none_result(video_id, prefer_lang, last_err, last_stage)
+
+
+def _log_stage_started(
+    video_id: str,
+    source: str,
+    lang: str | None = None,
+) -> float:
+    """Log that a stage started and return the start timestamp."""
+    started_at = time.perf_counter()
+    _log_transcript_chain_event(
+        "transcript_stage_started",
+        video_id,
+        stage=source,
+        lang=lang,
+        expensive=source in _EXPENSIVE_SOURCES,
+    )
+    return started_at
+
+
+def _log_stage_completed(
+    video_id: str,
+    source: str,
+    started_at: float,
+    *,
+    success: bool,
+    error: str | None = None,
+    chars: int = 0,
+    lang: str | None = None,
+    skipped: bool = False,
+    skip_reason: str | None = None,
+) -> None:
+    """Log that a stage completed (success, failure, or skipped)."""
+    _log_transcript_chain_event(
+        "transcript_stage_completed",
+        video_id,
+        stage=source,
+        lang=lang,
+        status="skipped" if skipped else "success" if success else "failed",
+        success=success,
+        skipped=skipped,
+        skip_reason=skip_reason,
+        failure_reason=None if success else _classify_failure(error, source),
+        error=error,
+        chars=chars,
+        elapsed_s=round(time.perf_counter() - started_at, 3),
+        expensive=source in _EXPENSIVE_SOURCES,
+    )
+
+
 def fetch_transcript_chain(
     video_id: str,
     config: LanguageConfig,
@@ -1899,74 +2033,6 @@ def fetch_transcript_chain(
 
     chain_started_at = time.perf_counter()
 
-    def _classify_failure(error: str | None, stage: str) -> str:
-        """Classify error string into structured failure reason."""
-        if not error:
-            return "unknown"
-        err_lower = error.lower()
-        if "429" in err_lower or "rate limit" in err_lower or "quota" in err_lower:
-            return "quota_exceeded"
-        if "region" in err_lower or "not available" in err_lower or "geo" in err_lower:
-            return "region_block"
-        if "auth" in err_lower or "login" in err_lower or "credential" in err_lower:
-            return "auth_failed"
-        if "captcha" in err_lower or "bot detection" in err_lower:
-            return "captcha"
-        if "timeout" in err_lower or "timed out" in err_lower:
-            return "timeout"
-        if "no transcript" in err_lower or "transcript unavailable" in err_lower:
-            return "no_transcript"
-        if "source add failed" in err_lower or "could not add url source" in err_lower:
-            return "source_add_failed"
-        if "no speech detected" in err_lower or "likely music or silence" in err_lower:
-            return "no_transcript"
-        if "whisper produced empty transcript" in err_lower:
-            return "no_transcript"
-        if "unavailable" in err_lower or "deleted" in err_lower or "private" in err_lower:
-            return "unavailable"
-        if "not found" in err_lower or "404" in err_lower:
-            return "unavailable"
-        return "unknown"
-
-    # Helper to build a "no transcript" result
-    def _none_result(last_err: str | None = None, last_stage: str | None = None) -> TranscriptResult:
-        return TranscriptResult(
-            video_id=video_id,
-            lang=prefer_lang,
-            raw_lang=None,
-            was_translated=False,
-            transcript="",
-            source="none",
-            source_stage=None,
-            detected_lang=None,
-            error=last_err,
-            last_stage=last_stage,
-            failure_reason=_classify_failure(last_err, last_stage or ""),
-        )
-
-    def _archive_failed_result(
-        last_err: str | None, last_stage: str | None
-    ) -> TranscriptResult:
-        failure_reason = _classify_failure(last_err, last_stage or "")
-        _log_transcript_chain_event(
-            "transcript_chain_failed",
-            video_id,
-            last_stage=last_stage,
-            failure_reason=failure_reason,
-            error=last_err,
-            elapsed_s=round(time.perf_counter() - chain_started_at, 3),
-        )
-        if failure_reason == "unavailable":
-            _persist_terminal_failure(video_id, last_err, last_stage)
-        else:
-            _record_soft_negative(
-                video_id,
-                failure_reason,
-                last_stage=last_stage,
-                error=last_err,
-            )
-        return _none_result(last_err, last_stage)
-
     oembed_enabled = os.getenv("YTIS_OEMBED_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
     if oembed_enabled:
         oembed_started_at = time.perf_counter()
@@ -1991,7 +2057,7 @@ def fetch_transcript_chain(
                     elapsed_s=round(time.perf_counter() - chain_started_at, 3),
                 )
                 _persist_terminal_failure(video_id, oembed_error, "oembed")
-                return _none_result(oembed_error, "oembed")
+                return _build_none_result(video_id, prefer_lang, oembed_error, "oembed")
 
     # Language fallback order: prefer_lang → en → None (any available)
     lang_fallbacks: list[str | None] = [prefer_lang]
@@ -2016,50 +2082,13 @@ def fetch_transcript_chain(
     if not skip_notebooklm:
         methods_to_try.insert(3, (_SOURCE_NLM, _fetch_via_notebooklm, STAGE_VERSION_NOTEBOOKLM))
 
-    def _stage_started(source: str, lang: str | None = None) -> float:
-        started_at = time.perf_counter()
-        _log_transcript_chain_event(
-            "transcript_stage_started",
-            video_id,
-            stage=source,
-            lang=lang,
-            expensive=source in {_SOURCE_SELENIUM, _SOURCE_WHISPER},
-        )
-        return started_at
-
-    def _stage_completed(
-        source: str,
-        started_at: float,
-        *,
-        success: bool,
-        error: str | None = None,
-        chars: int = 0,
-        lang: str | None = None,
-        skipped: bool = False,
-        skip_reason: str | None = None,
-    ) -> None:
-        _log_transcript_chain_event(
-            "transcript_stage_completed",
-            video_id,
-            stage=source,
-            lang=lang,
-            status="skipped" if skipped else "success" if success else "failed",
-            success=success,
-            skipped=skipped,
-            skip_reason=skip_reason,
-            failure_reason=None if success else _classify_failure(error, source),
-            error=error,
-            chars=chars,
-            elapsed_s=round(time.perf_counter() - started_at, 3),
-            expensive=source in {_SOURCE_SELENIUM, _SOURCE_WHISPER},
-        )
-
     for source, fetch_fn, stage in methods_to_try:
         if _is_source_rate_limited(source):
             continue  # skip circuit-open source
         if source in {_SOURCE_SELENIUM, _SOURCE_WHISPER} and not expensive_fallback_enabled:
-            stage_started_at = _stage_started(source)
-            _stage_completed(
+            stage_started_at = _log_stage_started(video_id, source)
+            _log_stage_completed(
+                video_id,
                 source,
                 stage_started_at,
                 success=False,
@@ -2094,16 +2123,17 @@ def fetch_transcript_chain(
                         last_stage="whisper_admission",
                         error=whisper_error,
                     )
-                return _none_result(whisper_error, "whisper_admission")
+                return _build_none_result(video_id, prefer_lang, whisper_error, "whisper_admission")
 
         last_stage_reached = source  # Track the last stage we actually tried
 
         # NLM ignores lang — call once without lang iteration (no language filtering)
         if source == _SOURCE_NLM:
-            stage_started_at = _stage_started(source, "en")
+            stage_started_at = _log_stage_started(video_id, source, "en")
             success, transcript, error = fetch_fn(video_id, "en")
             if success and transcript:
-                _stage_completed(
+                _log_stage_completed(
+                    video_id,
                     source,
                     stage_started_at,
                     success=True,
@@ -2146,19 +2176,20 @@ def fetch_transcript_chain(
                 )
                 return result
             last_error = error
-            _stage_completed(source, stage_started_at, success=False, error=error, lang="en")
+            _log_stage_completed(video_id, source, stage_started_at, success=False, error=error, lang="en")
             if (
                 error
                 and not whisper_on_notebooklm_add_failed
                 and _classify_failure(error, source) == "source_add_failed"
             ):
-                return _archive_failed_result(error, source)
+                return _archive_failed_result(video_id, prefer_lang, chain_started_at, error, source)
         # direct_api uses different signature (no lang arg)
         elif source == _SOURCE_DIRECT_API:
-            stage_started_at = _stage_started(source)
+            stage_started_at = _log_stage_started(video_id, source)
             success, transcript, error = fetch_fn(video_id)
             if success and transcript:
-                _stage_completed(
+                _log_stage_completed(
+                    video_id,
                     source,
                     stage_started_at,
                     success=True,
@@ -2187,7 +2218,7 @@ def fetch_transcript_chain(
                 )
                 return result
             last_error = error
-            _stage_completed(source, stage_started_at, success=False, error=error)
+            _log_stage_completed(video_id, source, stage_started_at, success=False, error=error)
             if error and (
                 "unavailable" in error.lower()
                 or "removed" in error.lower()
@@ -2202,13 +2233,13 @@ def fetch_transcript_chain(
                     elapsed_s=round(time.perf_counter() - chain_started_at, 3),
                 )
                 _persist_terminal_failure(video_id, error, source)
-                return _none_result(error, source)
+                return _build_none_result(video_id, prefer_lang, error, source)
         else:
             for lang in lang_fallbacks:
                 # Use "en" as placeholder when lang is None (yt-dlp will use its default)
                 try_lang = lang if lang is not None else "en"
 
-                stage_started_at = _stage_started(source, try_lang)
+                stage_started_at = _log_stage_started(video_id, source, try_lang)
                 result = fetch_fn(video_id, try_lang)
                 # Normalize 3-tuple (NotebookLM, Selenium, Whisper, direct_api) vs
                 # 4-tuple (yt-dlp, yt-dlp-with-cookies) which carries video metadata
@@ -2219,7 +2250,8 @@ def fetch_transcript_chain(
                     info_dict = {}
 
                 if success and transcript:
-                    _stage_completed(
+                    _log_stage_completed(
+                        video_id,
                         source,
                         stage_started_at,
                         success=True,
@@ -2279,7 +2311,7 @@ def fetch_transcript_chain(
                     return result
 
                 last_error = error
-                _stage_completed(source, stage_started_at, success=False, error=error, lang=try_lang)
+                _log_stage_completed(video_id, source, stage_started_at, success=False, error=error, lang=try_lang)
                 if error and ("429" in error.lower() or "rate limited" in error.lower()):
                     _record_source_429(source, video_id)
                     _apply_jitter_with_backoff(source)
@@ -2319,4 +2351,4 @@ def fetch_transcript_chain(
 
     # All methods failed; persist the final negative outcome using the same
     # terminal/soft-cache contract as early failure exits.
-    return _archive_failed_result(last_error, last_stage_reached)
+    return _archive_failed_result(video_id, prefer_lang, chain_started_at, last_error, last_stage_reached)
