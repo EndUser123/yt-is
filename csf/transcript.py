@@ -170,7 +170,6 @@ _MAX_BACKOFF_MULTIPLIER = 32  # cap jitter at 32x to prevent pathological sleeps
 _NLM_MIN_CONTENT_CHARS = 21
 
 # Whisper fallback — set YTIS_WHISPER_ENABLED=false to disable
-_WHISPER_ENABLED: bool | None = None  # lazily loaded from env
 
 # Whisper audio download prefers broad selectors so we do not fail valid
 # videos just because a particular extension is unavailable.
@@ -2033,6 +2032,8 @@ def fetch_transcript_chain(
 
     chain_started_at = time.perf_counter()
 
+    whisper_enabled = os.getenv("YTIS_WHISPER_ENABLED", "true").lower() == "true"
+
     oembed_enabled = os.getenv("YTIS_OEMBED_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
     if oembed_enabled:
         oembed_started_at = time.perf_counter()
@@ -2098,10 +2099,7 @@ def fetch_transcript_chain(
             continue
         # Skip whisper if disabled via env var
         if source == _SOURCE_WHISPER:
-            global _WHISPER_ENABLED
-            if _WHISPER_ENABLED is None:
-                _WHISPER_ENABLED = os.getenv("YTIS_WHISPER_ENABLED", "true").lower() == "true"
-            if not _WHISPER_ENABLED:
+            if not whisper_enabled:
                 continue
             should_attempt_whisper, whisper_failure_reason, whisper_error = _whisper_admission_check(
                 admission_metadata
