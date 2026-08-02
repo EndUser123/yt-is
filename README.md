@@ -6,6 +6,107 @@
 
 YouTube transcript ingestion and analysis pipeline — discover new videos, download transcripts with the full fallback chain (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper), and store results in CKS.
 
+## Documentation Index (read this first)
+
+This README is the entry point. The files below hold the authority for their
+respective areas — read them before touching those surfaces. A cold-start
+session that reads only this README must be able to find everything load-bearing
+from here.
+
+### Workspace state (current session)
+
+- [AGENTS.md](AGENTS.md) — workspace rules for any agent operating in yt-is
+- [HANDOFF.md](HANDOFF.md) — current session state and open work streams
+
+### Harness memory and debugging
+
+- [CODEX_MEMORY.md](CODEX_MEMORY.md) — OpenAI Codex harness memory (verified bug fixes, signals that matter, routing caveats). Linked by the codex harness on session start.
+- [DEBUGGING_PLAYBOOK.md](DEBUGGING_PLAYBOOK.md) — compact debugging rules, common failure modes, and session-start protocol
+- [PLAYBOOK_LINKS.md](PLAYBOOK_LINKS.md) — sub-index of the playbook/memory/handoff trio
+
+### Operations docs (`docs/operations/`)
+
+These are the canonical authority for production behavior. The README does not
+duplicate them; it points to them.
+
+- [docs/operations/nlm-auth-architecture.md](docs/operations/nlm-auth-architecture.md) — canonical NLM auth design (single `storage_state.json`, backup repo, preflight, keepalive). Read before touching anything NLM-auth-related.
+- [docs/operations/worker-count-trial-run-sheet.md](docs/operations/worker-count-trial-run-sheet.md) — validated throughput numbers (best observed: 3,928 VPH at 4 workers, batch-size 200, Pro tier, worker-owned notebooks)
+- [docs/operations/hot-path-throughput-next-test-plan.md](docs/operations/hot-path-throughput-next-test-plan.md) — failure-mode investigations: `source_add_failed`, `rpc_code=9`, NOT_FOUND mapping, zero-growth retry
+- [docs/operations/test-registry.md](docs/operations/test-registry.md) — run history and artifacts
+- [docs/operations/refactor-plan-2026-07-20-nlm-migration.md](docs/operations/refactor-plan-2026-07-20-nlm-migration.md) — 7-phase nlm-CLI → notebooklm-py migration (Phases 1+2 done, 3–7 deferred)
+- [docs/operations/nlm-surface-discovery-2026-07-20.md](docs/operations/nlm-surface-discovery-2026-07-20.md) — inventory of all nlm CLI call sites (baseline for Phases 3–7)
+
+## Production fetch operations (load-bearing)
+
+**Read before launching any production fetch.** Violating these rules has
+caused real incidents (scope blowout, mid-run auth death, retrying the wrong
+failure mode).
+
+### Scope rule (mandatory)
+
+Never run `bin/csf-source fetch` without `--limit` when the pending backlog
+exceeds 1,000 videos. The pending backlog is currently ~51,000 videos; an
+unbounded `fetch` will attempt all of them in one run.
+
+To find the intended scope (recent sync batch), use the time-window query:
+
+```sql
+SELECT COUNT(*) FROM analysis_status
+WHERE status = 'pending'
+  AND has_captions IS NULL
+  AND updated_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-6 days');
+```
+
+The current intended scope is **recently synced pending rows** (`has_captions IS NULL`,
+meaning not yet categorized), which is approximately 5,700 videos in the last 6
+days. Pass `--limit <that count>` at launch time. Recompute before each run —
+the window moves.
+
+**Note on `has_captions`:** newly synced videos have `has_captions IS NULL` until
+categorization runs; older backlog rows have `has_captions = 0` (already
+categorized as no-captions). The scope is the NULLs, not the 0s.
+
+### Validated production configuration
+
+From [worker-count-trial-run-sheet.md](docs/operations/worker-count-trial-run-sheet.md) and [hot-path-throughput-next-test-plan.md](docs/operations/hot-path-throughput-next-test-plan.md):
+
+| Setting | Value | Source |
+|---|---|---|
+| Worker shape | **3+3** (3 Pro + 3 Free, sharded lanes) | current best sustained: 3,788.53 VPH on `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` (hot-path-throughput-next-test-plan.md:29) |
+| Subbatch size | 50 | fixed control; 25 and 75/100 fail at materialization |
+| Worker notebooks | One per worker, reused across batches | worker-owned model |
+| Pro account | `a.hominidae@gmail.com` | single-account limitation |
+| Free accounts | `troup.hominidae`, `brsthomson` | documented but currently unused |
+| Auth storage | `P:/.data/yt-is/nlm-auth/storage_state.json` | nlm-auth-architecture.md |
+
+**NOT 4 workers on one account.** The `3,928 VPH at 4 workers` figure from worker-count-trial-run-sheet.md:199 was a single-lane (Pro-only) benchmark candidate, not the validated production shape. The validated shape distributes load across Pro and Free lanes via the benchmark harness `bin/csf-sharded-lane-series`. Applying benchmark-harness config to the production binary was the third of five failures in the 2026-07-20 incident.
+
+**Known gap:** `bin/csf-source fetch` exposes only `--workers` and `--limit`.
+It does not expose `--batch-size`; the 50-video subbatch is hardcoded. The
+batch-size 200 figure in the trial sheet was validated on the benchmark
+harness `bin/csf-sharded-lane-series`, not the production fetcher. Do not
+assume production-fetch throughput matches benchmark-harness throughput.
+
+### Known failure modes
+
+| Failure | Symptom | Status | Detail |
+|---|---|---|---|
+| `source_add_failed` (partial) | Sub-batch returns N/50 added; fetcher continues without reset | By-design (zero-growth retry only fires on 0/50) | hot-path-throughput-next-test-plan.md |
+| `rpc_code=9` on ADD_SOURCE | gRPC `FAILED_PRECONDITION` (NOT rate limiting — `RateLimitError` is a different class) | Unresolved; multiple prior investigations (source_map v2–v6) did not pin a single cause | hot-path-throughput-next-test-plan.md |
+| Notebook reuse degradation | Failure rate rises as sources accumulate in a reused notebook | Suspected but not confirmed; Pro tier documented at ~300 sources/notebook | worker-count-trial-run-sheet.md |
+| Google session expiry | Storage file present but cookies rejected | Observed 2.5h–7.5h lifespan; `ensure_storage()` checks file presence only, not liveness | nlm-auth-architecture.md |
+
+### Smoke test (minimum before any production run)
+
+```powershell
+python bin/csf-source fetch --limit 5 --workers 1
+```
+
+Expect 4/5 transcripts via NLM in ~42–120 seconds. The 1/5 failure is the
+intermittent `rpc_code=9` (see above). A 5-video smoke test **does not**
+validate batch-scale behavior; a 400-video run is the minimum that validates
+throughput per the trial sheet's Phase 2 protocol.
+
 ## Operator Notes
 
 For implementation gotchas, recurring bugs, and lessons learned from live canaries, see [CODEX_MEMORY.md](CODEX_MEMORY.md).
@@ -234,4 +335,4 @@ graph TB
 - Configurable NotebookLM policy via `csf/nlm_config.py` and the `YTIS_NLM_*` env vars it reads
 - External transcript provider hook for custom sources
 - Multi-terminal safe batch processing with InterProcessLock
-- See [PLAYBOOK_LINKS.md](P://packages/yt-is/PLAYBOOK_LINKS.md) for the debugging playbook, handoff, and memory pointers.
+- See [PLAYBOOK_LINKS.md](PLAYBOOK_LINKS.md) for the debugging playbook, handoff, and memory pointers.

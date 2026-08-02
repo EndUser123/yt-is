@@ -12,7 +12,7 @@
 
 | Artifact | Path | Role |
 |----------|------|------|
-| Skill under development | `P:\.grok\skills\refactor\SKILL.md` | The `/refactor` orchestrator (plain-language, plan/execute, seams, worktree cleanup) |
+| Skill under development | `~/.grok/skills/refactor/SKILL.md` | The `/refactor` orchestrator (plain-language, plan/execute, seams, worktree cleanup) |
 | `/go` routing | `~/.grok/skills/go/SKILL.md` | Routes refactor-shaped work to the skill |
 | Last run artifact | `P:\tmp\grok-refactor\yt-is\20260717-071452\{PLAN.md,seams.json,_run.json}` | Dry-run plan for yt-is; do NOT trust seam content as verified (see §4) |
 | Blind verifier test | `P:\tmp\grok-refactor\yt-is\20260717-071452\_blind_a2_msgs.json` + M3 output (in terminal log) | Proof that cross-model blind check catches misframes |
@@ -77,7 +77,7 @@ The proposal was itself critiqued. Hard constraints before building:
 
 **Wave 2
 
-> **BYOK warning:** mmx requires MINIMAX_API_KEY from P:/.env. If 401, load env first. See P:/.grok/skills/review/SKILL.md Step 5.5 for the BYOK protocol. If mmx is unavailable, Wave 1 alone still catches hallucinated seams (deterministic).
+> **BYOK warning:** mmx requires MINIMAX_API_KEY from P:/.env. If 401, load env first. See ~/.grok/skills/review/SKILL.md Step 5.5 for the BYOK protocol. If mmx is unavailable, Wave 1 alone still catches hallucinated seams (deterministic).
 
 **Wave 2 — blind second check:**
 - Wire `mmx --model minimax-m3` as a P0-only second check on ambiguous seams. Prompt = code excerpt + "locate defect / is label accurate", no author outcome. Parse structured verdict.
@@ -106,8 +106,8 @@ Final falsifier (all waves):** re-run `/refactor yt-is`. Pass iff: (a) zero hall
 ## 7. Open questions (answer before Wave 3)
 
 - How many discovery agents exactly (3 vs 4), and which lenses? Recommend: correctness, structure, scope-completeness.
-- Where does mmx prompt live -- inline in SKILL.md or a __lib/ script? **Answered:** P:/.grok/skills/refactor/__lib/blind_verify.py (reusable, testable, matches existing __lib/ pattern). — inline in SKILL.md or a `__lib/` script? Recommend `__lib/blind_verify.py` (reusable, testable).
-- Does the validator script live in `~/.grok/skills/refactor/__lib/` or `P:\.grok\skills\refactor\__lib\`? Match skill's own dir.
+- Where does mmx prompt live -- inline in SKILL.md or a __lib/ script? **Answered:** ~/.grok/skills/refactor/__lib/blind_verify.py (reusable, testable, matches existing __lib/ pattern). — inline in SKILL.md or a `__lib/` script? Recommend `__lib/blind_verify.py` (reusable, testable).
+- Does the validator script live in `~/.grok/skills/refactor/__lib/`? Match skill's own dir.
 
 ---
 

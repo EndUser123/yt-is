@@ -7,7 +7,7 @@
 **Refactor branch tip (re-verify):** `refactor/yt-is-control-planes @ 0d22eb4` (A2 mapping logic; supersedes `2b96382`)  
 **Worktree:** `P:\.worktrees\yt-is-refactor-control-planes`  
 **A2 merge attempt 2026-07-17:** merged into worktree `P:\.worktrees\yt-is-merge-a2` (branch `merge-a2`) → **39 test failures, NOT merged to main** (see finding #1 + claim ledger).  
-**Refactor skill hardening handoff:** `docs/operations/refactor-skill-handoff.md` (design only; not yet built into `P:\.grok\skills\refactor\SKILL.md`)
+**Refactor skill hardening handoff:** `docs/operations/refactor-skill-handoff.md` (design only; not yet built into `~/.grok/skills/refactor/SKILL.md`)
 **Scope:** architecture, correctness, data integrity, concurrency, auth, doc authority  
 **Not in scope (original review):** live benchmarks, DB mutation  
 
@@ -250,7 +250,7 @@ Full entrypoint inventory was produced by explore subagent 2026-07-17 (session);
 6. Doc hygiene: demote stale README/April authority; HANDOFF + ops contracts + this file for integrity risks. (Main package `AGENT_HANDOFF.md` may lag worktree handoff.)  
 7. Single DB path registry; quarantine in-repo `*.sqlite`.  
 8. Only then: auth-budget work with a decision packet (HANDOFF #965 line).  
-9. **Refactor skill hardening** (separate from yt-is product work): design in `docs/operations/refactor-skill-handoff.md`; build Wave 1 (seam schema+validator, `claim_type` scope-grep, RED gate) into `P:\.grok\skills\refactor\SKILL.md`, then run `/refactor yt-is` as falsifier.
+9. **Refactor skill hardening** (separate from yt-is product work): design in `docs/operations/refactor-skill-handoff.md`; build Wave 1 (seam schema+validator, `claim_type` scope-grep, RED gate) into `~/.grok/skills/refactor/SKILL.md`, then run `/refactor yt-is` as falsifier.
 
 **Closed since original review:** A1 (finding class: silent bulk status loss).  
 **Not recommended:** another same-shape throughput live run without a completed decision packet (`AGENTS.md`).

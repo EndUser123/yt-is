@@ -3148,6 +3148,38 @@ class NLMBatchIngestor:
         res = self._run_cmd(["notebook", "create", nb_name])
 
         parsed_nb_id = _parse_notebook_create_output(res.stdout or "") if res.returncode == 0 else ""
+        if not parsed_nb_id:
+            # CLI notebook creation failed (likely expired CLI auth — the CLI
+            # has its own cookie storage separate from storage_state.json).
+            # Fall back to the Python API, which uses storage_state.json
+            # directly and does not depend on the deprecated CLI path.
+            # This is Phase 3 of the nlm-CLI → notebooklm-py migration.
+            log_action(
+                "nlm_batch_notebook_create_cli_failed_fallback_to_api",
+                {
+                    "batch_size": len(batch_ids),
+                    "nb_name": nb_name,
+                    "notebooklm_profile": notebooklm_profile,
+                    "returncode": res.returncode,
+                    "stderr": (res.stderr or "")[:300],
+                },
+            )
+            try:
+                from csf.nlm_client import get_sync_client
+                client = get_sync_client()
+                nb = client.run(client.notebooks.create(title=nb_name))
+                parsed_nb_id = str(nb.id) if nb and nb.id else ""
+            except Exception as e:
+                log_action(
+                    "nlm_batch_notebook_create_api_failed",
+                    {
+                        "batch_size": len(batch_ids),
+                        "nb_name": nb_name,
+                        "notebooklm_profile": notebooklm_profile,
+                        "error": f"{type(e).__name__}: {e}",
+                    },
+                )
+                return None
         if parsed_nb_id:
             self._nb_id = parsed_nb_id
             log_action(
