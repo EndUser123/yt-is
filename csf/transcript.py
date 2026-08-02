@@ -1965,6 +1965,68 @@ def _log_stage_completed(
     )
 
 
+def _finalize_success(
+    *,
+    video_id: str,
+    prefer_lang: str,
+    source: str,
+    stage: int | None,
+    transcript: str,
+    raw_lang: str | None,
+    config: LanguageConfig,
+    info_dict: dict | None = None,
+) -> TranscriptResult:
+    """Build, cache, and return a successful TranscriptResult.
+
+    Centralizes the shared success path that was previously duplicated
+    across the NLM, direct_api, generic, and external provider branches.
+    Handles translation, metadata extraction, and cache write.
+    """
+    detected_lang = raw_lang
+    final_transcript = transcript
+    was_translated = False
+
+    if raw_lang is not None and raw_lang != prefer_lang and config.allow_translation:
+        final_transcript = _translate_text(
+            transcript, raw_lang, prefer_lang, config.translation_provider
+        )
+        was_translated = True
+
+    video_metadata = _extract_video_metadata(info_dict) if info_dict else {}
+
+    extra_metadata: dict[str, object] | None = (
+        {"yt_dlp_info_dict": info_dict} if info_dict else None
+    )
+
+    result = TranscriptResult(
+        video_id=video_id,
+        lang=prefer_lang,
+        raw_lang=raw_lang,
+        was_translated=was_translated,
+        transcript=final_transcript,
+        source=source,
+        source_stage=stage,
+        detected_lang=detected_lang,
+        error=None,
+        last_stage=source,
+        failure_reason=None,
+        view_count=video_metadata.get("view_count"),
+        like_count=video_metadata.get("like_count"),
+        comment_count=video_metadata.get("comment_count"),
+        duration=video_metadata.get("duration"),
+        video_title=video_metadata.get("title"),
+        video_description=video_metadata.get("description"),
+    )
+    set_cached_transcript(
+        video_id,
+        prefer_lang,
+        source,
+        final_transcript,
+        metadata=build_transcript_cache_metadata(result, extra=extra_metadata),
+    )
+    return result
+
+
 def fetch_transcript_chain(
     video_id: str,
     config: LanguageConfig,
@@ -2131,48 +2193,16 @@ def fetch_transcript_chain(
             success, transcript, error = fetch_fn(video_id, "en")
             if success and transcript:
                 _log_stage_completed(
-                    video_id,
-                    source,
-                    stage_started_at,
-                    success=True,
-                    chars=len(transcript),
-                    lang="en",
+                    video_id, source, stage_started_at,
+                    success=True, chars=len(transcript), lang="en",
                 )
                 _record_source_success(source, video_id)
-                # NLM always returns English (NotebookLM extracts from YouTube source)
-                raw_lang = "en"
-                detected_lang = raw_lang
-                final_transcript = transcript
-                was_translated = False
-
-                # Translate if prefer_lang is not English and translation is enabled
-                if raw_lang != prefer_lang and config.allow_translation:
-                    final_transcript = _translate_text(
-                        transcript, raw_lang, prefer_lang, config.translation_provider
-                    )
-                    was_translated = True
-
-                result = TranscriptResult(
-                    video_id=video_id,
-                    lang=prefer_lang,
-                    raw_lang=raw_lang,
-                    was_translated=was_translated,
-                    transcript=final_transcript,
-                    source=source,
-                    source_stage=stage,
-                    detected_lang=detected_lang,
-                    error=None,
-                    last_stage=source,
-                    failure_reason=None,
+                return _finalize_success(
+                    video_id=video_id, prefer_lang=prefer_lang,
+                    source=source, stage=stage,
+                    transcript=transcript, raw_lang="en",
+                    config=config,
                 )
-                set_cached_transcript(
-                    video_id,
-                    prefer_lang,
-                    source,
-                    final_transcript,
-                    metadata=build_transcript_cache_metadata(result),
-                )
-                return result
             last_error = error
             _log_stage_completed(video_id, source, stage_started_at, success=False, error=error, lang="en")
             if (
@@ -2187,34 +2217,16 @@ def fetch_transcript_chain(
             success, transcript, error = fetch_fn(video_id)
             if success and transcript:
                 _log_stage_completed(
-                    video_id,
-                    source,
-                    stage_started_at,
-                    success=True,
-                    chars=len(transcript),
+                    video_id, source, stage_started_at,
+                    success=True, chars=len(transcript),
                 )
                 _record_source_success(source, video_id)
-                result = TranscriptResult(
-                    video_id=video_id,
-                    lang=prefer_lang,
-                    raw_lang=prefer_lang,
-                    was_translated=False,
-                    transcript=transcript,
-                    source=source,
-                    source_stage=stage,
-                    detected_lang=prefer_lang,
-                    error=None,
-                    last_stage=source,
-                    failure_reason=None,
+                return _finalize_success(
+                    video_id=video_id, prefer_lang=prefer_lang,
+                    source=source, stage=stage,
+                    transcript=transcript, raw_lang=prefer_lang,
+                    config=config,
                 )
-                set_cached_transcript(
-                    video_id,
-                    prefer_lang,
-                    source,
-                    transcript,
-                    metadata=build_transcript_cache_metadata(result),
-                )
-                return result
             last_error = error
             _log_stage_completed(video_id, source, stage_started_at, success=False, error=error)
             if error and (
@@ -2249,64 +2261,16 @@ def fetch_transcript_chain(
 
                 if success and transcript:
                     _log_stage_completed(
-                        video_id,
-                        source,
-                        stage_started_at,
-                        success=True,
-                        chars=len(transcript),
-                        lang=try_lang,
+                        video_id, source, stage_started_at,
+                        success=True, chars=len(transcript), lang=try_lang,
                     )
                     _record_source_success(source, video_id)
-
-                    # Extract engagement metrics from yt-dlp info dict when available
-                    video_metadata = _extract_video_metadata(info_dict)
-
-                    # Determine actual language and whether translation is needed.
-                    # When lang is None we only know the transcript came from the
-                    # generic fallback, so keep the language unknown instead of
-                    # pretending it is English.
-                    raw_lang = lang
-                    detected_lang = raw_lang
-                    final_transcript = transcript
-                    was_translated = False
-
-                    # Only translate when the source language is known.
-                    if raw_lang is not None and raw_lang != prefer_lang and config.allow_translation:
-                        final_transcript = _translate_text(
-                            transcript, raw_lang, prefer_lang, config.translation_provider
-                        )
-                        was_translated = True
-
-                    result = TranscriptResult(
-                        video_id=video_id,
-                        lang=prefer_lang,
-                        raw_lang=raw_lang,
-                        was_translated=was_translated,
-                        transcript=final_transcript,
-                        source=source,
-                        source_stage=stage,
-                        detected_lang=detected_lang,
-                        error=None,
-                        last_stage=source,
-                        failure_reason=None,
-                        view_count=video_metadata.get("view_count"),
-                        like_count=video_metadata.get("like_count"),
-                        comment_count=video_metadata.get("comment_count"),
-                        duration=video_metadata.get("duration"),
-                        video_title=video_metadata.get("title"),
-                        video_description=video_metadata.get("description"),
+                    return _finalize_success(
+                        video_id=video_id, prefer_lang=prefer_lang,
+                        source=source, stage=stage,
+                        transcript=transcript, raw_lang=lang,
+                        config=config, info_dict=info_dict,
                     )
-                    set_cached_transcript(
-                        video_id,
-                        prefer_lang,
-                        source,
-                        final_transcript,
-                        metadata=build_transcript_cache_metadata(
-                            result,
-                            extra={"yt_dlp_info_dict": info_dict},
-                        ),
-                    )
-                    return result
 
                 last_error = error
                 _log_stage_completed(video_id, source, stage_started_at, success=False, error=error, lang=try_lang)
@@ -2324,27 +2288,12 @@ def fetch_transcript_chain(
         last_stage_reached = _SOURCE_EXTERNAL
         success, transcript, error = _external_provider(video_id, prefer_lang)
         if success and transcript:
-            result = TranscriptResult(
-                video_id=video_id,
-                lang=prefer_lang,
-                raw_lang=prefer_lang,
-                was_translated=False,
-                transcript=transcript,
-                source=_SOURCE_EXTERNAL,
-                source_stage=None,
-                detected_lang=prefer_lang,
-                error=None,
-                last_stage=_SOURCE_EXTERNAL,
-                failure_reason=None,
+            return _finalize_success(
+                video_id=video_id, prefer_lang=prefer_lang,
+                source=_SOURCE_EXTERNAL, stage=None,
+                transcript=transcript, raw_lang=prefer_lang,
+                config=config,
             )
-            set_cached_transcript(
-                video_id,
-                prefer_lang,
-                _SOURCE_EXTERNAL,
-                transcript,
-                metadata=build_transcript_cache_metadata(result),
-            )
-            return result
         last_error = error
 
     # All methods failed; persist the final negative outcome using the same
