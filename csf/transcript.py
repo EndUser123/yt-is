@@ -2086,6 +2086,143 @@ def _check_whisper_admission(
     return _build_none_result(video_id, prefer_lang, error, "whisper_admission")
 
 
+def _try_external_provider(
+    video_id: str, prefer_lang: str, config: LanguageConfig,
+) -> tuple[TranscriptResult | None, str | None]:
+    """Try the external provider hook. Returns (result, last_error)."""
+    if _external_provider is None:
+        return None, None
+    success, transcript, error = _external_provider(video_id, prefer_lang)
+    if success and transcript:
+        return _finalize_success(
+            video_id=video_id, prefer_lang=prefer_lang,
+            source=_SOURCE_EXTERNAL, stage=None,
+            transcript=transcript, raw_lang=prefer_lang,
+            config=config,
+        ), None
+    return None, error
+
+
+def _try_source(
+    source: str,
+    fetch_fn,
+    stage: int | None,
+    video_id: str,
+    prefer_lang: str,
+    config: LanguageConfig,
+    lang_fallbacks: list[str | None],
+    chain_started_at: float,
+    whisper_on_notebooklm_add_failed: bool,
+) -> tuple[TranscriptResult | None, str | None]:
+    """Try a single transcript source.
+
+    Returns (result, last_error):
+    - result: TranscriptResult to return (success or terminal failure), or None to continue.
+    - last_error: error from the last attempt for the final failure summary.
+    """
+    if source == _SOURCE_NLM:
+        return _try_nlm(source, fetch_fn, stage, video_id, prefer_lang, config,
+                        chain_started_at, whisper_on_notebooklm_add_failed)
+    elif source == _SOURCE_DIRECT_API:
+        return _try_direct_api(source, fetch_fn, stage, video_id, prefer_lang, config,
+                               chain_started_at)
+    else:
+        return _try_generic(source, fetch_fn, stage, video_id, prefer_lang, config,
+                            lang_fallbacks)
+
+
+def _try_nlm(
+    source: str, fetch_fn, stage: int | None,
+    video_id: str, prefer_lang: str, config: LanguageConfig,
+    chain_started_at: float, whisper_on_notebooklm_add_failed: bool,
+) -> tuple[TranscriptResult | None, str | None]:
+    stage_started_at = _log_stage_started(video_id, source, "en")
+    success, transcript, error = fetch_fn(video_id, "en")
+    if success and transcript:
+        _log_stage_completed(video_id, source, stage_started_at,
+                             success=True, chars=len(transcript), lang="en")
+        _record_source_success(source, video_id)
+        return _finalize_success(
+            video_id=video_id, prefer_lang=prefer_lang,
+            source=source, stage=stage,
+            transcript=transcript, raw_lang="en", config=config,
+        ), None
+    _log_stage_completed(video_id, source, stage_started_at, success=False, error=error, lang="en")
+    if (error and not whisper_on_notebooklm_add_failed
+            and _classify_failure(error, source) == "source_add_failed"):
+        return _archive_failed_result(video_id, prefer_lang, chain_started_at, error, source), error
+    return None, error
+
+
+def _try_direct_api(
+    source: str, fetch_fn, stage: int | None,
+    video_id: str, prefer_lang: str, config: LanguageConfig,
+    chain_started_at: float,
+) -> tuple[TranscriptResult | None, str | None]:
+    stage_started_at = _log_stage_started(video_id, source)
+    success, transcript, error = fetch_fn(video_id)
+    if success and transcript:
+        _log_stage_completed(video_id, source, stage_started_at,
+                             success=True, chars=len(transcript))
+        _record_source_success(source, video_id)
+        return _finalize_success(
+            video_id=video_id, prefer_lang=prefer_lang,
+            source=source, stage=stage,
+            transcript=transcript, raw_lang=prefer_lang, config=config,
+        ), None
+    _log_stage_completed(video_id, source, stage_started_at, success=False, error=error)
+    if error and ("unavailable" in error.lower() or "removed" in error.lower()
+                  or "private" in error.lower()):
+        _log_transcript_chain_event(
+            "transcript_chain_failed", video_id,
+            last_stage=source, failure_reason="unavailable", error=error,
+            elapsed_s=round(time.perf_counter() - chain_started_at, 3),
+        )
+        _persist_terminal_failure(video_id, error, source)
+        return _build_none_result(video_id, prefer_lang, error, source), error
+    return None, error
+
+
+def _try_generic(
+    source: str, fetch_fn, stage: int | None,
+    video_id: str, prefer_lang: str, config: LanguageConfig,
+    lang_fallbacks: list[str | None],
+) -> tuple[TranscriptResult | None, str | None]:
+    last_error: str | None = None
+    for lang in lang_fallbacks:
+        try_lang = lang if lang is not None else "en"
+        stage_started_at = _log_stage_started(video_id, source, try_lang)
+        result = fetch_fn(video_id, try_lang)
+        # Normalize 3-tuple vs 4-tuple (yt-dlp carries video metadata)
+        if len(result) == 4:
+            success, transcript, error, info_dict = result
+        else:
+            success, transcript, error = result
+            info_dict = {}
+
+        if success and transcript:
+            _log_stage_completed(video_id, source, stage_started_at,
+                                 success=True, chars=len(transcript), lang=try_lang)
+            _record_source_success(source, video_id)
+            return _finalize_success(
+                video_id=video_id, prefer_lang=prefer_lang,
+                source=source, stage=stage,
+                transcript=transcript, raw_lang=lang,
+                config=config, info_dict=info_dict,
+            ), None
+
+        last_error = error
+        _log_stage_completed(video_id, source, stage_started_at,
+                             success=False, error=error, lang=try_lang)
+        if error and ("429" in error.lower() or "rate limited" in error.lower()):
+            _record_source_429(source, video_id)
+            _apply_jitter_with_backoff(source)
+            break  # try next method, not next lang
+        else:
+            _apply_jitter()
+    return None, last_error
+
+
 def fetch_transcript_chain(
     video_id: str,
     config: LanguageConfig,
@@ -2184,19 +2321,15 @@ def fetch_transcript_chain(
 
     for source, fetch_fn, stage in methods_to_try:
         if _is_source_rate_limited(source):
-            continue  # skip circuit-open source
-        if source in {_SOURCE_SELENIUM, _SOURCE_WHISPER} and not expensive_fallback_enabled:
+            continue
+        if source in _EXPENSIVE_SOURCES and not expensive_fallback_enabled:
             stage_started_at = _log_stage_started(video_id, source)
             _log_stage_completed(
-                video_id,
-                source,
-                stage_started_at,
-                success=False,
-                skipped=True,
+                video_id, source, stage_started_at,
+                success=False, skipped=True,
                 skip_reason="expensive_fallback_disabled",
             )
             continue
-        # Skip whisper if disabled via env var
         if source == _SOURCE_WHISPER:
             if not whisper_enabled:
                 continue
@@ -2204,116 +2337,24 @@ def fetch_transcript_chain(
             if whisper_result is not None:
                 return whisper_result
 
-        last_stage_reached = source  # Track the last stage we actually tried
+        last_stage_reached = source
 
-        # NLM ignores lang — call once without lang iteration (no language filtering)
-        if source == _SOURCE_NLM:
-            stage_started_at = _log_stage_started(video_id, source, "en")
-            success, transcript, error = fetch_fn(video_id, "en")
-            if success and transcript:
-                _log_stage_completed(
-                    video_id, source, stage_started_at,
-                    success=True, chars=len(transcript), lang="en",
-                )
-                _record_source_success(source, video_id)
-                return _finalize_success(
-                    video_id=video_id, prefer_lang=prefer_lang,
-                    source=source, stage=stage,
-                    transcript=transcript, raw_lang="en",
-                    config=config,
-                )
+        result, error = _try_source(
+            source, fetch_fn, stage, video_id, prefer_lang, config,
+            lang_fallbacks, chain_started_at, whisper_on_notebooklm_add_failed,
+        )
+        if result is not None:
+            return result
+        if error:
             last_error = error
-            _log_stage_completed(video_id, source, stage_started_at, success=False, error=error, lang="en")
-            if (
-                error
-                and not whisper_on_notebooklm_add_failed
-                and _classify_failure(error, source) == "source_add_failed"
-            ):
-                return _archive_failed_result(video_id, prefer_lang, chain_started_at, error, source)
-        # direct_api uses different signature (no lang arg)
-        elif source == _SOURCE_DIRECT_API:
-            stage_started_at = _log_stage_started(video_id, source)
-            success, transcript, error = fetch_fn(video_id)
-            if success and transcript:
-                _log_stage_completed(
-                    video_id, source, stage_started_at,
-                    success=True, chars=len(transcript),
-                )
-                _record_source_success(source, video_id)
-                return _finalize_success(
-                    video_id=video_id, prefer_lang=prefer_lang,
-                    source=source, stage=stage,
-                    transcript=transcript, raw_lang=prefer_lang,
-                    config=config,
-                )
-            last_error = error
-            _log_stage_completed(video_id, source, stage_started_at, success=False, error=error)
-            if error and (
-                "unavailable" in error.lower()
-                or "removed" in error.lower()
-                or "private" in error.lower()
-            ):
-                _log_transcript_chain_event(
-                    "transcript_chain_failed",
-                    video_id,
-                    last_stage=source,
-                    failure_reason="unavailable",
-                    error=error,
-                    elapsed_s=round(time.perf_counter() - chain_started_at, 3),
-                )
-                _persist_terminal_failure(video_id, error, source)
-                return _build_none_result(video_id, prefer_lang, error, source)
-        else:
-            for lang in lang_fallbacks:
-                # Use "en" as placeholder when lang is None (yt-dlp will use its default)
-                try_lang = lang if lang is not None else "en"
-
-                stage_started_at = _log_stage_started(video_id, source, try_lang)
-                result = fetch_fn(video_id, try_lang)
-                # Normalize 3-tuple (NotebookLM, Selenium, Whisper, direct_api) vs
-                # 4-tuple (yt-dlp, yt-dlp-with-cookies) which carries video metadata
-                if len(result) == 4:
-                    success, transcript, error, info_dict = result
-                else:
-                    success, transcript, error = result
-                    info_dict = {}
-
-                if success and transcript:
-                    _log_stage_completed(
-                        video_id, source, stage_started_at,
-                        success=True, chars=len(transcript), lang=try_lang,
-                    )
-                    _record_source_success(source, video_id)
-                    return _finalize_success(
-                        video_id=video_id, prefer_lang=prefer_lang,
-                        source=source, stage=stage,
-                        transcript=transcript, raw_lang=lang,
-                        config=config, info_dict=info_dict,
-                    )
-
-                last_error = error
-                _log_stage_completed(video_id, source, stage_started_at, success=False, error=error, lang=try_lang)
-                if error and ("429" in error.lower() or "rate limited" in error.lower()):
-                    _record_source_429(source, video_id)
-                    _apply_jitter_with_backoff(source)
-                    # Break out of lang loop on rate limit, try next method
-                    break
-                else:
-                    _apply_jitter()
-                    # Try next language fallback
 
     # External provider hook — last chance before giving up
-    if _external_provider is not None:
+    ext_result, ext_error = _try_external_provider(video_id, prefer_lang, config)
+    if ext_result is not None:
+        return ext_result
+    if ext_error:
+        last_error = ext_error
         last_stage_reached = _SOURCE_EXTERNAL
-        success, transcript, error = _external_provider(video_id, prefer_lang)
-        if success and transcript:
-            return _finalize_success(
-                video_id=video_id, prefer_lang=prefer_lang,
-                source=_SOURCE_EXTERNAL, stage=None,
-                transcript=transcript, raw_lang=prefer_lang,
-                config=config,
-            )
-        last_error = error
 
     # All methods failed; persist the final negative outcome using the same
     # terminal/soft-cache contract as early failure exits.
