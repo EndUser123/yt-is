@@ -39,6 +39,10 @@ logs/
 !.logs/sharded_lane_series/**/logs/
 !.logs/sharded_lane_series/**/logs/term_*.jsonl
 
+# Temp scratch files
+tmp-*.txt
+tmp-*.md
+
 # Evidence / Research
 .evidence/
 .research_report.md
