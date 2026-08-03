@@ -1883,8 +1883,37 @@ def _normalize_channel_url(url: str) -> str:
     return normalize_channel_url(url)
 
 
+def _try_get_stored_channel_id(channel_ref: str) -> str | None:
+    """Look up a stored channel_id from the DB without making API calls.
+
+    Returns the UC channel ID if the channel is already tracked, or None.
+    """
+    normalized = normalize_channel_url(channel_ref)
+    db_path = _get_default_db_path()
+    if not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=5.0)
+        conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            cursor = conn.execute(
+                "SELECT channel_id FROM channel_metadata WHERE channel_url = ? AND channel_id IS NOT NULL",
+                (normalized,),
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return None
+
+
 def _channel_lookup_candidates(channel_ref: str) -> list[str]:
-    return channel_lookup_candidates(channel_ref)
+    """Return lookup candidates, preferring DB-stored channel_id over API resolution."""
+    stored_id = _try_get_stored_channel_id(channel_ref)
+    return channel_lookup_candidates(channel_ref, known_uc_id=stored_id)
 
 
 def _require_channel_identity(

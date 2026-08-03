@@ -33,8 +33,13 @@ def normalize_channel_url(channel_ref: str) -> str:
     return normalized
 
 
-def channel_lookup_candidates(channel_ref: str) -> list[str]:
-    """Return lookup candidates from most-specific to least-specific."""
+def channel_lookup_candidates(channel_ref: str, known_uc_id: str | None = None) -> list[str]:
+    """Return lookup candidates from most-specific to least-specific.
+
+    This function is pure syntactic transformation — it does NOT make API
+    calls. Pass ``known_uc_id`` when the caller already has the UC channel ID
+    from the database, avoiding a live API resolution.
+    """
     normalized = normalize_channel_url(channel_ref)
     candidates: list[str] = []
 
@@ -45,7 +50,7 @@ def channel_lookup_candidates(channel_ref: str) -> list[str]:
     add(normalized)
 
     try:
-        from csf.source_enumerator import parse_channel_url, resolve_to_uc_channel_id
+        from csf.source_enumerator import parse_channel_url
     except Exception:
         return candidates
 
@@ -66,10 +71,10 @@ def channel_lookup_candidates(channel_ref: str) -> list[str]:
     elif parsed.startswith("user/"):
         add(f"https://www.youtube.com/{parsed}")
 
-    uc_id = resolve_to_uc_channel_id(parsed)
-    add(uc_id)
-    if uc_id:
-        add(f"https://www.youtube.com/channel/{uc_id}")
+    # Use known UC ID if provided (from DB); do NOT make an API call here.
+    if known_uc_id:
+        add(known_uc_id)
+        add(f"https://www.youtube.com/channel/{known_uc_id}")
     return candidates
 
 
