@@ -1401,8 +1401,24 @@ class _BatchStatusStorage:
         return [(r[0], r[1], r[2]) for r in rows]
 
     def _query_entries_for_source_details(self, conn: sqlite3.Connection, channel_url: str) -> list[dict[str, object | None]]:
-        """Query entries for a channel using an existing connection."""
-        candidates = _channel_lookup_candidates(channel_url)
+        """Query entries for a channel using an existing connection.
+
+        Looks up the stored channel_id from the same connection to avoid
+        opening a separate connection (the caller typically holds a snapshot
+        connection for read isolation).
+        """
+        stored_id = None
+        try:
+            id_cursor = conn.execute(
+                "SELECT channel_id FROM channel_metadata WHERE channel_url = ? AND channel_id IS NOT NULL",
+                (channel_url,),
+            )
+            id_row = id_cursor.fetchone()
+            if id_row and id_row[0]:
+                stored_id = id_row[0]
+        except Exception:
+            pass
+        candidates = channel_lookup_candidates(channel_url, known_uc_id=stored_id)
         rows = []
         for candidate in candidates:
             cursor = conn.execute(
