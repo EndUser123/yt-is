@@ -9,6 +9,7 @@ Uses YOUTUBE_API_KEY from environment for API calls.
 
 import os
 import re
+import threading
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -104,15 +105,17 @@ class _ApiResult:
 
 # Module-level per-key quota state
 _key_state: dict[int, dict] = {}  # key_index -> {calls_made, units_consumed, exhausted, exhausted_at}
+_key_state_lock = threading.Lock()
 _API_UNIT_ESTIMATE_PER_CALL = 5  # conservative estimate for channels.list with 3 parts
 
 
 def _init_key_state(num_keys: int) -> None:
     """Initialize quota tracking state for each key."""
     global _key_state
-    for i in range(num_keys):
-        if i not in _key_state:
-            _key_state[i] = {"calls_made": 0, "units_consumed": 0, "exhausted": False, "exhausted_at": None}
+    with _key_state_lock:
+        for i in range(num_keys):
+            if i not in _key_state:
+                _key_state[i] = {"calls_made": 0, "units_consumed": 0, "exhausted": False, "exhausted_at": None}
 
 
 def get_quota_status() -> dict[int, dict]:
@@ -123,7 +126,8 @@ def get_quota_status() -> dict[int, dict]:
     """
     keys = _get_api_keys()
     _init_key_state(len(keys))
-    return dict(_key_state)
+    with _key_state_lock:
+        return dict(_key_state)
 
 
 def can_proceed(units_needed: int) -> bool:
@@ -137,12 +141,13 @@ def can_proceed(units_needed: int) -> bool:
     """
     keys = _get_api_keys()
     _init_key_state(len(keys))
-    total_exhausted = sum(1 for i in range(len(keys)) if _key_state.get(i, {}).get("exhausted", False))
-    if total_exhausted >= len(keys):
-        return False  # all keys exhausted
-    # Conservative: assume 10K units per key, subtract estimated consumption
-    per_key_estimate = 10000
-    available = sum(per_key_estimate - _key_state.get(i, {}).get("units_consumed", 0) for i in range(len(keys)))
+    with _key_state_lock:
+        total_exhausted = sum(1 for i in range(len(keys)) if _key_state.get(i, {}).get("exhausted", False))
+        if total_exhausted >= len(keys):
+            return False  # all keys exhausted
+        # Conservative: assume 10K units per key, subtract estimated consumption
+        per_key_estimate = 10000
+        available = sum(per_key_estimate - _key_state.get(i, {}).get("units_consumed", 0) for i in range(len(keys)))
     return available >= units_needed
 
 
@@ -171,8 +176,11 @@ def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_co
     cost = unit_cost if unit_cost is not None else _API_UNIT_ESTIMATE_PER_CALL
 
     for key_idx, api_key in enumerate(keys):
-        if record_quota and _key_state.get(key_idx, {}).get("exhausted", False):
-            continue  # skip exhausted keys
+        if record_quota:
+            with _key_state_lock:
+                is_exhausted = _key_state.get(key_idx, {}).get("exhausted", False)
+            if is_exhausted:
+                continue  # skip exhausted keys
 
         all_params = {**params, "key": api_key}
         query = urllib.parse.urlencode(all_params)
@@ -181,8 +189,9 @@ def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_co
             req = urllib.request.Request(f"{url}?{query}")
             with urllib.request.urlopen(req, timeout=30) as resp:
                 if record_quota:
-                    _key_state[key_idx]["calls_made"] += 1
-                    _key_state[key_idx]["units_consumed"] += cost
+                    with _key_state_lock:
+                        _key_state[key_idx]["calls_made"] += 1
+                        _key_state[key_idx]["units_consumed"] += cost
                 import json
 
                 return json.loads(resp.read().decode())
@@ -190,8 +199,9 @@ def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_co
             body = e.read().decode() if e.fp else ""
             if e.code == 404:
                 if record_quota:
-                    _key_state[key_idx]["calls_made"] += 1
-                    _key_state[key_idx]["units_consumed"] += cost
+                    with _key_state_lock:
+                        _key_state[key_idx]["calls_made"] += 1
+                        _key_state[key_idx]["units_consumed"] += cost
                 return None
             if e.code == 400 and "expired" in body.lower():
                 last_error = f"key expired (HTTP 400)"
@@ -199,19 +209,20 @@ def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_co
             if e.code == 403 or e.code == 429:
                 last_error = f"quota exceeded (HTTP {e.code})"
                 if record_quota:
-                    _key_state[key_idx]["exhausted"] = True
-                    from datetime import datetime, timezone
-
-                    _key_state[key_idx]["exhausted_at"] = datetime.now(timezone.utc).isoformat()
+                    with _key_state_lock:
+                        _key_state[key_idx]["exhausted"] = True
+                        _key_state[key_idx]["exhausted_at"] = datetime.now(timezone.utc).isoformat()
                 continue
             if record_quota:
-                _key_state[key_idx]["calls_made"] += 1
-                _key_state[key_idx]["units_consumed"] += cost
+                with _key_state_lock:
+                    _key_state[key_idx]["calls_made"] += 1
+                    _key_state[key_idx]["units_consumed"] += cost
             return None
         except Exception:
             if record_quota:
-                _key_state[key_idx]["calls_made"] += 1
-                _key_state[key_idx]["units_consumed"] += cost
+                with _key_state_lock:
+                    _key_state[key_idx]["calls_made"] += 1
+                    _key_state[key_idx]["units_consumed"] += cost
             return None
 
     import logging
@@ -712,34 +723,37 @@ def enumerate_recent(
     published_after: str,
     max_iterations: int = 20,
 ) -> list[dict]:
-    """Enumerate videos published after a timestamp using publishedAfter cursor.
+    """Enumerate videos published after a timestamp using nextPageToken pagination.
 
-    Used for gap resolution. Fetches 50 at a time until overlap is found.
+    Used for gap resolution. Fetches 50 at a time, paginating via next_page_token,
+    until all videos in the filtered result set are consumed.
 
     Args:
         playlist_id: Playlist ID to enumerate
-        published_after: ISO timestamp (lower bound)
+        published_after: ISO timestamp (lower bound filter, applied to all pages)
         max_iterations: Max API calls to bound quota usage (default 20 = 1000 videos)
 
     Returns:
         List of video dicts with id/title/publishedAt
     """
     all_videos = []
-    cursor = published_after
+    page_token: str | None = None
 
     for _ in range(max_iterations):
-        videos, _ = enumerate_videos_api(playlist_id, published_after=cursor)
+        videos, next_token = enumerate_videos_api(
+            playlist_id,
+            page_token=page_token,
+            published_after=published_after,
+        )
         if not videos:
             break
 
         all_videos.extend(videos)
 
-        # Use oldest video's publishedAt as new cursor for next page
-        cursor = videos[-1]["published_at"]
-
-        # If we got fewer than 50, we've reached the end
-        if len(videos) < 50:
+        if not next_token:
             break
+
+        page_token = next_token
 
     return all_videos
 
