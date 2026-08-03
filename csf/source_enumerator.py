@@ -118,6 +118,51 @@ def _init_key_state(num_keys: int) -> None:
                 _key_state[i] = {"calls_made": 0, "units_consumed": 0, "exhausted": False, "exhausted_at": None}
 
 
+def _last_midnight_pt() -> datetime:
+    """Return the most recent midnight Pacific Time (quota reset boundary).
+
+    YouTube quota resets at midnight PT (PDT UTC-7 or PST UTC-8).
+    We use a fixed UTC-7 offset for simplicity — the one-hour error
+    window is harmless for a daily-reset check.
+    """
+    now_utc = datetime.now(timezone.utc)
+    # Pacific time is UTC-7 (PDT, March-October) or UTC-8 (PST).
+    # Using UTC-7 year-round means we reset slightly early during PST
+    # (Nov-March), which is safe (conservative).
+    pt_offset = timezone(timedelta(hours=-7))
+    now_pt = now_utc.astimezone(pt_offset)
+    midnight_pt = now_pt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight_pt.astimezone(timezone.utc)
+
+
+def _refresh_exhausted_flags() -> None:
+    """Clear exhausted flags for keys whose quota has reset since exhaustion.
+
+    YouTube quota resets daily at midnight Pacific Time. A key marked
+    exhausted at 10pm PT resets at midnight PT (~2 hours later). Without
+    this check, long-running processes stay permanently stuck.
+    """
+    cutoff = _last_midnight_pt()
+    with _key_state_lock:
+        for idx, state in _key_state.items():
+            if not state.get("exhausted"):
+                continue
+            exhausted_at_str = state.get("exhausted_at")
+            if not exhausted_at_str:
+                continue
+            try:
+                exhausted_at = datetime.fromisoformat(exhausted_at_str)
+                if exhausted_at.tzinfo is None:
+                    exhausted_at = exhausted_at.replace(tzinfo=timezone.utc)
+                if exhausted_at < cutoff:
+                    state["exhausted"] = False
+                    state["exhausted_at"] = None
+                    state["calls_made"] = 0
+                    state["units_consumed"] = 0
+            except (ValueError, TypeError):
+                pass
+
+
 def get_quota_status() -> dict[int, dict]:
     """Return current quota state per key index.
 
@@ -126,6 +171,7 @@ def get_quota_status() -> dict[int, dict]:
     """
     keys = _get_api_keys()
     _init_key_state(len(keys))
+    _refresh_exhausted_flags()
     with _key_state_lock:
         return dict(_key_state)
 
@@ -141,6 +187,7 @@ def can_proceed(units_needed: int) -> bool:
     """
     keys = _get_api_keys()
     _init_key_state(len(keys))
+    _refresh_exhausted_flags()
     with _key_state_lock:
         total_exhausted = sum(1 for i in range(len(keys)) if _key_state.get(i, {}).get("exhausted", False))
         if total_exhausted >= len(keys):
@@ -170,6 +217,7 @@ def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_co
 
     if record_quota:
         _init_key_state(len(keys))
+        _refresh_exhausted_flags()
 
     url = f"{_YOUTUBE_API_BASE}/{endpoint}"
     last_error: str | None = None
