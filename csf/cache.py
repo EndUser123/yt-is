@@ -390,6 +390,40 @@ def set_cached_transcript(
         metadata_json=metadata_json,
     )
 
+    # Self-healing: register in analysis_status so the video is visible to
+    # check-all and fetch. Prevents orphan transcripts (transcript in cache
+    # but not tracked in analysis_status). Uses INSERT OR IGNORE to avoid
+    # downgrading existing rows.
+    _register_in_analysis_status(video_id, source)
+
+
+def _register_in_analysis_status(video_id: str, source: str) -> None:
+    """Ensure analysis_status has a row for this video_id (self-healing).
+
+    Called as a side effect of set_cached_transcript. Never blocks on failure.
+    """
+    try:
+        from csf.batch_status import _get_default_db_path
+        import sqlite3 as _sql
+        from datetime import datetime, timezone
+        db_path = _get_default_db_path()
+        if not db_path.exists():
+            return
+        conn = _sql.connect(str(db_path), timeout=5.0)
+        conn.execute("PRAGMA busy_timeout=2000")
+        try:
+            conn.execute(
+                """INSERT OR IGNORE INTO analysis_status
+                   (video_id, status, updated_at, source)
+                   VALUES (?, 'complete', ?, ?)""",
+                (video_id, datetime.now(timezone.utc).isoformat(), source),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Self-healing must never block the cache write
+
 
 def _log_unbound_write_skip(video_id: str, lang: str, source: str) -> None:
     """Log (don't raise) when a caller tries to write a non-bound key."""
