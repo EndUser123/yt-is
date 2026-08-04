@@ -22,11 +22,32 @@ _YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 
 class QuotaBudgetBlocked(RuntimeError):
-    """Raised when YTIS_API_SPEND_MODE=block prevents an API call.
+    """Raised when API spending is not authorized for this process.
 
-    This is a structural invariant, not a behavioral rule — the operator
-    sets the env var, and the code enforces it regardless of agent behavior.
+    API spending defaults to blocked. Each new process starts blocked.
+    Authorization is per-invocation only — it dies with the process.
+    No env var, no file, no persistence between sessions.
     """
+
+
+# Per-process spend authorization. Defaults to blocked.
+# Set via set_spend_authorized(True) — typically from a CLI flag like --allow-spend.
+_spend_authorized = False
+
+
+def set_spend_authorized(authorized: bool) -> None:
+    """Authorize or de-authorize API spending for this process only.
+
+    Called from CLI entry points (e.g. --allow-spend flag) or explicitly
+    at the top of scripts that need API access. Dies with the process.
+    """
+    global _spend_authorized
+    _spend_authorized = authorized
+
+
+def is_spend_authorized() -> bool:
+    """Check whether API spending is authorized for this process."""
+    return _spend_authorized
 
 
 class ChannelInfo(NamedTuple):
@@ -209,12 +230,10 @@ def can_proceed(units_needed: int) -> bool:
 def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_cost: int | None = None) -> dict | None:
     """Make a YouTube Data API request with automatic key failover and quota tracking.
 
-    Respects ``YTIS_API_SPEND_MODE``: when set to ``block`` (the default when
-    unset), raises ``QuotaBudgetBlocked`` before any network call.  The
-    operator must set ``YTIS_API_SPEND_MODE=authorize`` (e.g. in their
-    PowerShell profile) to allow API spending.  This makes unspending the
-    code's default and spending the exception that requires operator
-    presence — a structural invariant, not a behavioral rule.
+    Respects per-process spend authorization: spending is blocked by
+    default. Use ``set_spend_authorized(True)`` (typically via the
+    ``--allow-spend`` CLI flag) to authorize spending for one run only.
+    When the process exits, authorization is gone.
 
     Args:
         endpoint: API endpoint (e.g., 'channels', 'playlistItems')
@@ -228,15 +247,15 @@ def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_co
         JSON response dict or None on error.
 
     Raises:
-        QuotaBudgetBlocked: when ``YTIS_API_SPEND_MODE`` is ``block``.
+        QuotaBudgetBlocked: when spending is not authorized for this process.
     """
-    # --- Default-deny spend gate (fires regardless of record_quota) ---
-    spend_mode = os.getenv("YTIS_API_SPEND_MODE", "block").strip().lower()
-    if spend_mode == "block":
+    # --- Per-process spend gate (fires regardless of record_quota) ---
+    if not _spend_authorized:
         raise QuotaBudgetBlocked(
-            f"YouTube API call to {endpoint} blocked by YTIS_API_SPEND_MODE=block. "
-            f"Set YTIS_API_SPEND_MODE=authorize to allow API spending, or use "
-            f"free alternatives (oEmbed, RSS feeds, DB cache)."
+            f"YouTube API call to {endpoint} blocked — spending not authorized. "
+            f"Re-run with --allow-spend to authorize API calls for this run only, "
+            f"or call set_spend_authorized(True) in scripts. Use free alternatives "
+            f"(oEmbed, RSS, DB cache) when possible."
         )
 
     keys = _get_api_keys()

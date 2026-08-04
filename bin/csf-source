@@ -4274,6 +4274,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="YouTube source management CLI — Phase 2."
     )
+    parser.add_argument(
+        "--allow-spend",
+        action="store_true",
+        default=False,
+        help="Authorize YouTube API spending for this run only. Dies with the process."
+    )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # add command
@@ -4362,6 +4368,11 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Per-process spend authorization — --allow-spend flag
+    if getattr(args, "allow_spend", False):
+        from csf.source_enumerator import set_spend_authorized
+        set_spend_authorized(True)
 
     if args.command == "add":
         cmd_add(args.url)
