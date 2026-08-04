@@ -2599,9 +2599,21 @@ def run_v2_cross_db_backfill(
             """INSERT INTO _staging_transcript_cache
                (video_id, lang, source, transcript, cached_at, content_hash)
                SELECT video_id, lang, source, transcript, cached_at,
-                      lower(hex(randomblob(32)))
+                      'pending'
                FROM cache_db.transcript_cache"""
         )
+
+        # Compute content_hash in Python (SQLite has no built-in sha256)
+        import hashlib
+        rows = conn.execute(
+            "SELECT rowid, transcript FROM _staging_transcript_cache"
+        ).fetchall()
+        for rowid, transcript_text in rows:
+            h = hashlib.sha256((transcript_text or "").encode("utf-8")).hexdigest()
+            conn.execute(
+                "UPDATE _staging_transcript_cache SET content_hash = ? WHERE rowid = ?",
+                (h, rowid),
+            )
 
         empty_count = conn.execute(
             "SELECT COUNT(*) FROM _staging_transcript_cache WHERE transcript IS NULL OR length(transcript) = 0"
