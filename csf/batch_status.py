@@ -2444,3 +2444,390 @@ def get_provider_scores(
     if db_path is None:
         return _get_batch_status_storage()._get_provider_scores(channel_url)
     return _BatchStatusStorage(db_path=db_path)._get_provider_scores(channel_url)
+
+
+# =============================================================================
+# v2 Schema migration: split analysis_status into orthogonal state tables
+# =============================================================================
+
+V2_MIGRATION_SQL_PATH = Path(__file__).parent / "migrations" / "v2_split_states.sql"
+
+# State-rank ordering: prevents backward state transitions (e.g., complete→pending).
+# Higher rank = more progressed. record_status_event uses this for monotonic enforcement.
+_STATE_RANK: dict[str, dict[str, int]] = {
+    "transcript_status": {
+        "absent": 0, "queued": 1, "running": 2, "acquired": 3,
+        "failed_transient": 4, "failed_terminal": 5,
+    },
+    "visual_status": {
+        "queued": 0, "running": 1, "partial": 2, "complete": 3,
+        "failed_unavailable": 4, "failed_terminal": 5, "skipped": 6,
+    },
+    "analysis_status": {
+        "pending": 0, "assembling": 1, "assembled_v1": 2, "assembled_v2": 3,
+    },
+    "ingestion_status": {
+        "pending": 0, "published_v1": 1, "published_v2": 2, "stale": 3,
+    },
+}
+
+
+def run_v2_migration(db_path: str | Path | None = None) -> dict[str, int]:
+    """Run the v2 schema migration: create new tables and backfill from existing data.
+
+    Idempotent: safe to run multiple times. Returns a dict with row counts.
+    """
+    if db_path is None:
+        db_path = _get_batch_status_storage()._db_path
+    else:
+        db_path = Path(db_path)
+
+    if not V2_MIGRATION_SQL_PATH.exists():
+        raise FileNotFoundError(f"v2 migration SQL not found: {V2_MIGRATION_SQL_PATH}")
+
+    sql = V2_MIGRATION_SQL_PATH.read_text(encoding="utf-8")
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+
+    counts: dict[str, int] = {}
+    try:
+        conn.executescript(sql)
+
+        # Backfill video_catalog from analysis_status metadata columns
+        conn.execute(
+            """INSERT OR IGNORE INTO video_catalog
+               (video_id, channel_id, title, description, thumbnail, duration,
+                privacy_status, upload_status, is_live_content, unavailable_reason,
+                has_captions, last_checked_at)
+               SELECT video_id, channel_id, title, description, thumbnail, duration,
+                      privacy_status, upload_status, is_live_content, unavailable_reason,
+                      has_captions, updated_at
+               FROM analysis_status"""
+        )
+        counts["video_catalog"] = conn.execute(
+            "SELECT COUNT(*) FROM video_catalog"
+        ).fetchone()[0]
+
+        # Backfill analysis_jobs from pending analysis_status rows
+        conn.execute(
+            """INSERT OR IGNORE INTO analysis_jobs (video_id, profile, created_at)
+               SELECT video_id, 'standard', updated_at
+               FROM analysis_status WHERE status = 'pending'"""
+        )
+        counts["analysis_jobs"] = conn.execute(
+            "SELECT COUNT(*) FROM analysis_jobs"
+        ).fetchone()[0]
+
+        # Legacy coverage re-enqueue: complete videos get visual_jobs rows
+        conn.execute(
+            """INSERT OR IGNORE INTO visual_jobs (video_id, profile, created_at, max_attempts)
+               SELECT v.video_id, 'standard', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 3
+               FROM video_catalog v
+               JOIN analysis_status a ON v.video_id = a.video_id
+               WHERE a.status = 'complete' AND COALESCE(v.has_captions, 0) != 0"""
+        )
+        counts["legacy_visual_jobs"] = conn.execute(
+            """SELECT COUNT(*) FROM visual_jobs vj
+               JOIN analysis_status a ON vj.video_id = a.video_id
+               WHERE a.status = 'complete'"""
+        ).fetchone()[0]
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return counts
+
+
+def run_v2_cross_db_backfill(
+    batch_db_path: str | Path | None = None,
+    transcripts_db_path: str | Path | None = None,
+) -> dict[str, int]:
+    """Cross-DB backfill of transcript_status from transcripts.sqlite.
+
+    Uses ATTACH DATABASE with schema validation and two-phase staging.
+    Aborts on schema mismatch or empty-transcript rows (data-quality gate).
+    """
+    if batch_db_path is None:
+        batch_db_path = _get_batch_status_storage()._db_path
+    else:
+        batch_db_path = Path(batch_db_path)
+
+    if transcripts_db_path is None:
+        transcripts_db_path = Path(os.environ.get(
+            "YTIS_TRANSCRIPTS_DB",
+            str(batch_db_path.parent / "transcripts.sqlite"),
+        ))
+
+    if not Path(transcripts_db_path).exists():
+        raise FileNotFoundError(
+            f"Transcripts DB not found: {transcripts_db_path}. "
+            "Set YTIS_TRANSCRIPTS_DB to the correct path."
+        )
+
+    conn = sqlite3.connect(str(batch_db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+
+    counts: dict[str, int] = {}
+    try:
+        # Attach the transcripts DB
+        conn.execute(
+            f"ATTACH DATABASE '{transcripts_db_path}' AS cache_db"
+        )
+
+        # Schema validation: verify transcript_cache table exists
+        tables = conn.execute(
+            "SELECT name FROM cache_db.sqlite_master WHERE type='table' AND name='transcript_cache'"
+        ).fetchall()
+        if not tables:
+            raise RuntimeError(
+                f"transcript_cache table not found in {transcripts_db_path}. "
+                "Schema validation failed."
+            )
+
+        # Phase 1: staging extraction with data-quality gate
+        conn.execute("DROP TABLE IF EXISTS _staging_transcript_cache")
+        conn.execute(
+            """CREATE TEMP TABLE _staging_transcript_cache (
+                video_id TEXT, lang TEXT, source TEXT, transcript TEXT,
+                cached_at TEXT, content_hash TEXT
+            )"""
+        )
+        conn.execute(
+            """INSERT INTO _staging_transcript_cache
+               (video_id, lang, source, transcript, cached_at, content_hash)
+               SELECT video_id, lang, source, transcript, cached_at,
+                      lower(hex(randomblob(32)))
+               FROM cache_db.transcript_cache"""
+        )
+
+        empty_count = conn.execute(
+            "SELECT COUNT(*) FROM _staging_transcript_cache WHERE transcript IS NULL OR length(transcript) = 0"
+        ).fetchone()[0]
+        if empty_count > 0:
+            conn.execute("DROP TABLE IF EXISTS _staging_transcript_cache")
+            conn.execute("DETACH DATABASE cache_db")
+            conn.rollback()
+            raise RuntimeError(
+                f"Data-quality gate: {empty_count} rows have empty transcript text. "
+                "Migration aborted before any writes."
+            )
+
+        staging_count = conn.execute(
+            "SELECT COUNT(*) FROM _staging_transcript_cache"
+        ).fetchone()[0]
+
+        # Phase 2: atomic commit to transcript_status + transcript_artifacts
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """INSERT OR IGNORE INTO transcript_status
+               (video_id, status, source, updated_at)
+               SELECT video_id, 'acquired', source, cached_at
+               FROM _staging_transcript_cache"""
+        )
+        conn.execute(
+            """INSERT OR IGNORE INTO transcript_artifacts
+               (video_id, lang, source, content_hash, captured_at)
+               SELECT video_id, lang, source, content_hash, cached_at
+               FROM _staging_transcript_cache"""
+        )
+        conn.execute("COMMIT")
+
+        counts["transcript_cache_rows"] = staging_count
+        counts["transcript_status_acquired"] = conn.execute(
+            "SELECT COUNT(*) FROM transcript_status WHERE status = 'acquired'"
+        ).fetchone()[0]
+        counts["transcript_artifacts"] = conn.execute(
+            "SELECT COUNT(*) FROM transcript_artifacts"
+        ).fetchone()[0]
+
+        # Post-migration reconciliation
+        delta = abs(counts["transcript_cache_rows"] - counts["transcript_status_acquired"])
+        tolerance = max(1, int(counts["transcript_cache_rows"] * 0.01))
+        passed = 1 if delta <= tolerance else 0
+
+        conn.execute(
+            """INSERT OR REPLACE INTO migration_audit
+               (id, timestamp, transcript_status_count, transcript_cache_count,
+                transcript_artifacts_count, delta, pass)
+               VALUES (1, ?, ?, ?, ?, ?, ?)""",
+            (
+                datetime.now(timezone.utc).isoformat(),
+                counts["transcript_status_acquired"],
+                counts["transcript_cache_rows"],
+                counts["transcript_artifacts"],
+                delta,
+                passed,
+            ),
+        )
+
+        # Cleanup
+        conn.execute("DROP TABLE IF EXISTS _staging_transcript_cache")
+        conn.execute("DETACH DATABASE cache_db")
+        conn.commit()
+
+        counts["reconciliation_delta"] = delta
+        counts["reconciliation_pass"] = passed
+    except Exception:
+        conn.rollback()
+        try:
+            conn.execute("DROP TABLE IF EXISTS _staging_transcript_cache")
+            conn.execute("DETACH DATABASE cache_db")
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+    return counts
+
+
+def record_status_event(
+    state_kind: str,
+    video_id: str,
+    new_status: str,
+    *,
+    source: str | None = None,
+    last_stage: str | None = None,
+    failure_reason: str | None = None,
+    profile: str | None = None,
+    db_path: str | Path | None = None,
+) -> bool:
+    """Record a state transition for any of the four independent state machines.
+
+    Args:
+        state_kind: One of 'transcript_status', 'visual_status',
+                    'analysis_status', 'ingestion_status'.
+        video_id: YouTube video ID.
+        new_status: New status value for the given state_kind.
+        source: Optional source field (for transcript_status).
+        last_stage: Optional last_stage field.
+        failure_reason: Optional failure reason.
+        profile: Optional profile (for visual_status).
+        db_path: Optional DB path override.
+
+    Returns:
+        True if the status was written, False if a higher-ranked status
+        already exists (monotonic enforcement) or if the write failed silently.
+    """
+    if state_kind not in _STATE_RANK:
+        raise ValueError(
+            f"Unknown state_kind: {state_kind!r}. "
+            f"Expected one of: {list(_STATE_RANK.keys())}"
+        )
+
+    rank_map = _STATE_RANK[state_kind]
+    new_rank = rank_map.get(new_status, 0)
+
+    if db_path is None:
+        db_path = _get_batch_status_storage()._db_path
+    else:
+        db_path = Path(db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+
+    try:
+        # Check current rank for monotonic enforcement
+        if state_kind == "analysis_status":
+            # Legacy table uses different schema — route through existing set_status
+            return False  # Handled by existing mark_complete/mark_failed paths
+
+        row = conn.execute(
+            f"SELECT status FROM {state_kind} WHERE video_id = ?",
+            (video_id,)
+        ).fetchone()
+
+        if row is not None:
+            current_status = row[0]
+            current_rank = rank_map.get(current_status, 0)
+            if current_rank > new_rank:
+                # Monotonic: cannot go backward
+                return False
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Build column lists for the UPSERT
+        cols = ["video_id", "status", "updated_at"]
+        vals: list = [video_id, new_status, now]
+
+        if source is not None:
+            cols.append("source")
+            vals.append(source)
+        if last_stage is not None:
+            cols.append("last_stage")
+            vals.append(last_stage)
+        if failure_reason is not None:
+            cols.append("failure_reason")
+            vals.append(failure_reason)
+        if profile is not None and state_kind == "visual_status":
+            cols.append("profile")
+            vals.append(profile)
+
+        placeholders = ", ".join("?" * len(vals))
+        col_list = ", ".join(cols)
+
+        conn.execute(
+            f"""INSERT INTO {state_kind} ({col_list})
+               VALUES ({placeholders})
+               ON CONFLICT(video_id) DO UPDATE SET
+                   status = excluded.status,
+                   updated_at = excluded.updated_at"""
+               + (", source = excluded.source" if source is not None else "")
+               + (", last_stage = excluded.last_stage" if last_stage is not None else "")
+               + (", failure_reason = excluded.failure_reason" if failure_reason is not None else "")
+               + (", profile = excluded.profile" if profile is not None and state_kind == "visual_status" else ""),
+            vals
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def get_transcript_status(
+    video_id: str, db_path: str | Path | None = None
+) -> str | None:
+    """Get the transcript_status for a video. Returns None if not in the new table."""
+    if db_path is None:
+        db_path = _get_batch_status_storage()._db_path
+    else:
+        db_path = Path(db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        row = conn.execute(
+            "SELECT status FROM transcript_status WHERE video_id = ?",
+            (video_id,)
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def get_visual_status(
+    video_id: str, db_path: str | Path | None = None
+) -> str | None:
+    """Get the visual_status for a video. Returns None if not in the new table."""
+    if db_path is None:
+        db_path = _get_batch_status_storage()._db_path
+    else:
+        db_path = Path(db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        row = conn.execute(
+            "SELECT status FROM visual_status WHERE video_id = ?",
+            (video_id,)
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
