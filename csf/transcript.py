@@ -1791,7 +1791,12 @@ def _record_soft_negative(
 
 
 def _probe_oembed(video_id: str) -> tuple[bool, str | None]:
-    """Cheap reachability probe for obvious unavailable/private/removed videos."""
+    """Cheap reachability probe for obvious unavailable/private/removed videos.
+
+    Side effect: when the probe succeeds, caches the channel handle (from
+    author_url) so callers that need channel info for this video_id can
+    retrieve it without an additional API call.
+    """
     oembed_url = "https://www.youtube.com/oembed?" + urllib.parse.urlencode(
         {
             "url": f"https://www.youtube.com/watch?v={video_id}",
@@ -1812,6 +1817,10 @@ def _probe_oembed(video_id: str) -> tuple[bool, str | None]:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             if getattr(resp, "status", 200) == 200:
+                import json as _json
+                body = resp.read().decode()
+                data = _json.loads(body)
+                _cache_oembed_channel(video_id, data)
                 return (True, None)
             return (False, f"oembed unavailable: HTTP {getattr(resp, 'status', 'unknown')}")
     except urllib.error.HTTPError as e:
@@ -1822,6 +1831,50 @@ def _probe_oembed(video_id: str) -> tuple[bool, str | None]:
         return (False, f"oembed error: HTTP {e.code}")
     except Exception as e:
         return (False, f"oembed error: {e}")
+
+
+def _cache_oembed_channel(video_id: str, oembed_data: dict) -> None:
+    """Cache channel info from oEmbed response into analysis_status.
+
+    oEmbed returns author_name and author_url (channel handle). This stores
+    the channel info so it's available without a separate API call. Called
+    as a side effect of _probe_oembed — never blocks the transcript chain.
+    """
+    author_url = oembed_data.get("author_url", "")
+    if not author_url:
+        return
+    try:
+        import re as _re
+        from csf.batch_status import _get_default_db_path
+        import sqlite3 as _sqlite3
+        # Extract channel handle or UC ID from author_url
+        uc_match = _re.search(r"/channel/(UC[a-zA-Z0-9_-]{22})", author_url)
+        handle_match = _re.search(r"/(@[a-zA-Z0-9_.-]+)", author_url)
+        channel_id = uc_match.group(1) if uc_match else None
+        author_name = oembed_data.get("author_name", "")
+        db_path = _get_default_db_path()
+        if not db_path.exists():
+            return
+        conn = _sqlite3.connect(str(db_path), timeout=5.0)
+        conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            if channel_id:
+                conn.execute(
+                    "UPDATE analysis_status SET channel_id = ? WHERE video_id = ? AND (channel_id IS NULL OR channel_id = '')",
+                    (channel_id, video_id),
+                )
+            # Store author_name as title fallback if missing (not overwrite)
+            if author_name:
+                conn.execute(
+                    "UPDATE analysis_status SET source = COALESCE(source, ?) WHERE video_id = ?",
+                    (f"oembed:{author_name}", video_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        # Side effect must never break the transcript chain.
+        pass
 
 
 def _log_transcript_chain_event(action: str, video_id: str, **data: object) -> None:
