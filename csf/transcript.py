@@ -2016,6 +2016,8 @@ def _log_stage_completed(
         elapsed_s=round(time.perf_counter() - started_at, 3),
         expensive=source in _EXPENSIVE_SOURCES,
     )
+    # Persist timing to SQLite for the adaptive chain selector
+    _record_stage_timing(video_id, source, time.perf_counter() - started_at, success, skipped)
 
 
 def _finalize_success(
@@ -2276,23 +2278,243 @@ def _try_generic(
     return None, last_error
 
 
+# ---------------------------------------------------------------------------
+# Adaptive chain ordering — picks the fastest chain order based on batch context
+# ---------------------------------------------------------------------------
+
+# Empirical per-method parameters (from benchmark corpus + cache composition analysis)
+# These are conservative estimates; actual timings vary by video length, network, etc.
+# Updated at runtime from stage_timing table in transcripts.sqlite.
+_METHOD_LATENCY = {
+    "ytdlp":      {"per_video_s": 2.5,  "max_serial_videos": 50,  "coverage_without_captions": False},
+    "ytdlp_ejs":  {"per_video_s": 3.0,  "max_serial_videos": 50,  "coverage_without_captions": False},
+    "direct_api": {"per_video_s": 0.5,  "max_serial_videos": 200, "coverage_without_captions": False},
+    "notebooklm": {"per_video_s": 0.95, "max_serial_videos": 99999, "coverage_without_captions": True},  # 3788 VPH / 3600 = 0.95s equiv at 3-worker throughput
+    "selenium":   {"per_video_s": 20.0, "max_serial_videos": 99999, "coverage_without_captions": True},
+    "whisper":    {"per_video_s": 60.0, "max_serial_videos": 99999, "coverage_without_captions": True},
+}
+
+
+def _ensure_stage_timing_table(conn) -> None:
+    """Create the stage_timing table if it doesn't exist."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stage_timing (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            elapsed_s REAL NOT NULL,
+            success INTEGER NOT NULL,
+            skipped INTEGER NOT NULL DEFAULT 0,
+            recorded_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stage_timing_source ON stage_timing(source)"
+    )
+    conn.commit()
+
+
+def _record_stage_timing(video_id: str, source: str, elapsed: float, success: bool, skipped: bool) -> None:
+    """Record a stage timing to the SQLite stage_timing table.
+
+    This feeds the adaptive chain selector with empirical data, replacing
+    the static _METHOD_LATENCY estimates with real measurements over time.
+    Never blocks the transcript chain on failure.
+    """
+    try:
+        from csf.cache import _connect_shared_db
+        conn = _connect_shared_db()
+        _ensure_stage_timing_table(conn)
+        from datetime import datetime, timezone
+        conn.execute(
+            "INSERT INTO stage_timing (source, elapsed_s, success, skipped, recorded_at) VALUES (?, ?, ?, ?, ?)",
+            (source, round(elapsed, 3), 1 if success else 0, 1 if skipped else 0,
+             datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Timing recording must never block the chain
+
+
+def _get_empirical_latencies() -> dict[str, float]:
+    """Read median per-source elapsed_s from stage_timing table.
+
+    Returns source→median_seconds for sources with ≥10 samples.
+    Falls back to _METHOD_LATENCY defaults for sources with insufficient data.
+    """
+    try:
+        from csf.cache import _connect_shared_db, get_shared_db_path
+        db_path = get_shared_db_path()
+        if not db_path.exists():
+            return {}
+        conn = _connect_shared_db()
+        _ensure_stage_timing_table(conn)
+        rows = conn.execute(
+            """SELECT source, elapsed_s FROM stage_timing
+               WHERE skipped = 0 AND success = 1
+               ORDER BY source, elapsed_s"""
+        ).fetchall()
+        conn.close()
+        if not rows:
+            return {}
+
+        from collections import defaultdict
+        by_source = defaultdict(list)
+        for source, elapsed in rows:
+            by_source[source].append(elapsed)
+
+        result = {}
+        for source, times in by_source.items():
+            if len(times) >= 10:
+                result[source] = times[len(times) // 2]  # median
+        return result
+    except Exception:
+        return {}
+
+
+def estimate_chain_time(
+    method: str,
+    batch_size: int,
+    has_captions_ratio: float = 0.0,
+    nlm_workers: int = 3,
+) -> float:
+    """Estimate wall-clock time for processing batch_size videos through one method.
+
+    Args:
+        method: Source method name (ytdlp, notebooklm, etc.)
+        batch_size: Number of videos to process
+        has_captions_ratio: Fraction of videos with has_captions=1 (0.0-1.0)
+        nlm_workers: Number of NLM workers (affects throughput for notebooklm)
+
+    Returns:
+        Estimated wall-clock seconds
+    """
+    params = _METHOD_LATENCY.get(method)
+    if not params:
+        return float("inf")
+
+    # Coverage gate: methods that need captions get penalized for no-caption videos
+    if not params["coverage_without_captions"] and has_captions_ratio < 0.5:
+        # Method needs captions but most videos don't have them.
+        # The time spent is wasted (no transcripts produced), so it's pure overhead
+        # before the real work starts. Penalize heavily so universal methods go first.
+        effective_videos = min(batch_size, params["max_serial_videos"])
+        return float("inf")  # never try caption-gated methods first for no-caption videos
+
+    if method == "notebooklm":
+        # NLM throughput scales with workers: 3788 VPH at 3 workers
+        vph = 3788 * (nlm_workers / 3) if nlm_workers > 0 else 3788
+        per_video_at_scale = 3600 / vph
+        # For small batches, per-source overhead is lower (may already be in notebook)
+        setup_s = 5.0 if batch_size <= 10 else 15.0
+        return setup_s + batch_size * per_video_at_scale
+
+    # Serial method
+    effective_videos = min(batch_size, params["max_serial_videos"])
+    return effective_videos * params["per_video_s"]
+
+
+def build_adaptive_chain(
+    skip_notebooklm: bool = False,
+    batch_size: int = 1,
+    has_captions_ratio: float = 0.0,
+    nlm_workers: int = 3,
+) -> list[str]:
+    """Build the optimal transcript source chain for the current batch.
+
+    Orders sources by estimated total time. For large batches with low
+    caption ratios (the common case: 99.86% of backlog has no captions),
+    NotebookLM goes first because it has the highest throughput and doesn't
+    require captions.
+
+    Uses empirical timing data from the stage_timing table when available
+    (≥10 samples per source), falling back to static estimates otherwise.
+
+    Args:
+        skip_notebooklm: If True, exclude NotebookLM from the chain
+        batch_size: Number of videos to process in this batch
+        has_captions_ratio: Fraction of videos with has_captions=1
+        nlm_workers: Number of NLM workers available
+
+    Returns:
+        Ordered list of source method names
+    """
+    # Refresh latencies from empirical data
+    empirical = _get_empirical_latencies()
+    for source, median_s in empirical.items():
+        if source in _METHOD_LATENCY and median_s > 0:
+            _METHOD_LATENCY[source]["per_video_s"] = median_s
+
+    all_methods = [
+        _SOURCE_YTDLP,
+        _SOURCE_YTDLP_EJS,
+        _SOURCE_DIRECT_API,
+        _SOURCE_SELENIUM,
+        _SOURCE_WHISPER,
+    ]
+    if not skip_notebooklm:
+        all_methods.append(_SOURCE_NLM)
+
+    # Estimate time for each method and sort by ascending estimated time
+    timed = [
+        (m, estimate_chain_time(m, batch_size, has_captions_ratio, nlm_workers))
+        for m in all_methods
+    ]
+    timed.sort(key=lambda x: x[1])
+
+    return [m for m, _ in timed]
+
+
+def _build_methods_to_try(
+    skip_notebooklm: bool,
+    has_captions_ratio: float = 0.0,
+) -> list[tuple]:
+    """Build the ordered (source, fetch_fn, stage) list for the transcript chain.
+
+    Uses build_adaptive_chain to pick the optimal order, then maps to
+    (source, fetch_fn, stage_version) tuples.
+    """
+    chain_order = build_adaptive_chain(
+        skip_notebooklm=skip_notebooklm,
+        batch_size=1,  # Per-video call — batch context is handled by the caller
+        has_captions_ratio=has_captions_ratio,
+    )
+
+    _FETCH_MAP = {
+        _SOURCE_YTDLP: (_fetch_via_ytdlp, STAGE_VERSION_YTDLP),
+        _SOURCE_YTDLP_EJS: (_fetch_via_ytdlp_with_cookies, STAGE_VERSION_EJS),
+        _SOURCE_DIRECT_API: (_fetch_via_direct_api, STAGE_VERSION_DIRECT_API),
+        _SOURCE_NLM: (_fetch_via_notebooklm, STAGE_VERSION_NOTEBOOKLM),
+        _SOURCE_SELENIUM: (_fetch_via_selenium_firefox, STAGE_VERSION_SELENIUM),
+        _SOURCE_WHISPER: (_fetch_via_whisper, None),
+    }
+
+    methods = []
+    for source in chain_order:
+        if source in _FETCH_MAP:
+            fetch_fn, stage = _FETCH_MAP[source]
+            methods.append((source, fetch_fn, stage))
+
+    return methods
+
+
 def fetch_transcript_chain(
     video_id: str,
     config: LanguageConfig,
     *,
     skip_notebooklm: bool = False,
     admission_metadata: dict[str, object] | None = None,
+    has_captions: bool | int | None = None,
 ) -> TranscriptResult:
     """Fetch transcript using the full fallback chain.
 
-    Chain order:
-      1. oEmbed reachability probe — cheap early skip for removed/private videos
-      2. yt-dlp (WEB client, curl_cffi TLS) — High Fidelity, Fastest Local
-      3. yt-dlp + cookies — fallback for cookie-gated sources
-      4. direct_api — cheap terminal/no-transcript discriminator
-      5. NotebookLM Industrial (Cloud) — High Fidelity, Cleanest Data, Best for Backlog
-      6. Selenium Firefox — Dirty Scraper (Polluted with page noise), Slow
-      7. Whisper — Audio Fallback
+    Chain order is **adaptive**: build_adaptive_chain picks the fastest order
+    based on whether the video has captions and the batch context. For the
+    common case (no captions, large backlog), NotebookLM goes first because
+    it has the highest throughput (3,788 VPH at 3 workers) and doesn't
+    require captions.
 
     Args:
         video_id: YouTube video ID (must be 11 chars)
@@ -2361,16 +2583,27 @@ def fetch_transcript_chain(
     expensive_fallback_enabled = runtime_config.transcript_expensive_fallback_enabled
     whisper_on_notebooklm_add_failed = runtime_config.whisper_on_notebooklm_add_failed
 
-    # Methods to try: yt-dlp (WEB) → yt-dlp with cookies → direct_api → NotebookLM → Selenium → Whisper
-    methods_to_try = [
-        (_SOURCE_YTDLP, _fetch_via_ytdlp, STAGE_VERSION_YTDLP),
-        (_SOURCE_YTDLP_EJS, _fetch_via_ytdlp_with_cookies, STAGE_VERSION_EJS),
-        (_SOURCE_DIRECT_API, _fetch_via_direct_api, STAGE_VERSION_DIRECT_API),
-        (_SOURCE_SELENIUM, _fetch_via_selenium_firefox, STAGE_VERSION_SELENIUM),
-        (_SOURCE_WHISPER, _fetch_via_whisper, None),  # audio fallback — no captions needed
-    ]
-    if not skip_notebooklm:
-        methods_to_try.insert(3, (_SOURCE_NLM, _fetch_via_notebooklm, STAGE_VERSION_NOTEBOOKLM))
+    # Adaptive chain: order methods by estimated total time.
+    # For no-caption videos (99.86% of backlog), NotebookLM goes first.
+    # For captioned videos, yt-dlp goes first (faster for small batches).
+    # When has_captions is None (unknown), use the old chain order (backward compat).
+    if has_captions is None:
+        # Unknown caption status — use old hardcoded order for backward compat
+        methods_to_try = [
+            (_SOURCE_YTDLP, _fetch_via_ytdlp, STAGE_VERSION_YTDLP),
+            (_SOURCE_YTDLP_EJS, _fetch_via_ytdlp_with_cookies, STAGE_VERSION_EJS),
+            (_SOURCE_DIRECT_API, _fetch_via_direct_api, STAGE_VERSION_DIRECT_API),
+            (_SOURCE_SELENIUM, _fetch_via_selenium_firefox, STAGE_VERSION_SELENIUM),
+            (_SOURCE_WHISPER, _fetch_via_whisper, None),
+        ]
+        if not skip_notebooklm:
+            methods_to_try.insert(3, (_SOURCE_NLM, _fetch_via_notebooklm, STAGE_VERSION_NOTEBOOKLM))
+    else:
+        captions_ratio = 1.0 if has_captions in (True, 1) else 0.0
+        methods_to_try = _build_methods_to_try(
+            skip_notebooklm=skip_notebooklm,
+            has_captions_ratio=captions_ratio,
+        )
 
     for source, fetch_fn, stage in methods_to_try:
         if _is_source_rate_limited(source):
