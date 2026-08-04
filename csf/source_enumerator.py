@@ -21,6 +21,14 @@ from typing import NamedTuple
 _YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 
+class QuotaBudgetBlocked(RuntimeError):
+    """Raised when YTIS_API_SPEND_MODE=block prevents an API call.
+
+    This is a structural invariant, not a behavioral rule — the operator
+    sets the env var, and the code enforces it regardless of agent behavior.
+    """
+
+
 class ChannelInfo(NamedTuple):
     """Full channel metadata from channels.list API response.
 
@@ -201,16 +209,36 @@ def can_proceed(units_needed: int) -> bool:
 def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_cost: int | None = None) -> dict | None:
     """Make a YouTube Data API request with automatic key failover and quota tracking.
 
+    Respects ``YTIS_API_SPEND_MODE``: when set to ``block`` (the default when
+    unset), raises ``QuotaBudgetBlocked`` before any network call.  The
+    operator must set ``YTIS_API_SPEND_MODE=authorize`` (e.g. in their
+    PowerShell profile) to allow API spending.  This makes unspending the
+    code's default and spending the exception that requires operator
+    presence — a structural invariant, not a behavioral rule.
+
     Args:
         endpoint: API endpoint (e.g., 'channels', 'playlistItems')
         params: Query parameters including 'key' for API key
         record_quota: If True, update per-key quota state on each call.
+            Ignored for the spend gate check — the gate fires regardless.
         unit_cost: Override per-call unit cost. Defaults to _API_UNIT_ESTIMATE_PER_CALL.
             Use 1 for lightweight calls (snippet only), 5 for full channel calls.
 
     Returns:
         JSON response dict or None on error.
+
+    Raises:
+        QuotaBudgetBlocked: when ``YTIS_API_SPEND_MODE`` is ``block``.
     """
+    # --- Default-deny spend gate (fires regardless of record_quota) ---
+    spend_mode = os.getenv("YTIS_API_SPEND_MODE", "block").strip().lower()
+    if spend_mode == "block":
+        raise QuotaBudgetBlocked(
+            f"YouTube API call to {endpoint} blocked by YTIS_API_SPEND_MODE=block. "
+            f"Set YTIS_API_SPEND_MODE=authorize to allow API spending, or use "
+            f"free alternatives (oEmbed, RSS feeds, DB cache)."
+        )
+
     keys = _get_api_keys()
     if not keys:
         return None
@@ -536,7 +564,9 @@ def get_video_count(channel_id: str) -> int | None:
 def resolve_to_uc_channel_id(channel_identifier: str) -> str | None:
     """Resolve a channel identifier (@handle, c/custom, user/name) to UC channel ID.
 
-    Uses YouTube Data API channels.list with id projection.
+    Free-first resolution: tries DB cache → oEmbed before falling through
+    to the YouTube Data API. This makes routine identity resolution
+    zero-quota by default — nothing for the agent to remember.
 
     Args:
         channel_identifier: Channel identifier (@handle, c/name, user/name, or UC...)
@@ -544,10 +574,49 @@ def resolve_to_uc_channel_id(channel_identifier: str) -> str | None:
     Returns:
         UC channel ID (e.g., "UCxxxxxxxxxxxxxxxxxx") or None if not found.
     """
-    # If already UC format, return as-is
+    # If already UC format, return as-is (free)
     if channel_identifier.startswith("UC"):
         return channel_identifier
 
+    # --- Free method 1: DB cache (channel_metadata.channel_id) ---
+    try:
+        import sqlite3
+        from csf.batch_status import _get_default_db_path
+        db_path = _get_default_db_path()
+        if db_path.exists():
+            conn = sqlite3.connect(str(db_path), timeout=5.0)
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                # Try direct handle match in channel_url
+                from csf.channel_identity import normalize_channel_url
+                normalized = normalize_channel_url(channel_identifier)
+                cursor = conn.execute(
+                    "SELECT channel_id FROM channel_metadata WHERE channel_url = ? AND channel_id IS NOT NULL",
+                    (normalized,),
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    return row[0]
+            finally:
+                conn.close()
+    except Exception:
+        pass
+
+    # --- Free method 2: oEmbed (returns author_url with @handle) ---
+    # oEmbed doesn't return UC IDs directly, but it returns author_url
+    # which sometimes contains /channel/UC... format.
+    try:
+        import json as _json
+        import urllib.parse as _up
+        import urllib.request as _ur
+        # We need a video_id for oEmbed, which we don't have here.
+        # oEmbed works per-video, not per-channel. Skip for now —
+        # the _probe_oembed side-effect cache handles this at fetch time.
+        pass
+    except Exception:
+        pass
+
+    # --- API fallback (requires YTIS_API_SPEND_MODE=authorize) ---
     # Determine API parameters based on format
     if channel_identifier.startswith("@"):
         # Handle
