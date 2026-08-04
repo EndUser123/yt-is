@@ -400,7 +400,14 @@ def set_cached_transcript(
 def _register_in_analysis_status(video_id: str, source: str) -> None:
     """Ensure analysis_status has a row for this video_id (self-healing).
 
+    Inserts as 'pending' — NOT 'complete' — so that:
+    - The video is visible to check-all and fetch (orphan prevention)
+    - Rich analysis (OCR/CLIP/Gemini) is NOT suppressed (batch.py only
+      processes pending rows; marking as 'complete' would permanently skip
+      analysis for imported transcripts)
+
     Called as a side effect of set_cached_transcript. Never blocks on failure.
+    Uses INSERT OR IGNORE so existing rows are never modified.
     """
     try:
         from csf.batch_status import _get_default_db_path
@@ -415,7 +422,7 @@ def _register_in_analysis_status(video_id: str, source: str) -> None:
             conn.execute(
                 """INSERT OR IGNORE INTO analysis_status
                    (video_id, status, updated_at, source)
-                   VALUES (?, 'complete', ?, ?)""",
+                   VALUES (?, 'pending', ?, ?)""",
                 (video_id, datetime.now(timezone.utc).isoformat(), source),
             )
             conn.commit()

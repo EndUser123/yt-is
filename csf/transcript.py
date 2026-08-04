@@ -2500,6 +2500,37 @@ def _build_methods_to_try(
     return methods
 
 
+def _lookup_has_captions(video_id: str) -> bool | None:
+    """Look up has_captions from analysis_status for this video.
+
+    Returns True/False if the field is set, or None if the video isn't
+    in analysis_status or the column doesn't exist. Used to activate
+    the adaptive chain without requiring callers to pass has_captions.
+    Never blocks — wraps all DB access in try/except.
+    """
+    try:
+        from csf.batch_status import _get_default_db_path
+        import sqlite3 as _sql
+        db_path = _get_default_db_path()
+        if not db_path.exists():
+            return None
+        conn = _sql.connect(str(db_path), timeout=3.0)
+        conn.execute("PRAGMA busy_timeout=2000")
+        try:
+            cursor = conn.execute(
+                "SELECT has_captions FROM analysis_status WHERE video_id = ?",
+                (video_id,),
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                return bool(row[0])
+            return None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
 def fetch_transcript_chain(
     video_id: str,
     config: LanguageConfig,
@@ -2586,9 +2617,19 @@ def fetch_transcript_chain(
     # Adaptive chain: order methods by estimated total time.
     # For no-caption videos (99.86% of backlog), NotebookLM goes first.
     # For captioned videos, yt-dlp goes first (faster for small batches).
-    # When has_captions is None (unknown), use the old chain order (backward compat).
+    # When has_captions is None (unknown), try to look it up from analysis_status.
+    # If lookup also fails (no DB, test mode, video not found), use old chain.
     if has_captions is None:
-        # Unknown caption status — use old hardcoded order for backward compat
+        has_captions = _lookup_has_captions(video_id)
+
+    if has_captions is not None:
+        captions_ratio = 1.0 if has_captions in (True, 1) else 0.0
+        methods_to_try = _build_methods_to_try(
+            skip_notebooklm=skip_notebooklm,
+            has_captions_ratio=captions_ratio,
+        )
+    else:
+        # Caption status unknown — use old hardcoded order (backward compat)
         methods_to_try = [
             (_SOURCE_YTDLP, _fetch_via_ytdlp, STAGE_VERSION_YTDLP),
             (_SOURCE_YTDLP_EJS, _fetch_via_ytdlp_with_cookies, STAGE_VERSION_EJS),
@@ -2598,12 +2639,6 @@ def fetch_transcript_chain(
         ]
         if not skip_notebooklm:
             methods_to_try.insert(3, (_SOURCE_NLM, _fetch_via_notebooklm, STAGE_VERSION_NOTEBOOKLM))
-    else:
-        captions_ratio = 1.0 if has_captions in (True, 1) else 0.0
-        methods_to_try = _build_methods_to_try(
-            skip_notebooklm=skip_notebooklm,
-            has_captions_ratio=captions_ratio,
-        )
 
     for source, fetch_fn, stage in methods_to_try:
         if _is_source_rate_limited(source):
