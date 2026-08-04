@@ -26,17 +26,19 @@ class TestSelectProvider:
     """Tests for select_provider() routing logic."""
 
     @mock.patch("csf.orchestrator.has_cached_transcript", return_value=True)
-    def test_select_provider_cached_transcript_returns_tier3(self, mock_cached):
-        """When has_cached_transcript is True, TranscriptProvider is returned directly.
+    def test_select_provider_cached_transcript_does_not_suppress_visual(self, mock_cached):
+        """When has_cached_transcript is True, the provider is NOT short-circuited
+        to TranscriptProvider. Cache-hit suppression was removed (DEC-02):
+        cached transcripts should accelerate visual analysis, not suppress it.
 
-        No SDK, OCR, or CLIP calls are made.
+        The orchestrator routes through the full tier list regardless of cache state.
         """
         provider = select_provider(
             "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         )
 
-        assert isinstance(provider, TranscriptProvider)
-        mock_cached.assert_called_once_with("dQw4w9WgXcQ")
+        # Provider should NOT be TranscriptProvider (the old suppression behavior)
+        assert not isinstance(provider, TranscriptProvider)
 
     def test_select_provider_invalid_video_id_raises_valueerror(self):
         """Malformed video_id raises ValueError before any provider call."""

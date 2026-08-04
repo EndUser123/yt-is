@@ -1,9 +1,16 @@
 """Availability routing layer for tiered video analysis system.
 
-Routing priority: Tier 3 (cached transcript) → Tier 1 (Gemini SDK) →
-Tier 2 (OCR/CLIP) → Tier 3 (transcript fallback).
+Routing priority: Tier 1 (Gemini SDK) → Tier 2 (OCR/CLIP) →
+Tier 3 (transcript fallback).
 
 Thread-safe _gemini_available flag with per-process reset at Pacific midnight.
+
+analyze_video() implements provider failover: it builds an ordered
+candidate list, tries each provider in order, records per-attempt outcomes
+for GAUC routing, and falls through to the next candidate on failure.
+
+select_provider() remains for callers that want a single provider without
+failover (e.g., for explicit tier overrides).
 
 Failure-aware routing: select_provider() uses per-channel success/failure
 history to route around channels where certain providers consistently fail,
@@ -229,10 +236,9 @@ def select_provider(
             "video_url must use http or https scheme."
         )
 
-    # Tier 3 optimization: if transcript is already cached, skip orchestration
-    # and return TranscriptProvider directly (zero cost, deterministic)
-    if has_cached_transcript(video_id):
-        return TranscriptProvider()
+    # Cache-hit suppression removed (DEC-02): cached transcripts no longer
+    # short-circuit to TranscriptProvider. The orchestrator routes through
+    # the full provider tier list so cached videos also receive visual analysis.
 
     # Check and reset Gemini availability on every call
     with _gemini_lock:
@@ -297,31 +303,154 @@ def analyze_video(
 ) -> VideoAnalysisResult:
     """Analyze a video using the selected provider or orchestrator's default selection.
 
+    When no explicit provider is given, the orchestrator builds an ordered
+    candidate list via select_provider-style logic and tries each one in
+    order. If a provider raises, the failure is recorded for GAUC routing
+    and the next candidate is attempted. Only when ALL candidates fail is
+    NonFatalAnalysisError raised.
+
+    The last successful provider name is available on the result's ``mode``
+    field. Per-attempt outcomes (provider name, duration, success/failure,
+    error) are returned via the ``_attempt_log`` attribute on the result.
+
     Args:
         video_id: YouTube video ID (11 chars).
         video_url: Full YouTube URL.
-        provider: Optional pre-selected provider instance. If None, select automatically.
-        channel_url: Optional channel URL for failure-aware routing. If None,
-            provider order falls back to default priority (first video in channel
-            or unknown channel uses default order; subsequent videos benefit from
-            recorded history).
+        provider: Optional pre-selected provider instance. If None, the
+            orchestrator selects candidates and tries them with failover.
+        channel_url: Optional channel URL for failure-aware routing.
 
     Returns:
-        VideoAnalysisResult from the provider.
+        VideoAnalysisResult from the first provider that succeeds.
 
     Raises:
         ValueError: if video_id format or video_url scheme is invalid.
-        NonFatalAnalysisError: if all provider tiers fail (propagated from provider).
+        NonFatalAnalysisError: if ALL provider tiers fail.
     """
-    if provider is None:
-        provider = select_provider(video_id, video_url, channel_url=channel_url)
-    assert provider is not None  # for pyright type narrowing
+    # If caller provided an explicit provider, use it directly (no failover).
+    if provider is not None:
+        try:
+            return provider.analyze(video_id, video_url)
+        except Exception as exc:
+            raise NonFatalAnalysisError(
+                f"Provider {provider.__class__.__name__} raised unexpected error: {exc}"
+            ) from exc
 
-    try:
-        return provider.analyze(video_id, video_url)
-    except Exception as exc:
-        # Wrap unexpected exceptions in NonFatalAnalysisError so callers can
-        # distinguish fatal vs non-fatal failures
-        raise NonFatalAnalysisError(
-            f"Provider {provider.__class__.__name__} raised unexpected error: {exc}"
-        ) from exc
+    # --- Failover path: try ordered candidates ---
+    import time as _time
+
+    # Validate inputs (same as select_provider)
+    if not _VIDEO_ID_PATTERN.match(video_id):
+        raise ValueError(
+            f"Invalid video_id format: {video_id!r}. "
+            "Expected 11-character YouTube video ID."
+        )
+    parsed = urlparse(video_url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"Invalid URL scheme: {parsed.scheme!r}. "
+            "video_url must use http or https scheme."
+        )
+
+    # Build the ordered candidate list using the same logic as select_provider
+    with _gemini_lock:
+        _check_and_reset_gemini()
+        gemini_available = _gemini_available
+
+    candidates = ["local_model", "gemini_sdk", "ocr_clip", "transcript"]
+
+    # Failure-aware reordering
+    if channel_url:
+        try:
+            scores = get_provider_scores(channel_url)
+            if scores:
+                def success_rate(provider_name: str) -> float:
+                    if provider_name not in scores:
+                        return -1.0
+                    successes, failures = scores[provider_name]
+                    total = successes + failures
+                    if total == 0:
+                        return -1.0
+                    return successes / total
+                candidates = sorted(candidates, key=success_rate, reverse=True)
+        except Exception:
+            pass
+
+    # Instantiate providers in order, skipping unavailable ones
+    instantiated: list[tuple[str, Any]] = []
+    for provider_name in candidates:
+        if provider_name == "gemini_sdk" and not gemini_available:
+            continue
+        if provider_name == "ocr_clip":
+            try:
+                OcrClipProvider = _load_ocr_clip_provider()
+                instantiated.append((provider_name, OcrClipProvider()))
+            except Exception:
+                continue
+        elif provider_name == "local_model":
+            try:
+                LocalModelProvider = _load_local_model_provider()
+                instantiated.append((provider_name, LocalModelProvider()))
+            except Exception:
+                continue
+        elif provider_name == "gemini_sdk" and gemini_available:
+            instantiated.append((provider_name, GeminiSDKProvider()))
+        elif provider_name == "transcript":
+            instantiated.append((provider_name, TranscriptProvider()))
+
+    if not instantiated:
+        # Should never happen (TranscriptProvider is always available)
+        instantiated.append(("transcript", TranscriptProvider()))
+
+    # Try each candidate with failover
+    attempt_log: list[dict[str, Any]] = []
+    last_error: Exception | None = None
+
+    for provider_name, prov in instantiated:
+        t0 = _time.monotonic()
+        try:
+            result = prov.analyze(video_id, video_url)
+            elapsed = _time.monotonic() - t0
+            attempt_log.append({
+                "provider": provider_name,
+                "duration_s": round(elapsed, 2),
+                "success": True,
+            })
+            # Record success for GAUC routing with the ACTUAL provider name
+            if channel_url:
+                try:
+                    from csf.batch_status import record_provider_result
+                    record_provider_result(channel_url, provider_name, success=True)
+                except Exception:
+                    pass
+            # Attach the attempt log for callers that need attribution
+            try:
+                result._attempt_log = attempt_log  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            return result
+        except Exception as exc:
+            elapsed = _time.monotonic() - t0
+            attempt_log.append({
+                "provider": provider_name,
+                "duration_s": round(elapsed, 2),
+                "success": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+            last_error = exc
+            # Record failure for GAUC routing with the ACTUAL provider name
+            if channel_url:
+                try:
+                    from csf.batch_status import record_provider_result
+                    record_provider_result(channel_url, provider_name, success=False)
+                except Exception:
+                    pass
+            continue
+
+    # All candidates failed
+    attempted_names = [a["provider"] for a in attempt_log]
+    raise NonFatalAnalysisError(
+        f"All providers failed for {video_id}. "
+        f"Attempted: {attempted_names}. "
+        f"Last error: {last_error}"
+    )

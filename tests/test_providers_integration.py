@@ -39,6 +39,11 @@ class TestProviderSelection:
                     "_load_ocr_clip_provider",
                     side_effect=RuntimeError("OCR not available"),
                 ),
+                mock.patch.object(
+                    oc,
+                    "_load_local_model_provider",
+                    side_effect=RuntimeError("local model not available"),
+                ),
             ):
                 provider = select_provider(
                     "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -62,6 +67,11 @@ class TestProviderSelection:
                 mock.patch.object(oc, "_check_and_reset_gemini"),
                 mock.patch.object(oc, "_load_ocr_clip_provider") as mock_load,
                 mock.patch.object(oc, "has_cached_transcript", return_value=False),
+                mock.patch.object(
+                    oc,
+                    "_load_local_model_provider",
+                    side_effect=RuntimeError("local model not available"),
+                ),
             ):
                 mock_load.return_value = OcrClipProvider
                 provider = select_provider(
@@ -76,8 +86,12 @@ class TestProviderSelection:
 class TestTierIntegration:
     """Integration tests for tier behavior — NonFatalAnalysisError propagation."""
 
-    def test_analyze_video_with_gemini_nonfatal_propagates(self):
-        """NonFatalAnalysisError from GeminiSDKProvider.analyze propagates to caller."""
+    def test_analyze_video_with_gemini_failure_triggers_failover(self):
+        """NonFatalAnalysisError from GeminiSDKProvider triggers failover to next provider.
+
+        With provider failover (DEC-04), Gemini failure no longer propagates —
+        the orchestrator tries the next candidate and returns its result.
+        """
         import csf.orchestrator as oc
 
         with oc._gemini_lock:
@@ -91,17 +105,30 @@ class TestTierIntegration:
                     "analyze",
                     side_effect=NonFatalAnalysisError("Tier 1 quota error"),
                 ),
+                mock.patch.object(
+                    oc,
+                    "_load_local_model_provider",
+                    side_effect=RuntimeError("no local model"),
+                ),
+                mock.patch.object(
+                    oc,
+                    "_load_ocr_clip_provider",
+                    side_effect=RuntimeError("no OCR"),
+                ),
             ):
-                with pytest.raises(NonFatalAnalysisError, match="Tier 1 quota error"):
-                    analyze_video(
-                        "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-                    )
+                # With all higher tiers failing, failover reaches TranscriptProvider
+                result = analyze_video(
+                    "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                )
+                assert result is not None
+                # The result came from TranscriptProvider (the fallback tier)
+                assert result.mode == "transcript"
         finally:
             with oc._gemini_lock:
                 oc._gemini_available = True
 
-    def test_analyze_video_with_ocr_nonfatal_propagates(self):
-        """NonFatalAnalysisError from OcrClipProvider.analyze propagates to caller."""
+    def test_analyze_video_with_ocr_failure_triggers_failover(self):
+        """NonFatalAnalysisError from OcrClipProvider triggers failover to TranscriptProvider."""
         import csf.orchestrator as oc
 
         with oc._gemini_lock:
@@ -113,6 +140,11 @@ class TestTierIntegration:
                 mock.patch.object(oc, "has_cached_transcript", return_value=False),
                 mock.patch.object(
                     oc,
+                    "_load_local_model_provider",
+                    side_effect=RuntimeError("no local model"),
+                ),
+                mock.patch.object(
+                    oc,
                     "_load_ocr_clip_provider",
                     return_value=OcrClipProvider,
                 ),
@@ -122,12 +154,12 @@ class TestTierIntegration:
                     side_effect=NonFatalAnalysisError("Tier 2 OCR unavailable"),
                 ),
             ):
-                with pytest.raises(
-                    NonFatalAnalysisError, match="Tier 2 OCR unavailable"
-                ):
-                    analyze_video(
-                        "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-                    )
+                # OCR fails → failover to TranscriptProvider
+                result = analyze_video(
+                    "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                )
+                assert result is not None
+                assert result.mode == "transcript"
         finally:
             with oc._gemini_lock:
                 oc._gemini_available = True

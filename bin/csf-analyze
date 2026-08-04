@@ -705,11 +705,10 @@ def analyze_video(
                 record_provider_result(effective_source, result.mode, success=True)
             return _result_to_dict(result)
         except NonFatalAnalysisError:
-            # Record failure for GAUC routing so future calls route around the bad provider.
-            # We record against "gemini_sdk" as the default tier-1 provider since
-            # NonFatalAnalysisError from the orchestrator means at least one provider failed.
-            if effective_source:
-                record_provider_result(effective_source, "gemini_sdk", success=False)
+            # Per-provider failures are already recorded inside orchestrator_analyze
+            # with correct attribution (the ACTUAL provider name, not hardcoded).
+            # No additional recording needed here — the old code hardcoded
+            # "gemini_sdk" which corrupted GAUC routing data.
             raise
 
     # ---- Explicit tier overrides (backwards compatible) ----

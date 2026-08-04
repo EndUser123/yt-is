@@ -129,13 +129,11 @@ def analyze_videos_parallel(
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         try:
             analyze_video = _get_analyze_video()
-            # If transcript is cached, use transcript-only mode (free, no API cost).
-            # Otherwise use auto mode (orchestrator routing with GAUC failure-aware
-            # routing when channel_url is available for this batch).
-            if has_cached_transcript(video_id):
-                result: dict = analyze_video(video_id, video_url, mode="transcript")  # type: ignore[assignment]
-            else:
-                result = analyze_video(video_id, video_url, mode="auto", channel_url=effective_channel_url)  # type: ignore[assignment]
+            # Always use auto mode so the orchestrator routes through the full
+            # provider tier list (Gemini → OCR/CLIP → transcript fallback).
+            # Cache-hit suppression was removed: cached transcripts should
+            # accelerate visual analysis, not suppress it.
+            result: dict = analyze_video(video_id, video_url, mode="auto", channel_url=effective_channel_url)  # type: ignore[assignment]
             return (video_id, result, True, None)
         except Exception as e:
             log_action("batch_analyze_error", {"video_id": video_id, "error": repr(e)})
@@ -234,12 +232,10 @@ def analyze_videos_round_robin(
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         try:
             analyze_video = _get_analyze_video()
-            if has_cached_transcript(video_id):
-                result: dict = analyze_video(video_id, video_url, mode="transcript")
-            else:
-                result = analyze_video(
-                    video_id, video_url, mode="auto", channel_url=effective_channel_url
-                )
+            # Always use auto mode — cache-hit suppression removed (DEC-02).
+            result: dict = analyze_video(
+                video_id, video_url, mode="auto", channel_url=effective_channel_url
+            )
             return (video_id, result, True, None)
         except Exception as e:
             log_action("batch_analyze_error", {"video_id": video_id, "error": repr(e)})
