@@ -199,7 +199,9 @@ def test_cli_plan_binds_execute_to_same_inputs_and_database(tmp_path, monkeypatc
     result_report = json.loads(result_path.read_text(encoding="utf-8"))
     assert result_report["mode"] == "execute"
     assert result_report["provenance_run_id"]
-    assert get_playlist_import_run(result_report["provenance_run_id"])["status"] == "completed"
+    run = get_playlist_import_run(result_report["provenance_run_id"])
+    assert run["status"] == "completed"
+    assert json.loads(run["notes_json"])["batch_status_db_path"] == str(db_path.resolve())
     assert import_video_ids(
         [BatchEntry(video_id="aaaaaaaaaaa", status="pending")],
         db_path=db_path,

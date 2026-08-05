@@ -13,10 +13,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from csf.playlist_imports import (
+    VideoImportReconciliationUnavailable,
     get_playlist_import_db_path,
     list_video_import_runs,
     reconcile_video_import_run,
 )
+from csf.paths import get_batch_db_path
 
 
 def _write_json(path: Path, payload: object, *, overwrite: bool = False) -> None:
@@ -63,19 +65,34 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     statuses = tuple(args.status or ("running", "failed"))
-    if args.run_id:
-        payload = reconcile_video_import_run(
-            args.run_id,
-            batch_status_db_path=args.batch_db,
-            playlist_import_db_path=args.playlist_db,
-        )
-    else:
-        payload = {
-            "operation": "list_video_import_runs",
-            "playlist_import_db_path": str(Path(args.playlist_db or get_playlist_import_db_path())),
-            "statuses": list(statuses),
-            "runs": list_video_import_runs(statuses=statuses, db_path=args.playlist_db),
-        }
+    playlist_db = Path(args.playlist_db or get_playlist_import_db_path()).resolve()
+    batch_db = Path(args.batch_db or get_batch_db_path()).resolve()
+
+    try:
+        if args.run_id:
+            payload = reconcile_video_import_run(
+                args.run_id,
+                batch_status_db_path=args.batch_db,
+                playlist_import_db_path=playlist_db,
+            )
+        else:
+            payload = {
+                "operation": "list_video_import_runs",
+                "playlist_import_db_path": str(playlist_db),
+                "statuses": list(statuses),
+                "runs": list_video_import_runs(statuses=statuses, db_path=playlist_db),
+            }
+    except VideoImportReconciliationUnavailable as exc:
+        parser.error(str(exc))
+
+    if args.output:
+        output = args.output.resolve()
+        protected = {playlist_db, batch_db}
+        recorded_batch_db = payload.get("batch_status_db_path") if isinstance(payload, dict) else None
+        if isinstance(recorded_batch_db, str) and recorded_batch_db.strip():
+            protected.add(Path(recorded_batch_db).resolve())
+        if output in protected:
+            parser.error("--output must not replace a playlist or batch status database")
 
     rendered = json.dumps(payload, indent=2, sort_keys=True, default=str)
     print(rendered)

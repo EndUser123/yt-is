@@ -11,6 +11,7 @@ from csf.video_selection_manifest import (
     select_manifest_entries,
     verify_selection_receipt,
     write_selection_receipt,
+    write_video_selection_manifest,
 )
 
 
@@ -160,3 +161,19 @@ def test_selection_receipt_verification_detects_changed_selection(tmp_path):
     changed["selection_fingerprint"] = "sha256:changed"
     with pytest.raises(ValueError, match="selection receipt does not match"):
         verify_selection_receipt(changed, manifest, selection)
+
+
+def test_manifest_writer_validates_before_replacing(tmp_path):
+    path = tmp_path / "selection.json"
+    with pytest.raises(ValueError, match="11-character"):
+        write_video_selection_manifest(
+            path,
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "invalid",
+                "videos": [{"video_id": "short"}],
+            },
+        )
+    assert not path.exists()
+    assert not list(tmp_path.glob(".selection.json.*.tmp"))

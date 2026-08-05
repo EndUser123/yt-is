@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
-from typing import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 
 
@@ -202,9 +202,26 @@ def write_selection_receipt(
     overwrite: bool = False,
 ) -> None:
     """Atomically write a selection receipt without replacing it accidentally."""
+    _write_json_atomically(
+        path,
+        receipt,
+        overwrite=overwrite,
+        error_label="selection receipt",
+    )
+
+
+def _write_json_atomically(
+    path: Path,
+    payload: Mapping[str, object],
+    *,
+    overwrite: bool,
+    validate: Callable[[Path], object] | None = None,
+    error_label: str = "path",
+) -> None:
+    """Write JSON atomically, using exclusive creation unless replacing is explicit."""
     path = Path(path)
     if path.exists() and not overwrite:
-        raise FileExistsError(f"selection receipt exists: {path}")
+        raise FileExistsError(f"{error_label} exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     try:
@@ -216,11 +233,21 @@ def write_selection_receipt(
             suffix=".tmp",
             delete=False,
         ) as temp_file:
-            json.dump(dict(receipt), temp_file, indent=2, sort_keys=True)
+            json.dump(dict(payload), temp_file, indent=2, sort_keys=True)
             temp_file.write("\n")
             temp_path = Path(temp_file.name)
-        os.replace(temp_path, path)
-        temp_path = None
+        if validate is not None:
+            validate(temp_path)
+        if overwrite:
+            os.replace(temp_path, path)
+            temp_path = None
+        else:
+            try:
+                os.link(temp_path, path)
+            except FileExistsError as exc:
+                raise FileExistsError(f"{error_label} exists: {path}") from exc
+            temp_path.unlink()
+            temp_path = None
     finally:
         if temp_path is not None:
             try:
@@ -270,28 +297,10 @@ def write_video_selection_manifest(
     overwrite: bool = False,
 ) -> None:
     """Atomically write a validated manifest payload."""
-    path = Path(path)
-    if path.exists() and not overwrite:
-        raise FileExistsError(f"manifest exists: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temp_file:
-            json.dump(dict(payload), temp_file, indent=2, sort_keys=True)
-            temp_file.write("\n")
-            temporary = Path(temp_file.name)
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
+    _write_json_atomically(
+        path,
+        payload,
+        overwrite=overwrite,
+        validate=load_video_selection_manifest,
+        error_label="manifest",
+    )

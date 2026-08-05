@@ -50,7 +50,9 @@ recovery/observability without adding a second database owner.
   files are protected unless `--overwrite-selection-receipt` is supplied.
 - `scripts/reconcile_video_imports.py` lists non-terminal `video_import` runs
   and compares their item decisions with current `analysis_status` rows without
-  creating or mutating either database.
+  creating or mutating either database. It fails closed on unavailable input
+  databases, rejects report paths that target either input DB, and uses the
+  effective batch-status DB path persisted in provenance notes.
 - `scripts/build_video_selection_manifest.py` creates ordered manifests from
   local `analysis_status` filters only, recording criteria and a candidate-set
   input fingerprint.
@@ -196,6 +198,7 @@ run `notes_json` and report instead:
   "workflow": "scripts/import_video_ids.py",
   "input_fingerprint": "sha256:...",
   "database_fingerprint": "sha256:...",
+  "batch_status_db_path": "...",
   "playlist_path": "...",
   "history_path": "...",
   "decision_report": "...",

@@ -24,6 +24,10 @@ _DEFAULT_DB_PATH = Path("P:\\\\\\.data/yt-is/playlists.sqlite")
 _db_lock = threading.RLock()
 
 
+class VideoImportReconciliationUnavailable(RuntimeError):
+    """The databases needed for a reconciliation audit could not be read."""
+
+
 def get_playlist_import_db_path() -> Path:
     """Return the active playlist-import DB path."""
     override = os.environ.get("YTIS_PLAYLIST_IMPORT_DB_PATH")
@@ -330,8 +334,12 @@ def list_video_import_runs(
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     """List non-terminal video-import runs without creating or mutating a DB."""
-    target = Path(db_path or get_playlist_import_db_path())
-    if not target.exists() or not statuses:
+    target = Path(db_path or get_playlist_import_db_path()).resolve()
+    if not target.exists():
+        raise VideoImportReconciliationUnavailable(
+            f"playlist import database not found: {target}"
+        )
+    if not statuses:
         return []
     placeholders = ",".join("?" for _ in statuses)
     try:
@@ -349,8 +357,10 @@ def list_video_import_runs(
                 """,
                 tuple(statuses),
             ).fetchall()
-    except sqlite3.OperationalError:
-        return []
+    except sqlite3.Error as exc:
+        raise VideoImportReconciliationUnavailable(
+            f"cannot read playlist import database: {target}"
+        ) from exc
     keys = [
         "run_id", "playlist_kind", "playlist_url", "command", "cookie_source",
         "started_at", "finished_at", "status", "total_items", "resolved_items",
@@ -366,8 +376,12 @@ def _read_analysis_status_rows(
     db_path: Path | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Read status rows through a read-only SQLite connection."""
-    target = Path(db_path or _get_default_db_path())
-    if not target.exists() or not video_ids:
+    target = Path(db_path or _get_default_db_path()).resolve()
+    if not target.exists():
+        raise VideoImportReconciliationUnavailable(
+            f"batch status database not found: {target}"
+        )
+    if not video_ids:
         return {}
     columns = (
         "video_id", "status", "updated_at", "source", "last_stage", "failure_reason",
@@ -384,8 +398,10 @@ def _read_analysis_status_rows(
                     f"WHERE video_id IN ({placeholders})",
                     chunk,
                 ).fetchall())
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
-        return {}
+    except sqlite3.Error as exc:
+        raise VideoImportReconciliationUnavailable(
+            f"cannot read batch status database: {target}"
+        ) from exc
     return {
         str(row[0]): dict(zip(columns, row, strict=False))
         for row in rows
@@ -394,7 +410,9 @@ def _read_analysis_status_rows(
 
 def _read_video_import_run(run_id: str, target: Path) -> dict[str, Any] | None:
     if not target.exists():
-        return None
+        raise VideoImportReconciliationUnavailable(
+            f"playlist import database not found: {target}"
+        )
     keys = [
         "run_id", "playlist_kind", "playlist_url", "command", "cookie_source",
         "started_at", "finished_at", "status", "total_items", "resolved_items",
@@ -414,14 +432,18 @@ def _read_video_import_run(run_id: str, target: Path) -> dict[str, Any] | None:
                 """,
                 (run_id,),
             ).fetchone()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
-        return None
+    except sqlite3.Error as exc:
+        raise VideoImportReconciliationUnavailable(
+            f"cannot read playlist import database: {target}"
+        ) from exc
     return dict(zip(keys, row, strict=False)) if row else None
 
 
 def _read_video_import_items(run_id: str, target: Path) -> list[dict[str, Any]]:
     if not target.exists():
-        return []
+        raise VideoImportReconciliationUnavailable(
+            f"playlist import database not found: {target}"
+        )
     keys = [
         "run_id", "item_id", "playlist_kind", "playlist_url", "playlist_position",
         "video_id", "video_url", "video_title", "channel_id", "channel_url",
@@ -442,9 +464,23 @@ def _read_video_import_items(run_id: str, target: Path) -> list[dict[str, Any]]:
                 """,
                 (run_id,),
             ).fetchall()
-    except (sqlite3.OperationalError, sqlite3.DatabaseError):
-        return []
+    except sqlite3.Error as exc:
+        raise VideoImportReconciliationUnavailable(
+            f"cannot read playlist import database: {target}"
+        ) from exc
     return [dict(zip(keys, row, strict=False)) for row in rows]
+
+
+def _batch_status_path_from_run(run: Mapping[str, Any]) -> Path:
+    raw_notes = run.get("notes_json")
+    try:
+        notes = json.loads(raw_notes) if isinstance(raw_notes, str) else (raw_notes or {})
+    except json.JSONDecodeError:
+        notes = {}
+    recorded_path = notes.get("batch_status_db_path") if isinstance(notes, dict) else None
+    if isinstance(recorded_path, str) and recorded_path.strip():
+        return Path(recorded_path).expanduser().resolve()
+    return Path(_get_default_db_path()).resolve()
 
 
 def reconcile_video_import_run(
@@ -454,15 +490,24 @@ def reconcile_video_import_run(
     playlist_import_db_path: Path | None = None,
 ) -> dict[str, Any]:
     """Compare one append-only import run with current analysis status rows."""
-    playlist_target = Path(playlist_import_db_path or get_playlist_import_db_path())
+    playlist_target = Path(
+        playlist_import_db_path or get_playlist_import_db_path()
+    ).resolve()
     if not playlist_target.exists():
-        raise ValueError(f"playlist import database not found: {playlist_target}")
+        raise VideoImportReconciliationUnavailable(
+            f"playlist import database not found: {playlist_target}"
+        )
     run = _read_video_import_run(run_id, playlist_target)
     if run is None or run.get("playlist_kind") != "video_import":
         raise ValueError(f"video import run not found: {run_id}")
     item_rows = _read_video_import_items(run_id, playlist_target)
     video_ids = [str(row["video_id"]) for row in item_rows if row.get("video_id")]
-    actual_rows = _read_analysis_status_rows(video_ids, db_path=batch_status_db_path)
+    batch_target = (
+        Path(batch_status_db_path).expanduser().resolve()
+        if batch_status_db_path is not None
+        else _batch_status_path_from_run(run)
+    )
+    actual_rows = _read_analysis_status_rows(video_ids, db_path=batch_target)
     reconciled: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
     for item in item_rows:
@@ -504,7 +549,7 @@ def reconcile_video_import_run(
     )
     return {
         "run": run,
-        "batch_status_db_path": str(Path(batch_status_db_path or _get_default_db_path())),
+        "batch_status_db_path": str(batch_target),
         "playlist_import_db_path": str(playlist_target),
         "item_count": len(reconciled),
         "counts": counts,

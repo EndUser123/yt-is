@@ -353,6 +353,7 @@ def main():
             "source_description": "playlist-and-history-import",
             "input_fingerprint": input_fingerprint,
             "database_fingerprint": expected_database_fingerprint,
+            "batch_status_db_path": str(effective_db_path),
             "playlist_path": str(playlist_path),
             "history_path": str(history_path),
             "parse_stats": {

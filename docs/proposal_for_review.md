@@ -105,9 +105,11 @@ replay validation.
 `scripts/reconcile_video_imports.py` lists unfinished `video_import` runs and
 can reconcile one run against `analysis_status` using read-only SQLite access.
 It reports applied, missing, status-mismatch, preserved-complete, and
-no-mutation-expected items without changing either database. The manifest
-builder reads only local `analysis_status` rows and records its filters and
-candidate-set fingerprint.
+no-mutation-expected items without changing either database. It fails closed
+when an input database is unavailable, rejects output paths that target either
+database, and uses the recorded batch-status DB path unless `--batch-db` is
+provided. The manifest builder reads only local `analysis_status` rows and
+records its filters and candidate-set fingerprint.
 
 ## Compact claim ledger
 
@@ -132,11 +134,11 @@ python -m py_compile csf/batch_status.py scripts/import_video_ids.py tests/test_
 git diff --check
 ```
 
-Current results: the combined affected suite passed 97 tests, including the
-status/import/provenance and fetch timing tests. The focused manifest suite
-passed 38 tests; Commit C added 10 focused receipt/reconciliation/builder/real
-CLI tests. Compilation, CLI help, and diff checks passed. No external spend or
-live fetch was authorized.
+Current results: the combined affected suite passed 112 tests, including the
+status/import/provenance, fetch timing, reconciliation, builder, receipt, and
+real-CLI tests. The focused selection/recovery suite contains 19 tests.
+Compilation, CLI help, and diff checks passed. No external spend or live fetch
+was authorized.
 The FMEA scanner reports the temporary-file boundary as a heuristic risk; code
 inspection and the report test confirm that the final report uses atomic
 replacement and does not leave a temporary file behind.
@@ -149,6 +151,7 @@ not authorize external spend merely to make the suite green.
 
 This branch hardens import planning, status-row mutation, provenance logging,
 and exact-video selection. It does not fetch YouTube metadata, launch
-NotebookLM, run a transcript batch, stage, commit, or push changes. Live
-manifest execution remains a separate operational decision requiring a
-reviewed manifest, explicit limit, and normal runtime/auth preflight.
+NotebookLM, run a transcript batch, or push changes to `main`. Its isolated
+branch commit is a review artifact; live manifest execution remains a separate
+operational decision requiring a reviewed manifest, explicit limit, and normal
+runtime/auth preflight.

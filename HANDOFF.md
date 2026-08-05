@@ -3,7 +3,7 @@
 **This is the package-local operational reference for `yt-is`.** For active work
 streams, see the integration handoff chain at the bottom of this file.
 
-Last updated: 2026-08-03 (cleaned up — removed completed trust-floor, worktree-lifecycle,
+Last updated: 2026-08-05 (cleaned up — removed completed trust-floor, worktree-lifecycle,
 and throughput-benchmarking sections; kept operational reference).
 
 ## Active work stream
@@ -61,7 +61,9 @@ This worktree contains the isolated follow-up branch
   status rows changed; live manifest fetches still require an explicit
   `--limit`.
 - `scripts/reconcile_video_imports.py` lists unfinished `video_import` runs or
-  reconciles one run against `analysis_status` without writing either DB.
+  reconciles one run against `analysis_status` without writing either DB. Import
+  provenance records the effective batch-status DB path; the CLI uses that path
+  unless `--batch-db` is supplied explicitly, and fails closed on unavailable DBs.
 - Design and acceptance evidence: `docs/operations/import-workflow-next-design.md`
   and `docs/proposal_for_review.md`.
 
