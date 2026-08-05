@@ -2525,7 +2525,7 @@ def run_v2_migration(db_path: str | Path | None = None) -> dict[str, int]:
                SELECT v.video_id, 'standard', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 3
                FROM video_catalog v
                JOIN analysis_status a ON v.video_id = a.video_id
-               WHERE a.status = 'complete' AND COALESCE(v.has_captions, 0) != 0"""
+               WHERE a.status = 'complete' AND COALESCE(v.has_captions, 1) != 0"""
         )
         counts["legacy_visual_jobs"] = conn.execute(
             """SELECT COUNT(*) FROM visual_jobs vj
@@ -2632,6 +2632,8 @@ def run_v2_cross_db_backfill(
         ).fetchone()[0]
 
         # Phase 2: atomic commit to transcript_status + transcript_artifacts
+        # Commit any pending transaction before BEGIN IMMEDIATE (Python sqlite3 auto-begins)
+        conn.commit()
         conn.execute("BEGIN IMMEDIATE")
         conn.execute(
             """INSERT OR IGNORE INTO transcript_status
