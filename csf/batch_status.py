@@ -8,6 +8,8 @@ Multi-terminal safe: all terminals share the same DB with WAL mode.
 """
 
 import os
+import hashlib
+import json
 import sqlite3
 import time
 import threading
@@ -17,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, NamedTuple
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from csf.channel_identity import (
     channel_lookup_candidates,
@@ -36,6 +38,58 @@ class SetStatusBatchResult(NamedTuple):
 
     ok_count: int
     fail_count: int
+
+
+@dataclass(frozen=True)
+class ImportVideoDecision:
+    """Decision for one logical video in an import operation."""
+
+    video_id: str
+    decision: Literal[
+        "inserted",
+        "updated",
+        "skipped_complete",
+        "unchanged",
+        "conflict",
+        "blocked",
+    ]
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ImportVideoResult:
+    """Auditable result of a dry-run or executed import operation."""
+
+    decisions: tuple[ImportVideoDecision, ...]
+    executed: bool
+    database_fingerprint: str | None = None
+
+    @property
+    def counts(self) -> dict[str, int]:
+        """Return stable decision counts for CLI/reporting callers."""
+        counts = Counter(decision.decision for decision in self.decisions)
+        return {key: counts.get(key, 0) for key in (
+            "inserted",
+            "updated",
+            "skipped_complete",
+            "unchanged",
+            "conflict",
+            "blocked",
+        )}
+
+
+def _import_database_fingerprint(ordered_ids, existing):
+    payload = [
+        (video_id, existing.get(video_id))
+        for video_id in ordered_ids
+    ]
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 # Type alias for batch entries - use dataclass for extensibility
@@ -149,9 +203,10 @@ def _get_batch_status_storage() -> "_BatchStatusStorage":
 class _BatchStatusStorage:
     """Thread-safe batch status backed by SQLite with WAL mode."""
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(self, db_path: Path | None = None, *, ensure_schema: bool = True) -> None:
         self._db_path = db_path or _get_default_db_path()
-        self._ensure_table()
+        if ensure_schema:
+            self._ensure_table()
 
     def _ensure_table(self) -> None:
         """Create analysis_status and channel_metadata tables, migrate columns if needed."""
@@ -643,10 +698,14 @@ class _BatchStatusStorage:
                     break
         return {row[0]: (row[1], row[2]) for row in rows}
 
-    def _get_conn(self) -> sqlite3.Connection:
+    def _get_conn(self, *, read_only: bool = False) -> sqlite3.Connection:
         """Get a connection to the batch status DB."""
-        conn = sqlite3.connect(self._db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
+        if read_only:
+            uri = f"file:{self._db_path.resolve().as_posix()}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True)
+        else:
+            conn = sqlite3.connect(self._db_path)
+            conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
@@ -695,18 +754,22 @@ class _BatchStatusStorage:
         if not video_ids:
             return []
         with self._conn() as conn:
-            placeholders = ",".join("?" * len(video_ids))
-            cursor = conn.execute(
-                f"""
-                SELECT video_id, status, source, published_at, has_captions, title, description,
-                       channel_id, thumbnail, duration, privacy_status, upload_status,
-                       is_live_content, unavailable_reason, last_stage, failure_reason
-                FROM analysis_status
-                WHERE video_id IN ({placeholders})
-                """,
-                video_ids,
-            )
-            rows = cursor.fetchall()
+            rows = []
+            # SQLite's host-parameter limit varies by build. Keep manifest
+            # selection bounded per query while retaining one read snapshot.
+            for offset in range(0, len(video_ids), 900):
+                chunk = video_ids[offset:offset + 900]
+                placeholders = ",".join("?" * len(chunk))
+                rows.extend(conn.execute(
+                    f"""
+                    SELECT video_id, status, source, published_at, has_captions, title, description,
+                           channel_id, thumbnail, duration, privacy_status, upload_status,
+                           is_live_content, unavailable_reason, last_stage, failure_reason
+                    FROM analysis_status
+                    WHERE video_id IN ({placeholders})
+                    """,
+                    chunk,
+                ).fetchall())
         return [
             {
                 "video_id": row[0],
@@ -1595,6 +1658,242 @@ class _BatchStatusStorage:
             conn.close()
         return SetStatusBatchResult(ok_count=ok_count, fail_count=fail_count)
 
+    def import_video_ids(
+        self,
+        entries: Sequence[BatchEntry],
+        *,
+        execute: bool = False,
+        expected_database_fingerprint: str | None = None,
+    ) -> ImportVideoResult:
+        """Plan or execute a non-destructive import of video status rows.
+
+        This boundary is for external/import workflows, not provider lifecycle
+        updates. It deduplicates repeated input IDs, preserves the first
+        non-null value for each field, never writes over a complete row, and
+        preserves existing non-null values when incoming metadata is absent.
+        ``execute=False`` is the safe default and performs no writes.
+        """
+        valid_statuses = {"pending", "complete", "failed"}
+        metadata_fields = (
+            "source",
+            "published_at",
+            "has_captions",
+            "title",
+            "description",
+            "channel_id",
+            "thumbnail",
+            "duration",
+            "privacy_status",
+            "upload_status",
+            "is_live_content",
+        )
+        ordered_ids: list[str] = []
+        merged: dict[str, BatchEntry] = {}
+        conflicts: dict[str, str] = {}
+        decisions: list[ImportVideoDecision] = []
+
+        for entry in entries:
+            video_id = getattr(entry, "video_id", None)
+            status = getattr(entry, "status", None)
+            if not isinstance(video_id, str) or not video_id.strip() or status not in valid_statuses:
+                invalid_id = video_id if isinstance(video_id, str) else "<invalid>"
+                decisions.append(
+                    ImportVideoDecision(
+                        invalid_id,
+                        "conflict",
+                        "invalid_video_id_or_status",
+                    )
+                )
+                continue
+            video_id = video_id.strip()
+            incoming = replace(entry, video_id=video_id)
+            if video_id in conflicts:
+                continue
+            if video_id not in merged:
+                ordered_ids.append(video_id)
+                merged[video_id] = incoming
+                continue
+            current = merged[video_id]
+            if current.status != incoming.status:
+                conflicts[video_id] = "duplicate_status_mismatch"
+                del merged[video_id]
+                continue
+            for field in metadata_fields:
+                if getattr(current, field) is None and getattr(incoming, field) is not None:
+                    setattr(current, field, getattr(incoming, field))
+
+        if not ordered_ids:
+            return ImportVideoResult(tuple(decisions), execute)
+
+        if not execute and not self._db_path.exists():
+            database_fingerprint = _import_database_fingerprint(ordered_ids, {})
+            if (
+                expected_database_fingerprint is not None
+                and expected_database_fingerprint != database_fingerprint
+            ):
+                raise RuntimeError("database state changed since the import plan")
+            for video_id in ordered_ids:
+                if video_id in conflicts:
+                    decisions.append(
+                        ImportVideoDecision(video_id, "conflict", conflicts[video_id])
+                    )
+                else:
+                    decisions.append(ImportVideoDecision(video_id, "inserted"))
+            return ImportVideoResult(tuple(decisions), execute, database_fingerprint)
+
+        column_names = (
+            "video_id",
+            "status",
+            "source",
+            "published_at",
+            "has_captions",
+            "title",
+            "description",
+            "channel_id",
+            "thumbnail",
+            "duration",
+            "privacy_status",
+            "upload_status",
+            "is_live_content",
+            "unavailable_reason",
+            "last_stage",
+            "failure_reason",
+        )
+        conn = self._get_conn(read_only=not execute)
+        try:
+            if execute:
+                conn.execute("BEGIN IMMEDIATE")
+            available_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(analysis_status)")
+            }
+            missing_columns = set(column_names) - available_columns
+            if missing_columns:
+                missing = ", ".join(sorted(missing_columns))
+                if execute:
+                    raise RuntimeError(
+                        f"analysis_status schema is missing import columns: {missing}"
+                    )
+                for video_id in ordered_ids:
+                    if video_id in conflicts:
+                        decisions.append(
+                            ImportVideoDecision(video_id, "conflict", conflicts[video_id])
+                        )
+                    else:
+                        decisions.append(
+                            ImportVideoDecision(
+                                video_id,
+                                "blocked",
+                                f"database_schema_missing_columns:{missing}",
+                            )
+                        )
+                return ImportVideoResult(tuple(decisions), execute)
+            rows = []
+            # Stay below SQLite's lowest common host-parameter limit while
+            # retaining one consistent read/transaction for the import.
+            for offset in range(0, len(ordered_ids), 900):
+                chunk = ordered_ids[offset:offset + 900]
+                placeholders = ",".join("?" for _ in chunk)
+                rows.extend(conn.execute(
+                    f"SELECT {', '.join(column_names)} FROM analysis_status "
+                    f"WHERE video_id IN ({placeholders})",
+                    chunk,
+                ).fetchall())
+            existing = {
+                row[0]: dict(zip(column_names, row))
+                for row in rows
+            }
+            database_fingerprint = _import_database_fingerprint(ordered_ids, existing)
+            if (
+                execute
+                and expected_database_fingerprint is not None
+                and expected_database_fingerprint != database_fingerprint
+            ):
+                raise RuntimeError("database state changed since the import plan")
+
+            for video_id in ordered_ids:
+                if video_id in conflicts:
+                    decisions.append(
+                        ImportVideoDecision(video_id, "conflict", conflicts[video_id])
+                    )
+                    continue
+                entry = merged[video_id]
+                row = existing.get(video_id)
+                if row and row["status"] == _STATUS_COMPLETE:
+                    decisions.append(
+                        ImportVideoDecision(
+                            video_id,
+                            "skipped_complete",
+                            "existing_complete_is_terminal_for_import",
+                        )
+                    )
+                    continue
+
+                changed = row is None or row["status"] != entry.status
+                if row is not None:
+                    # Existing non-null metadata is intentionally authoritative;
+                    # only fill missing fields during an import.
+                    changed = changed or any(
+                        row.get(field) is None and getattr(entry, field) is not None
+                        for field in metadata_fields
+                    )
+                decision = "inserted" if row is None else ("updated" if changed else "unchanged")
+                decisions.append(ImportVideoDecision(video_id, decision))
+                if not execute or decision == "unchanged":
+                    continue
+
+                conn.execute(
+                    "INSERT INTO analysis_status "
+                    "(video_id, status, updated_at, source, published_at, has_captions, "
+                    "title, description, channel_id, thumbnail, duration, privacy_status, "
+                    "upload_status, is_live_content, unavailable_reason, last_stage, failure_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(video_id) DO UPDATE SET "
+                    "status = CASE WHEN analysis_status.status = 'complete' THEN 'complete' ELSE excluded.status END, "
+                    "updated_at = excluded.updated_at, "
+                    "source = COALESCE(analysis_status.source, excluded.source), "
+                    "published_at = COALESCE(analysis_status.published_at, excluded.published_at), "
+                    "has_captions = COALESCE(analysis_status.has_captions, excluded.has_captions), "
+                    "title = COALESCE(analysis_status.title, excluded.title), "
+                    "description = COALESCE(analysis_status.description, excluded.description), "
+                    "channel_id = COALESCE(analysis_status.channel_id, excluded.channel_id), "
+                    "thumbnail = COALESCE(analysis_status.thumbnail, excluded.thumbnail), "
+                    "duration = COALESCE(analysis_status.duration, excluded.duration), "
+                    "privacy_status = COALESCE(analysis_status.privacy_status, excluded.privacy_status), "
+                    "upload_status = COALESCE(analysis_status.upload_status, excluded.upload_status), "
+                    "is_live_content = COALESCE(analysis_status.is_live_content, excluded.is_live_content), "
+                    "unavailable_reason = COALESCE(analysis_status.unavailable_reason, excluded.unavailable_reason), "
+                    "last_stage = COALESCE(analysis_status.last_stage, excluded.last_stage), "
+                    "failure_reason = COALESCE(analysis_status.failure_reason, excluded.failure_reason)",
+                    (
+                        video_id,
+                        entry.status,
+                        datetime.now(timezone.utc).isoformat(),
+                        entry.source,
+                        entry.published_at,
+                        entry.has_captions,
+                        entry.title,
+                        entry.description,
+                        entry.channel_id,
+                        entry.thumbnail,
+                        entry.duration,
+                        entry.privacy_status,
+                        entry.upload_status,
+                        entry.is_live_content,
+                        None,
+                        None,
+                        None,
+                    ),
+                )
+            if execute:
+                conn.commit()
+        except Exception:
+            if execute:
+                conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return ImportVideoResult(tuple(decisions), execute, database_fingerprint)
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -2313,6 +2612,35 @@ def set_status_batch(
     if db_path is None:
         return _get_batch_status_storage().set_status_batch(entries)
     return _BatchStatusStorage(db_path=db_path).set_status_batch(entries)
+
+
+def import_video_ids(
+    entries: Sequence["BatchEntry"],
+    *,
+    execute: bool = False,
+    db_path: Path | None = None,
+    expected_database_fingerprint: str | None = None,
+) -> ImportVideoResult:
+    """Plan or execute a safe import of video IDs.
+
+    Imports are dry-run by default. The operation never downgrades an
+    existing complete row and preserves existing non-null metadata. Use
+    ``execute=True`` only after reviewing the returned decisions.
+    """
+    if execute and db_path is None:
+        return _get_batch_status_storage().import_video_ids(
+            entries,
+            execute=True,
+            expected_database_fingerprint=expected_database_fingerprint,
+        )
+    return _BatchStatusStorage(
+        db_path=db_path or _get_default_db_path(),
+        ensure_schema=execute,
+    ).import_video_ids(
+        entries,
+        execute=execute,
+        expected_database_fingerprint=expected_database_fingerprint,
+    )
 
 
 # ---------------------------------------------------------------------------

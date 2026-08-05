@@ -50,6 +50,49 @@ def test_industrial_worker_env_uses_lane_profile_prefix(tmp_path, monkeypatch):
     assert worker["env"]["NOTEBOOKLM_PROFILE"] == "ytis-pro-worker-03"
 
 
+def test_video_manifest_dry_run_selects_exact_ids_without_channel_scan(tmp_path, monkeypatch):
+    mod = _load_csf_source_module()
+    manifest_path = tmp_path / "selection.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "exact-selection",
+                "videos": [
+                    {"video_id": "aaaaaaaaaaa"},
+                    {"video_id": "bbbbbbbbbbb"},
+                    {"video_id": "ccccccccccc"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = []
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda ids: [
+        {"video_id": "aaaaaaaaaaa", "status": "pending", "source": "source-a", "has_captions": True},
+        {"video_id": "bbbbbbbbbbb", "status": "complete", "source": "source-b"},
+    ])
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+
+    mod.cmd_fetch(video_manifest=manifest_path, dry_run=True)
+
+    selection_events = [payload for name, payload in events if name == "fetch_manifest_selection"]
+    assert len(selection_events) == 1
+    assert selection_events[0]["selected_count"] == 1
+    assert selection_events[0]["missing_count"] == 1
+    assert selection_events[0]["non_pending_count"] == 1
+    completed = [payload for name, payload in events if name == "fetch_completed"]
+    assert len(completed) == 1
+    assert completed[0]["status"] == "dry_run"
+    assert completed[0]["selection_mode"] == "video_manifest"
+    assert completed[0]["channels_active_total"] == 0
+    assert completed[0]["selection_fingerprint"].startswith("sha256:")
+
+
 def test_industrial_worker_env_can_use_explicit_lane_profiles(tmp_path, monkeypatch):
     """Industrial workers can bind to exact CLI auth profiles when names are not prefix-derived."""
     mod = _load_csf_source_module()

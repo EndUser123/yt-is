@@ -7,6 +7,7 @@ Usage:
     csf-source check <source_id>                  # Daily check: RSS → gap detection → API if needed
     csf-source sync <source_id>                   # Process all pending videos via batch
     csf-source fetch [--source <url>]             # ESCALATION: fetch transcripts (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper)
+    csf-source fetch --video-manifest <path>      # Fetch only explicitly selected video IDs
     csf-source history                            # Extract channels from YouTube watch history and add new ones
 
 Commands:
@@ -33,6 +34,7 @@ Commands:
               --source <url>   Process only this channel URL (default: all channels)
               --dry-run        Show what would be fetched without fetching
               --workers <n>    Number of parallel workers (default: 1)
+              --video-manifest <path>  Select exact video IDs; mutually exclusive with --source
 """
 
 import argparse
@@ -111,7 +113,13 @@ from csf.batch_status import (
     get_all_blocked_channels,
     delete_channel,
     get_entries_for_source_details,
+    get_entries_for_video_ids_details,
 )
+from csf.video_selection_manifest import (
+    load_video_selection_manifest,
+    select_manifest_entries,
+)
+from csf.paths import get_batch_db_path
 from csf.source_enumerator import (
     parse_channel_url,
     parse_playlist_url,
@@ -353,6 +361,7 @@ def _build_fetch_completed_payload(
     negative_cache_sample: list[dict[str, object]] | None = None,
     route_no_captions_to_fallback: bool = False,
     failure_reason: str | None = None,
+    selection_metadata: dict[str, object] | None = None,
 ) -> dict[str, object]:
     cfg = get_nlm_config()
     return {
@@ -400,6 +409,7 @@ def _build_fetch_completed_payload(
         "processed_per_min": round(processed_count / elapsed_s * 60, 2) if elapsed_s > 0 else None,
         "status": status,
         "failure_reason": failure_reason,
+        **(selection_metadata or {}),
     }
 
 
@@ -686,6 +696,7 @@ def _log_fetch_completed(
     negative_cache_sample: list[dict[str, object]] | None = None,
     route_no_captions_to_fallback: bool = False,
     failure_reason: str | None = None,
+    selection_metadata: dict[str, object] | None = None,
 ) -> None:
     processed_count = success_count + fail_count + skip_count
     log_action(
@@ -727,6 +738,7 @@ def _log_fetch_completed(
             elapsed_s=elapsed_s,
             status=status,
             failure_reason=failure_reason,
+            selection_metadata=selection_metadata,
         ),
     )
 
@@ -1840,6 +1852,7 @@ def cmd_fetch(
     dry_run: bool = False,
     workers: int = 1,
     max_items: int | None = None,
+    video_manifest: Path | None = None,
 ) -> None:
     """Fetch transcripts for pending videos using the full fallback chain.
 
@@ -1855,6 +1868,20 @@ def cmd_fetch(
     """
     from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
     from csf.transcript import fetch_transcript_chain, LanguageConfig
+
+    if video_manifest is not None and source_filter is not None:
+        raise ValueError("video_manifest and source_filter are mutually exclusive")
+    if video_manifest is not None and video_manifest.resolve() == get_batch_db_path().resolve():
+        raise ValueError("video_manifest must not be the active batch status database")
+    selection_manifest = load_video_selection_manifest(video_manifest) if video_manifest else None
+    if selection_manifest is not None and not dry_run and max_items is None:
+        raise ValueError("a live video-manifest fetch requires --limit")
+    selection_metadata: dict[str, object] = {
+        "selection_mode": "video_manifest" if selection_manifest is not None else "channel_scan",
+        "video_manifest": str(video_manifest) if video_manifest else None,
+        "video_manifest_fingerprint": selection_manifest.fingerprint if selection_manifest else None,
+        "selection_fingerprint": None,
+    }
 
     fetch_started_at = time.monotonic()
     industrial_first_worker_finished_at: float | None = None
@@ -1896,6 +1923,8 @@ def cmd_fetch(
         "fetch_invoked",
         {
             "source_filter": source_filter,
+            "video_manifest": str(video_manifest) if video_manifest else None,
+            "video_manifest_fingerprint": selection_manifest.fingerprint if selection_manifest else None,
             "dry_run": dry_run,
             "workers": workers,
             "max_items": max_items,
@@ -1915,9 +1944,10 @@ def cmd_fetch(
                 1,
                 _env_int("YTIS_INDUSTRIAL_BATCHES_PER_WORKER", "YTIS_INDUSTRIAL_BATCHES_PER_LAUNCH", 4),
             ),
-            "route_no_captions_to_fallback": route_no_captions_to_fallback,
-            "shared_retry_pool_enabled": shared_retry_pool_enabled,
-        },
+                "route_no_captions_to_fallback": route_no_captions_to_fallback,
+                "shared_retry_pool_enabled": shared_retry_pool_enabled,
+                **selection_metadata,
+            },
     )
     first_download_logged = False
     deleted = 0
@@ -1954,9 +1984,9 @@ def cmd_fetch(
             batch_size=batch_size,
             max_items=max_items,
             workers=workers,
-            channels_tracked_total=tracked_count,
+            channels_tracked_total=reported_tracked_count,
             channels_blocked_total=blocked_count,
-            channels_active_total=channel_count,
+            channels_active_total=reported_channel_count,
             pending_total=total_pending,
             cached_total=cached_count,
             cached_hit_rate=round(cached_count / (cached_count + total_pending + terminal_count), 4)
@@ -1980,10 +2010,11 @@ def cmd_fetch(
             success_count=success_count,
             fail_count=fail_count,
             skip_count=skip_count,
-            elapsed_s=elapsed_s,
-            status="failed",
-            failure_reason=failure_reason,
-        )
+                elapsed_s=elapsed_s,
+                status="failed",
+                failure_reason=failure_reason,
+                selection_metadata=selection_metadata,
+            )
 
     def _log_worker_health_warning(reason: str, **details) -> None:
         log_action(
@@ -2002,8 +2033,11 @@ def cmd_fetch(
 
     storage = _get_batch_status_storage()
 
-    # Get all channels or specific channel
-    if source_filter:
+    # Get all channels or specific channel. A video manifest bypasses channel
+    # enumeration entirely; its IDs are resolved directly from analysis_status.
+    if selection_manifest is not None:
+        tracked_channels = [("__video_manifest__", None)]
+    elif source_filter:
         existing = get_channel_metadata(source_filter)
         if not existing:
             print(f"[source] Error: {source_filter} is not a tracked source.", file=sys.stderr)
@@ -2015,21 +2049,24 @@ def cmd_fetch(
         tracked_channels = cursor.fetchall()
         conn.close()
 
-    if not tracked_channels:
+    if not tracked_channels and selection_manifest is None:
         print("[source] No tracked channels found.")
         return
 
-    channels: list[tuple[str, str]] = []
+    channels: list[tuple[str, str | None]] = []
     blocked_count = 0
-    for channel_url, playlist_id in tracked_channels:
-        if is_channel_blocked(channel_url):
-            blocked_count += 1
-            continue
-        if not playlist_id:
-            continue
-        channels.append((channel_url, playlist_id))
+    if selection_manifest is not None:
+        channels = [("__video_manifest__", None)]
+    else:
+        for channel_url, playlist_id in tracked_channels:
+            if is_channel_blocked(channel_url):
+                blocked_count += 1
+                continue
+            if not playlist_id:
+                continue
+            channels.append((channel_url, playlist_id))
 
-    if not channels:
+    if not channels and selection_manifest is None:
         print("[source] No unblocked tracked channels found.")
         return
 
@@ -2042,6 +2079,8 @@ def cmd_fetch(
     scan_started_at = time.monotonic()
     tracked_count = len(tracked_channels)
     channel_count = len(channels)
+    reported_tracked_count = 0 if selection_manifest is not None else tracked_count
+    reported_channel_count = 0 if selection_manifest is not None else channel_count
     scan_progress_interval = max(1, channel_count // 10)
     scan_status_interval_s = float(_env_float("YTIS_SCAN_STATUS_INTERVAL_S", "YTIS_FETCH_STATUS_INTERVAL_S", 30.0))
     scan_last_status_at = scan_started_at
@@ -2205,25 +2244,35 @@ def cmd_fetch(
         "fetch_scan_started",
         {
             "source_filter": source_filter,
-            "channels_tracked_total": tracked_count,
+            "channels_tracked_total": reported_tracked_count,
             "channels_blocked_total": blocked_count,
-            "channels_active_total": channel_count,
+            "channels_active_total": reported_channel_count,
             "progress_interval": scan_progress_interval,
+            **selection_metadata,
         },
     )
-    print(
-        f"[source] Preflight scan: checking {channel_count} active channels "
-        f"({blocked_count} blocked skipped) for pending videos..."
-    )
+    if selection_manifest is not None:
+        print(
+            f"[source] Preflight scan: checking {len(selection_manifest.items)} manifest items "
+            "before status filtering..."
+        )
+    else:
+        print(
+            f"[source] Preflight scan: checking {channel_count} active channels "
+            f"({blocked_count} blocked skipped) for pending videos..."
+        )
 
     def _emit_scan_status(channel_index: int, trigger: str) -> None:
         nonlocal scan_last_status_at
         elapsed_s = round(time.monotonic() - scan_started_at, 3)
         scan_last_status_at = time.monotonic()
+        if selection_manifest is not None:
+            scope_status = f"{pending_discovered_total} manifest items"
+        else:
+            scope_status = f"{channel_index}/{channel_count} channels"
         print(
             "[source] Scan status: "
-            f"{channel_index}/{channel_count} channels, "
-            f"pending={pending_discovered_total}, cached={cached_count}, "
+            f"{scope_status}, pending={pending_discovered_total}, cached={cached_count}, "
             f"neg_cache={negative_cache_count}, terminal={terminal_count}, "
             f"notebooklm={notebooklm_pending_count}, fallback={transcript_fallback_queued_count}, "
             f"elapsed={elapsed_s}s, trigger={trigger}"
@@ -2233,7 +2282,7 @@ def cmd_fetch(
             {
                 "source_filter": source_filter,
                 "channel_index": channel_index,
-                "channels_active_total": channel_count,
+                "channels_active_total": reported_channel_count,
                 "pending_so_far": pending_discovered_total,
                 "cached_total": cached_count,
                 "negative_cache_count": negative_cache_count,
@@ -2243,6 +2292,7 @@ def cmd_fetch(
                 "terminal_reason_counts": dict(terminal_reason_counts),
                 "elapsed_s": elapsed_s,
                 "trigger": trigger,
+                **selection_metadata,
             },
         )
 
@@ -2984,22 +3034,75 @@ def cmd_fetch(
     def _primary_pending_discovered_total() -> int:
         return max(0, pending_discovered_total - int(shared_retry_processed_count_total))
 
-    # Snapshot isolation: read all channel entries with a single DB connection
-    # so every channel sees the same database state under concurrent writes.
-    _snapshot_conn = storage._get_conn()
-    try:
-        _all_channel_entries: dict[str, list[dict[str, object | None]]] = {
-            _curl: storage._query_entries_for_source_details(_snapshot_conn, _curl)
-            for _curl, _ in channels
+    selection_result = None
+    if selection_manifest is not None:
+        manifest_ids = [item.video_id for item in selection_manifest.items]
+        manifest_rows = get_entries_for_video_ids_details(manifest_ids)
+        rows_by_video_id = {
+            str(row["video_id"]): row
+            for row in manifest_rows
+            if row.get("video_id") is not None
         }
-    finally:
-        _snapshot_conn.close()
+        selection_result = select_manifest_entries(
+            selection_manifest,
+            rows_by_video_id,
+            max_items=max_items,
+        )
+        selection_metadata["selection_fingerprint"] = selection_result.fingerprint
+        _all_channel_entries = {
+            "__video_manifest__": list(selection_result.selected_entries)
+        }
+        log_action(
+            "fetch_manifest_selection",
+            {
+                "manifest_path": str(video_manifest),
+                "manifest_fingerprint": selection_manifest.fingerprint,
+                "selection_fingerprint": selection_result.fingerprint,
+                "manifest_item_count": len(selection_manifest.items),
+                "selected_count": len(selection_result.selected_entries),
+                "missing_count": len(selection_result.missing_ids),
+                "non_pending_count": sum(
+                    len(ids) for ids in selection_result.non_pending_by_status.values()
+                ),
+                "limit_omitted_count": len(selection_result.limit_omitted_ids),
+                "missing_sample": list(selection_result.missing_ids[:10]),
+                "limit_omitted_sample": list(selection_result.limit_omitted_ids[:10]),
+            },
+        )
+    else:
+        # Snapshot isolation: read all channel entries with a single DB
+        # connection so every channel sees the same database state under
+        # concurrent writes.
+        # Small test doubles historically exposed only the public lookup.
+        # Keep that compatibility without weakening the real storage path.
+        if hasattr(type(storage), "_query_entries_for_source_details"):
+            _snapshot_conn = storage._get_conn()
+            try:
+                _all_channel_entries = {
+                    _curl: storage._query_entries_for_source_details(_snapshot_conn, _curl)
+                    for _curl, _ in channels
+                }
+            finally:
+                _snapshot_conn.close()
+        else:
+            _all_channel_entries = {
+                _curl: get_entries_for_source_details(_curl)
+                for _curl, _ in channels
+            }
 
     for channel_index, (channel_url, playlist_id) in enumerate(channels, start=1):
         pending_entries = _all_channel_entries.get(channel_url, [])
         for entry in pending_entries:
             video_id = str(entry["video_id"])
             status = str(entry["status"])
+            source_url = str(
+                entry.get("source")
+                or (
+                    f"https://www.youtube.com/watch?v={video_id}"
+                    if selection_manifest is not None
+                    else channel_url
+                )
+            )
             if status != "pending":
                 continue
             if has_cached_transcript(video_id):
@@ -3008,7 +3111,7 @@ def cmd_fetch(
                     cached_sample.append(
                         {
                             "video_id": video_id,
-                            "source": channel_url,
+                            "source": source_url,
                             "channel_index": channel_index,
                         }
                     )
@@ -3022,7 +3125,7 @@ def cmd_fetch(
                     negative_cache_sample.append(
                         {
                             "video_id": video_id,
-                            "source": channel_url,
+                            "source": source_url,
                             "channel_index": channel_index,
                             "reason": reason,
                             "last_stage": neg_cache.get("last_stage"),
@@ -3038,7 +3141,7 @@ def cmd_fetch(
                     terminal_sample.append(
                         {
                             "video_id": video_id,
-                            "source": channel_url,
+                            "source": source_url,
                             "reason": reason or "unavailable",
                             "privacy_status": entry.get("privacy_status"),
                             "upload_status": entry.get("upload_status"),
@@ -3049,7 +3152,7 @@ def cmd_fetch(
                     BatchEntry(
                         video_id=video_id,
                         status="failed",
-                        source=channel_url,
+                        source=source_url,
                         has_captions=entry.get("has_captions") if isinstance(entry.get("has_captions"), bool) else None,
                         duration=entry.get("duration") if isinstance(entry.get("duration"), int) else None,
                         privacy_status=entry.get("privacy_status") if isinstance(entry.get("privacy_status"), str) else None,
@@ -3063,10 +3166,10 @@ def cmd_fetch(
             pending_discovered_total += 1
             if bucket == "notebooklm":
                 notebooklm_pending_count += 1
-                pending_buffer.append((video_id, channel_url))
+                pending_buffer.append((video_id, source_url))
             else:
                 transcript_fallback_queued_count += 1
-                transcript_fallback_queue.append((video_id, channel_url, True))
+                transcript_fallback_queue.append((video_id, source_url, True))
 
             if notebooklm_pending_count >= backlog_threshold or transcript_fallback_queued_count >= backlog_threshold:
                 industrial_selected = True
@@ -3148,7 +3251,7 @@ def cmd_fetch(
         "fetch_triage_summary",
         {
             "source_filter": source_filter,
-            "channels_active_total": channel_count,
+            "channels_active_total": reported_channel_count,
             "pending_total": pending_discovered_total,
             "max_items": max_items,
             "max_items_reached": max_items_reached,
@@ -3190,9 +3293,9 @@ def cmd_fetch(
         "fetch_scan_completed",
         {
             "source_filter": source_filter,
-            "channels_tracked_total": tracked_count,
+            "channels_tracked_total": reported_tracked_count,
             "channels_blocked_total": blocked_count,
-            "channels_active_total": channel_count,
+            "channels_active_total": reported_channel_count,
             "pending_total": total_pending,
             "max_items": max_items,
             "max_items_reached": max_items_reached,
@@ -3210,14 +3313,22 @@ def cmd_fetch(
             "transcript_fallback_queued_count": transcript_fallback_queued_count,
             "notebooklm_pending_count": notebooklm_pending_count,
             "elapsed_s": round(time.monotonic() - scan_started_at, 3),
+            **selection_metadata,
         },
     )
-    print(
-        f"[source] Preflight scan complete: {channel_count} active channels, "
-        f"{total_pending} pending, {cached_count} cached, "
-        f"{negative_cache_count} neg-cache, {terminal_count} terminal, {notebooklm_pending_count} notebooklm, "
-        f"{transcript_fallback_queued_count} transcript-fallback"
-    )
+    if selection_manifest is not None:
+        print(
+            f"[source] Preflight scan complete: {total_pending} manifest-selected pending items, "
+            f"{cached_count} cached, {negative_cache_count} neg-cache, {terminal_count} terminal, "
+            f"{notebooklm_pending_count} notebooklm, {transcript_fallback_queued_count} transcript-fallback"
+        )
+    else:
+        print(
+            f"[source] Preflight scan complete: {channel_count} active channels, "
+            f"{total_pending} pending, {cached_count} cached, "
+            f"{negative_cache_count} neg-cache, {terminal_count} terminal, {notebooklm_pending_count} notebooklm, "
+            f"{transcript_fallback_queued_count} transcript-fallback"
+        )
     if cached_sample:
         cached_ids = ", ".join(item["video_id"] for item in cached_sample)
         print(f"[source] Cached sample: {cached_ids}")
@@ -3243,7 +3354,10 @@ def cmd_fetch(
     if industrial_parallel_enabled:
         _service_industrial_workers(wait_for_completion=False)
     print(f"[source] Escalation Batch Process")
-    print(f"[source] Channels: {channel_count} active / {tracked_count} tracked")
+    if selection_manifest is not None:
+        print(f"[source] Manifest items: {len(selection_manifest.items)} selected from manifest")
+    else:
+        print(f"[source] Channels: {channel_count} active / {tracked_count} tracked")
     print(f"[source] Already cached: {cached_count}")
     if cached_sample:
         cached_ids = ", ".join(item["video_id"] for item in cached_sample)
@@ -3266,9 +3380,9 @@ def cmd_fetch(
             batch_size=batch_size,
             max_items=max_items,
             workers=workers,
-            channels_tracked_total=tracked_count,
+            channels_tracked_total=reported_tracked_count,
             channels_blocked_total=blocked_count,
-            channels_active_total=channel_count,
+            channels_active_total=reported_channel_count,
             pending_total=total_pending,
             cached_total=cached_count,
             cached_hit_rate=round(cached_count / (cached_count + total_pending + terminal_count), 4)
@@ -3292,6 +3406,7 @@ def cmd_fetch(
             skip_count=skip_count,
             elapsed_s=round(time.monotonic() - fetch_started_at, 3),
             status="dry_run",
+            selection_metadata=selection_metadata,
             worker_source_profile_totals=_build_worker_source_profile_totals_payload(),
         )
         return
@@ -3318,9 +3433,9 @@ def cmd_fetch(
             "backlog_threshold": backlog_threshold,
             "batch_size": batch_size,
             "workers": workers,
-            "channels_tracked_total": tracked_count,
+            "channels_tracked_total": reported_tracked_count,
             "channels_blocked_total": blocked_count,
-            "channels_active_total": channel_count,
+            "channels_active_total": reported_channel_count,
             "pending_total": total_pending,
             "cached_total": cached_count,
             "cached_hit_rate": round(cached_count / (cached_count + total_pending + terminal_count), 4)
@@ -3336,6 +3451,7 @@ def cmd_fetch(
             "use_industrial": use_industrial,
             "notebooklm_pending_count": notebooklm_pending_count,
             "transcript_fallback_queued_count": transcript_fallback_queued_count,
+            **selection_metadata,
         },
     )
     deleted = 0
@@ -3350,9 +3466,9 @@ def cmd_fetch(
             batch_size=batch_size,
             max_items=max_items,
             workers=workers,
-            channels_tracked_total=tracked_count,
+            channels_tracked_total=reported_tracked_count,
             channels_blocked_total=blocked_count,
-            channels_active_total=channel_count,
+            channels_active_total=reported_channel_count,
             pending_total=total_pending,
             cached_total=cached_count,
             cached_hit_rate=round(cached_count / (cached_count + total_pending + terminal_count), 4)
@@ -3376,6 +3492,7 @@ def cmd_fetch(
             skip_count=skip_count,
             elapsed_s=round(time.monotonic() - fetch_started_at, 3),
             status="no_pending",
+            selection_metadata=selection_metadata,
             worker_source_profile_totals=_build_worker_source_profile_totals_payload(),
         )
         return
@@ -3667,9 +3784,9 @@ def cmd_fetch(
         batch_size=batch_size,
         max_items=max_items,
         workers=workers,
-        channels_tracked_total=tracked_count,
+        channels_tracked_total=reported_tracked_count,
         channels_blocked_total=blocked_count,
-        channels_active_total=channel_count,
+        channels_active_total=reported_channel_count,
         pending_total=total_pending,
         cached_total=cached_count,
         cached_hit_rate=round(cached_count / (cached_count + total_pending + terminal_count), 4)
@@ -3695,6 +3812,7 @@ def cmd_fetch(
         skip_count=skip_count,
         elapsed_s=elapsed_s,
         status="completed",
+        selection_metadata=selection_metadata,
     )
 
 
@@ -4317,6 +4435,11 @@ def main() -> None:
     fetch_parser.add_argument("--dry-run", action="store_true", help="Show what would be fetched without fetching")
     fetch_parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")
     fetch_parser.add_argument("--limit", type=int, help="Stop after this many pending items have been queued for fetching")
+    fetch_parser.add_argument(
+        "--video-manifest",
+        type=Path,
+        help="Select exact video IDs from a validated JSON manifest (mutually exclusive with --source)",
+    )
 
     # block command
     block_parser = subparsers.add_parser("block", help="Add a channel to the blocklist")
@@ -4389,6 +4512,10 @@ def main() -> None:
     elif args.command == "quota":
         cmd_quota()
     elif args.command == "fetch":
+        if args.video_manifest is not None and args.source is not None:
+            parser.error("--video-manifest and --source are mutually exclusive")
+        if args.video_manifest is not None and not args.dry_run and args.limit is None:
+            parser.error("live --video-manifest fetch requires --limit")
         # Scope guardrail: refuse unbounded fetch when backlog is large.
         # Prevents the scope-blowout incident (2026-07-20) where an unbounded
         # `fetch` attempted all 51k pending videos instead of the intended
@@ -4426,6 +4553,7 @@ def main() -> None:
             dry_run=args.dry_run,
             workers=args.workers,
             max_items=args.limit,
+            video_manifest=args.video_manifest,
         )
     elif args.command == "block":
         cmd_block(args.url)

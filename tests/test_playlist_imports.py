@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from csf.batch_status import get_channel_metadata, is_channel_blocked
+from csf.batch_status import BatchEntry, get_channel_metadata, is_channel_blocked
 from csf.playlist_imports import (
     get_playlist_import_item_rows,
     get_playlist_import_run,
+    record_video_import_run,
     record_playlist_import_item,
     record_playlist_import_run,
     replay_playlist_import_run_into_batch_status,
@@ -102,3 +103,44 @@ def test_playlist_import_replay_populates_batch_status(tmp_path, monkeypatch):
     assert channel_row is not None
     assert is_channel_blocked("https://www.youtube.com/channel/UC999", db_path=live_status_db) is False
 
+
+def test_record_video_import_run_bulk_records_decisions_and_context(tmp_path, monkeypatch):
+    import_db = tmp_path / "playlists.sqlite"
+    monkeypatch.setenv("YTIS_PLAYLIST_IMPORT_DB_PATH", str(import_db))
+
+    entries = [
+        BatchEntry(
+            video_id="dQw4w9WgXcQ",
+            status="pending",
+            source="history:test",
+            title="Example",
+            duration=123,
+        ),
+        BatchEntry(
+            video_id="9bZkp7q19f0",
+            status="pending",
+            source="playlist:test",
+        ),
+    ]
+    run_id = record_video_import_run(
+        entries,
+        origin="scripts/import_video_ids.py",
+        item_context=[
+            {"source_path": "history.csv", "source_row": 4},
+            {"source_path": "playlist.jsonl", "source_row": 8},
+        ],
+        planned_decisions={
+            "dQw4w9WgXcQ": ("inserted", None),
+            "9bZkp7q19f0": ("skipped_complete", "terminal"),
+        },
+        notes={"input_fingerprint": "sha256:test"},
+    )
+
+    run = get_playlist_import_run(run_id)
+    rows = get_playlist_import_item_rows(run_id)
+    assert run is not None
+    assert run["status"] == "running"
+    assert run["playlist_kind"] == "video_import"
+    assert [row["classification"] for row in rows] == ["inserted", "skipped_complete"]
+    assert json.loads(rows[0]["raw_json"])["context"]["source_row"] == 4
+    assert rows[0]["duration_seconds"] == 123

@@ -9,6 +9,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from csf.batch_status import (
@@ -557,3 +558,96 @@ def complete_import_run(
         db_path: Optional path to a non-default playlists DB.
     """
     finish_playlist_import_run(run_id, status=status, db_path=db_path)
+
+
+def record_video_import_run(
+    entries: Sequence[BatchEntry],
+    *,
+    origin: str,
+    item_context: Sequence[dict[str, object]] | None = None,
+    planned_decisions: Mapping[str, tuple[str, str | None]] | None = None,
+    notes: dict[str, object] | None = None,
+    db_path: Path | None = None,
+) -> str:
+    """Record a safe video import in one append-only transaction.
+
+    This records provenance only. The caller remains responsible for applying
+    the corresponding status mutation and finishing the run as completed or
+    failed. ``item_context`` is ordered alongside ``entries`` and is stored in
+    ``raw_json`` so source-file details do not become lifecycle fields.
+    """
+    if item_context is not None and len(item_context) != len(entries):
+        raise ValueError("item_context must have the same length as entries")
+
+    decision_map = planned_decisions or {}
+    run_id = uuid.uuid4().hex
+    started_at = datetime.now(timezone.utc).isoformat()
+    run_notes = dict(notes or {})
+    run_notes.setdefault("workflow", "video_import")
+
+    _ensure_db(db_path)
+    with _db_lock, _connect(db_path) as conn:
+        _ensure_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO playlist_import_run (
+                run_id, playlist_kind, playlist_url, command, cookie_source,
+                started_at, status, total_items, notes_json
+            ) VALUES (?, 'video_import', ?, ?, NULL, ?, 'running', ?, ?)
+            """,
+            (
+                run_id,
+                str(run_notes.get("source_description") or origin),
+                origin,
+                started_at,
+                len(entries),
+                _json_text(run_notes),
+            ),
+        )
+
+        item_rows = []
+        for index, entry in enumerate(entries):
+            context = dict(item_context[index]) if item_context is not None else {}
+            decision, reason = decision_map.get(entry.video_id, ("planned", None))
+            raw_payload = {
+                "context": context,
+                "decision": decision,
+                "reason": reason,
+            }
+            item_rows.append(
+                (
+                    run_id,
+                    f"video_import:{index}:{entry.video_id}",
+                    "video_import",
+                    str(run_notes.get("source_description") or origin),
+                    index,
+                    entry.video_id,
+                    f"https://www.youtube.com/watch?v={entry.video_id}",
+                    entry.title,
+                    entry.channel_id,
+                    entry.source,
+                    None,
+                    entry.published_at,
+                    entry.duration,
+                    entry.privacy_status,
+                    1 if entry.is_live_content else 0 if entry.is_live_content is not None else None,
+                    _json_text(raw_payload),
+                    "{}",
+                    decision,
+                    started_at,
+                )
+            )
+
+        conn.executemany(
+            """
+            INSERT INTO playlist_import_item (
+                run_id, item_id, playlist_kind, playlist_url, playlist_position,
+                video_id, video_url, video_title, channel_id, channel_url,
+                channel_title, published_at, duration_seconds, availability,
+                is_live, raw_json, resolved_channel_json, classification, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            item_rows,
+        )
+        conn.commit()
+    return run_id

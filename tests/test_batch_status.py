@@ -5,6 +5,7 @@ Verifies: analysis_status table skip-on-restart, --force override.
 """
 
 import sys
+import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from csf.batch_status import (
     get_analysis_status,
     get_channel_metadata,
     get_entries_for_source_details,
+    get_entries_for_video_ids_details,
     get_negative_cache,
     get_pending_by_source,
     get_source,
@@ -33,6 +35,7 @@ from csf.batch_status import (
     set_channel_metadata,
     set_status,
     set_status_batch,
+    import_video_ids,
     SetStatusBatchResult,
     get_status_batch,
     BatchEntry,
@@ -49,6 +52,21 @@ from csf.playlist_imports import (
 # Shared DB path for testing
 _TEST_DB_PATH = Path(tempfile.gettempdir()) / "yt-is" / "batch_status" / "test_status.sqlite"
 _TEST_PLAYLIST_DB_PATH = Path(tempfile.gettempdir()) / "yt-is" / "batch_status" / "test_playlists.sqlite"
+
+
+def _stub_channel_identity_resolution(monkeypatch):
+    """Keep channel-state tests local and independent of API quota."""
+    def fake_resolve(channel_ref: str) -> ChannelIdentity:
+        handle = channel_ref.rsplit("@", 1)[-1].strip("/")
+        if handle not in {"example", "blocked"}:
+            raise AssertionError(f"unexpected channel lookup: {channel_ref}")
+        return ChannelIdentity(
+            channel_id=f"UC{handle.upper()}0000000000000000",
+            canonical_url=f"https://www.youtube.com/@{handle}",
+            source_ref=channel_ref,
+        )
+
+    monkeypatch.setattr("csf.batch_status.resolve_channel_identity", fake_resolve)
 
 
 class TestAnalysisStatusTable:
@@ -279,6 +297,186 @@ class TestSetStatusBatch:
         assert get_analysis_status("vid_single_guard", db_path=_TEST_DB_PATH) == "complete"
 
 
+class TestImportVideoIds:
+    """Test the explicit, non-destructive import boundary."""
+
+    def setup_method(self):
+        reset_all(_TEST_DB_PATH)
+
+    def test_import_defaults_to_dry_run_without_writing(self):
+        result = import_video_ids(
+            [BatchEntry(video_id="vid_new", status="pending", title="New")],
+            db_path=_TEST_DB_PATH,
+        )
+
+        assert result.executed is False
+        assert result.counts == {
+            "inserted": 1,
+            "updated": 0,
+            "skipped_complete": 0,
+            "unchanged": 0,
+            "conflict": 0,
+            "blocked": 0,
+        }
+        assert get_analysis_status("vid_new", db_path=_TEST_DB_PATH) is None
+
+    def test_import_dry_run_does_not_create_missing_database(self, tmp_path):
+        missing_db = tmp_path / "not_created.sqlite"
+
+        result = import_video_ids(
+            [BatchEntry(video_id="vid_missing_db", status="pending")],
+            db_path=missing_db,
+        )
+
+        assert result.counts["inserted"] == 1
+        assert not missing_db.exists()
+
+    def test_import_never_downgrades_complete_or_changes_its_metadata(self):
+        set_status_batch(
+            [
+                BatchEntry(
+                    video_id="vid_complete",
+                    status="complete",
+                    source="playlist:source",
+                    title="Authoritative title",
+                    duration=321,
+                    last_stage="notebooklm",
+                )
+            ],
+            db_path=_TEST_DB_PATH,
+        )
+
+        result = import_video_ids(
+            [
+                BatchEntry(
+                    video_id="vid_complete",
+                    status="pending",
+                    source="history:source",
+                    title="Sparse replacement",
+                )
+            ],
+            execute=True,
+            db_path=_TEST_DB_PATH,
+        )
+
+        assert result.counts["skipped_complete"] == 1
+        assert get_analysis_status("vid_complete", db_path=_TEST_DB_PATH) == "complete"
+        row = get_entries_for_video_ids_details(["vid_complete"], db_path=_TEST_DB_PATH)[0]
+        assert row["source"] == "playlist:source"
+        assert row["title"] == "Authoritative title"
+        assert row["duration"] == 321
+        assert row["last_stage"] == "notebooklm"
+
+    def test_import_merges_duplicate_ids_and_preserves_existing_metadata(self):
+        set_status_batch(
+            [BatchEntry(video_id="vid_existing", status="pending", title="Existing")],
+            db_path=_TEST_DB_PATH,
+        )
+
+        result = import_video_ids(
+            [
+                BatchEntry(video_id="vid_existing", status="pending", title=None),
+                BatchEntry(video_id="vid_existing", status="pending", duration=42),
+                BatchEntry(video_id="vid_new", status="pending", title=None),
+                BatchEntry(video_id="vid_new", status="pending", title="Merged title"),
+            ],
+            execute=True,
+            db_path=_TEST_DB_PATH,
+        )
+
+        assert result.counts == {
+            "inserted": 1,
+            "updated": 1,
+            "skipped_complete": 0,
+            "unchanged": 0,
+            "conflict": 0,
+            "blocked": 0,
+        }
+        rows = {
+            row["video_id"]: row
+            for row in get_entries_for_video_ids_details(
+                ["vid_existing", "vid_new"], db_path=_TEST_DB_PATH
+            )
+        }
+        assert rows["vid_existing"]["title"] == "Existing"
+        assert rows["vid_existing"]["duration"] == 42
+        assert rows["vid_new"]["title"] == "Merged title"
+
+    def test_import_does_not_accept_lifecycle_fields_from_external_entries(self):
+        result = import_video_ids(
+            [
+                BatchEntry(
+                    video_id="vid_lifecycle",
+                    status="pending",
+                    last_stage="untrusted",
+                    failure_reason="fake",
+                    unavailable_reason="fake",
+                )
+            ],
+            execute=True,
+            db_path=_TEST_DB_PATH,
+        )
+
+        assert result.counts["inserted"] == 1
+        row = get_entries_for_video_ids_details(
+            ["vid_lifecycle"], db_path=_TEST_DB_PATH
+        )[0]
+        assert row["last_stage"] is None
+        assert row["failure_reason"] is None
+        assert row["unavailable_reason"] is None
+
+    def test_import_dry_run_blocks_legacy_schema_without_migrating(self, tmp_path):
+        legacy_db = tmp_path / "legacy.sqlite"
+
+        conn = sqlite3.connect(legacy_db)
+        conn.execute(
+            "CREATE TABLE analysis_status "
+            "(video_id TEXT PRIMARY KEY, status TEXT, updated_at TEXT NOT NULL)"
+        )
+        conn.commit()
+        conn.close()
+
+        result = import_video_ids(
+            [BatchEntry(video_id="vid_legacy", status="pending")],
+            db_path=legacy_db,
+        )
+
+        assert result.counts["blocked"] == 1
+        assert result.decisions[0].reason.startswith("database_schema_missing_columns:")
+
+    def test_import_reports_duplicate_status_conflict_without_writing(self):
+        result = import_video_ids(
+            [
+                BatchEntry(video_id="vid_conflict", status="pending"),
+                BatchEntry(video_id="vid_conflict", status="failed"),
+            ],
+            execute=True,
+            db_path=_TEST_DB_PATH,
+        )
+
+        assert result.counts["conflict"] == 1
+        assert get_analysis_status("vid_conflict", db_path=_TEST_DB_PATH) is None
+
+    def test_import_does_not_report_rejected_non_null_metadata_as_updated(self):
+        set_status_batch(
+            [BatchEntry(video_id="vid_authoritative", status="pending", title="Original")],
+            db_path=_TEST_DB_PATH,
+        )
+
+        result = import_video_ids(
+            [BatchEntry(video_id="vid_authoritative", status="pending", title="Replacement")],
+            execute=True,
+            db_path=_TEST_DB_PATH,
+        )
+
+        assert result.counts["unchanged"] == 1
+        assert result.counts["updated"] == 0
+        row = get_entries_for_video_ids_details(
+            ["vid_authoritative"], db_path=_TEST_DB_PATH
+        )[0]
+        assert row["title"] == "Original"
+
+
 class TestGetStatusBatch:
     """Test get_status_batch O(1) bulk lookup."""
 
@@ -417,6 +615,7 @@ class TestSummarizeVideoIds:
 def test_batch_status_env_override_uses_live_data_root(tmp_path, monkeypatch):
     live_db = tmp_path / "batch_status.sqlite"
     monkeypatch.setenv("YTIS_BATCH_STATUS_DB_PATH", str(live_db))
+    _stub_channel_identity_resolution(monkeypatch)
 
     set_channel_metadata(
         "https://www.youtube.com/@example",
@@ -433,6 +632,7 @@ def test_batch_status_env_override_uses_live_data_root(tmp_path, monkeypatch):
 def test_batch_status_normalizes_malformed_handle_urls(tmp_path, monkeypatch):
     live_db = tmp_path / "batch_status.sqlite"
     monkeypatch.setenv("YTIS_BATCH_STATUS_DB_PATH", str(live_db))
+    _stub_channel_identity_resolution(monkeypatch)
 
     set_channel_metadata(
         "https://www.youtube.com@example",
@@ -453,6 +653,7 @@ def test_backup_batch_status_db_snapshots_channel_state(tmp_path, monkeypatch):
     live_db = tmp_path / "batch_status.sqlite"
     backup_root = tmp_path / "backups"
     monkeypatch.setenv("YTIS_BATCH_STATUS_DB_PATH", str(live_db))
+    _stub_channel_identity_resolution(monkeypatch)
 
     set_channel_metadata(
         "https://www.youtube.com/@example",

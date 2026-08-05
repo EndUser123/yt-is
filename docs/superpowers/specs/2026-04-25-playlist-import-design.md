@@ -1,5 +1,12 @@
 # Playlist Import and Channel-State Preservation Design
 
+> Historical design from 2026-04-25. The append-only
+> `playlist_import_run`/`playlist_import_item` tables now exist, and
+> `csf-source history` plus `watchlater` already write them. For the current
+> implementation plan, use
+> [import-workflow-next-design.md](../../operations/import-workflow-next-design.md).
+> The gaps below describe the state at the time this design was written.
+
 ## Problem
 
 The current `yt-is` code can already import channels from YouTube watch history via `csf-source history`, but it does not yet expose a matching path for YouTube Watch Later, and it does not persist a durable append-only record of playlist imports.
