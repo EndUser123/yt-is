@@ -50,8 +50,10 @@ Before any operation, verify which DB your code targets via `YTIS_TRANSCRIPT_CAC
 
 ## Import workflow operationalization
 
-This worktree contains the isolated follow-up branch
-`codex/yt-is-import-operationalization` from `main` commit `debf5b3`.
+The import-workflow operationalization is now on `main` in the reviewed
+cherry-picked commits `e75af02` and `deb26ba`. The former review branch
+`codex/yt-is-import-operationalization` (tip `ae4952f`) was verified clean and
+tree-equivalent before it was retired; `main` is now the sole active worktree.
 
 - `scripts/build_video_selection_manifest.py` builds deterministic manifests
   from local `analysis_status` rows only.
@@ -68,8 +70,18 @@ This worktree contains the isolated follow-up branch
   and `docs/proposal_for_review.md`.
 
 No live fetch, external API call, NotebookLM action, or raw-artifact mutation
-was performed on this branch. Parent review should inspect the branch diff and
-commit hashes before porting changes to `main`.
+was performed as part of this implementation. The current main worktree also
+preserves the pre-existing modification to
+`.logs/term_5bd58f58.jsonl`; do not reset, stage, or delete it. The canonical
+transcript integration remains in progress: resolve the unmatched transcripts,
+implement forward-sync, and sync the unchecked channels listed above. The
+throughput investigation remains dormant and does not establish an optimal VPH.
+
+Post-merge verification on `main` (2026-08-05): the focused batch-status
+selection tests passed `14` with `34` deselected; the import, manifest,
+reconciliation, playlist, and `csf-source` test set passed `41`; compilation,
+`git diff --check`, and the three CLI help checks all passed. No live or
+write-producing workflow was run.
 
 ## Routing split (still active)
 

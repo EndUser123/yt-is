@@ -3,10 +3,11 @@
 ## Status
 
 Implementation-ready design and implementation record, verified against the
-current `yt-is` source and tests on 2026-08-05. Commits A, B, and C are now
-implemented locally. No external YouTube API spend, transcript fetching,
-NotebookLM work, staging, or raw-artifact mutation was performed. The isolated
-branch commit is the review boundary; it is not merged into `main`.
+current `yt-is` source and tests on 2026-08-05. Commits A, B, and C are
+implemented on `main` as the reviewed cherry-picked commits `e75af02` and
+`deb26ba`. No external YouTube API spend, transcript fetching, NotebookLM work,
+staging, or raw-artifact mutation was performed. The isolated branch was the
+historical review boundary; it is no longer the active implementation location.
 
 ## Decision Summary
 
@@ -523,7 +524,7 @@ selection adapter and downstream-route tests verify that separation.
 
 `Parent handoff: ready_for_parent_review`
 
-Commits A, B, and C are implemented and locally verified. Do not reopen the
-provenance schema question or add another generic manifest owner. A future
+Commits A, B, and C are implemented on `main` and locally verified. Do not
+reopen the provenance schema question or add another generic manifest owner. A future
 operational goal may review a concrete manifest and authorize a bounded live
 run, but this worktree did not perform one.

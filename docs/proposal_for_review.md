@@ -125,7 +125,7 @@ records its filters and candidate-set fingerprint.
 
 ## Verification
 
-Required checks for this branch:
+Required checks for this implementation:
 
 ```text
 python -m pytest tests/test_batch_status.py -q -k "ImportVideoIds or SetStatusBatch"
@@ -134,11 +134,13 @@ python -m py_compile csf/batch_status.py scripts/import_video_ids.py tests/test_
 git diff --check
 ```
 
-Current results: the combined affected suite passed 112 tests, including the
-status/import/provenance, fetch timing, reconciliation, builder, receipt, and
-real-CLI tests. The focused selection/recovery suite contains 19 tests.
-Compilation, CLI help, and diff checks passed. No external spend or live fetch
-was authorized.
+The earlier isolated-branch report recorded 112 passing affected tests and a
+19-test focused selection/recovery suite; that is historical evidence, not a
+replacement for destination-branch verification. Post-merge verification on
+`main` passed 14 focused batch-status tests (34 deselected) and 41 import,
+manifest, reconciliation, playlist, and `csf-source` tests. Compilation, CLI
+help, and diff checks also passed. No external spend or live fetch was
+authorized.
 The FMEA scanner reports the temporary-file boundary as a heuristic risk; code
 inspection and the report test confirm that the final report uses atomic
 replacement and does not leave a temporary file behind.
@@ -147,11 +149,11 @@ The full `tests/test_batch_status.py` suite also contains environment-dependent
 channel identity/quota tests. If those fail, report their exact failures and do
 not authorize external spend merely to make the suite green.
 
-## Review boundary
+## Review boundary and current merge state
 
-This branch hardens import planning, status-row mutation, provenance logging,
-and exact-video selection. It does not fetch YouTube metadata, launch
-NotebookLM, run a transcript batch, or push changes to `main`. Its isolated
-branch commit is a review artifact; live manifest execution remains a separate
-operational decision requiring a reviewed manifest, explicit limit, and normal
-runtime/auth preflight.
+The implementation was developed and reviewed on an isolated branch, then
+cherry-picked to `main` as `e75af02` and `deb26ba`. It hardens import planning,
+status-row mutation, provenance logging, and exact-video selection. It does not
+fetch YouTube metadata, launch NotebookLM, or run a transcript batch. Live
+manifest execution remains a separate operational decision requiring a
+reviewed manifest, explicit limit, and normal runtime/auth preflight.
