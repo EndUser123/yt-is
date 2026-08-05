@@ -3,16 +3,17 @@
 ## Status
 
 Implementation-ready design and implementation record, verified against the
-current `yt-is` source and tests on 2026-08-05. Commit A and Commit B are now
+current `yt-is` source and tests on 2026-08-05. Commits A, B, and C are now
 implemented locally. No external YouTube API spend, transcript fetching,
-NotebookLM work, staging, or commit was performed.
+NotebookLM work, staging, or raw-artifact mutation was performed. The isolated
+branch commit is the review boundary; it is not merged into `main`.
 
 ## Decision Summary
 
 Use the existing import-log owner in `csf/playlist_imports.py` for durable
 provenance. Do not add a second generic manifest or provenance database.
 
-The design was delivered in three bounded slices:
+The design was delivered in four bounded slices:
 
 1. Make the three channel-identity tests hermetic so the affected suite is
    green without YouTube API spend.
@@ -22,10 +23,13 @@ The design was delivered in three bounded slices:
 3. Add an exact-video selection manifest to `csf-source fetch` through a new
    `--video-manifest PATH` option. The manifest controls selection only; the
    database remains authoritative for status and routing metadata.
+4. Add atomic selection receipts, read-only provenance reconciliation, and a
+   deterministic local manifest builder.
 
 The slices were implemented and reviewed independently. Slice 3 uses a shared
 selection adapter, bounded SQL lookup, dry-run coverage, exact-order selection,
-and an end-to-end routing test; it is not a parser-only flag.
+and an end-to-end routing test; it is not a parser-only flag. Commit C adds
+recovery/observability without adding a second database owner.
 
 ## Implementation Result
 
@@ -41,6 +45,15 @@ and an end-to-end routing test; it is not a parser-only flag.
   queried in bounded chunks.
 - The three channel-identity tests use deterministic local fixtures; no API
   call is needed for the affected regression suite.
+- `--selection-receipt PATH` writes an atomic JSON snapshot containing the
+  manifest, relevant database, and selected-set fingerprints. Existing receipt
+  files are protected unless `--overwrite-selection-receipt` is supplied.
+- `scripts/reconcile_video_imports.py` lists non-terminal `video_import` runs
+  and compares their item decisions with current `analysis_status` rows without
+  creating or mutating either database.
+- `scripts/build_video_selection_manifest.py` creates ordered manifests from
+  local `analysis_status` filters only, recording criteria and a candidate-set
+  input fingerprint.
 
 ## Discovery Record
 
@@ -268,6 +281,8 @@ Add:
 
 ```text
 csf-source fetch --video-manifest PATH [--dry-run] [--limit N] [--workers N]
+                 [--selection-receipt PATH]
+                 [--verify-selection-receipt PATH]
 ```
 
 Rules:
@@ -276,6 +291,12 @@ Rules:
   implementation. This prevents ambiguous intersection semantics.
 - A live manifest fetch requires `--limit`, preserving the existing scope
   guard. Dry-run may omit it.
+- `--selection-receipt PATH` is optional; it writes an atomic JSON receipt
+  before downstream routing. Existing receipts are not replaced unless
+  `--overwrite-selection-receipt` is supplied.
+- `--verify-selection-receipt PATH` is optional; it fails closed before routing
+  unless the current manifest, relevant status snapshot, and selected set match
+  the receipt.
 - The manifest path must be readable and must not be the active batch DB.
 - Invalid IDs, duplicate IDs, unknown schema versions, or malformed rows fail
   closed before any fetch or status mutation.
@@ -348,8 +369,7 @@ Add the manifest path, manifest fingerprint, selection fingerprint, and
 selection counts to the existing `fetch_invoked`, `fetch_scan_completed`, and
 `fetch_completed` payloads. In dry-run, print the counts and write no status or
 transcript data. In live mode, preserve the existing worker result files and
-add the selection receipt beside the run output only if the caller requests a
-report path.
+    add a selection receipt only when `--selection-receipt PATH` is supplied.
 
 ### Slice 3 acceptance tests
 
@@ -434,15 +454,18 @@ Files:
 Verification must include parser, pure selection, dry-run, and mocked
 downstream route tests before any live fetch is considered.
 
-### Optional Commit C: recovery and observability
+### Commit C: recovery and observability
 
-Only after A and B:
+Implemented in this worktree:
 
-- add a `list/reconcile` command for non-terminal provenance runs;
-- add a durable selection receipt if operators need resumable manifest runs;
-- add a provenance-to-status audit report.
-
-These are not prerequisites for the first safe implementation.
+- `scripts/reconcile_video_imports.py` lists `running`/`failed` video-import
+  runs by default and reconciles one run with the status database using a
+  read-only comparison.
+- `--selection-receipt PATH` writes an atomic selection snapshot before any
+  downstream live route can begin; `--verify-selection-receipt PATH` consumes
+  one as a fail-closed preflight.
+- `scripts/build_video_selection_manifest.py` produces deterministic local
+  selections with status/source/order/limit criteria and input fingerprints.
 
 ## Non-goals And Stop Conditions
 
@@ -465,6 +488,8 @@ These are not prerequisites for the first safe implementation.
 | Safe ID import is connected to that log | verified_fact | `scripts/import_video_ids.py` calls `record_video_import_run` on execute; integration test reads completed run | execute/provenance test | high | status mutation can complete without a run/item | needs_fix |
 | Exact-video fetch selection is implemented | verified_fact | parser, selection adapter, route test, and operational dry-run receipt | CLI/source search plus dry-run | high | non-manifest IDs enter the selected queue | needs_fix |
 | A dedicated selection manifest avoids unrelated channel enumeration | verified_fact | manifest branch reads `analysis_status` by ID; dry-run receipt reports zero channels | operational receipt and route test | high | channel enumeration occurs in manifest mode | needs_fix |
+| Selection receipts are durable and fail closed on accidental replacement | verified_fact | atomic writer, receipt loader, CLI dry-run test | receipt test and CLI test | high | partial/temp receipt survives or existing receipt is silently replaced | needs_fix |
+| Provenance reconciliation is read-only | verified_fact | direct read-only SQLite comparison and no-write test | reconciliation test | high | audit creates or mutates a DB | needs_fix |
 | Existing provenance tables are sufficient for first integration | inference | fields plus `notes_json`/`raw_json` cover current audit data | schema/readers and failure tests | medium | required query needs normalized new columns | add migration deliberately |
 | Bulk provenance transaction is preferable to per-item commits | inference | current item writer commits per row | failure/throughput test | high | caller requires each item durable immediately | retain per-item mode explicitly |
 
@@ -495,7 +520,7 @@ selection adapter and downstream-route tests verify that separation.
 
 `Parent handoff: ready_for_parent_review`
 
-Commit A and Commit B are implemented and locally verified. Do not reopen the
+Commits A, B, and C are implemented and locally verified. Do not reopen the
 provenance schema question or add another generic manifest owner. A future
 operational goal may review a concrete manifest and authorize a bounded live
-run, but this implementation did not perform one.
+run, but this worktree did not perform one.

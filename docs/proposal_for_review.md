@@ -37,6 +37,11 @@ also not modeled as an independent many-to-many relationship.
 5. `bin/csf-source fetch --video-manifest PATH` now provides an exact-video
    route. It validates the manifest, resolves status rows directly, preserves
    manifest order, and reports missing/non-pending/limit-omitted IDs.
+6. `--selection-receipt PATH` provides an atomic, durable selection snapshot;
+   `scripts/reconcile_video_imports.py` audits unfinished provenance runs
+   against current status rows; and
+   `scripts/build_video_selection_manifest.py` produces deterministic local
+   manifests without external metadata.
 
 ## Implemented Tier 1 - Safe import API
 
@@ -91,7 +96,18 @@ mutation marks the provenance run failed. Dry-run remains write-free.
 selection adapter and mocked dry-run routing coverage. The manifest controls
 selection only; the status database remains authoritative. Live manifest
 fetches require an explicit `--limit`, and `--video-manifest` is mutually
-exclusive with `--source`.
+exclusive with `--source`. Use `--selection-receipt PATH` for a durable
+selection snapshot and `--verify-selection-receipt PATH` for fail-closed
+replay validation.
+
+## Implemented Recovery And Observability
+
+`scripts/reconcile_video_imports.py` lists unfinished `video_import` runs and
+can reconcile one run against `analysis_status` using read-only SQLite access.
+It reports applied, missing, status-mismatch, preserved-complete, and
+no-mutation-expected items without changing either database. The manifest
+builder reads only local `analysis_status` rows and records its filters and
+candidate-set fingerprint.
 
 ## Compact claim ledger
 
@@ -102,6 +118,8 @@ exclusive with `--source`.
 | Execute is bound to reviewed target state | verified_fact | plan fingerprint and targeted-row mutation test | changed target row does not abort | execute only with a valid plan |
 | Import origins need independent provenance | inference | playlist/history are multiple origins per ID | existing log cannot represent the needed audit | integrate with the existing log; add schema only if a tested query requires it |
 | Manifest fetch avoids broad channel selection | verified_fact | manifest selection test and `fetch_manifest_selection` receipt | selected IDs differ from downstream IDs | use only with reviewed manifest and limit |
+| Reconciliation is read-only | verified_fact | direct read-only status comparison and no-write test | audit changes either database | use for recovery review |
+| Manifest builder is local-only | verified_fact | SQLite read-only query and CLI test | builder invokes a network/provider path | use for reviewed selection generation |
 
 ## Verification
 
@@ -116,8 +134,9 @@ git diff --check
 
 Current results: the combined affected suite passed 97 tests, including the
 status/import/provenance and fetch timing tests. The focused manifest suite
-passed 38 tests. Compilation, CLI help, and diff checks passed. No external
-spend or live fetch was authorized.
+passed 38 tests; Commit C added 10 focused receipt/reconciliation/builder/real
+CLI tests. Compilation, CLI help, and diff checks passed. No external spend or
+live fetch was authorized.
 The FMEA scanner reports the temporary-file boundary as a heuristic risk; code
 inspection and the report test confirm that the final report uses atomic
 replacement and does not leave a temporary file behind.

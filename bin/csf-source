@@ -8,6 +8,8 @@ Usage:
     csf-source sync <source_id>                   # Process all pending videos via batch
     csf-source fetch [--source <url>]             # ESCALATION: fetch transcripts (oEmbed → yt-dlp → yt-dlp+cookies → direct API → NotebookLM → Selenium → Whisper)
     csf-source fetch --video-manifest <path>      # Fetch only explicitly selected video IDs
+                       [--selection-receipt <path>]
+                       [--verify-selection-receipt <path>]
     csf-source history                            # Extract channels from YouTube watch history and add new ones
 
 Commands:
@@ -35,6 +37,8 @@ Commands:
               --dry-run        Show what would be fetched without fetching
               --workers <n>    Number of parallel workers (default: 1)
               --video-manifest <path>  Select exact video IDs; mutually exclusive with --source
+              --selection-receipt <path>  Write an atomic selection receipt
+              --verify-selection-receipt <path>  Verify a prior selection receipt
 """
 
 import argparse
@@ -116,8 +120,12 @@ from csf.batch_status import (
     get_entries_for_video_ids_details,
 )
 from csf.video_selection_manifest import (
+    build_selection_receipt,
     load_video_selection_manifest,
+    read_selection_receipt,
     select_manifest_entries,
+    verify_selection_receipt,
+    write_selection_receipt,
 )
 from csf.paths import get_batch_db_path
 from csf.source_enumerator import (
@@ -1853,6 +1861,9 @@ def cmd_fetch(
     workers: int = 1,
     max_items: int | None = None,
     video_manifest: Path | None = None,
+    selection_receipt: Path | None = None,
+    overwrite_selection_receipt: bool = False,
+    verify_selection_receipt_path: Path | None = None,
 ) -> None:
     """Fetch transcripts for pending videos using the full fallback chain.
 
@@ -1871,8 +1882,22 @@ def cmd_fetch(
 
     if video_manifest is not None and source_filter is not None:
         raise ValueError("video_manifest and source_filter are mutually exclusive")
+    if selection_receipt is not None and video_manifest is None:
+        raise ValueError("selection_receipt requires video_manifest")
+    if verify_selection_receipt_path is not None and video_manifest is None:
+        raise ValueError("verify_selection_receipt requires video_manifest")
     if video_manifest is not None and video_manifest.resolve() == get_batch_db_path().resolve():
         raise ValueError("video_manifest must not be the active batch status database")
+    if selection_receipt is not None:
+        selection_receipt = selection_receipt.resolve()
+        if selection_receipt == get_batch_db_path().resolve():
+            raise ValueError("selection_receipt must not be the active batch status database")
+        if video_manifest is not None and selection_receipt == video_manifest.resolve():
+            raise ValueError("selection_receipt must differ from video_manifest")
+    receipt_to_verify = None
+    if verify_selection_receipt_path is not None:
+        verify_selection_receipt_path = verify_selection_receipt_path.resolve()
+        receipt_to_verify = read_selection_receipt(verify_selection_receipt_path)
     selection_manifest = load_video_selection_manifest(video_manifest) if video_manifest else None
     if selection_manifest is not None and not dry_run and max_items is None:
         raise ValueError("a live video-manifest fetch requires --limit")
@@ -1881,6 +1906,8 @@ def cmd_fetch(
         "video_manifest": str(video_manifest) if video_manifest else None,
         "video_manifest_fingerprint": selection_manifest.fingerprint if selection_manifest else None,
         "selection_fingerprint": None,
+        "selection_receipt": str(selection_receipt) if selection_receipt else None,
+        "selection_receipt_verified": False if receipt_to_verify is not None else None,
     }
 
     fetch_started_at = time.monotonic()
@@ -3049,6 +3076,27 @@ def cmd_fetch(
             max_items=max_items,
         )
         selection_metadata["selection_fingerprint"] = selection_result.fingerprint
+        if receipt_to_verify is not None:
+            verify_selection_receipt(
+                receipt_to_verify,
+                selection_manifest,
+                selection_result,
+            )
+            selection_metadata["selection_receipt_verified"] = True
+        if selection_receipt is not None:
+            receipt = build_selection_receipt(
+                selection_manifest,
+                selection_result,
+                manifest_path=video_manifest.resolve(),
+                database_path=get_batch_db_path().resolve(),
+                max_items=max_items,
+                dry_run=dry_run,
+            )
+            write_selection_receipt(
+                selection_receipt,
+                receipt,
+                overwrite=overwrite_selection_receipt,
+            )
         _all_channel_entries = {
             "__video_manifest__": list(selection_result.selected_entries)
         }
@@ -4440,6 +4488,21 @@ def main() -> None:
         type=Path,
         help="Select exact video IDs from a validated JSON manifest (mutually exclusive with --source)",
     )
+    fetch_parser.add_argument(
+        "--selection-receipt",
+        type=Path,
+        help="Write an atomic JSON receipt for a video-manifest selection",
+    )
+    fetch_parser.add_argument(
+        "--overwrite-selection-receipt",
+        action="store_true",
+        help="Allow replacing an existing selection receipt",
+    )
+    fetch_parser.add_argument(
+        "--verify-selection-receipt",
+        type=Path,
+        help="Fail closed unless the current manifest/database selection matches this receipt",
+    )
 
     # block command
     block_parser = subparsers.add_parser("block", help="Add a channel to the blocklist")
@@ -4516,6 +4579,10 @@ def main() -> None:
             parser.error("--video-manifest and --source are mutually exclusive")
         if args.video_manifest is not None and not args.dry_run and args.limit is None:
             parser.error("live --video-manifest fetch requires --limit")
+        if args.selection_receipt is not None and args.video_manifest is None:
+            parser.error("--selection-receipt requires --video-manifest")
+        if args.verify_selection_receipt is not None and args.video_manifest is None:
+            parser.error("--verify-selection-receipt requires --video-manifest")
         # Scope guardrail: refuse unbounded fetch when backlog is large.
         # Prevents the scope-blowout incident (2026-07-20) where an unbounded
         # `fetch` attempted all 51k pending videos instead of the intended
@@ -4554,6 +4621,9 @@ def main() -> None:
             workers=args.workers,
             max_items=args.limit,
             video_manifest=args.video_manifest,
+            selection_receipt=args.selection_receipt,
+            overwrite_selection_receipt=args.overwrite_selection_receipt,
+            verify_selection_receipt_path=args.verify_selection_receipt,
         )
     elif args.command == "block":
         cmd_block(args.url)

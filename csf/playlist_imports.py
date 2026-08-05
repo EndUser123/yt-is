@@ -16,6 +16,7 @@ from csf.batch_status import (
     BatchEntry,
     _get_default_db_path,
     block_channel,
+    get_entries_for_video_ids_details,
     set_channel_metadata,
 )
 
@@ -323,6 +324,195 @@ def get_playlist_import_item_rows(run_id: str, db_path: Path | None = None) -> l
     return [dict(zip(keys, row, strict=False)) for row in rows]
 
 
+def list_video_import_runs(
+    *,
+    statuses: Sequence[str] = ("running", "failed"),
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """List non-terminal video-import runs without creating or mutating a DB."""
+    target = Path(db_path or get_playlist_import_db_path())
+    if not target.exists() or not statuses:
+        return []
+    placeholders = ",".join("?" for _ in statuses)
+    try:
+        uri = f"file:{target.resolve().as_posix()}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT run_id, playlist_kind, playlist_url, command, cookie_source,
+                       started_at, finished_at, status, total_items, resolved_items,
+                       new_channels, already_tracked_channels, blocked_channels,
+                       failed_items, notes_json
+                FROM playlist_import_run
+                WHERE playlist_kind = 'video_import' AND status IN ({placeholders})
+                ORDER BY started_at ASC, run_id ASC
+                """,
+                tuple(statuses),
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    keys = [
+        "run_id", "playlist_kind", "playlist_url", "command", "cookie_source",
+        "started_at", "finished_at", "status", "total_items", "resolved_items",
+        "new_channels", "already_tracked_channels", "blocked_channels",
+        "failed_items", "notes_json",
+    ]
+    return [dict(zip(keys, row, strict=False)) for row in rows]
+
+
+def _read_analysis_status_rows(
+    video_ids: Sequence[str],
+    *,
+    db_path: Path | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Read status rows through a read-only SQLite connection."""
+    target = Path(db_path or _get_default_db_path())
+    if not target.exists() or not video_ids:
+        return {}
+    columns = (
+        "video_id", "status", "updated_at", "source", "last_stage", "failure_reason",
+    )
+    rows: list[tuple[Any, ...]] = []
+    try:
+        uri = f"file:{target.resolve().as_posix()}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as conn:
+            for offset in range(0, len(video_ids), 900):
+                chunk = list(video_ids[offset:offset + 900])
+                placeholders = ",".join("?" for _ in chunk)
+                rows.extend(conn.execute(
+                    f"SELECT {', '.join(columns)} FROM analysis_status "
+                    f"WHERE video_id IN ({placeholders})",
+                    chunk,
+                ).fetchall())
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        return {}
+    return {
+        str(row[0]): dict(zip(columns, row, strict=False))
+        for row in rows
+    }
+
+
+def _read_video_import_run(run_id: str, target: Path) -> dict[str, Any] | None:
+    if not target.exists():
+        return None
+    keys = [
+        "run_id", "playlist_kind", "playlist_url", "command", "cookie_source",
+        "started_at", "finished_at", "status", "total_items", "resolved_items",
+        "new_channels", "already_tracked_channels", "blocked_channels",
+        "failed_items", "notes_json",
+    ]
+    uri = f"file:{target.resolve().as_posix()}?mode=ro"
+    try:
+        with sqlite3.connect(uri, uri=True) as conn:
+            row = conn.execute(
+                """
+                SELECT run_id, playlist_kind, playlist_url, command, cookie_source,
+                       started_at, finished_at, status, total_items, resolved_items,
+                       new_channels, already_tracked_channels, blocked_channels,
+                       failed_items, notes_json
+                FROM playlist_import_run WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        return None
+    return dict(zip(keys, row, strict=False)) if row else None
+
+
+def _read_video_import_items(run_id: str, target: Path) -> list[dict[str, Any]]:
+    if not target.exists():
+        return []
+    keys = [
+        "run_id", "item_id", "playlist_kind", "playlist_url", "playlist_position",
+        "video_id", "video_url", "video_title", "channel_id", "channel_url",
+        "channel_title", "published_at", "duration_seconds", "availability",
+        "is_live", "raw_json", "resolved_channel_json", "classification", "created_at",
+    ]
+    uri = f"file:{target.resolve().as_posix()}?mode=ro"
+    try:
+        with sqlite3.connect(uri, uri=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT run_id, item_id, playlist_kind, playlist_url, playlist_position,
+                       video_id, video_url, video_title, channel_id, channel_url,
+                       channel_title, published_at, duration_seconds, availability,
+                       is_live, raw_json, resolved_channel_json, classification, created_at
+                FROM playlist_import_item
+                WHERE run_id = ? ORDER BY playlist_position ASC, item_id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        return []
+    return [dict(zip(keys, row, strict=False)) for row in rows]
+
+
+def reconcile_video_import_run(
+    run_id: str,
+    *,
+    batch_status_db_path: Path | None = None,
+    playlist_import_db_path: Path | None = None,
+) -> dict[str, Any]:
+    """Compare one append-only import run with current analysis status rows."""
+    playlist_target = Path(playlist_import_db_path or get_playlist_import_db_path())
+    if not playlist_target.exists():
+        raise ValueError(f"playlist import database not found: {playlist_target}")
+    run = _read_video_import_run(run_id, playlist_target)
+    if run is None or run.get("playlist_kind") != "video_import":
+        raise ValueError(f"video import run not found: {run_id}")
+    item_rows = _read_video_import_items(run_id, playlist_target)
+    video_ids = [str(row["video_id"]) for row in item_rows if row.get("video_id")]
+    actual_rows = _read_analysis_status_rows(video_ids, db_path=batch_status_db_path)
+    reconciled: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    for item in item_rows:
+        video_id = str(item.get("video_id") or "")
+        raw = item.get("raw_json")
+        try:
+            raw_payload = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except json.JSONDecodeError:
+            raw_payload = {}
+        classification = str(item.get("classification") or "unknown")
+        requested_status = raw_payload.get("requested_status")
+        actual = actual_rows.get(video_id)
+        if classification in {"inserted", "updated"}:
+            if actual is None:
+                state = "missing"
+            elif requested_status and actual.get("status") != requested_status:
+                state = "status_mismatch"
+            else:
+                state = "applied"
+        elif classification == "skipped_complete":
+            state = "preserved_complete" if actual and actual.get("status") == "complete" else "expected_complete_missing"
+        elif classification in {"conflict", "blocked", "unchanged"}:
+            state = "no_mutation_expected"
+        else:
+            state = "present_unclassified" if actual else "missing"
+        counts[state] = counts.get(state, 0) + 1
+        reconciled.append({
+            "video_id": video_id,
+            "item_id": item.get("item_id"),
+            "classification": classification,
+            "requested_status": requested_status,
+            "reconciliation": state,
+            "analysis_status": actual,
+        })
+    unresolved = (
+        counts.get("missing", 0)
+        + counts.get("status_mismatch", 0)
+        + counts.get("expected_complete_missing", 0)
+    )
+    return {
+        "run": run,
+        "batch_status_db_path": str(Path(batch_status_db_path or _get_default_db_path())),
+        "playlist_import_db_path": str(playlist_target),
+        "item_count": len(reconciled),
+        "counts": counts,
+        "recovery_state": "reconcile_required" if unresolved else "consistent",
+        "items": reconciled,
+    }
+
+
 def replay_playlist_import_run_into_batch_status(
     run_id: str,
     *,
@@ -613,6 +803,7 @@ def record_video_import_run(
                 "context": context,
                 "decision": decision,
                 "reason": reason,
+                "requested_status": entry.status,
             }
             item_rows.append(
                 (

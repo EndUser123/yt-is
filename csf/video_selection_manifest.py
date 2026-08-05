@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Mapping
+from datetime import datetime, timezone
 
 
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -26,6 +29,8 @@ class VideoSelectionManifest:
     selection_name: str
     items: tuple[VideoSelectionItem, ...]
     fingerprint: str
+    selection_criteria: dict[str, object] | None = None
+    input_database_fingerprint: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +39,13 @@ class FetchSelection:
     missing_ids: tuple[str, ...]
     non_pending_by_status: dict[str, tuple[str, ...]]
     limit_omitted_ids: tuple[str, ...]
+    database_fingerprint: str
     fingerprint: str
+
+
+def _sha256_json(value: object) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 def load_video_selection_manifest(path: Path) -> VideoSelectionManifest:
@@ -74,12 +85,21 @@ def load_video_selection_manifest(path: Path) -> VideoSelectionManifest:
         seen.add(video_id)
         items.append(VideoSelectionItem(video_id, source_note.strip() if source_note else None))
 
+    raw_criteria = payload.get("selection_criteria")
+    if raw_criteria is not None and not isinstance(raw_criteria, dict):
+        raise ValueError("selection_criteria must be an object or null")
+    input_database_fingerprint = payload.get("input_database_fingerprint")
+    if input_database_fingerprint is not None and not isinstance(input_database_fingerprint, str):
+        raise ValueError("input_database_fingerprint must be a string or null")
+
     return VideoSelectionManifest(
         manifest_version=1,
         generated_at=generated_at.strip(),
         selection_name=selection_name.strip(),
         items=tuple(items),
         fingerprint="sha256:" + hashlib.sha256(raw_bytes).hexdigest(),
+        selection_criteria=dict(raw_criteria) if raw_criteria is not None else None,
+        input_database_fingerprint=input_database_fingerprint,
     )
 
 
@@ -113,8 +133,14 @@ def select_manifest_entries(
 
     selected_ids = {str(row["video_id"]) for row in selected}
     limit_omitted = [video_id for video_id in eligible_ids if video_id not in selected_ids]
+    database_snapshot = [
+        (item.video_id, rows_by_video_id.get(item.video_id))
+        for item in manifest.items
+    ]
+    database_fingerprint = _sha256_json(database_snapshot)
     selection_payload = {
         "manifest_fingerprint": manifest.fingerprint,
+        "database_fingerprint": database_fingerprint,
         "selected_ids": [str(row["video_id"]) for row in selected],
         "missing_ids": missing,
         "non_pending_by_status": non_pending,
@@ -126,5 +152,146 @@ def select_manifest_entries(
         missing_ids=tuple(missing),
         non_pending_by_status={key: tuple(value) for key, value in non_pending.items()},
         limit_omitted_ids=tuple(limit_omitted),
+        database_fingerprint=database_fingerprint,
         fingerprint="sha256:" + hashlib.sha256(canonical).hexdigest(),
     )
+
+
+def build_selection_receipt(
+    manifest: VideoSelectionManifest,
+    selection: FetchSelection,
+    *,
+    manifest_path: Path,
+    database_path: Path,
+    max_items: int | None,
+    dry_run: bool,
+) -> dict[str, object]:
+    """Build a durable, replay-auditable receipt for one manifest selection."""
+    return {
+        "receipt_version": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "selection_mode": "video_manifest",
+        "selection_name": manifest.selection_name,
+        "manifest_path": str(manifest_path),
+        "manifest_fingerprint": manifest.fingerprint,
+        "database_path": str(database_path),
+        "database_fingerprint": selection.database_fingerprint,
+        "selection_fingerprint": selection.fingerprint,
+        "selection_criteria": manifest.selection_criteria,
+        "input_database_fingerprint": manifest.input_database_fingerprint,
+        "max_items": max_items,
+        "dry_run": dry_run,
+        "manifest_item_count": len(manifest.items),
+        "selected_ids": [str(row["video_id"]) for row in selection.selected_entries],
+        "selected_count": len(selection.selected_entries),
+        "missing_ids": list(selection.missing_ids),
+        "missing_count": len(selection.missing_ids),
+        "non_pending_by_status": {
+            key: list(value) for key, value in selection.non_pending_by_status.items()
+        },
+        "non_pending_count": sum(len(value) for value in selection.non_pending_by_status.values()),
+        "limit_omitted_ids": list(selection.limit_omitted_ids),
+        "limit_omitted_count": len(selection.limit_omitted_ids),
+    }
+
+
+def write_selection_receipt(
+    path: Path,
+    receipt: Mapping[str, object],
+    *,
+    overwrite: bool = False,
+) -> None:
+    """Atomically write a selection receipt without replacing it accidentally."""
+    path = Path(path)
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"selection receipt exists: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            json.dump(dict(receipt), temp_file, indent=2, sort_keys=True)
+            temp_file.write("\n")
+            temp_path = Path(temp_file.name)
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def read_selection_receipt(path: Path) -> dict[str, object]:
+    """Read and minimally validate a previously written selection receipt."""
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("receipt_version") != 1:
+        raise ValueError("invalid selection receipt")
+    required = ("manifest_fingerprint", "database_fingerprint", "selection_fingerprint")
+    missing = [key for key in required if not isinstance(payload.get(key), str)]
+    if missing:
+        raise ValueError(f"selection receipt missing fields: {', '.join(missing)}")
+    return payload
+
+
+def verify_selection_receipt(
+    receipt: Mapping[str, object],
+    manifest: VideoSelectionManifest,
+    selection: FetchSelection,
+) -> None:
+    """Fail closed when a receipt no longer describes the current selection."""
+    expected = {
+        "manifest_fingerprint": manifest.fingerprint,
+        "database_fingerprint": selection.database_fingerprint,
+        "selection_fingerprint": selection.fingerprint,
+    }
+    mismatches = [
+        key for key, value in expected.items()
+        if receipt.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            "selection receipt does not match current manifest/database: "
+            + ", ".join(mismatches)
+        )
+
+
+def write_video_selection_manifest(
+    path: Path,
+    payload: Mapping[str, object],
+    *,
+    overwrite: bool = False,
+) -> None:
+    """Atomically write a validated manifest payload."""
+    path = Path(path)
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"manifest exists: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            json.dump(dict(payload), temp_file, indent=2, sort_keys=True)
+            temp_file.write("\n")
+            temporary = Path(temp_file.name)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass

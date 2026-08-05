@@ -48,6 +48,27 @@ Before any operation, verify which DB your code targets via `YTIS_TRANSCRIPT_CAC
 - `tests/test_transcript.py` — direct_api and Whisper regression tests
 - `tests/test_shared_modules.py` — 31 tests for csf/urls.py, csf/paths.py, csf/clusters.py
 
+## Import workflow operationalization
+
+This worktree contains the isolated follow-up branch
+`codex/yt-is-import-operationalization` from `main` commit `debf5b3`.
+
+- `scripts/build_video_selection_manifest.py` builds deterministic manifests
+  from local `analysis_status` rows only.
+- `bin/csf-source fetch --video-manifest PATH` selects exact IDs. Add
+  `--selection-receipt PATH` for an atomic selection snapshot, and
+  `--verify-selection-receipt PATH` to fail closed if the manifest or relevant
+  status rows changed; live manifest fetches still require an explicit
+  `--limit`.
+- `scripts/reconcile_video_imports.py` lists unfinished `video_import` runs or
+  reconciles one run against `analysis_status` without writing either DB.
+- Design and acceptance evidence: `docs/operations/import-workflow-next-design.md`
+  and `docs/proposal_for_review.md`.
+
+No live fetch, external API call, NotebookLM action, or raw-artifact mutation
+was performed on this branch. Parent review should inspect the branch diff and
+commit hashes before porting changes to `main`.
+
 ## Routing split (still active)
 
 `no_captions` items go to NotebookLM (not the slow fallback lane). Live/streamed/premiere

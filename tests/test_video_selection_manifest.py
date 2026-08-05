@@ -5,8 +5,12 @@ import json
 import pytest
 
 from csf.video_selection_manifest import (
+    build_selection_receipt,
     load_video_selection_manifest,
+    read_selection_receipt,
     select_manifest_entries,
+    verify_selection_receipt,
+    write_selection_receipt,
 )
 
 
@@ -90,4 +94,69 @@ def test_select_manifest_entries_preserves_order_and_reports_skips(tmp_path):
     assert selection.missing_ids == ("ddddddddddd",)
     assert selection.non_pending_by_status == {"complete": ("bbbbbbbbbbb",)}
     assert selection.limit_omitted_ids == ("ccccccccccc",)
+    assert selection.database_fingerprint.startswith("sha256:")
     assert selection.fingerprint.startswith("sha256:")
+
+
+def test_selection_receipt_is_atomic_and_refuses_accidental_replace(tmp_path):
+    manifest_path = tmp_path / "selection.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "receipt",
+                "videos": [{"video_id": "aaaaaaaaaaa"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = load_video_selection_manifest(manifest_path)
+    selection = select_manifest_entries(
+        manifest,
+        {"aaaaaaaaaaa": {"video_id": "aaaaaaaaaaa", "status": "pending"}},
+        max_items=1,
+    )
+    receipt = build_selection_receipt(
+        manifest,
+        selection,
+        manifest_path=manifest_path,
+        database_path=tmp_path / "batch_status.sqlite",
+        max_items=1,
+        dry_run=True,
+    )
+    receipt_path = tmp_path / "receipt.json"
+    write_selection_receipt(receipt_path, receipt)
+    assert read_selection_receipt(receipt_path)["selection_fingerprint"] == selection.fingerprint
+    assert not list(tmp_path.glob(".receipt.json.*.tmp"))
+    with pytest.raises(FileExistsError):
+        write_selection_receipt(receipt_path, receipt)
+
+
+def test_selection_receipt_verification_detects_changed_selection(tmp_path):
+    path = tmp_path / "selection.json"
+    path.write_text(json.dumps({
+        "manifest_version": 1,
+        "generated_at": "now",
+        "selection_name": "verify",
+        "videos": [{"video_id": "aaaaaaaaaaa"}],
+    }), encoding="utf-8")
+    manifest = load_video_selection_manifest(path)
+    selection = select_manifest_entries(
+        manifest,
+        {"aaaaaaaaaaa": {"video_id": "aaaaaaaaaaa", "status": "pending"}},
+        max_items=1,
+    )
+    receipt = build_selection_receipt(
+        manifest,
+        selection,
+        manifest_path=path,
+        database_path=tmp_path / "batch.sqlite",
+        max_items=1,
+        dry_run=True,
+    )
+    verify_selection_receipt(receipt, manifest, selection)
+    changed = dict(receipt)
+    changed["selection_fingerprint"] = "sha256:changed"
+    with pytest.raises(ValueError, match="selection receipt does not match"):
+        verify_selection_receipt(changed, manifest, selection)
