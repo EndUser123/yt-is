@@ -31,7 +31,7 @@ from csf.providers import (
     VideoAnalysisResult,
     TranscriptProvider,
 )
-from csf.cache import has_cached_transcript
+from csf.cache import has_cached_transcript  # noqa: F401  # kept for callers
 from csf.transcript import _VIDEO_ID_PATTERN
 
 # ---------------------------------------------------------------------------
@@ -193,33 +193,19 @@ def _load_local_model_provider() -> Any:
 # ---------------------------------------------------------------------------
 
 
-def select_provider(
-    video_id: str, video_url: str, channel_url: str | None = None
-) -> Any:
-    """Select and return the best available analysis provider.
+def _build_ordered_candidates(
+    video_id: str,
+    video_url: str,
+    channel_url: str | None = None,
+) -> list[tuple[str, Any]]:
+    """Build an ordered list of (provider_name, provider_instance) tuples.
 
-    Failure-aware routing: if per-channel success/failure history is available
-    for this channel_url, providers are reordered to try the most reliable one
-    first (highest success rate). Circuit-breaker logic still applies to
-    Gemini availability.
-
-    Default priority (no history):
-      1. Cached transcript exists → TranscriptProvider directly (zero cost)
-      2. Gemini SDK available → GeminiSDKProvider
-      3. OCR/CLIP available → OcrClipProvider
-      4. Fallback → TranscriptProvider
-
-    Args:
-        video_id: YouTube video ID (must be 11 chars, alphanumeric + hyphen/underscore).
-        video_url: Full YouTube URL (must be http or https).
-        channel_url: Optional channel URL for failure-aware routing. If None,
-            provider order falls back to default priority.
+    Shared by select_provider() and analyze_video() to eliminate DRY violation.
+    Handles validation, Gemini circuit-breaker, and failure-aware reordering.
 
     Returns:
-        An AnalysisProvider instance.
-
-    Raises:
-        ValueError: if video_id format or video_url scheme is invalid.
+        List of (name, instance) tuples, ordered by priority. At least one
+        entry (TranscriptProvider) is always present.
     """
     # Validate video_id format
     if not _VIDEO_ID_PATTERN.match(video_id):
@@ -236,10 +222,6 @@ def select_provider(
             "video_url must use http or https scheme."
         )
 
-    # Cache-hit suppression removed (DEC-02): cached transcripts no longer
-    # short-circuit to TranscriptProvider. The orchestrator routes through
-    # the full provider tier list so cached videos also receive visual analysis.
-
     # Check and reset Gemini availability on every call
     with _gemini_lock:
         _check_and_reset_gemini()
@@ -249,50 +231,73 @@ def select_provider(
     candidates = ["local_model", "gemini_sdk", "ocr_clip", "transcript"]
 
     # Failure-aware reordering: if we have channel history, sort by success rate
-    # Higher success rate (succeeded/(succeeded+failed)) = try first
     if channel_url:
         try:
             from csf.batch_status import get_provider_scores
 
             scores = get_provider_scores(channel_url)
             if scores:
-                # Sort candidates by success rate desc; unknown providers last
                 def success_rate(provider_name: str) -> float:
                     if provider_name not in scores:
-                        return -1.0  # unknown = try last
+                        return -1.0
                     successes, failures = scores[provider_name]
                     total = successes + failures
                     if total == 0:
                         return -1.0
                     return successes / total
-
                 candidates = sorted(candidates, key=success_rate, reverse=True)
         except Exception:
             pass  # Never let routing data affect availability
 
     # Instantiate providers in sorted order, skipping unavailable ones
+    instantiated: list[tuple[str, Any]] = []
     for provider_name in candidates:
         if provider_name == "gemini_sdk" and not gemini_available:
             continue
         if provider_name == "ocr_clip":
             try:
                 OcrClipProvider = _load_ocr_clip_provider()
-                return OcrClipProvider()
+                instantiated.append((provider_name, OcrClipProvider()))
             except Exception:
                 continue
-        if provider_name == "local_model":
+        elif provider_name == "local_model":
             try:
                 LocalModelProvider = _load_local_model_provider()
-                return LocalModelProvider()
+                instantiated.append((provider_name, LocalModelProvider()))
             except Exception:
                 continue
-        if provider_name == "gemini_sdk" and gemini_available:
-            return GeminiSDKProvider()
-        if provider_name == "transcript":
-            return TranscriptProvider()
+        elif provider_name == "gemini_sdk" and gemini_available:
+            instantiated.append((provider_name, GeminiSDKProvider()))
+        elif provider_name == "transcript":
+            instantiated.append((provider_name, TranscriptProvider()))
 
-    # Should never reach here (TranscriptProvider is always available)
-    return TranscriptProvider()
+    if not instantiated:
+        instantiated.append(("transcript", TranscriptProvider()))
+
+    return instantiated
+
+
+def select_provider(
+    video_id: str, video_url: str, channel_url: str | None = None
+) -> Any:
+    """Select and return the best available analysis provider.
+
+    Returns the first available provider from the ordered candidate list.
+    For failover (trying multiple providers), use analyze_video() instead.
+
+    Default priority: local_model → gemini_sdk → ocr_clip → transcript,
+    reordered by per-channel success history when available.
+
+    Args:
+        video_id: YouTube video ID (must be 11 chars).
+        video_url: Full YouTube URL.
+        channel_url: Optional channel URL for failure-aware routing.
+
+    Returns:
+        An AnalysisProvider instance.
+    """
+    candidates = _build_ordered_candidates(video_id, video_url, channel_url)
+    return candidates[0][1]
 
 
 def analyze_video(
@@ -339,68 +344,8 @@ def analyze_video(
     # --- Failover path: try ordered candidates ---
     import time as _time
 
-    # Validate inputs (same as select_provider)
-    if not _VIDEO_ID_PATTERN.match(video_id):
-        raise ValueError(
-            f"Invalid video_id format: {video_id!r}. "
-            "Expected 11-character YouTube video ID."
-        )
-    parsed = urlparse(video_url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(
-            f"Invalid URL scheme: {parsed.scheme!r}. "
-            "video_url must use http or https scheme."
-        )
-
-    # Build the ordered candidate list using the same logic as select_provider
-    with _gemini_lock:
-        _check_and_reset_gemini()
-        gemini_available = _gemini_available
-
-    candidates = ["local_model", "gemini_sdk", "ocr_clip", "transcript"]
-
-    # Failure-aware reordering
-    if channel_url:
-        try:
-            scores = get_provider_scores(channel_url)
-            if scores:
-                def success_rate(provider_name: str) -> float:
-                    if provider_name not in scores:
-                        return -1.0
-                    successes, failures = scores[provider_name]
-                    total = successes + failures
-                    if total == 0:
-                        return -1.0
-                    return successes / total
-                candidates = sorted(candidates, key=success_rate, reverse=True)
-        except Exception:
-            pass
-
-    # Instantiate providers in order, skipping unavailable ones
-    instantiated: list[tuple[str, Any]] = []
-    for provider_name in candidates:
-        if provider_name == "gemini_sdk" and not gemini_available:
-            continue
-        if provider_name == "ocr_clip":
-            try:
-                OcrClipProvider = _load_ocr_clip_provider()
-                instantiated.append((provider_name, OcrClipProvider()))
-            except Exception:
-                continue
-        elif provider_name == "local_model":
-            try:
-                LocalModelProvider = _load_local_model_provider()
-                instantiated.append((provider_name, LocalModelProvider()))
-            except Exception:
-                continue
-        elif provider_name == "gemini_sdk" and gemini_available:
-            instantiated.append((provider_name, GeminiSDKProvider()))
-        elif provider_name == "transcript":
-            instantiated.append((provider_name, TranscriptProvider()))
-
-    if not instantiated:
-        # Should never happen (TranscriptProvider is always available)
-        instantiated.append(("transcript", TranscriptProvider()))
+    # Build candidates via shared helper (eliminates DRY violation)
+    instantiated = _build_ordered_candidates(video_id, video_url, channel_url)
 
     # Try each candidate with failover
     attempt_log: list[dict[str, Any]] = []
