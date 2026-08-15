@@ -21,6 +21,7 @@ htmlcov/
 # Data stores (local only - never push to GitHub)
 *.sqlite
 *.sqlite3
+*.db
 history.json
 youtube_cookies.txt
 
