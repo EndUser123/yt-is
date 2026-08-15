@@ -7,6 +7,11 @@
 git clone <repo-url>
 cd yt-is
 
+# Install the pre-commit hook (REQUIRED — path-based credential deny list
+# + gitleaks secret scan; .git/hooks is not tracked by git)
+cp scripts/git-hooks/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+
 # Create skill junctions (Windows)
 New-Item -ItemType Junction -Path "$CLAUDE_ROOT/skills\yt-is-analyze" -Target "P:///packages//yt-is/skills/analyze"
 New-Item -ItemType Junction -Path "$CLAUDE_ROOT/skills\yt-is-ingest" -Target "P:///packages//yt-is/skills/ingest"

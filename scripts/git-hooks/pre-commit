@@ -1,0 +1,115 @@
+#!/bin/bash
+# Pre-commit hook: run gate regression tests when gate code changes,
+# and validate all Python hook files for syntax errors.
+#
+# Bypass: git commit --no-verify (discouraged for gate changes)
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# =====================================================================
+# SECTION 0: Path-based deny list (fail-closed)
+# =====================================================================
+# Binary credential stores (Chromium profiles, SQLite cookie/session DBs)
+# cannot be caught by regex secret scanners — their content is AES-encrypted
+# binary with no token shape. Block them by path instead. This section has
+# no external binary dependency, so it NEVER skips (unlike the gitleaks
+# section, which fails open by documented design).
+# Incident: a 15,095-file Chromium profile incl. Network/Cookies and
+# Login Data was committed 2026-04-23 (c720775) and pushed to GitHub;
+# regex scanning could not have caught it.
+# Diff-filter ACMR: deletions are allowed — removing an already-tracked
+# denied artifact must stay possible (see untrack commit 2eeb910).
+DENIED=$(git diff --cached --name-only --diff-filter=ACMR | grep -Ei '(^|/)\.browser/|\.db$|(^|/)Network/Cookies$|(^|/)Login Data$|(^|/)Web Data$|(^|/)Trust Tokens$|(^|/)nlm-auth/' || true)
+if [ -n "$DENIED" ]; then
+    echo "DENIED PATH staged — credential-bearing or local-only artifact:"
+    echo "$DENIED" | head -20 | sed 's/^/  /'
+    [ "$(echo "$DENIED" | wc -l)" -gt 20 ] && echo "  ... and $(($(echo "$DENIED" | wc -l) - 20)) more" || true
+    echo ""
+    echo "These paths must never be committed (binary secrets / local-only data)."
+    echo "Untrack instead: git rm --cached <path>  (deletions are not blocked)"
+    echo "Bypass (NOT recommended): git commit --no-verify"
+    exit 1
+fi
+
+# =====================================================================
+# SECTION 1: Hook correctness check (all Python files in hook directories)
+# =====================================================================
+HOOK_CHANGED=$(git diff --cached --name-only | grep -E '\.(py)$' | grep -E 'hooks/' || true)
+if [ -n "$HOOK_CHANGED" ]; then
+    echo "Hook files staged — checking Python syntax..."
+    ERRORS=0
+    for f in $(git diff --cached --name-only | grep -E '\.(py)$' | grep -E 'hooks/'); do
+        # Only check files that are staged (not deleted)
+        if git diff --cached -- "$f" | grep -q '^+'; then
+            STAGED_CONTENT=$(git show ":$f" 2>/dev/null) || continue
+            # Validate the *staged* bytes. py_compile with '-' reads a list of
+            # filenames from stdin (not source), so it misread file content as
+            # paths; ast.parse syntax-checks the source piped on stdin directly.
+            RESULT=$(echo "$STAGED_CONTENT" | python -c "import ast,sys; ast.parse(sys.stdin.read())" 2>&1) && continue
+            echo "  SYNTAX ERROR in staged $f:"
+            echo "$RESULT" | head -3 | sed 's/^/    /'
+            ERRORS=$((ERRORS + 1))
+        fi
+    done
+    if [ $ERRORS -gt 0 ]; then
+        echo ""
+        echo "Pre-commit hook: $ERRORS Python syntax error(s) in staged hook files."
+        echo "Fix before committing. Bypass: git commit --no-verify"
+        exit 1
+    fi
+    echo "Hook Python syntax: OK"
+fi
+
+# =====================================================================
+# SECTION 2: gitleaks secret scan on staged content
+# =====================================================================
+# Invokes gitleaks by absolute path — the winget shim is NOT on PATH in
+# stripped/hook subprocess environments (verified), so a bare `gitleaks`
+# call would silently no-fire. Fails OPEN (warn + skip) if the binary or
+# config is missing, so a winget uninstall never hard-blocks all commits.
+GITLEAKS="C:/Users/brsth/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe"
+GITLEAKS_CONFIG="P:/.claude/gitleaks.toml"
+if [ ! -f "$GITLEAKS" ] || [ ! -f "$GITLEAKS_CONFIG" ]; then
+    echo "pre-commit: gitleaks not found — secret scan SKIPPED (fail-open)."
+    echo "  expected shim:   $GITLEAKS"
+    echo "  expected config: $GITLEAKS_CONFIG"
+else
+    GL_REPORT="$(git rev-parse --git-common-dir)/gitleaks-scan.json"
+    if ! git diff --cached | "$GITLEAKS" stdin --no-banner --config "$GITLEAKS_CONFIG" --redact -f json -r "$GL_REPORT" >/dev/null 2>&1; then
+        echo "SECRET DETECTED in staged content — commit blocked."
+        python -c "import json,sys; d=json.load(open(sys.argv[1])); [print('  %s @ %s:%s' % (f.get('RuleID','?'), f.get('File','?'), f.get('StartLine','?'))) for f in d]" "$GL_REPORT" 2>/dev/null || cat "$GL_REPORT"
+        rm -f "$GL_REPORT"
+        echo "False positive? Add the finding fingerprint to .gitleaksignore (repo root)."
+        echo "Bypass (NOT recommended): git commit --no-verify"
+        exit 1
+    fi
+    rm -f "$GL_REPORT"
+fi
+
+# =====================================================================
+# SECTION 3: intent_artifact_alignment regression tests
+# =====================================================================
+ALIGN_CHANGED=$(git diff --cached --name-only | grep -i "intent_artifact_alignment" || true)
+
+if [ -z "$ALIGN_CHANGED" ]; then
+    exit 0
+fi
+
+echo "Alignment files changed, running regression tests..."
+
+python -m pytest .claude/hooks/tests/test_intent_artifact_alignment.py -q
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "GATE REGRESSION TESTS FAILED."
+    echo "Commit blocked. Fix the failing tests before committing."
+    echo "Bypass (not recommended): git commit --no-verify"
+    exit 1
+fi
+
+echo "Alignment tests passed."
+exit 0
