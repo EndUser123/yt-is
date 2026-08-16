@@ -10,6 +10,20 @@
 
 > No-patch guardrail: if the current branch has a no-patch design packet, do not reopen it with another same-shape benchmark or a code patch request. Start from the design packet and the attribution helper instead.
 
+> **Current auth override (2026-08-08):** The active runner uses the exact
+> account identities and canonical storage map in
+> `docs/operations/nlm-auth-architecture.md`. The profile-family/CDP sync
+> instructions preserved later in this historical plan are not current launch
+> instructions. Do not run `csf-nlm-worker-auth sync` for an active run. First
+> run `python P://packages/yt-is/bin/csf-nlm-auth --all`; it attempts the
+> account-scoped master-token repair path and fails closed if any exact account
+> remains unavailable. If an exact account has no durable master token, use
+> `csf-nlm-auth --profile <exact-profile> --cdp-url http://127.0.0.1:<port>`
+> once with a loopback browser context containing only that account; never use
+> `--all --cdp-url`, a shared/default profile, `--no-sandbox`, or cookie copy.
+> Current live status must be re-probed; the 2026-08-08 preflight found the
+> canonical sessions expired and no reachable CDP endpoints.
+
 ## Goal
 
 Find whether `yt-is` can exceed the current best proven sustained hot-path throughput:
@@ -26,8 +40,248 @@ Find whether `yt-is` can exceed the current best proven sustained hot-path throu
 
 ## Current Status
 
-- The current best sustained current-contract result on disk is `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` at `3788.53` combined hot-path VPH. It is valid (`status=ok`, `throughput_valid=true`, `worker_shape_signature=3+3`, `run_environment_label=home_300mb`) but still a mixed diagnostic branch because the smoke promotion gate failed.
-- Do not treat `3788.53` as proven optimal sustained VPH; it is only the current observed leader on disk.
+- **Hot-path throughput loop outcome (2026-08-12):** the hot-path optimization
+  loop reached the blocked-gap end state; no live benchmark was launched. The
+  operational leader is `source_age_cadence_run01_current` at `3636.16`
+  (`793/7/800`, zero `source_age_cliff`, command time `2652.777s`; clean smoke
+  at `3759.6` and valid soak; `status=ok`, `throughput_valid=true`, `3+3`,
+  `home_300mb`) — the highest current-contract home-network result with a
+  clean profile; not proven optimal, control variance unresolved. The
+  numerically higher
+  `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current`
+  soak at `3788.53` is a diagnostic soak (not a control) measured from an
+  ungated launch whose smoke promotion gate failed (`2788.30` VPH, `67`
+  `source_age_cliff`, `72` failures); that branch is closed negative. Every
+  tested lever family has explicit negative/invalidated evidence; the sole
+  remaining lever (batch-1 old-window `nlm source content` latency) is blocked
+  by the no-patch design packet at
+  `.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md`
+  (`no patch candidate yet`). Unblock path: a new code mechanism narrower than
+  the existing projection/retry guard path that reduces old-window command
+  latency or source-age accumulation directly, passing the design packet's
+  "Exact Proposed Test Coverage" first, then one bounded live run with an
+  adjacent current-control run and a completed decision packet. The loop's
+  decision packet is filed at
+  `docs/operations/packets/batch1-old-window-source-content-latency-2026-08-12.md`
+  (`no run — packet failed`); the per-lever dispositions and ceiling-
+  classification row are in `docs/operations/test-registry.md` under
+  "Hot-path throughput loop outcome (2026-08-12)". Do not launch another
+  hot-path live benchmark without a new mechanism.
+
+- **Account-scoped source-add pacing canary (2026-08-12):** `done` as a
+  controlled negative result, not as a mechanism comparison. The fresh packet
+  at `P:/.logs/multi_account_fetch/20260812_source_add_account_pacing_pair_run02/`
+  passed immediate exact-account token-only preflight, then `pair-01/control`
+  hit a nonce-matched RPC9 for `a.hominidae` video `ZHYqjD099Aw` at source
+  position 14 after `42` successful adds. The executor aborted and withheld
+  the pacing candidate and pair-02; `vph_valid=false`. The candidate therefore
+  has no observation. Keep the pacing gate disabled by default and do not
+  replay the cohort or direct-retry RPC9. The implementation is locally
+  verified (`9` gate tests, `182` batch tests, `47` pair tests), but a future
+  causal test needs a fresh packet and a mechanism design that can produce a
+  valid candidate observation without silently relaxing the control abort gate.
+
+- **Source-add fallback routing-gap repair (2026-08-12):** routing and
+  provenance `done`, quality `deferred`. A typed `SourceAddError (rpc_code=9)` followed by
+  read-only source recovery and terminal materialization was being persisted
+  as only the generic materialization reason, so the explicit source-add
+  fallback route could miss it. `csf/nlm_batch.py` now preserves the typed
+  provenance for terminal and timeout outcomes. The fresh three-ID canary at
+  `P:/.logs/multi_account_fetch/20260812_source_add_fallback_routing_gap_canary_run01/`
+  admitted `3/3` eligible rows exactly once with no direct RPC9 retry and no
+  canonical mutation, but its deliberately short `30s` fallback deadline made
+  all three quality outcomes `transcript fallback deadline exhausted`. The
+  canary also found and the local code now fixes loss of the original source-add
+  reason during fallback finalization. A fresh quality canary at
+  `P:/.logs/multi_account_fetch/20260812_source_add_fallback_quality_canary_run01/`
+  then passed one-for-one routing and provenance with the normal `900s`
+  deadline, but produced only `301` transcript characters against the existing
+  `500`-character gate. The default route remains off; no promotion, VPH claim,
+  or full-backlog authorization follows. `184` batch tests and `79` routing
+  tests pass. Use the packet at
+  `P:/.logs/multi_account_fetch/20260812_source_add_fallback_routing_gap_fix_current.md`.
+
+- **Unattended coordinator candidate (2026-08-10):** the 600-row adaptive
+  policy candidate is `partial` (`548/600` complete, `52` failed), so its
+  fixed control was not launched and it is not throughput evidence. The `51`
+  source-add failures were all known `has_captions=0` rows with `rpc_code=9`;
+  Pro adaptive scale-up did not exceed three workers because only four
+  industrial batches were available. See
+  `P:/.logs/multi_account_fetch/20260810_throughput_adaptive_policy_run01_decision_packet.md`.
+- **Route-partitioned adaptive candidate (2026-08-10):** the follow-up
+  `has_captions IS NULL` candidate is closed as
+  `candidate_invalidated_no_control`, not throughput evidence. It selected
+  1,200 rows and reconciled `994` complete and `206` failed (`166` source-add,
+  `25` command, `15` content-threshold). Pro target-worker telemetry never
+  exceeded the initial three workers, so adaptive scale-up was not exercised
+  and the fixed control was not launched. Do not rerun this pair or claim a
+  worker-count result. See
+  `P:/.logs/multi_account_fetch/20260810_throughput_uncategorized_adaptive_pair_run01_decision_packet.md`.
+  The next live branch is a separate exact source-add fallback-only recovery
+  canary, not a VPH comparison.
+
+- **Uncached control/adaptive pair run03 (2026-08-10):** the fixed control
+  completed `1137/1200` with `63` terminal failures and `0` pending, yielding
+  `1534.50` completed VPH across the parallel accounts. All exact auth probes,
+  cache rows, staging integrity checks, and cleanup passed, but the run had
+  `231` fallback attempts, `48` `transcript_chain_failed` events, two
+  deadline-exhausted fallbacks, and two cookie-rotation failures. The packet's
+  fallback-failure gate invalidated the comparison, so adaptive was not
+  launched. Treat this as partial reliability/control evidence only; it does
+  not establish maximum throughput or authorize full backlog. See
+  `P:/.logs/multi_account_fetch/20260810_uncached_control_adaptive_pair_run03/`.
+
+- **Captioned adaptive pair candidate (2026-08-10):** closed as
+  `candidate_invalidated_cache_only_no_control`, not throughput evidence. The
+  200 selected IDs were all reconciled at `last_stage=cache`; all 200 cache
+  rows already existed with `source=notebooklm`; raw events contained only
+  `transcript_cache_reconciled` per-video work and no NotebookLM workload.
+  The fixed control was not launched. Receipt:
+  `P:/.logs/multi_account_fetch/20260810_throughput_captioned_adaptive_pair_run01/result_receipt.md`.
+  A future pair must prove uncached selected IDs and live source/content event
+  coverage before any VPH calculation.
+
+- **Adaptive scale-up cohort feasibility check (2026-08-11):** a plan-only
+  attempt using the current account settings and `851` captioned items per
+  account failed before staging because the canonical pending database had
+  only `270` captioned rows (`need 5106, found 270`). The `851` floor follows
+  from the current `batch_size=50`, three initial workers, health window `2`,
+  four industrial batches per worker, and scale-up backlog `2`: the scheduler
+  needs `18` logical batches, or `851` items per account. The same settings
+  file explicitly sets `batch_size=50`, so a CLI `--batch-size 1` does not
+  override it. Current pending counts are `270` captioned, `6,167` unknown,
+  and `326,804` known no-caption. No staging, live work, quota use, or
+  canonical mutation occurred. A future batch-1 scheduler canary must use
+  explicit batch-1 settings; a batch-50 captioned comparison needs a larger
+  eligible cohort or a separately labeled source state.
+
+- **All-account adaptive scheduler packet (2026-08-11):** the plan-only
+  packet at
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_adaptive_all_accounts_batch1_plan_run07/`
+  explicitly targets `a.hominidae`, `troup.hominidae`, and `brsthomson` with
+  bounded `3 -> 5` adaptive settings on the same 18-per-account captioned
+  cohort. It is now closed as `negative_control_invalid_adaptive_withheld`;
+  the packet promotes only
+  operational transition, assignment, and cleanup evidence, not VPH or a
+  production default. The required immediate preflight is the typed exact-
+  account `ensure_account_session(..., allow_bootstrap=False)` probe, not the
+  bootstrap-capable `csf-nlm-auth --all` command.
+
+- **All-account adaptive batch-1 canary result (2026-08-11):** the packet was
+  exercised once after all three exact token-only probes passed. Both fixed
+  controls were invalid for comparison (`50/54` and `53/54` complete), so the
+  executor withheld both adaptive arms. The five failures were four
+  `nlm_content_below_threshold` rows and one `command_failed`/
+  `SourceNotFoundError`; this is source/content quality, not authentication.
+  VPH is invalid and no worker-scale or optimality claim follows. Canonical DB
+  state stayed `complete=9,681`, `failed=197`, `pending=333,241` with integrity
+  `ok`. Receipt:
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_adaptive_all_accounts_batch1_plan_run07/result_receipt.md`.
+  Do not replay this same shape without a new quality/cohort mechanism and
+  decision packet.
+
+- **All-account adaptive batch-1 scheduler canary passed (2026-08-11):** the
+  follow-up packet at
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_excluded_residuals_adaptive_all_accounts_batch1_plan_run08/`
+  passed the immediate typed token-only preflight for all three exact accounts.
+  All four arms completed `54/54`; staging integrity, selected-cache
+  completeness, canonical hash/count preservation, and child cleanup passed.
+  Both adaptive pairs emitted target workers `[3,4]` for `a.hominidae`,
+  `troup.hominidae`, and `brsthomson`. Combined diagnostic VPH was `2474.038`
+  versus `1953.690` in pair 01 and `2599.938` versus `2041.888` in pair 02.
+  This is a bounded scheduler/cohort result only: `batch_size=1`, small
+  captioned-only cohort, two pairs, and five explicit benchmark exclusions.
+  It is not sustained production VPH, proof that four workers is optimal, or
+  full-backlog authorization. **Done:** scheduler transition and receipt
+  validation. **Deferred:** repeated larger clean soaks at the intended
+  production batch size and any production-settings change, pending a larger
+  eligible cohort and a new decision packet. Do not replay run07; this is not
+  an authentication result.
+
+- **Larger adaptive batch-1 repeat closed invalid (2026-08-11):** run09 at
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_excluded_residuals_adaptive_all_accounts_batch1_repeat_run09/`
+  passed the immediate token-only preflight for all three accounts and used
+  `30` captioned IDs/account/pair. Pair 01 control/adaptive completed `90/90`;
+  adaptive emitted `[3,4]` for all accounts and measured `2814.430` versus
+  `2351.456` diagnostic VPH. Pair 02 control failed at `89/90` because
+  `troup.hominidae` video `p0jZ_cV9ZmA` ended
+  `nlm_content_below_threshold`; adaptive was withheld. **Done:** executor
+  control-first behavior and exact failure classification. **Deferred:** any
+  repeated throughput conclusion, production worker change, or full-backlog
+  authorization. Canonical state and integrity remained unchanged; do not
+  replay the exact row or rerun this cohort. Receipt:
+   `P:/.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_excluded_residuals_adaptive_all_accounts_batch1_repeat_run09/result_receipt.md`.
+
+- **Fresh captioned Pro scale-up canary passed (2026-08-11):** run10b at
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_objective_fresh_captioned_scaleup_batch1_run10b/`
+  passed immediate token-only preflight for all three exact accounts and all
+  four arms completed `42/42`. Both Pro adaptive event trees recorded raw
+  target workers `{3,4}` and started worker-04; the Free accounts remained
+  fixed at three workers. Diagnostic VPH was `2036.665`/`2058.852` for the
+  controls and `2055.800`/`2083.018` for adaptive. All `168` content rows were
+  `ready` with command return code `0`; staging, canonical fingerprints, and
+  cleanup passed. **Done:** bounded scheduler transition evidence.
+  **Deferred:** intended production-shape repeated clean soaks, worker/batch
+  optimality, and full-backlog authorization. Do not change production account
+  settings from this batch-1 captioned canary. Receipt:
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_objective_fresh_captioned_scaleup_batch1_run10b/result_receipt.md`.
+
+- **Source-ready gate recovery canary (2026-08-11):** run05 at
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_canary_run05/`
+  passed exact token-only auth preflight and produced exact READY telemetry on
+  `161/161` successful waits. Pair01 control/adaptive completed `54/54`; pair02
+  control was `53/54` after `9WfjJl2JGoE` remained present but not READY for
+  `604.553s`, so pair02 adaptive was withheld. The timeout was quarantined with
+  an exact reason and no extraction. **Done:** live exact-readiness evidence
+  and timeout classification. **Partial:** live continuation after a timeout;
+  the timeout was the final selected item, while the later-sub-batch shape is
+  covered by focused tests. **Deferred:** any VPH interpretation, production
+  worker/batch change, and full-backlog authorization. Do not rerun the same
+  cohort or treat the pair01 VPH difference as a throughput result. Receipt:
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_canary_run05/result_receipt.md`.
+
+- **Source-ready gate validation run06 (2026-08-11):** the fresh captioned
+  108-ID packet at
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_scaleup_run06/`
+  passed exact token-only auth and repeated the readiness contract: `107/107`
+  successful waits had exact READY status `2`, and all `111` content-fetch
+  starts followed a successful wait. One Pro source remained status `3` and
+  timed out at `606.235s`; it was quarantined without extraction. Both
+  controls were partial (`50/54`, `53/54`), both adaptive arms were withheld,
+  and no VPH or adaptive result is valid. **Done:** repeated exact readiness
+  and timeout classification. **Deferred:** live later-sub-batch timeout
+  evidence, source-add repair, adaptive scale-up, throughput optimality, and
+  full-backlog authorization. Do not rerun this cohort or treat the single
+  source-add recovery observation as proof of a provider fix. Receipt:
+  `P:/.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_scaleup_run06/result_receipt.md`.
+
+- **No-caption fallback:** the explicit route initially had an oEmbed false
+- **Terminal source-status guard (2026-08-11):** run06 showed that installed
+  `SourceStatus.ERROR=3` could be misclassified as a 600-second readiness
+  timeout. `csf/nlm_batch.py` now fails fast on that terminal status, records
+  `source_materialization_terminal_error`, raises a distinct failure class,
+  quarantines the affected subbatch, and continues later subbatches; status
+  `1`/`5` still poll. The sharded runner treats the new class as source
+  invalidation. **Done:** code, regression tests (`176` package tests,
+  `44` sharded-lane tests), and the isolated live artifact confirmation in
+  `P:/.logs/multi_account_fetch/terminal_source_status_guard_canary_20260811/result_receipt.md`.
+  **Deferred:** same-call later-sub-batch live proof, RPC9/source-add repair,
+  VPH comparison, adaptive scale-up, and full-backlog authorization. The
+  canary used `batch_size=1`, so it proves runner continuation rather than a
+  later sub-batch within one add call.
+
+- **No-caption fallback:** the explicit route initially had an oEmbed false
+  terminal; `bin/csf-source` now bypasses oEmbed for that route and focused
+  tests pass. The 12-row retest reached the real fallback chain but all rows
+  were external private/unavailable/cookie failures. Keep
+  `--route-no-captions-to-fallback` opt-in/off by default; this branch does not
+  authorize `--until-empty` or establish sustained VPH. Packets:
+  `P:/.logs/multi_account_fetch/20260810_no_caption_fallback_canary_run01_decision_packet.md`
+  and run 02.
+
+- The numerically highest diagnostic soak on disk is `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` at `3788.53` combined hot-path VPH. It is valid (`status=ok`, `throughput_valid=true`, `worker_shape_signature=3+3`, `run_environment_label=home_300mb`) but is a diagnostic soak (not a control) measured from an ungated launch whose smoke promotion gate failed; the operational leader is `source_age_cadence_run01_current` at `3636.16` (see the loop-outcome bullet above).
+- The latest Candidate 6 live validation (`candidate6_telemetry_validation_run03_current`, 2026-08-08) is invalidated and must not be compared numerically: the exact `a.hominidae` and `troup.hominidae` probes passed, but both lanes had the same six `source_add_failed` source IDs. This is source/cohort invalidation, not evidence that authentication needs to be repaired again. See the result packet under `.logs/sharded_lane_series/`.
+- Do not treat `3788.53` or `3636.16` as proven optimal sustained VPH; both are single-sample current-contract results and control variance is unresolved. Treat cadence01 (`3636.16`) as the operational leader and projection-60 run02 (`3788.53`) as a diagnostic soak.
 - The next June reruns did not beat it: `run03` is `blocked_before_soak`, `margin20_run06` is `blocked_before_soak`, `margin25` is negative, `post_scope_fix_run05` is `blocked_before_soak`, and `margin15` is invalidated.
 - The local-retry projection branch is also closed now: `fresh_state_3plus3_extract_schema_source_age_cadence_local_retry_projection_run08_current` is a valid negative rerun, and the reducer points to batch-1 old-window `nlm source content` command latency / source-age accumulation as the unresolved pressure point.
 - The batch-1 old-window design packet at [.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md](P://packages/yt-is/.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md) concludes `no patch candidate yet`; use it before asking for any code change on this branch.
@@ -57,12 +311,18 @@ Before running anything, read:
 - `P://packages/yt-is/docs/operations/test-registry.md`
 - `P://packages/yt-is/docs/operations/sharded-lane-artifact-audit.md`
 - `P://packages/yt-is/docs/operations/sharded-lane-series.md`
-- `P://packages/yt-is/docs/operations/notebooklm-auth-family-extension.md`
+- `P://packages/yt-is/docs/operations/nlm-auth-architecture.md`
 - `P://packages/yt-is/docs/superpowers/specs/2026-04-28-hot-path-throughput-optimization-series-design.md`
 
-These files record what has already been proven, what was negative, and how the dedicated Pro and Free browser roots must be authenticated.
+These files record what has already been proven and what was negative. The
+canonical auth architecture above supersedes the historical browser-root and
+profile-family procedures retained later in this document.
 
-## Current Session State: 2026-05-27
+## Historical Session State: 2026-05-27
+
+> This section is retained as historical evidence. Do not execute its legacy
+> auth commands or treat its account/session state as current. The current
+> auth override and `nlm-auth-architecture.md` above govern active work.
 
 What has been actioned:
 
@@ -153,8 +413,12 @@ Current interpretation:
 - Keep `--batch-size 200`; it has already beaten nearby and larger batch sizes for this workload.
 - Keep `--reusable-pipeline-mode serial`; double-buffered runs have not established a stable win.
 - Keep profile-pinned NotebookLM commands. Do not use `nlm login switch` in concurrent worker code.
+- Active launchers must pass exact account identities (`a.hominidae`,
+  `troup.hominidae`, `brsthomson`) and call `ensure_account_session()`; worker
+  labels such as `ytis-pro-worker-01` are telemetry only.
 - For any new root, run `doctor` first, then the smoke, then `csf-run-evidence-check`, then the long soak.
-- Keep dedicated Chrome roots:
+- Keep dedicated Chrome roots only for exceptional first-time headless
+  bootstrap; normal renewal uses the account-scoped master token:
   - Pro: `P://.data/yt-is/browser/notebooklm-pro`
   - Free: `P://.data/yt-is/browser/notebooklm-free`
 - Keep account mapping:
@@ -189,20 +453,25 @@ Expected: no shared/default NotebookLM auth browser, no direct sibling login, an
 
 Expected: stale worker notebooks are cleared through the existing worker-notebook cleanup path before any timed trial begins. The worker process still prewarms its notebook before processing, so the measured run starts from a clean, reproducible notebook state.
 
-- [ ] Validate all NotebookLM worker profiles.
+- [ ] Validate all canonical account sessions through the durable non-interactive path.
 
 ```powershell
 foreach ($profile in @(
-  'ytis-pro-worker-01', 'ytis-pro-worker-02', 'ytis-pro-worker-03', 'ytis-pro-worker-04',
-  'ytis-free1-worker-01', 'ytis-free1-worker-02', 'ytis-free1-worker-03', 'ytis-free1-worker-04'
+  'a.hominidae', 'troup.hominidae', 'brsthomson'
 )) {
-  nlm login --check --profile $profile
+  python -c "from csf.nlm_client import ensure_account_session; p=ensure_account_session('$profile', worker_id='preflight'); print('$profile', p.ok, p.reason)"
 }
 ```
 
-Expected: every profile is authenticated. If a sibling profile fails, run `csf-nlm-worker-auth sync`; it repairs the account-family worker-01 through the configured dedicated CDP root when necessary, then copies only verified same-account credentials to siblings. It must never log in a sibling directly or request user sign-in.
+Expected: each exact account reports `True ok`. If one fails, inspect its
+account-specific reason and preserve the failed preflight; do not run a legacy
+CLI profile sync or request user sign-in as part of a benchmark.
 
-The sharded runner performs the same mandatory non-interactive preflight. It checks each profile, attempts same-family credential sync when stale, and permits one bounded worker-01 renewal through the account's dedicated hidden/headless CDP root. Challenge/sign-in pages, wrong-account capture, default-profile launch, and direct sibling renewal all fail closed without waiting for user authentication.
+The sharded runner performs the same mandatory non-interactive preflight. It
+tries the durable master token first and permits the matching dedicated
+headless CDP root only for first-time bootstrap. Challenge/sign-in pages,
+wrong-account capture, default-profile launch, and direct sibling renewal all
+fail closed without waiting for user authentication.
 
 - [ ] Run the existing focused regression tests before changing code.
 
@@ -220,7 +489,9 @@ Use this suite before and after the next code change:
 
 ```powershell
 $env:PYTHONPATH = 'P://packages/yt-is'
-python P://packages/yt-is/bin/csf-nlm-worker-auth sync
+foreach ($profile in @('a.hominidae', 'troup.hominidae', 'brsthomson')) {
+  python -c "from csf.nlm_client import ensure_account_session; p=ensure_account_session('$profile', worker_id='test-preflight'); print('$profile', p.ok, p.reason)"
+}
 pytest tests/test_nlm_batch.py tests/test_nlm_config.py tests/test_sharded_lane_series.py tests/test_nlm_worker_auth.py -q
 python -m py_compile csf/nlm_batch.py csf/nlm_config.py csf/nlm_worker_auth.py tests/test_nlm_batch.py tests/test_nlm_config.py tests/test_nlm_worker_auth.py bin/csf-source bin/csf-nlm-worker-auth
 ```
@@ -230,7 +501,7 @@ Last verified results:
 - `pytest tests/test_nlm_batch.py -q`: `68 passed` after `nlm_content_below_threshold` metric update.
 - `pytest tests/test_nlm_scraper.py -q`: `59 passed` after staging scraper readiness-probe metric update.
 - `pytest tests/test_worker_count_sweep.py tests/test_fallback_crossover_benchmark.py -q`: `10 passed` after reporting fixtures were updated to the new status.
-- `python bin/csf-nlm-worker-auth sync`: defaults to `YTIS_NLM_AUTH_NONINTERACTIVE=1`, uses account-aware `nlm login --check` parsing, renews only worker `01` through its configured dedicated hidden/headless CDP root, and copies credentials only after expected-account verification. It fails closed on challenge/sign-in pages and never logs in sibling profiles directly. Explicit `YTIS_NLM_AUTH_NONINTERACTIVE=0` is reserved for deliberate manual maintenance outside benchmark workflows.
+- `ensure_account_session()` is the active auth verification and repair gate. The `csf-nlm-worker-auth` command remains a legacy compatibility test surface and is not an active benchmark prerequisite.
 - `pytest tests/test_nlm_batch.py tests/test_nlm_config.py tests/test_sharded_lane_series.py tests/test_nlm_worker_auth.py -q`: `79 passed`.
 - `pytest tests/test_nlm_batch.py -q -k 'records_source_ids_from_stdout_in_order or rejects_duplicate_source_ids_before_fetch'`: `2 passed`.
 - `pytest tests/test_nlm_worker_auth.py -q -k "real_nlm_process or worker_auth_cli_sync"`: the direct helper test preserves the explicit interactive-maintenance `check -> force -> check -> copy` path, while the CLI sync regression verifies its default invocation is non-interactive and cannot reach an unprofiled or direct-sibling force-login path.
@@ -239,24 +510,26 @@ Last verified results:
 
 ## Auth Renewal Proof Gate
 
-Run this before the next full benchmark whenever any worker profile has expired:
+Run this before the next full benchmark whenever any canonical account session has expired:
 
 ```powershell
 $env:PYTHONPATH = 'P://packages/yt-is'
-python P://packages/yt-is/bin/csf-nlm-worker-auth sync
 foreach ($profile in @(
-  'ytis-pro-worker-01', 'ytis-pro-worker-02', 'ytis-pro-worker-03', 'ytis-pro-worker-04',
-  'ytis-free1-worker-01', 'ytis-free1-worker-02', 'ytis-free1-worker-03', 'ytis-free1-worker-04'
+  'a.hominidae', 'troup.hominidae', 'brsthomson'
 )) {
-  nlm login --check --profile $profile
+  python -c "from csf.nlm_client import ensure_account_session; p=ensure_account_session('$profile', worker_id='benchmark-preflight'); print('$profile', p.ok, p.reason)"
 }
 ```
 
 Expected:
 
-- If a sibling worker profile is expired or mapped to the wrong account, `csf-nlm-worker-auth sync` replaces it from the verified same-account worker `01`, then the follow-up account check must pass.
-- If worker `01` is expired, the command may renew it only through the configured family CDP root without user interaction. If Google presents a sign-in/challenge page, account validation fails, or capture times out, stop the dedicated browser, restore the prior profile state, and fail before copying credentials.
-- Do not start `pro_free_source_map_v1` until all twelve `nlm login --check --profile ...` commands pass.
+- Each exact account must report `True ok`. The helper first uses its durable
+  master token and only attempts the matching dedicated CDP root when no token
+  exists. If Google presents a sign-in/challenge page, account validation
+  fails, or capture times out, preserve the failed preflight and do not start
+  the benchmark.
+- Worker labels are not authentication identities; never substitute a
+  `ytis-*` label for one of the three exact account profiles above.
 
 ## Metrics To Record
 

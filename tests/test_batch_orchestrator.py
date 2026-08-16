@@ -64,17 +64,18 @@ class TestCachedTranscriptFastpath:
 
         transcript_provider_used = []
 
-        def fake_analyze(video_id, video_url):
+        def fake_analyze(video_id, video_url, **kwargs):
             transcript_provider_used.append((video_id, video_url))
             return mock_result
 
-        with mock.patch.object(TranscriptProvider, "analyze", side_effect=fake_analyze):
+        with mock.patch.object(csf.batch, "_get_analyze_video", return_value=fake_analyze):
             successful, failed = analyze_videos_parallel(["dQw4w9WgXcQ"])
 
         assert len(successful) == 1
         assert "dQw4w9WgXcQ" in successful
         assert len(transcript_provider_used) == 1
-        # Fast path used — no orchestrator needed
+        # The current batch path always delegates to the orchestrator; cached
+        # transcripts are an input optimization, not a separate dispatch path.
         assert transcript_provider_used[0][0] == "dQw4w9WgXcQ"
 
 

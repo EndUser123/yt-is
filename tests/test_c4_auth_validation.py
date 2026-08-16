@@ -249,7 +249,9 @@ class TestFamilyRefreshUsesLiveSessionCheck:
 
     def test_family_refresh_does_not_pass_lambda_true_to_sync_worker_profiles(self):
         """Direct call: the lambda: True sentinel must be gone."""
-        family = nlm_batch.DEFAULT_FAMILIES[1]
+        from csf.nlm_worker_auth import DEFAULT_FAMILIES
+
+        family = DEFAULT_FAMILIES[1]
         auth_context = nlm_batch._NLMAuthContext(
             profile=family.sibling_profiles[0] if family.sibling_profiles else family.source_profile,
             login_profile_args=["--profile", family.source_profile],
@@ -263,8 +265,8 @@ class TestFamilyRefreshUsesLiveSessionCheck:
             captured_sync_kwargs.update(kwargs)
             return None
 
-        with mock.patch("csf.nlm_batch.refresh_source_profile", return_value=True):
-            with mock.patch("csf.nlm_batch.sync_worker_profiles", side_effect=mock_sync_worker_profiles):
+        with mock.patch("csf.nlm_worker_auth.refresh_source_profile", return_value=True):
+            with mock.patch("csf.nlm_worker_auth.sync_worker_profiles", side_effect=mock_sync_worker_profiles):
                 with mock.patch("csf.nlm_batch.nlm_auth_guard.auth_check_cache_store"):
                     result = nlm_batch._refresh_family_nlm_auth_session(
                         auth_context, family, timeout_s=1.0
@@ -291,8 +293,8 @@ class TestFamilyRefreshUsesLiveSessionCheck:
             sync_calls.append(kwargs)
             return None
 
-        with mock.patch("csf.nlm_batch.refresh_source_profile", return_value=True):
-            with mock.patch("csf.nlm_batch.sync_worker_profiles", side_effect=mock_sync_worker_profiles):
+        with mock.patch("csf.nlm_worker_auth.refresh_source_profile", return_value=True):
+            with mock.patch("csf.nlm_worker_auth.sync_worker_profiles", side_effect=mock_sync_worker_profiles):
                 with mock.patch(
                     "csf.nlm_batch.run_nlm",
                     side_effect=AssertionError(

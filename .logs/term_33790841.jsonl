@@ -18,3 +18,9 @@
 {"timestamp": "2026-04-19T18:30:26.130799+00:00", "trace_id": "term_33790841", "action": "nlm_batch_subbatch_size_selected", "data": {"nb_id": "35c025b3-58d7-4cee-9467-d24f417eee6e", "subbatch_index": 1, "subbatch_size": 50, "remaining": 300, "target_subbatch_size": 50}}
 {"timestamp": "2026-04-19T18:30:26.131129+00:00", "trace_id": "term_33790841", "action": "nlm_batch_subbatch_add_started", "data": {"nb_id": "35c025b3-58d7-4cee-9467-d24f417eee6e", "subbatch_index": 1, "subbatch_size": 50, "expected_total": 50, "retry_depth": 0}}
 {"timestamp": "2026-04-19T18:30:29.703419+00:00", "trace_id": "term_33790841", "action": "nlm_auth_checked", "data": {"component": "nlm_batch", "status": "ok"}}
+{"timestamp": "2026-08-11T18:11:40.949291+00:00", "trace_id": "term_33790841", "action": "nlm_client_client_created", "data": {"profile": "multi-account-coordinator", "account": "a.hominidae", "owns_loop": true}}
+{"timestamp": "2026-08-11T18:11:42.014456+00:00", "trace_id": "term_33790841", "action": "nlm_client_client_closed", "data": {"profile": "multi-account-coordinator", "account": "a.hominidae"}}
+{"timestamp": "2026-08-11T18:11:42.758876+00:00", "trace_id": "term_33790841", "action": "nlm_client_client_created", "data": {"profile": "multi-account-coordinator", "account": "troup.hominidae", "owns_loop": true}}
+{"timestamp": "2026-08-11T18:11:43.263510+00:00", "trace_id": "term_33790841", "action": "nlm_client_client_closed", "data": {"profile": "multi-account-coordinator", "account": "troup.hominidae"}}
+{"timestamp": "2026-08-11T18:11:44.066618+00:00", "trace_id": "term_33790841", "action": "nlm_client_client_created", "data": {"profile": "multi-account-coordinator", "account": "brsthomson", "owns_loop": true}}
+{"timestamp": "2026-08-11T18:11:44.402755+00:00", "trace_id": "term_33790841", "action": "nlm_client_client_closed", "data": {"profile": "multi-account-coordinator", "account": "brsthomson"}}

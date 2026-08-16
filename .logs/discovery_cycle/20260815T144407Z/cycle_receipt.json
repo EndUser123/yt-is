@@ -1,0 +1,56 @@
+{
+  "created_at": "2026-08-15T14:45:33.419948+00:00",
+  "run_dir": "P:\\packages\\yt-is\\.logs\\discovery_cycle\\20260815T144407Z",
+  "settings_path": "P:\\packages\\yt-is\\config\\discovery-settings.json",
+  "steps": [
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\scripts\\refresh_youtube_cookies.py",
+        "--browser",
+        "firefox:dvrlqwow.default-release"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "step": "refresh_cookies"
+    },
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-source",
+        "watchlater",
+        "--cookies-from-browser",
+        "firefox:dvrlqwow.default-release",
+        "--min-watchlater-videos",
+        "2",
+        "--dry-run"
+      ],
+      "ok": false,
+      "returncode": 1,
+      "step": "watchlater_dryrun"
+    },
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-source",
+        "history",
+        "--cookies-from-browser",
+        "firefox:dvrlqwow.default-release",
+        "--min-history-videos",
+        "2",
+        "--dry-run"
+      ],
+      "ok": false,
+      "returncode": 1,
+      "step": "history_dryrun"
+    },
+    {
+      "skipped": "no excluded_categories configured",
+      "step": "promote_excluded"
+    },
+    {
+      "skipped": "run_sync false or --skip-sync",
+      "step": "sync"
+    }
+  ]
+}

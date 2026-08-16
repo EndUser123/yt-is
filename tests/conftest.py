@@ -25,6 +25,7 @@ def clean_shared_cache(tmp_path_factory):
     #    This ensures no more writes happen while we delete the DB.
     import csf.cache
     import csf.batch_status
+    import csf.nlm_auth_guard
     import csf.retry_queue
     import csf.shared_retry_pool
 
@@ -57,6 +58,7 @@ def clean_shared_cache(tmp_path_factory):
 
     csf.cache.clear_all_storages()
     csf.batch_status._batch_status_storage = None
+    csf.nlm_auth_guard._clear_default_chrome_profile_pids_cache()
     csf.retry_queue.clear_all_storages()
     csf.shared_retry_pool.reset_pool()
 
@@ -116,6 +118,7 @@ def clean_shared_cache(tmp_path_factory):
     try:
         yield
     finally:
+        csf.nlm_auth_guard._clear_default_chrome_profile_pids_cache()
         if previous_db_path is None:
             os.environ.pop("YTIS_TRANSCRIPT_CACHE_DB_PATH", None)
         else:

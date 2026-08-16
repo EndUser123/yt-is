@@ -1,5 +1,10 @@
 # NotebookLM Auth Robustness Test Plan
 
+> **Historical, superseded:** Active yt-is runs use the canonical
+> account-storage design in `nlm-auth-architecture.md`. The profile-family,
+> CDP, and `csf-nlm-worker-auth` procedures below are retained as historical
+> evidence only. Do not execute them for a current run.
+
 > For future LLM agents: follow this plan before trusting a long Pro+Free throughput soak as auth evidence. A long run is only conclusive if the logs prove multiple auth refresh paths actually executed.
 
 ## Goal

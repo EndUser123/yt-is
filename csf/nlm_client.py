@@ -1,11 +1,16 @@
-"""Sync wrapper around the async ``notebooklm.NotebookLMClient`` library.
+"""Synchronous adapter for the canonical ``notebooklm-py`` client.
 
-This module is the Phase-1 scaffolding for the nlm-CLI → notebooklm-py
-migration (see ``docs/operations/refactor-plan-2026-07-20-nlm-migration.md``).
+The active path is account-first: an exact external account identity selects
+one canonical storage-state file, and each worker process owns its own client,
+event loop, and HTTP session. Worker labels are telemetry/routing names only;
+they never select auth state. The legacy ``PROFILE_TO_ACCOUNT`` resolver is
+kept solely for historical callers and tests and is not used by active
+launchers.
+
 It provides:
 
-* ``PROFILE_TO_ACCOUNT`` — routing-label → Google-account map covering every
-  existing yt-is worker profile name.
+* ``PROFILE_TO_ACCOUNT`` — read-only compatibility mapping for historical
+  routing labels.
 * ``NLMSyncClient`` — a synchronous facade over the async
   ``NotebookLMClient``. The wrapper owns a single persistent
   :class:`asyncio.AbstractEventLoop` and exposes ``run(coro)`` as the
@@ -14,8 +19,8 @@ It provides:
   when the running loop differs from the one bound at ``open()`` time), so the
   same persistent loop is used for both ``from_storage`` and every later
   ``run`` call.
-* ``get_sync_client(profile=None)`` — convenience resolver that honors the
-  yt-is ``NOTEBOOKLM_PROFILE`` convention.
+* ``get_sync_client(...)`` — account-first resolver for active callers, with a
+  compatibility-only label resolver when session verification is disabled.
 
 This module replaces ``csf/nlm_auth_guard.py`` (the CLI shell-out path). It
 performs **no** network I/O at import time; auth only happens when
@@ -27,7 +32,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+import sys
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Awaitable, TypeVar
 
 from notebooklm import NotebookLMClient
@@ -36,38 +43,58 @@ from csf.csf_logging import log_action
 
 __all__ = [
     "DEFAULT_PROFILE_STORAGE_ROOT",
+    "ACCOUNT_PROFILES",
+    "AccountSessionProbe",
     "PROFILE_TO_ACCOUNT",
     "NLMSyncClient",
     "get_sync_client",
+    "probe_account_session",
+    "ensure_account_session",
 ]
 
 T = TypeVar("T")
+
+
+def _new_event_loop() -> asyncio.AbstractEventLoop:
+    """Create a client loop that avoids the observed Windows Proactor path.
+
+    The NotebookLM client uses sockets and does not require asyncio's Windows
+    subprocess support. An explicit selector loop avoids the Python 3.14
+    Proactor ``_OverlappedFuture`` warning seen when a worker closes after a
+    child/pipe-backed operation, without changing the process-wide event-loop
+    policy (which is deprecated in Python 3.14). A fresh live canary must still
+    confirm that this is the owning mitigation.
+    """
+    if sys.platform == "win32":
+        selector_loop = getattr(asyncio, "SelectorEventLoop", None)
+        if selector_loop is not None:
+            return selector_loop()
+    return asyncio.new_event_loop()
 
 # Matches the notebooklm-py default: ``get_home_dir() / "profiles"`` where
 # ``get_home_dir()`` resolves to ``~/.notebooklm`` (see ``notebooklm.paths``).
 DEFAULT_PROFILE_STORAGE_ROOT = Path.home() / ".notebooklm" / "profiles"
 
-# The 3 Google accounts backed by real ``storage_state.json`` files under
-# ``DEFAULT_PROFILE_STORAGE_ROOT``.
-_KNOWN_ACCOUNTS = (
-    "ytis-pro-account",
-    "ytis-free1-account",
-    "ytis-free2-account",
-)
+ACCOUNT_PROFILES = ("a.hominidae", "troup.hominidae", "brsthomson")
 
-# Routing-label → account map. Worker profile names are preserved as routing
-# labels per the refactor plan (§"Profile → account mapping"); each resolves to
-# one of the 3 real accounts.
+# Historical routing-label → account map. Active code must pass one of the
+# exact external identities in ACCOUNT_PROFILES to from_account_profile();
+# this map is not an auth source and does not select storage for active runs.
 #
 # Coverage:
 #   ytis-pro-worker-01..05  → ytis-pro-account   (a.hominidae@gmail.com)
-#   ytis-free1-worker-01..05 → ytis-free1-account (troup.hominidae@gmail.com)
+#   ytis-free-worker-01..05  → ytis-free1-account (troup.hominidae@gmail.com)
+#   ytis-free1-worker-01..05 → ytis-free1-account (legacy compatibility)
 #   ytis-free2-worker-01..04 → ytis-free2-account (brsthomson@hotmail.com)
 #   ytis-worker-01..06      → ytis-pro-account   (legacy default prefix; see
 #                              bin/csf-source `YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILE_PREFIX`
 #                              default of "ytis-worker". Pre-dates the 3-account
 #                              split, so all 6 route to the primary account.)
 PROFILE_TO_ACCOUNT: dict[str, str] = {
+    # Exact external account identities used by active lane metadata.
+    "a.hominidae": "ytis-pro-account",
+    "troup.hominidae": "ytis-free1-account",
+    "brsthomson": "ytis-free2-account",
     # pro account (5 workers)
     "ytis-pro-worker-01": "ytis-pro-account",
     "ytis-pro-worker-02": "ytis-pro-account",
@@ -80,6 +107,12 @@ PROFILE_TO_ACCOUNT: dict[str, str] = {
     "ytis-free1-worker-03": "ytis-free1-account",
     "ytis-free1-worker-04": "ytis-free1-account",
     "ytis-free1-worker-05": "ytis-free1-account",
+    # Canonical free worker labels; keep the free1 labels above for history.
+    "ytis-free-worker-01": "ytis-free1-account",
+    "ytis-free-worker-02": "ytis-free1-account",
+    "ytis-free-worker-03": "ytis-free1-account",
+    "ytis-free-worker-04": "ytis-free1-account",
+    "ytis-free-worker-05": "ytis-free1-account",
     # free2 account (4 workers)
     "ytis-free2-worker-01": "ytis-free2-account",
     "ytis-free2-worker-02": "ytis-free2-account",
@@ -105,17 +138,134 @@ def _get_active_profile() -> str:
     return os.environ.get("NOTEBOOKLM_PROFILE", "default")
 
 
+def _get_active_account_profile() -> str:
+    return os.environ.get("YTIS_NLM_ACCOUNT_PROFILE", "").strip()
+
+
+def _validate_runtime_account_binding(
+    client: NotebookLMClient,
+    account_profile: str,
+    worker_id: str,
+) -> None:
+    """Verify the opened client still names the exact requested account.
+
+    Static storage validation is necessary but does not prove which identity
+    the third-party client loaded into its live auth object.  This check is
+    deliberately local: it reads only non-secret auth metadata and records no
+    cookies or tokens.  A mismatch fails closed before a worker can mutate a
+    notebook or add a source through the wrong account.
+    """
+    from csf.nlm_auth_check import (
+        expected_email_for_account_profile,
+        storage_path_for_account_profile,
+    )
+
+    expected_email = expected_email_for_account_profile(account_profile).strip().lower()
+    expected_storage_path = storage_path_for_account_profile(account_profile).resolve()
+    auth = getattr(client, "auth", None)
+    observed_email = str(getattr(auth, "account_email", "") or "").strip().lower()
+    account_route = str(getattr(auth, "account_route", "") or "").strip()
+    raw_authuser = getattr(auth, "authuser", None)
+    authuser = raw_authuser if isinstance(raw_authuser, (int, str)) else None
+    raw_storage_path = getattr(auth, "storage_path", None)
+    observed_storage_path = ""
+    if raw_storage_path:
+        try:
+            observed_storage_path = str(Path(raw_storage_path).resolve())
+        except (OSError, TypeError, ValueError):
+            observed_storage_path = str(raw_storage_path)
+
+    if not observed_email:
+        status = "runtime_account_email_missing"
+    elif observed_email != expected_email:
+        status = "runtime_account_email_mismatch"
+    elif account_route != expected_email:
+        status = "runtime_account_route_mismatch"
+    elif observed_storage_path != str(expected_storage_path):
+        status = "runtime_storage_path_mismatch"
+    else:
+        status = "ok"
+
+    log_action(
+        "nlm_client_account_binding_checked",
+        {
+            "account_profile": account_profile,
+            "worker_id": worker_id,
+            "expected_email": expected_email,
+            "observed_email": observed_email or None,
+            "account_route": account_route or None,
+            "authuser": authuser,
+            "expected_storage_path": str(expected_storage_path),
+            "observed_storage_path": observed_storage_path or None,
+            "status": status,
+        },
+    )
+    if status != "ok":
+        raise RuntimeError(
+            f"NotebookLM runtime account binding failed for {account_profile!r}: "
+            f"{status}; expected_email={expected_email!r} "
+            f"observed_email={observed_email or '<none>'!r} "
+            f"account_route={account_route or '<none>'!r} "
+            f"storage={observed_storage_path or '<none>'}"
+        )
+
+
+@dataclass(frozen=True)
+class AccountSessionProbe:
+    account_profile: str
+    worker_id: str
+    expected_email: str
+    storage_path: str
+    ok: bool
+    reason: str
+    observed_email: str = ""
+
+
+async def _open_account_storage_context(
+    account_profile: str,
+    *,
+    worker_id: str = "",
+    storage_path: Path | None = None,
+) -> NotebookLMClient:
+    """Open the exact canonical storage file for an external account identity."""
+    from csf.nlm_auth_check import inspect_account_storage
+
+    status = inspect_account_storage(account_profile, storage_path=storage_path)
+    if not status.ok:
+        raise RuntimeError(
+            f"NotebookLM account {account_profile!r} is not usable for worker "
+            f"{worker_id or '<unknown>'}: {status.reason}; "
+            f"storage={status.storage_path} expected={status.expected_email!r} "
+            f"observed={status.observed_email or '<none>'}"
+        )
+    ctx = NotebookLMClient.from_storage(path=str(status.storage_path))
+    try:
+        client = await ctx.__aenter__()
+        try:
+            _validate_runtime_account_binding(client, account_profile, worker_id)
+        except BaseException:
+            close_fn = getattr(client, "close", None)
+            if inspect.iscoroutinefunction(close_fn):
+                await close_fn()
+            raise
+        return client
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"canonical NotebookLM storage disappeared for account {account_profile!r}: "
+            f"{status.storage_path}"
+        ) from exc
+
+
 async def _open_storage_context(account: str, profile: str) -> NotebookLMClient:
-    """Enter the ``NotebookLMClient.from_storage`` async context and return the client.
+    """Open the legacy label-resolved storage context for compatibility only.
 
     Auth load + session open happen on ``__aenter__``. A missing
     ``storage_state.json`` surfaces as :class:`FileNotFoundError` from the
     library; we translate it into a clear domain error naming the yt-is
     profile and the recovery command for the resolved account.
 
-    Uses the yt-is-managed storage path at ``P:/.data/yt-is/nlm-auth/``
-    (shared with ``csf.nlm_auth_check`` and ``csf.nlm_keepalive``) rather
-    than the notebooklm-py default at ``~/.notebooklm/profiles/<account>/``.
+    Active callers use :func:`_open_account_storage_context` instead, which
+    selects an account-specific path through ``ACCOUNT_STORAGE_PATHS``.
     """
     from csf.nlm_auth_check import STORAGE_PATH  # avoid import cycle at module load
     ctx = NotebookLMClient.from_storage(path=str(STORAGE_PATH))
@@ -214,7 +364,7 @@ class NLMSyncClient:
             )
         account = PROFILE_TO_ACCOUNT[profile]
 
-        loop = asyncio.new_event_loop()
+        loop = _new_event_loop()
         try:
             client = loop.run_until_complete(_open_storage_context(account, profile))
         except BaseException:
@@ -224,6 +374,44 @@ class NLMSyncClient:
 
         return cls(client=client, loop=loop, profile=profile, account=account, owns_loop=True)
 
+    @classmethod
+    def from_account_profile(
+        cls,
+        account_profile: str,
+        *,
+        worker_id: str = "",
+        verify_session: bool = False,
+        storage_path: Path | None = None,
+    ) -> NLMSyncClient:
+        """Build a client from an exact external account identity.
+
+        ``worker_id`` is diagnostic only. It cannot select another account or
+        storage file. Session verification is opt-in so long-lived workers can
+        reuse the one probe performed by their coordinator.
+        """
+        profile = str(account_profile or "").strip()
+        from csf.nlm_auth_check import expected_email_for_account_profile
+
+        expected_email_for_account_profile(profile)  # fail closed on aliases
+        loop = _new_event_loop()
+        try:
+            client = loop.run_until_complete(
+                _open_account_storage_context(profile, worker_id=worker_id, storage_path=storage_path)
+            )
+            wrapper = cls(
+                client=client,
+                loop=loop,
+                profile=worker_id,
+                account=profile,
+                owns_loop=True,
+            )
+            if verify_session:
+                wrapper.run(wrapper.notebooks.list())
+            return wrapper
+        except BaseException:
+            loop.close()
+            raise
+
     # ------------------------------------------------------------------
     # Loop / bridge
     # ------------------------------------------------------------------
@@ -231,7 +419,7 @@ class NLMSyncClient:
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         """Return the wrapper's loop, creating it lazily if needed."""
         if self._loop is None:
-            self._loop = asyncio.new_event_loop()
+            self._loop = _new_event_loop()
             self._owns_loop = True
         return self._loop
 
@@ -272,7 +460,8 @@ class NLMSyncClient:
         if self._closed or self._client is None:
             return False
         try:
-            return bool(self._client.is_connected())
+            value = getattr(self._client, "is_connected", False)
+            return bool(value() if callable(value) else value)
         except Exception:
             return False
 
@@ -359,7 +548,13 @@ class NLMSyncClient:
         return self._closed
 
 
-def get_sync_client(profile: str | None = None) -> NLMSyncClient:
+def get_sync_client(
+    profile: str | None = None,
+    *,
+    account_profile: str | None = None,
+    worker_id: str | None = None,
+    verify_session: bool = False,
+) -> NLMSyncClient:
     """Return an :class:`NLMSyncClient` for the given or active profile.
 
     Args:
@@ -374,5 +569,80 @@ def get_sync_client(profile: str | None = None) -> NLMSyncClient:
         KeyError: If the resolved profile is not in :data:`PROFILE_TO_ACCOUNT`.
         RuntimeError: If the account's ``storage_state.json`` is missing.
     """
+    resolved_account = (account_profile or _get_active_account_profile()).strip()
+    if resolved_account:
+        return NLMSyncClient.from_account_profile(
+            resolved_account,
+            worker_id=worker_id or os.getenv("YTIS_NLM_WORKER_ID", "").strip(),
+            verify_session=verify_session,
+        )
+    if verify_session:
+        raise ValueError(
+            "YTIS_NLM_ACCOUNT_PROFILE is required for an active NotebookLM client"
+        )
     resolved = profile if profile is not None else _get_active_profile()
+    # Compatibility-only path for older unit tests and historical callers.
+    # Active launchers must set YTIS_NLM_ACCOUNT_PROFILE and therefore cannot
+    # reach this branch.
     return NLMSyncClient.from_storage(resolved)
+
+
+def probe_account_session(account_profile: str, *, worker_id: str = "coordinator") -> AccountSessionProbe:
+    """Read-only canonical storage and NotebookLM session probe.
+
+    The probe opens the selected storage, lists notebooks, and closes the
+    client. It never logs in, refreshes, creates notebooks, or fetches YouTube
+    sources.
+    """
+    from csf.nlm_auth_check import inspect_account_storage
+
+    status = inspect_account_storage(account_profile)
+    base = {
+        "account_profile": status.account_profile,
+        "worker_id": worker_id,
+        "expected_email": status.expected_email,
+        "storage_path": str(status.storage_path),
+        "observed_email": status.observed_email,
+    }
+    if not status.ok:
+        return AccountSessionProbe(**base, ok=False, reason=status.reason)
+    client: NLMSyncClient | None = None
+    try:
+        client = NLMSyncClient.from_account_profile(account_profile, worker_id=worker_id)
+        client.run(client.notebooks.list())
+        return AccountSessionProbe(**base, ok=True, reason="ok")
+    except Exception as exc:  # session expiry/auth rejection is a hard preflight failure
+        return AccountSessionProbe(
+            **base,
+            ok=False,
+            reason=f"session_probe_failed:{type(exc).__name__}:{str(exc)[:200]}",
+        )
+    finally:
+        if client is not None:
+            client.close()
+
+
+def ensure_account_session(
+    account_profile: str,
+    *,
+    worker_id: str = "coordinator",
+    timeout_s: float = 180.0,
+    allow_bootstrap: bool = True,
+    cdp_url: str | None = None,
+    interactive_bootstrap: bool = False,
+) -> AccountSessionProbe:
+    """Probe and repair one account through the durable headless auth path.
+
+    ``cdp_url`` is an exceptional one-time bootstrap input for the package CLI;
+    active workers should leave it unset so normal repair remains token-only.
+    """
+    from csf.nlm_auth_headless import ensure_account_session as _ensure_account_session
+
+    return _ensure_account_session(
+        account_profile,
+        worker_id=worker_id,
+        timeout_s=timeout_s,
+        allow_bootstrap=allow_bootstrap,
+        cdp_url=cdp_url,
+        interactive_bootstrap=interactive_bootstrap,
+    )

@@ -377,6 +377,21 @@ def set_cached_transcript(
     terminal_id = resolve_tid()
     cache_key = _make_cache_key(video_id, lang, source)
     now = datetime.now()
+
+    # Quality instrumentation: always record transcript content metrics so
+    # "are these good?" is answerable at scale (currently 0.4% coverage).
+    if transcript:
+        merged = dict(metadata or {})
+        merged.setdefault("transcript_chars", len(transcript))
+        merged.setdefault("transcript_words", len(transcript.split()))
+        merged.setdefault(
+            "quality_band",
+            "short" if len(transcript) < 500
+            else "medium" if len(transcript) < 2000
+            else "long" if len(transcript) < 10000
+            else "very_long",
+        )
+        metadata = merged
     metadata_json = _normalize_metadata(metadata)
 
     storage = _get_storage(terminal_id)

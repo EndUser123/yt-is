@@ -99,6 +99,35 @@ def test_select_manifest_entries_preserves_order_and_reports_skips(tmp_path):
     assert selection.fingerprint.startswith("sha256:")
 
 
+def test_selection_fingerprint_ignores_non_operational_metadata_columns(tmp_path):
+    path = tmp_path / "selection.json"
+    path.write_text(json.dumps({
+        "manifest_version": 1,
+        "generated_at": "now",
+        "selection_name": "canonical-row-shape",
+        "videos": [{"video_id": "aaaaaaaaaaa"}],
+    }), encoding="utf-8")
+    manifest = load_video_selection_manifest(path)
+    base = {
+        "video_id": "aaaaaaaaaaa",
+        "status": "pending",
+        "source": "source-a",
+        "updated_at": "2026-08-10T00:00:00+00:00",
+        "has_captions": 1,
+    }
+    detailed = {
+        **base,
+        "published_at": "2020-01-01T00:00:00+00:00",
+        "title": "diagnostic metadata",
+        "duration": 42,
+        "failure_reason": None,
+    }
+
+    assert select_manifest_entries(manifest, {base["video_id"]: base}).fingerprint == (
+        select_manifest_entries(manifest, {detailed["video_id"]: detailed}).fingerprint
+    )
+
+
 def test_selection_receipt_is_atomic_and_refuses_accidental_replace(tmp_path):
     manifest_path = tmp_path / "selection.json"
     manifest_path.write_text(
@@ -128,7 +157,14 @@ def test_selection_receipt_is_atomic_and_refuses_accidental_replace(tmp_path):
     )
     receipt_path = tmp_path / "receipt.json"
     write_selection_receipt(receipt_path, receipt)
-    assert read_selection_receipt(receipt_path)["selection_fingerprint"] == selection.fingerprint
+    loaded_receipt = read_selection_receipt(receipt_path)
+    assert loaded_receipt["selection_fingerprint"] == selection.fingerprint
+    assert loaded_receipt["database_snapshot_fingerprint"] == selection.database_fingerprint
+    assert loaded_receipt["database_snapshot_schema"] == "analysis_status"
+    assert loaded_receipt["database_snapshot_scope"] == "manifest_video_ids_in_manifest_order"
+    assert loaded_receipt["fingerprint_semantics"]["database_fingerprint"] == (
+        "sha256_canonical_analysis_status_rows_in_manifest_order"
+    )
     assert not list(tmp_path.glob(".receipt.json.*.tmp"))
     with pytest.raises(FileExistsError):
         write_selection_receipt(receipt_path, receipt)

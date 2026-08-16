@@ -115,6 +115,19 @@ class TestTierIntegration:
                     "_load_ocr_clip_provider",
                     side_effect=RuntimeError("no OCR"),
                 ),
+                mock.patch.object(
+                    TranscriptProvider,
+                    "analyze",
+                    return_value=VideoAnalysisResult(
+                        title="Fallback",
+                        summary="Transcript fallback",
+                        key_topics=[],
+                        key_points=[],
+                        code_snippets=[],
+                        visual_tags=[],
+                        mode="transcript",
+                    ),
+                ),
             ):
                 # With all higher tiers failing, failover reaches TranscriptProvider
                 result = analyze_video(
@@ -152,6 +165,19 @@ class TestTierIntegration:
                     OcrClipProvider,
                     "analyze",
                     side_effect=NonFatalAnalysisError("Tier 2 OCR unavailable"),
+                ),
+                mock.patch.object(
+                    TranscriptProvider,
+                    "analyze",
+                    return_value=VideoAnalysisResult(
+                        title="Fallback",
+                        summary="Transcript fallback",
+                        key_topics=[],
+                        key_points=[],
+                        code_snippets=[],
+                        visual_tags=[],
+                        mode="transcript",
+                    ),
                 ),
             ):
                 # OCR fails → failover to TranscriptProvider

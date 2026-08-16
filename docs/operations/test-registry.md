@@ -1,6 +1,9 @@
 # YT-IS Test Registry
 
-Last updated: 2026-07-01 (Candidate 6 telemetry validation smoke validated on run02; status `proven` for the instrumentation contract; VPH guard classified separately as fresh-cohort confound)
+Last updated: 2026-08-12 (hot-path throughput loop outcome: ceiling-classification
+row and per-lever `no run — packet failed` dispositions recorded; run10 exact
+fallback promotion, source-add fallback routing/quality canaries, residual audit
+and packet set regenerated; full-backlog gate remains closed)
 
 ## Purpose
 
@@ -14,20 +17,498 @@ Before launching any live throughput benchmark, read [Throughput Optimization LL
 
 Registry note: the recommendation text in a row is a decision record, not an execution checklist. If a next step is deferred, the row or linked plan must say so explicitly and name the missing evidence.
 
+## Hot-path throughput loop outcome (2026-08-12)
+
+The hot-path optimization loop (`/goal` yt-is NotebookLM hot-path throughput)
+reached the blocked-gap end state. The current control is confirmed as the
+ceiling **subject to one documented gap**: every tested lever has explicit
+negative or invalidated evidence, and the single remaining lever
+(batch-1 old-window `nlm source content` latency) is blocked by a no-patch
+design packet with a concrete unblock path. No live benchmark was launched.
+
+- **Operational leader (current control):** `source_age_cadence_run01_current`
+  at `3636.16` combined hot-path VPH (`793/7/800`, zero `source_age_cliff`,
+  command time `2652.777s`, `status=ok`, `throughput_valid=true`,
+  `worker_shape_signature=3+3`, `run_environment_label=home_300mb`; clean
+  smoke at `3759.6` and valid soak) — the highest current-contract
+  home-network result with a clean profile. Not proven optimal; control
+  variance unresolved.
+- **Historical high-water mark (kept separate):** `pro_free_source_map_v1` at
+  `5572.04`, old metric contract, non-reproduced (replay run02 = `2109.58`).
+  Not the control; not comparable numerically.
+- **Diagnostic soak (not a control):** `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current`
+  soak at `3788.53` combined hot-path VPH (`status=ok`, `throughput_valid=true`,
+  `worker_shape_signature=3+3`, `run_environment_label=home_300mb`, `794/6/800`,
+  `throughput_elapsed_s=754.487`). Numerically higher but measured from an
+  ungated launch whose smoke promotion gate failed (`2788.30` VPH, `67`
+  `source_age_cliff`, `72` failures); a single unpaired diagnostic sample from
+  a closed branch — kept for reference, not the operational leader.
+
+> **Operational leader vs diagnostic soak:** cadence01 (`3636.16`) is the
+> operational leader because it is the highest current-contract home-network
+> result with a clean profile — clean smoke (`790/10/800`, `3759.6` VPH) and
+> valid soak, zero `source_age_cliff`, lowest command time (`2652.777s`).
+> projection-60 run02 (`3788.53`) is a numerically higher diagnostic soak
+> measured from an ungated launch (smoke promotion gate failed) and is not a
+> control; do not treat it as the operational leader. Neither number is
+> proven optimal (both single-sample; control variance unresolved).
+- **Ceiling classification:** `ceiling_subject_to_blocked_gap` — all tested
+  levers negative/invalidated (margin20/25/15, projection-60 gated rerun,
+  retry-queue-fix, local-retry projection, first-window cap, rotation-180,
+  shared retry, warmup-state, auth intervals 30/40/45/47/50/75, worker balance,
+  agecap-200 revalidation, profile swap, browser default, active/extract
+  windows, cadence threshold tuning peak `50/100`). The only remaining lever
+  (batch-1 old-window command latency) is blocked by
+  `P:/packages/yt-is/.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md`
+  (`no patch candidate yet`).
+- **Unblock path (concrete):** a new code mechanism narrower than the existing
+  projection/retry guard path that reduces old-window `nlm source content`
+  command latency or source-age accumulation directly, with the design packet's
+  "Exact Proposed Test Coverage" layer first, then one bounded live run with an
+  adjacent current-control run in the same cohort/time window and a completed
+  decision packet.
+- **Decision packet:** `docs/operations/packets/batch1-old-window-source-content-latency-2026-08-12.md`
+  — status `no run — packet failed` (Exact Run Command and Promotion Rule
+  unfillable; same-shape reruns prohibited; no-patch design packet governs).
+
+Per-lever dispositions (operating loop step 5): each remaining lever family was
+evaluated against the decision-packet requirements; all recorded `no run —
+packet failed`.
+
+| Lever family | Disposition | Evidence / blocker |
+| --- | --- | --- |
+| Batch-1 old-window `nlm source content` latency | `no run — packet failed` | No patch candidate (design packet); same-shape rerun prohibited; packet at `docs/operations/packets/batch1-old-window-source-content-latency-2026-08-12.md` |
+| Retry-heavy command attempts / retry sleep amplification | `no run — packet failed` | Negative live evidence (retry-queue-fix run01 `2957.0`; local-retry projection run08); no new mechanism |
+| Free-lane batch_02 source-list probe / add-path overhead | `no run — packet failed` | Probe already bounded; audit shows probe time small (cadence01 `43.814s` vs command `2652.777s`); first-window-cap negative; source-add pacing falsified; initial-window negative mechanism evidence |
+| Worker / batch skew | `no run — packet failed` | Worker-balance branch closed negative (run06 regressed); design packet: symptom propagation, not scheduler bug |
+
+Offline attribution performed this session:
+`P:/packages/yt-is/.logs/sharded_lane_series/command_latency_attribution_packet_current.md`
+(control07 vs cadence01 vs projection60_run02 soaks; reconciliation gates
+1.0 / 0.989 / 0.968; cadence01 pays `2652.777s` command time vs `5041.379s`
+control and `4685.822s` projection-60 leader; projection-60 batch-1 retry rows
+are the residual old-window pressure).
+
+## Sub-batch tracker trace canary (2026-08-12)
+
+Bounded live trace canary consuming the shipped `YTIS_NLM_RATE_LIMIT_TRACKER_TRACE`
+instrumentation. One Pro lane (`a.hominidae`), 30 sources at `YTIS_NLM_BATCH_SIZE=10`,
+`YTIS_NLM_RATE_LIMIT_TRACKER_TRACE=1`. Run completed in `207.28s` with `29/30`
+complete and `1` RPC9 source-add terminal failure (the known `ZHYqjD099Aw`-class
+pattern, not auth). Canonical DBs untouched (staging-only). Packet:
+`docs/operations/packets/subbatch-tracker-trace-canary-2026-08-12.md`.
+
+| Field | Value |
+| --- | --- |
+| date | 2026-08-12 |
+| branch | subbatch_tracker_trace_canary |
+| classification | `correlation_absent_with_no_observed_failures` |
+| subbatch_boundary_count | 3 |
+| boundaries_with_pre_reset_failures_gt0 | 0 |
+| max_pre_reset_delay_s | 0.0 |
+| apply_delay_slept_count | 0 |
+| crossed_threshold_count | 0 |
+| validity_preconditions_met | no (tracker was not exercised — zero content-fetch failures) |
+| falsifier_outcome | indeterminate (all `pre_reset_failures == 0` but tracker never triggered; not retried per packet rule) |
+| packet_path | `docs/operations/packets/subbatch-tracker-trace-canary-2026-08-12.md` |
+
+The `nlm_batch_rate_limit_tracker_event` trace recorded `68` events: `65`
+`record_success` (all with `failures_before=0`), `3` `subbatch_reset` (all at
+`subbatch_index=1`, all with `pre_reset_failures=0` / `pre_reset_delay_s=0.0`),
+zero `record_failure`, and zero `apply_delay_slept`. All five stop gates passed.
+The sub-batch reset is confirmed to have discarded no rate-limit signal during
+this run, but the run had zero content-fetch failures, so the tracker was never
+triggered — the falsifier validity precondition (tracker exercised) is unmet.
+Classification is `correlation_absent_with_no_observed_failures` (indeterminate),
+documented as a valid result per the packet's no-retry rule.
+
+Structural note: the `30` sources were processed as `3` industrial batches of
+`10` (each calling `_add_sources_in_subbatches` with `10` IDs), producing `3`
+`subbatch_reset` events all at `subbatch_index=1`. The packet's design note
+(`30 → 3 sub-batches at indices 1, 2, 3`) expected sub-batches within a single
+`_add_sources_in_subbatches` call; the actual structure is cross-industrial-
+batch boundaries (process-global tracker, fresh notebook per batch). The result
+is still valid: no signal existed to mask at any boundary.
+
+## Source-ready gate recovery canary run05 (2026-08-11)
+
+`P:/.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_canary_run05/`
+is `partial_source_ready_gate_verified_control_invalid`. The new exact-ID
+materialization telemetry was live-verified: `161/161` successful waits
+reported matching expected/ready IDs with `status=2`, and all matching content
+fetches began after the successful wait. One troup source stayed present but
+not READY for `604.553s`; the timeout path emitted an exact per-video failure
+and the control finished `53/54`, so the paired adaptive arm was withheld.
+This is bounded mechanism evidence, not valid VPH/optimality evidence, a
+production default change, an authentication result, or full-backlog
+authorization. The timeout occurred on the final selected item, so a live
+timeout followed by later selected-sub-batch evidence remains deferred. See
+the [decision packet](../../../.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_canary_run05/decision_packet.md)
+and [result receipt](../../../.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_canary_run05/result_receipt.md).
+
+## Source-ready gate validation run06 (2026-08-11)
+
+`P:/.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_scaleup_run06/`
+repeated the source-readiness gate on a fresh 108-ID captioned cohort. Exact
+token-only auth passed for all three profiles. Raw events show `107/107`
+successful waits with matching expected/ready IDs, empty missing/not-ready
+sets, and status `2`; all `111` content-fetch starts followed a successful
+wait. One Pro source stayed at status `3` and timed out after `606.235s`, then
+was quarantined without extraction. Both controls were partial (`50/54` and
+`53/54`), so both adaptive arms were withheld; no VPH or adaptive result is
+valid. Canonical and staging integrity, identity, cleanup, and process gates
+passed. No RPC9, `SourceNotFound`, `source_add_failed`, or `ADD_SOURCE` marker
+appeared. The single source-add recovery event is not a provider-fix proof.
+Do not rerun the cohort or interpret it as an optimality or full-backlog
+decision. See the [decision packet](../../../.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_scaleup_run06/decision_packet.md)
+and [result receipt](../../../.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_scaleup_run06/result_receipt.md).
+
+## Source-ready gate scale-up run07c (2026-08-12)
+
+The packet and [result receipt](../../../.logs/multi_account_fetch/throughput_pair_20260811_source_ready_gate_scaleup_run07c/result_receipt.md)
+record a fresh 108-ID captioned cohort with exact token-only preflight for all
+three accounts. Pair01 control was partial at `53/54`, so adaptive was
+withheld. Pair02 control completed `54/54`, while pair02 adaptive was partial
+at `53/54` because `brsthomson` video `u9D1A8vSn0A` reached materialization
+status `3` after one poll. No combined VPH comparison is valid, and the
+cohort must not be replayed.
+
+The Pro adaptive event tree did emit target workers `3` then `4` and started
+`worker-04`; Free accounts remained fixed at three workers. This is bounded
+scheduler-transition evidence only, not sustained-VPH, worker-optimality, or
+full-backlog evidence. The terminal-status guard failed fast and emitted no
+content-fetch event for the terminal source. A future comparison requires a
+new disjoint cohort and complete control/adaptive arms.
+
+### Terminal-guard validation run08 (2026-08-12)
+
+The [packet](../../../.logs/multi_account_fetch/throughput_pair_20260812_terminal_guard_validation_run08/throughput_pair_packet.json)
+and [result receipt](../../../.logs/multi_account_fetch/throughput_pair_20260812_terminal_guard_validation_run08/result_receipt.md)
+record a fresh 108-ID canary. Exact token-only auth preflight passed for all
+three account identities. Pair01 control was `50/54` and pair02 control was
+`53/54`; both adaptive arms were withheld, so no VPH comparison is valid.
+
+The terminal-status guard is positively confirmed on the observed status-3
+source: it emitted the terminal failure and subbatch-continuation events, did
+not emit `nlm_batch_source_content_fetch_started` for that source, and allowed
+later selected work to continue. The incomplete controls were
+content-quality/workload outcomes, not auth. This run does not authorize
+worker-setting changes or full-backlog work; do not replay its residual IDs.
+
+The arm validator now returns null VPH for invalid partial arms rather than a
+numeric diagnostic rate, and the package regression suite covers this contract.
+
+### Terminal source-status fail-fast guard (2026-08-11)
+
+Run06's status-`3` source exposed that the readiness loop could spend the full
+`600s` timeout on a provider-terminal error. `csf/nlm_batch.py` now detects
+`SourceStatus.ERROR` (`3` and compatible encodings), emits
+`source_materialization_terminal_error`, raises
+`NotebookSourceMaterializationTerminalError`, and lets the subbatch
+continuation quarantine that source while processing later subbatches. The
+existing processing/preparing wait behavior and timeout classification remain
+covered. `176` package tests and `44` sharded-lane tests passed. The isolated
+live confirmation at
+`P:/.logs/multi_account_fetch/terminal_source_status_guard_canary_20260811/result_receipt.md`
+then observed one-poll status-`3` fail-fast, no content fetch for the terminal
+source, successful continuation to the next selected source, intact staging,
+unchanged canonical fingerprints, and cleanup. Because it used `batch_size=1`,
+it does not prove same-call later-sub-batch continuation. RPC9 remained present;
+the canary is not VPH, adaptive, or full-backlog authorization.
+
+The exact semantic-debt notebook `4017aa6e-35fb-426d-bc53-34620bec405e` was
+closed by bounded MMX checkpoint-resume run16. It reopened only the poisoned
+item, completed in `1168.5s` within the `1200s` bound, and reconciled to
+`completed=47`, `failed=2`, `poisoned=0`, `needs_resynthesis=0`. Five pages
+passed validation with complete four-hop provenance, but citation coverage is
+`19/36` transcripts (`52.8%`), so this is not a claim of complete source
+coverage. Receipt:
+`P:/.logs/wiki-yt-queue/20260811/semantic-resynthesis-4017-mmx-run16-result_receipt.md`.
+
+The read-only historical manifest audit remains an explicit residual:
+`P:/.logs/wiki-yt-queue/20260811/manifest_gap_audit_after_run16.json` reports
+13 gaps and zero exact-receipt repairs. Do not fabricate or repair those gaps
+from transcript/page output alone.
+
+The latest unknown-caption throughput gate is closed as
+`control_invalid_adaptive_not_launched`:
+`P:/.logs/multi_account_fetch/throughput_pair_20260811_unknown_30_live_gate_run02/`.
+Its fixed controls reconciled `86/90` and `79/90` after fresh typed source-add
+RPC9 and post-add `SourceNotFoundError` failures. All three immediate
+token-only auth probes passed; adaptive was withheld. The observed rates are
+not valid control/adaptive VPH or maximum-throughput evidence. Receipt:
+`P:/.logs/multi_account_fetch/throughput_pair_20260811_unknown_30_live_gate_run02/result_receipt.md`.
+
+The pair's source-add failures must not be directly replayed. A future
+recovery requires an exact isolated fallback-only packet and a new clean
+control before any adaptive or full-backlog run.
+
+The batch-10 policy-floor throughput canaries are also closed as
+`control_invalid_adaptive_not_launched`. The first packet had controls at
+`508/513` and `501/513` after `17` source-add/source-addressability failures.
+The replacement packet excluded exactly those IDs, but its controls still
+ended at `512/513` and `509/513` with five `SourceNotFoundError` rows. All
+three immediate token-only auth probes passed before both runs, staging
+integrity passed, and no adaptive arm launched. These packets are not valid
+VPH or optimality evidence; the raw results show that source-list presence
+after add is not sufficient for successful `nlm source content` access.
+Receipts:
+
+- `P:/.logs/multi_account_fetch/throughput_pair_20260811_batch10_policy_floor_run01/result_receipt.md`
+- `P:/.logs/multi_account_fetch/throughput_pair_20260811_batch10_clean_cohort_run02/result_receipt.md`
+
+The current read-only residual audit is
+[20260812 residual audit after source-add canaries](../../../.logs/multi_account_fetch/20260812_residual_audit_after_source_add_canaries.json).
+It was regenerated after the exact run10 promotion and reports the current
+canonical failed scope with `integrity_check=ok`.
+The current residual packet set is
+[20260812 post-run10 residual retry packets](../../../.logs/multi_account_fetch/20260812_residual_retry_packet_set_after_run10/).
+It was generated from the final post-quality read-only audit by
+`scripts/build_residual_retry_packets.py` and contains exact manifests for the
+six packet-required classes: command, content-threshold, cookie-source,
+fallback-quality, source-add, and Whisper-timeout. The source-addressability
+class is closed separately by the exact unavailable reconciliation; it is not
+in this packet set. The set is preparation only: no database mutation, live
+authorization, or blanket retry is implied.
+The pending-only residual-policy gate receipt is
+[20260812 pending-only residual policy](../../../.logs/multi_account_fetch/20260812_residual_policy_gate_pending_only_after_run10/).
+It proves only that pending rows may be drained while failed rows remain
+deferred; it is not a recovery, throughput, scheduler, or full-backlog
+authorization.
+
+The source-add fallback routing-gap repair is locally complete and its routing
+half is live-validated, but fallback quality remains deferred. A typed
+`SourceAddError (rpc_code=9)` can be followed by read-only source recovery and
+terminal materialization; the repaired `csf/nlm_batch.py` path preserves that
+typed provenance so the existing explicit `--route-source-add-failures-to-fallback`
+predicate can recognize the row. The fresh three-ID canary admitted `3/3`
+eligible rows exactly once with no direct RPC9 retry and no canonical mutation,
+but its deliberately short `30s` fallback deadline made all three quality
+outcomes `transcript fallback deadline exhausted`. The canary also exposed and
+the local `bin/csf-source` repair now preserves the original source-add reason
+through fallback finalization. The repair does not retry RPC9 or enable
+fallback by default. Verification is `184` NLM batch tests plus `79`
+`csf-source` routing tests. The packet is
+[source-add fallback routing-gap repair](../../../.logs/multi_account_fetch/20260812_source_add_fallback_routing_gap_fix_current.md);
+the live routing receipt is
+[routing-gap canary run01](../../../.logs/multi_account_fetch/20260812_source_add_fallback_routing_gap_canary_run01/decision_packet.md).
+Require a fresh disjoint quality canary with the normal fallback deadline
+before policy or promotion decisions.
+
+The three source-add fallback outputs that met the exact `500`-character gate
+were reconciled into canonical state by
+`scripts/promote_exact_fallback_results.py`. Apply receipts:
+`P:/.logs/multi_account_fetch/20260811_fallback_promotion_source_add_successes_20260811/run01_apply_receipt.json`
+and
+`P:/.logs/multi_account_fetch/20260811_fallback_promotion_source_add_successes_20260811/run02_apply_receipt.json`.
+The current logical postcondition is `complete=9,982`, `failed=197`, and
+`pending=332,940`; the final audit leaves `25` command, `12`
+content-threshold, `2` cookie-source, `1` fallback-quality, `2` source-add,
+and `9` Whisper-timeout rows packet-required. The source-addressability
+class is closed; its run02 receipt is
+`P:/.logs/multi_account_fetch/20260811_source_addressability_fallback_canary_run02/result_receipt.md`;
+one exact Whisper recovery passed the `500`-character gate and was promoted by
+the locked exact promoter, while one remained `no_transcript`.
+
+The current command-residual fallback canary run04 is bounded recovery
+evidence: three exact command-class rows reached `complete/whisper` in isolated
+staging with non-empty cache output, intact SQLite databases, all three
+canonical auth identities, no NotebookLM actions, and no canonical mutation.
+It does not establish a provider fix, semantic quality, default fallback
+routing, throughput, or full-backlog readiness. See
+[run04 packet](../../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run04/decision_packet.md)
+and
+[run04 receipt](../../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run04/result_receipt.md).
+
+The disjoint command-residual fallback canary run05 is `partial` bounded
+recovery evidence: `4/6` exact rows reached `complete/whisper` with non-empty
+cache output and `2/6` reached the explicit fallback deadline. All three
+canonical auth identities passed, staging integrity and exact-ID reconciliation
+passed, no mutating NotebookLM source/content action occurred, and canonical
+state was unchanged. Generic `nlm_client_*` initialization events are not
+counted as mutation. The expensive tail prevents default-route promotion and
+does not establish semantic quality, throughput, or full-backlog readiness. See
+[run05 packet](../../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run05/decision_packet.md)
+and
+[run05 receipt](../../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run05/result_receipt.md).
+
+The nine former `unknown: transcript fallback deadline exhausted` residuals
+were given one exact isolated `--fallback-only` retry. All nine reached
+Whisper and timed out between `782.510s` and `823.481s`; none produced a
+transcript, no NotebookLM source action occurred, and no row remained pending.
+The canonical rows were repaired under a DB-scoped receipt to
+`whisper_timeout` while remaining `failed`; no automatic retry or fallback
+promotion follows. See
+`P:/.logs/multi_account_fetch/20260810_source_add_residual_policy_current/deadline_unknown_retry_run01/result_receipt.md`.
+
+The fresh run13 unknown-caption throughput controls are negative mechanism
+evidence: pair 01 completed `84/90` with six exact source-add RPC9 failures and
+pair 02 completed `78/90` with nine RPC9 plus three separate command failures.
+All three immediate token-only auth probes passed, adaptive arms were withheld,
+and no VPH is valid promotion evidence. The six pair-01 RPC9 rows were then
+processed in isolated staging through exact `--fallback-only` manifests: `2`
+non-empty transcripts, `4` explicit unavailable terminals, `0` pending/missing,
+and `0` NotebookLM source-action events. This closes bounded recovery for the
+exact cohort, not the provider RPC9 mechanism or default fallback policy. See
+[run13 diagnosis](../../../.logs/multi_account_fetch/throughput_pair_20260811_unknown_plan_run13/source_add_failure_diagnosis_packet.md)
+and [recovery receipt](../../../.logs/multi_account_fetch/throughput_pair_20260811_unknown_plan_run13/source_add_rpc9_recovery_run01/result_receipt.md).
+
+The current command-residual canary used a fresh exact three-ID manifest and
+the opt-in industrial-failure fallback route. `bnXLDAGL2z8`, `A9Wy_9h1_Ro`, and
+`BwI1JgoT3pI` all reconciled to `complete`; all three account auth probes
+passed, both SQLite databases passed integrity, and no NLM source/add/content
+event occurred after fallback admission. This is bounded recovery evidence,
+not a provider fix, throughput result, or default-route authorization. One
+cache result was only 16 characters, so downstream semantic-quality gates
+remain open. See
+[packet](../../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run01/decision_packet.md)
+and
+[receipt](../../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run01/result_receipt.md).
+
+A five-ID isolated staging expansion of the same route produced two non-empty
+Whisper transcripts and three explicit failures, but the outer launcher timed
+out at `1300s` before publishing its coordinator summary and required exact
+descendant cleanup. The staging databases remained intact and no NotebookLM
+action occurred. This is negative cleanup-boundary evidence; it does not
+authorize the remaining 20 command rows or default fallback routing. See
+[run02 packet](../../../.logs/multi_account_fetch/20260811_command_residual_canary_run02/decision_packet.md)
+and
+[run02 receipt](../../../.logs/multi_account_fetch/20260811_command_residual_canary_run02/result_receipt.md).
+
+The source-content addressability canaries are bounded mechanism evidence, not
+throughput evidence. In the first isolated one-item run, source-list presence
+admitted the existing retry, but four content attempts returned the same
+spaced `SourceNotFoundError`; the row exhausted attempts and could not enter
+fallback because the selected fallback dependency was unavailable. In the
+second run, the explicit addressability-fallback switch preserved the marker,
+queued exactly one ID, and suppressed later NotebookLM content actions;
+fallback returned oEmbed HTTP 404 and classified the item as terminal
+`unavailable`. Keep this route opt-in and do not infer an auth or provider fix.
+See [presence retry packet](../../../.logs/multi_account_fetch/source_content_presence_retry_canary_20260811_run01/decision_packet.md)
+and [addressability route packet](../../../.logs/multi_account_fetch/source_content_addressability_fallback_canary_20260811_run02/decision_packet.md).
+
+The older RPC9 reconciliation artifact records a positive source-presence
+probe with one `not_retryable` attempt but has no runtime source fingerprint.
+The later presence-aware artifact and current regression test record the
+intended bounded behavior: four attempts followed by `attempts_exhausted` for
+a persistent present-source miss. This is a provenance reconciliation, not an
+auth or throughput result. See
+`P:/.logs/multi_account_fetch/source_add_content_not_found_reconciliation_20260812.md`.
+
+The throughput-pair harness was then hardened for per-account settings. Its
+packets now preserve normalized worker/batch/adaptive mappings and fingerprints,
+reject settings-file drift before execution, and derive adaptive scale gates
+from every configured adaptive account. The offline plan
+[throughput_pair_20260811_distinct_settings_plan_run01](../../../.logs/multi_account_fetch/throughput_pair_20260811_distinct_settings_plan_run01/throughput_pair_packet.json)
+passed provenance validation with `live_launch=false`; `122` focused
+harness/scheduler tests passed. This is capability and provenance evidence,
+not a throughput result or proof of optimal settings.
+
+The earlier run13/run14 records for
+`4017aa6e-35fb-426d-bc53-34620bec405e` are historical. The latest authoritative
+run16 receipt,
+`P:/.logs/wiki-yt-queue/20260811/semantic-resynthesis-4017-mmx-run16-result_receipt.md`,
+reports `completed=47`, `failed=2`, `poisoned=0`, `needs_resynthesis=0`, and no
+pending/in-progress work. The five resumed pages passed normal validation and
+have complete four-hop provenance. Citation coverage is `19/36` (`52.8%`),
+so this does not prove complete source coverage. The separate `13` historical
+manifest gaps remain unrecoverable without exact receipts.
+
+Current unattended-operation update (2026-08-10): the adaptive-policy
+candidate is a partial diagnostic (`548/600` complete, `52` failed), not a
+valid control comparison. Its `51` source-add failures were all known
+no-caption rows and Pro adaptive scale-up did not exceed three workers. The
+fixed control was intentionally not launched. The explicit no-caption fallback
+route then passed its oEmbed-bypass boundary after a narrow code fix, but the
+12-row retest encountered only private/unavailable/cookie-blocked content and
+produced no transcript cache entries. Keep the route opt-in; do not promote it
+or authorize `--until-empty` from these artifacts.
+
+The later route-partitioned adaptive candidate is closed as
+`candidate_invalidated_no_control`: `994/1200` complete and `206` failed,
+including `166` source-add, `25` command, and `15` content-threshold rows.
+Pro target-worker telemetry never exceeded its initial three workers, so no
+adaptive comparison was exercised and the fixed control was not launched.
+See the adaptive-pair packet and the post-run residual audit under
+`P:/.logs/multi_account_fetch/`. The separate exact 12-row source-add
+fallback canary is complete with 9 non-empty cache results and 3 explicit
+unavailable terminal failures. It validated bounded recovery safety but not
+default promotion, fallback speed, or throughput; keep the route packeted and
+do not authorize `--until-empty`.
+
+The follow-up source-add policy canary with the forwarded `900s` per-item
+deadline processed 400 fresh rows: `392` completed, `8` remained terminally
+failed, and all `40` admitted source-add rows reached terminal fallback
+outcomes with no fallback timeout, fallback failure, or NotebookLM mutation.
+This validates bounded route handling, not default promotion or full-backlog
+readiness. The nested Whisper timeout hardening that followed now gives all
+audio selectors one shared budget, reserves time for transcription and result
+serialization, and stops the chain before starting another provider after the
+deadline. Its focused verification is `160 passed`; a three-ID production-
+deadline diagnostic had two Whisper successes and one pre-fix finalization
+timeout, while a post-fix 120-second diagnostic ended in a classified terminal
+timeout with no pending row. The route remains opt-in until a fresh production-
+deadline fallback packet establishes acceptable tail cost.
+
+The captioned adaptive pair candidate is also closed as
+`candidate_invalidated_cache_only_no_control`: all 200 selected rows were
+already complete at `last_stage=cache`, with pre-existing `source=notebooklm`
+cache entries and no NotebookLM source/content events. The fixed control was
+not launched. Receipt:
+[captioned adaptive pair result](../../../.logs/multi_account_fetch/20260810_throughput_captioned_adaptive_pair_run01/result_receipt.md).
+Do not treat it as adaptive or VPH evidence; future pairs must prove uncached
+selection before launch.
+
+The corrected uncached captioned pair run04 is closed as
+`control_invalid_adaptive_not_launched`: exact staging proved zero selected
+cache rows before launch and the fixed control performed real NotebookLM work,
+but `264/270` completed and `6` failed (`1` RPC9 source-add precondition,
+`5` content-threshold). The adaptive arm was not launched. Diagnostic combined
+useful VPH was `2880.37`, not a promoted throughput result. The exact staged
+source-add residual fallback ended `unavailable` at `direct_api` with no
+NotebookLM actions; canonical state was unchanged. Packet and receipt:
+[run04 packet](../../../.logs/multi_account_fetch/20260810_captioned_uncached_control_adaptive_pair_run04/throughput_decision_packet.md),
+[run04 receipt](../../../.logs/multi_account_fetch/20260810_captioned_uncached_control_adaptive_pair_run04/result_receipt.md).
+
+Governing packets:
+
+- [adaptive-policy candidate](../../../.logs/multi_account_fetch/20260810_throughput_adaptive_policy_run01_decision_packet.md)
+- [no-caption fallback run 01](../../../.logs/multi_account_fetch/20260810_no_caption_fallback_canary_run01_decision_packet.md)
+- [no-caption fallback run 02](../../../.logs/multi_account_fetch/20260810_no_caption_fallback_canary_run02_decision_packet.md)
+
 Use this registry before starting a new benchmark or adding a new cohort:
 - If a case is marked `proven`, do not rerun it unless the code path it exercises has changed.
 - If a case is marked `negative`, do not rerun it unless the touched code affects the underlying assumption.
 - If a case is marked `pending`, it is still a valid candidate for future validation.
 
-Current best sustained current-contract result on disk: `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` at `3788.53` combined hot-path VPH. It is a valid `ok` run with `throughput_valid=true`, but it is still a mixed diagnostic branch rather than a promoted control because the smoke promotion gate failed. Treat it as the current observed leader, not a final promotion, until a paired control or a new code/harness change justifies another live run.
-
-Do not treat `3788.53` as proven optimal sustained VPH; it is only the current observed leader on disk.
+> Treat projection-60 run02 (`3788.53`) as the highest diagnostic soak on disk; the
+> operational leader is `source_age_cadence_run01_current` (cadence01) at `3636.16`
+> (see § "Hot-path throughput loop outcome (2026-08-12)"). Neither number is proven
+> optimal; both are single-sample current-contract results, and control variance is
+> unresolved.
 
 The retry-queue primary-command projection validation packet is now complete, but the live rerun already closed as a negative smoke-gated branch, so no further same-shape live benchmark is justified without a code or harness change. The next step is offline attribution/tooling aimed at batch-1 old-window `nlm source content` latency and retry-heavy rows, not benchmark churn.
 
 The retry-queue primary-command projection validation rerun `fresh_state_3plus3_extract_schema_primary_command_projection_60_retry_queue_fix_run01_current` closed as a negative smoke-gated branch at `2957.0` combined hot-path VPH on `795/5/800`; the new projected-primary-command skip reason did not appear in the live artifact, so it did not prove the narrower queue gate yet.
 
 The batch-1 old-window design packet at [.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md](../../.logs/sharded_lane_series/design_packet_batch1_old_window_source_content_latency_no_patch_current.md) closes that hypothesis as `no patch candidate yet`; use it before asking for any code change on this branch.
+
+The current unattended residual audit is [20260810_unattended_residual_audit.md](../../../.logs/multi_account_fetch/20260810_unattended_residual_audit.md).
+Classification version `unattended-residuals-v3` records 35 failed rows as 29
+terminal unavailable, 2 terminal no-transcript, 2 terminal empty-Whisper-
+transcript, and 2 cookie-source rows blocked on external YouTube cookie state.
+The six original content-threshold candidates were processed by the dedicated
+fallback-only recovery receipt; five completed and one is explicitly terminal
+no-transcript. The 17 command candidates were
+processed through an opt-in industrial-failure fallback expansion; 15
+completed and 2 remained failed. The exact result receipt is
+[command residual expansion](../../../.logs/multi_account_fetch/20260810_command_residual_expansion_result_receipt.md).
+This is a bounded recovery result, not a generic retry authorization. The
+latest exact source-add recovery receipt is
+[result_receipt.md](../../../.logs/multi_account_fetch/20260810_source_add_residual_recovery_run01/result_receipt.md)
+and is partial (`14/26` complete). Do not authorize `--until-empty` until each
+non-terminal class has its own packet, falsifier, bounded policy, and
+postcondition, and the long-audio per-item tail policy is validated.
 
 Before any future throughput proposal, run `scripts/analyze_command_latency_attribution.py` against the current control and candidate artifacts so the lever is explicit before any code review or live-run packet.
 
@@ -264,6 +745,48 @@ Treat the following as still needing live proof:
 | Account sharding | Pro+Free fresh-state `3+3` source-age primary-command projection `60s` margin25 measurement run | negative | [.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_margin25_run05_current/sharded_lane_series_summary.json](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_margin25_run05_current/sharded_lane_series_summary.json) | `status=blocked_before_soak`, `throughput_valid=true`, `worker_shape_signature=3+3`, `run_environment_label=home_300mb`; combined hot-path VPH `2147.11` on `652/148/800`; Pro `1351.2` with `307/93`; Free `1281.77` with `345/55`; `source_ready_age_s_max=240.983`; this is a lower neighbor probe below margin20 and it regressed materially versus margin20 rather than improving it. | keep margin20 as the guard; do not treat margin25 as a promotion candidate or reopen the same nearby probe unless the source-add/materialization path changes |
 | Account sharding | Pro+Free fresh-state `3+3` source-age primary-command projection `60s` margin15 dead branch | invalidated | [.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_margin15_run01_current/smoke/sharded_lane_series_summary.json](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_margin15_run01_current/smoke/sharded_lane_series_summary.json) | `status=invalidated`, `throughput_valid=false`; the run never produced a valid throughput summary. Pro invalidated on `source_count_probe_failed`, `source_add_failed`, and `nlm_batch_source_mapping_failed`; Free invalidated on `NotebookSourceMaterializationTimeout`, `materialization_wait_failed`, and `source_add_failed`. | do not compare numerically; treat this as dead evidence for the current branch and only revisit after a concrete source-add/materialization fix |
 | Account sharding | Pro+Free fresh-state `3+3` retry-queue primary-command projection fix run01 | negative | [.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_retry_queue_fix_run01_current/sharded_lane_series_summary.json](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_retry_queue_fix_run01_current/sharded_lane_series_summary.json), [.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_retry_queue_fix_run01_current/smoke/sharded_lane_series_summary.json](../../.logs/sharded_lane_series/fresh_state_3plus3_extract_schema_primary_command_projection_60_retry_queue_fix_run01_current/smoke/sharded_lane_series_summary.json) | `status=blocked_before_soak`, `throughput_valid=true`, `worker_shape_signature=3+3`, `run_environment_label=home_300mb`; smoke completed at `2957.0` combined hot-path VPH on `795/5/800`, Pro `1741.88` with `398/2`, Free `1612.99` with `397/3`; `retry_queue_skipped_reason` stayed `None` on all `895` fetch-completed rows, so the new projected-primary-command skip reason was not eligible in this run; the smoke promotion gate failed on `fail_count_total=5` and VPH below `3000`, so soak did not run. | close the retry-queue primary-command projection validation as a negative smoke-gated rerun; rerun only if the queue gate or batch-1 latency path changes |
+| Instrumentation | Candidate 6 telemetry validation run03 | invalidated | [.logs/sharded_lane_series/candidate6_telemetry_validation_run03_result.md](../../.logs/sharded_lane_series/candidate6_telemetry_validation_run03_result.md), [.logs/sharded_lane_series/candidate6_telemetry_validation_run03_current/sharded_lane_series_summary.json](../../.logs/sharded_lane_series/candidate6_telemetry_validation_run03_current/sharded_lane_series_summary.json) | Immediate canonical probes passed for the configured `a.hominidae` Pro and `troup.hominidae` Free lanes; both lane processes exited `0`, but the coordinator invalidated the run on the same six `source_add_failed` source IDs in both lanes. `throughput_valid=false` and combined `0.00 VPH` is an invalidation placeholder. Candidate 6 field population and retry-exit distribution passed; the overshoot phase split was partial/useful evidence. | do not reopen auth from this result; create a source/cohort gate and classify the separate lane stderr decoding issue before another live run |
+
+| Fallback reliability | Source-add deadline post-fix fallback-only canary run04 | proven bounded / default deferred | [.logs/multi_account_fetch/20260810_source_add_deadline_postfix_canary_run04/result_receipt.md](../../.logs/multi_account_fetch/20260810_source_add_deadline_postfix_canary_run04/result_receipt.md), [.logs/multi_account_fetch/20260810_source_add_deadline_postfix_canary_run04/decision_packet.md](../../.logs/multi_account_fetch/20260810_source_add_deadline_postfix_canary_run04/decision_packet.md) | Isolated exact 40-row source-add cohort: `2` complete with non-empty cache (`ytdlp=1`, `whisper=1`), `38` terminal `unavailable`, `0` pending, no outer fallback timeout, zero NotebookLM mutation, staged integrity `ok`; canonical remained `9184/294/333641`. Failed-item elapsed p50/p95/max `84.031/99.773/101.068s`; success max `791.397s` at `n=2`. Because the run used explicit `--fallback-only`, it did not test normal source-add admission and makes no throughput claim. | retain deadline hardening; keep source-add route opt-in and require a separate policy/throughput packet before any default or full-backlog promotion |
+| Source-add recovery | Current post-gate source-add fallback-only canaries run01/run02 | partial bounded recovery / default deferred | [.logs/multi_account_fetch/20260811_source_add_fallback_canary_run01/result_receipt.md](../../.logs/multi_account_fetch/20260811_source_add_fallback_canary_run01/result_receipt.md), [.logs/multi_account_fetch/20260811_source_add_fallback_canary_run02/result_receipt.md](../../.logs/multi_account_fetch/20260811_source_add_fallback_canary_run02/result_receipt.md) | Exact current five-row class in isolated staging: `3/5` non-empty Whisper recoveries; `w9cxJdazkEs` terminal `no_transcript`; `yLSnkG9yLbA` terminal fallback deadline exhaustion; all three immediate token-only auth probes passed; zero source-add/materialization/content actions; staging integrity, cleanup, and canonical hash preservation passed. | preserve exact classifications; keep fallback opt-in; require quality/cost policy, canonical reconciliation proof, and a fresh clean control before any promotion |
+| Source-addressability recovery | Current post-gate source-addressability fallback-only canary run01 | bounded recovery positive / quality caveat / default deferred | [.logs/multi_account_fetch/20260811_source_addressability_fallback_canary_run01/result_receipt.md](../../.logs/multi_account_fetch/20260811_source_addressability_fallback_canary_run01/result_receipt.md), [.logs/multi_account_fetch/20260811_source_addressability_fallback_canary_run01/decision_packet.md](../../.logs/multi_account_fetch/20260811_source_addressability_fallback_canary_run01/decision_packet.md) | Exact one-row canary recovered `QvxHBtYsDig` in `19.598s` through fallback-only with no source-add/materialization/content actions; all three token-only auth probes passed; staged integrity, cleanup, and canonical hash preservation passed. Cache is only `33` characters / `5` words from Selenium and barely meets the existing minimum. | keep fallback opt-in; require semantic-quality policy and broader exact evidence before canonical reconciliation or promotion |
+
+| Throughput control | Uncached control versus adaptive pair run03 fixed control | invalid comparison / adaptive not launched | [.logs/multi_account_fetch/20260810_uncached_control_adaptive_pair_run03/result_receipt.md](../../.logs/multi_account_fetch/20260810_uncached_control_adaptive_pair_run03/result_receipt.md), [.logs/multi_account_fetch/20260810_uncached_control_adaptive_pair_run03/throughput_decision_packet.md](../../.logs/multi_account_fetch/20260810_uncached_control_adaptive_pair_run03/throughput_decision_packet.md) | Exact frozen `1200`-ID cohort; all three token-only auth probes passed; fixed `3` workers/account and batch `50`; `1137/1200` complete, `63` failed, `0` pending, no missing IDs. Combined completed VPH `1534.50` using max parallel account elapsed `2667.454s`. Fallback telemetry was `231` queued/started/completed with `48` `transcript_chain_failed`; selected failures included two deadline-exhausted fallback rows and two cookie-rotation failures. Both staged SQLite integrity checks and process cleanup passed. The fallback-failure gate invalidated the pair; adaptive was not launched. | do not compare as clean throughput evidence; do not launch adaptive or full backlog until a new clean control gate or narrower mechanism packet exists |
+| Unattended operations | Current-policy offline plan/health validation | planned only | [.logs/multi_account_fetch/20260810_offline_plan_validation/result_receipt.md](../../.logs/multi_account_fetch/20260810_offline_plan_validation/result_receipt.md) | `400` pending rows planned as `134/133/133`; Pro adaptive settings forwarded, Free fixed at three workers, explicit source-add fallback deadline `900s`; health `planned`, `issues=[]`; no auth/child/live work. Reusing the prior state after configuration changed was rejected fail-closed. | use a new state path after policy/settings changes; do not treat plan health as live readiness |
+| Throughput control | Unknown-caption repeated control/adaptive pair run07 | invalid comparison / adaptive not launched | [.logs/multi_account_fetch/throughput_pair_20260811_unknown_plan_run07/pair-01/control_result_receipt.md](../../.logs/multi_account_fetch/throughput_pair_20260811_unknown_plan_run07/pair-01/control_result_receipt.md), [.logs/multi_account_fetch/throughput_pair_20260811_unknown_plan_run07/pair-01/control/run/multi_account_fetch_summary.json](../../.logs/multi_account_fetch/throughput_pair_20260811_unknown_plan_run07/pair-01/control/run/multi_account_fetch_summary.json) | Immediate token-only auth passed for `a.hominidae`, `troup.hominidae`, and `brsthomson`. Control performed real uncached work but reconciled `29/30`; the one failure was `brsthomson` video `A1NrAlw1lHw`, typed `ADD_SOURCE` `RPCError rpc_code=9`. Direct replay was correctly skipped. Adaptive and pair 02 were not launched. No VPH from this arm is valid comparison evidence. | preserve RPC9 no-replay policy; use fallback-only recovery in isolated staging; require a new clean control gate and the durable partial-receipt path before any adaptive/full-backlog promotion |
+| Throughput control | All-account adaptive batch-1 scheduler canary run08 | bounded scheduler/cohort diagnostic passed; production promotion deferred | [run08 receipt](../../.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_excluded_residuals_adaptive_all_accounts_batch1_plan_run08/result_receipt.md), [run08 decision packet](../../.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_excluded_residuals_adaptive_all_accounts_batch1_plan_run08/throughput_decision_packet.md) | Immediate typed token-only preflight passed for all three exact accounts. Four arms completed `54/54`; adaptive target workers were `[3,4]` for `a.hominidae`, `troup.hominidae`, and `brsthomson` in both pairs. Combined diagnostic VPH was `2474.038` vs `1953.690` and `2599.938` vs `2041.888`; staged integrity, selected-cache completeness, canonical hash/count preservation, and cleanup passed. Scope was `batch_size=1`, a small captioned-only cohort, two pairs, and five explicit benchmark exclusions. | retain as scheduler-transition evidence only; do not set a production default or claim sustained/optimal VPH; require a larger repeated clean control/adaptive soak at the intended batch size and a new decision packet |
+| Throughput control | Larger all-account adaptive batch-1 repeat run09 | invalid comparison / pair-02 adaptive withheld | [run09 receipt](../../.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_excluded_residuals_adaptive_all_accounts_batch1_repeat_run09/result_receipt.md), [run09 decision packet](../../.logs/multi_account_fetch/throughput_pair_20260811_objective_captioned_excluded_residuals_adaptive_all_accounts_batch1_repeat_run09/throughput_decision_packet.md) | Immediate token-only preflight passed for all three exact accounts. Pair 01 control/adaptive completed `90/90`; adaptive target workers were `[3,4]` for all three accounts and diagnostic VPH was `2814.430` vs `2351.456`. Pair 02 control reconciled `89/90` because `troup.hominidae` video `p0jZ_cV9ZmA` ended `nlm_content_below_threshold`; adaptive was withheld. Canonical hashes/counts and integrity remained unchanged; no process survived. | classify as source/content cohort-quality evidence; do not replay the row or rerun the cohort; retain pair-01 transition only as bounded evidence and require a fresh clean control before another throughput comparison |
+| Throughput control | Production-shaped batch-50 pair run09 | invalidated control / RPC9 recurrence / adaptive withheld | [run09 result receipt](../../.logs/multi_account_fetch/20260812_batch50_any_throughput_pair_run09_plan/result_receipt.md), [run09 packet](../../.logs/multi_account_fetch/20260812_batch50_any_throughput_pair_run09_plan/throughput_pair_packet.json), [source-add decision packet](../../.logs/multi_account_fetch/20260812_batch50_any_throughput_pair_run09_plan/source_add_rpc9_decision_packet.md) | Fresh `5,106`-ID, two-pair scope at `batch_size=50` across `a.hominidae` Pro, `troup.hominidae` Free, and `brsthomson` Free. Immediate exact-account token-only preflight passed. Pair01 control reached `1,113/2,553` complete, `37` failed, and `1,403` pending before controlled abort after `13` fresh raw `ADD_SOURCE rpc_code=9` errors (`6/4/3` by account); raw events contain `53` unique video-level RPC9 outcomes. Pair02 control was stopped before meaningful work at `0/2,553`; both adaptive arms were withheld. Both runner receipts report `vph_valid=false`; no VPH, worker/batch recommendation, auth diagnosis, or full-backlog authorization follows. | preserve the source-add no-blind-replay boundary; do not replay this cohort; require a new source-add mechanism packet and fresh clean control before any adaptive or full-backlog arm |
+| Source-add recovery | Routing-gap and quality canaries run01 | routing/provenance passed; quality gate failed; default deferred | [decision packet](../../.logs/multi_account_fetch/20260812_source_add_fallback_routing_gap_fix_current.md), [quality canary](../../.logs/multi_account_fetch/20260812_source_add_fallback_quality_canary_run01/decision_packet.md) | Fresh disjoint staging canaries: routing run01 admitted `3/3` typed RPC9/materialization failures exactly once with no direct RPC9 retry; the follow-up quality run admitted `1/1` with the normal `900s` fallback deadline, preserved the original reason in staged status and durable queue, and left canonical hashes unchanged. Its fallback transcript was `301` characters, below the existing `500`-character promotion gate; no promotion occurred. | retain opt-in/default-off policy; do not replay either cohort or direct-retry RPC9; require class-level quality/cost evidence before any unattended fallback policy |
+| Source-add recovery | Exact run10 fallback-only canary | partial bounded recovery / one exact quality promotion / default deferred | [run10 receipt](../../.logs/multi_account_fetch/20260812_source_add_fallback_canary_run10/result_receipt.md), [promotion packet](../../.logs/multi_account_fetch/20260812_source_add_fallback_canary_run10/canonical_promotion_packet.md) | Three exact run09 source-add rows across the three accounts passed immediate token-only preflight and ran through explicit `--fallback-only` with `76` raw events and zero NotebookLM mutation actions. `DV4EYDLeqBg` produced `645` Whisper characters and was promoted; `2vYu5CYAQtY` produced `3` characters and `QbK4INVu9fI` was unavailable, so neither was promoted. Canonical counts changed exactly from `9681/197/333241` to `9682/197/333240`; staging and canonical integrity were `ok`. | retain exact classifications and the one quality promotion; keep fallback opt-in and RPC9 replay prohibited; require class-level quality/cost policy and a fresh clean control before any default or full-backlog promotion |
+| Unattended operations | Post-promotion stale-plan reconciliation after run10 | planned / health passed / live execution deferred | [run10 receipt](../../.logs/multi_account_fetch/20260812_source_add_fallback_canary_run10/result_receipt.md), [fresh plan artifacts](../../.logs/multi_account_fetch/unattended-refresh-after-run10/) | The old state selected an ID that exact promotion made complete; it was archived at `P:/.data/yt-is/unattended-backlog/state-stale-after-run10.json`. A fresh plan was generated from the current authoritative databases, installed at `P:/.data/yt-is/unattended-backlog/state.json`, and read-only health returned `planned` with `issues=[]`; no live work launched. | after any canonical promotion or exact status reconciliation, archive and regenerate the plan before launch; do not treat plan health as full-backlog authorization |
+
+The 2026-08-11 scheduler input-closure canary is recorded at
+[run11 receipt](../../../.logs/multi_account_fetch/throughput_pair_20260811_unknown_plan_run11/result_receipt.md).
+Pair-01 used a fresh 30-ID cohort, `batch_size=1`, and 10 items per canonical
+account. Fixed control and adaptive both reconciled `30/30`; adaptive events
+showed the target rising from 3 to 4 after input closed, while `input_open`
+prevented premature scale-down. Combined VPH was `662.963` control versus
+`1616.234` adaptive. This is a valid bounded scheduler-mechanism canary, not
+promotion-quality sustained VPH evidence because the cohort is small and the
+adaptive arm has not been repeated on a larger queue. Pair-02 was invalidated
+at `26/30` by four `SourceNotFoundError` content failures; no adaptive arm was
+launched and no VPH from that pair is valid.
+
+The OS scheduler execution canary is recorded at
+`P:/.logs/multi_account_fetch/scheduler_execution_canary_run01/result_receipt.md`.
+`YtisUnattendedBacklog` registered and launched successfully under the current
+interactive token (`LastTaskResult=0`) in plan-only mode, producing an isolated
+`400`-row plan without changing the canonical database. S4U registration was
+denied by Windows, so this closes only the interactive scheduler-execution
+subgate; logged-out execution, full authorization, and full drain remain open.
+
+The application supervisor's bounded execute/restart/resume behavior is also
+proven by the isolated six-ID run04 receipt at
+`P:/.logs/multi_account_fetch/20260810_scheduler_restart_resume_canary_run04/result_receipt.md`.
+The first process tree was terminated, the same chunk resumed once, and all six
+staged rows completed with integrity `ok`. This does not upgrade the Windows
+task to logged-out execution or authorize `--until-empty`.
 
 When a new benchmark is run:
 - add the case or cohort here
@@ -272,6 +795,15 @@ When a new benchmark is run:
 - add a rerun guard that names the code path that would justify trying it again
 
 When a benchmark result is only meaningful because the sample changed, record that explicitly. That keeps future runs from repeating the same test under a different name.
+
+| Fallback reliability | Current command residual fallback canary run02 | configuration-limited | [run02 packet](../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run02/decision_packet.md) | Exact one-item staged run with immediate token-only auth for all three accounts. `120s` fallback deadline left Whisper `0.1s` after earlier stages; no canonical DB/cache mutation and no NotebookLM action. | do not classify as provider/auth failure; use a meaningful fallback deadline before retrying |
+| Fallback reliability | Current command residual fallback canary run03 | bounded single-item recovery | [run03 packet](../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run03/decision_packet.md) | Exact same ID in fresh staging with `900s` fallback deadline completed through Whisper in `257.065s`, produced `1125` non-empty characters, reconciled `complete`, passed staged integrity, left no process, and showed no NotebookLM action. Semantic quality was not independently scored. | route is not globally promoted; require a larger class-specific packet and quality/cost gates before unattended fallback use |
+| Throughput measurement | No-caption distinct-settings pair run01 | negative control invalid; adaptive withheld | [pair receipt](../../.logs/multi_account_fetch/throughput_pair_20260811_no_caption_30_distinct_settings_plan_run01/result_receipt.md) | Pair 01 `85/90` and pair 02 `88/90`; seven typed RPC9 source-add/content residuals; immediate token-only auth passed for all three accounts; no valid VPH and no adaptive arms launched. | do not use diagnostic rates as VPH; require a changed mechanism or separately justified clean cohort |
+| Source-add recovery | Exact RPC9 fallback recovery pair01 | partial bounded recovery | [recovery receipt](../../.logs/multi_account_fetch/throughput_pair_20260811_no_caption_30_distinct_settings_plan_run01/rpc9_recovery/source_add_pair01/result_receipt.md) | Four exact rows in isolated staging: `3/4` non-empty Whisper completions, `1/4` bounded deadline exhaustion, staging integrity passed, zero NotebookLM actions, canonical state unchanged. | do not replay or promote fallback by default; require class policy and quality/cost evidence |
+| Fallback quality | Command residual completion quality observability | instrumentation-only | [canary receipt](../../.logs/multi_account_fetch/20260811_command_residual_current_canary_run01/result_receipt.md) | Fallback completion now records transcript length/word-count evidence even without engagement metadata; the motivating canary included one 16-character result. No routing or completion semantics changed. | use the measured distribution for a future quality gate; do not equate `complete` with semantic quality |
+| Unattended reliability | Quality-observability coordinator canary run01 | partial bounded canary | [run01 receipt](../../.logs/multi_account_fetch/quality-observability-canary-run01/result_receipt.md) | Fresh 400-ID run: 389 complete and 11 failed across all three accounts; immediate token-only auth passed; Pro emitted scale-down only, not scale-up; normal cache/NotebookLM completions did not populate fallback-only quality fields. Canonical plan was refreshed afterward and health returned `planned` with no issues. | do not claim fallback quality validation, scale-up proof, VPH, or full-backlog readiness; use a dedicated scale-up or fallback-path packet |
+| Throughput measurement | Fresh captioned Pro scale-up canary run10b | proven bounded scheduler canary | [run10b receipt](../../.logs/multi_account_fetch/throughput_pair_20260811_objective_fresh_captioned_scaleup_batch1_run10b/result_receipt.md) | Two disjoint 14-ID/account pairs at `batch_size=1`; all four arms completed `42/42`; immediate exact-account token-only preflight, staging integrity, canonical fingerprints, cleanup, and coordinator validation passed. Pro adaptive emitted raw target workers `{3,4}` twice; Free accounts remained fixed at three. Diagnostic VPH was `2036.665`/`2058.852` control versus `2055.800`/`2083.018` adaptive. | retain only as bounded scheduler evidence; do not claim sustained VPH, account-specific worker optimality, production default, or full-backlog readiness; require repeated intended-shape soaks |
+| Source-add mechanism | Account-scoped pacing canary run02 | negative control aborted; candidate withheld | [pacing result receipt](../../.logs/multi_account_fetch/20260812_source_add_account_pacing_pair_run02/result_receipt.md) | Exact token-only preflight passed for all three accounts. Fresh `pair-01/control` hit nonce-matched RPC9 for `a.hominidae` video `ZHYqjD099Aw` at source position 14 after `42` successful adds; candidate and pair-02 were withheld; no VPH is valid. Gate implementation is opt-in and covered by `9` gate, `182` batch, and `47` pair tests. | do not replay the cohort, direct-retry RPC9, enable pacing by default, or claim a causal mechanism result |
 
 ## Related Docs
 

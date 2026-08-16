@@ -1,0 +1,28 @@
+{
+  "created_at": "2026-08-16T05:33:47.646746+00:00",
+  "db_path": "P:\\.data\\yt-is\\batch_status.sqlite",
+  "dry_run": false,
+  "fetch": {
+    "elapsed_s": 0.5,
+    "mode": "EXECUTE",
+    "phase": "fetch",
+    "returncode": 1,
+    "stdout_tail": "{\"status\": \"failed\", \"error\": \"ValueError: supervisor state belongs to a different configuration; use a new --state-path\"}\n",
+    "supervisor_status": "failed"
+  },
+  "pre_sync_pending": 336032,
+  "skip_sync": true,
+  "status": "fetch_failed",
+  "verify": {
+    "blocked_pending": 126096,
+    "delta": 0,
+    "issues": [],
+    "ok": true,
+    "phase": "verify",
+    "post_pending": 336032,
+    "pre_pending": 336032,
+    "warnings": [
+      "126096 pending rows on blocked channels (coordinator will skip)"
+    ]
+  }
+}

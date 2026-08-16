@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
+import subprocess
 import sys
 import types
 from concurrent.futures import Future
@@ -18,6 +20,12 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _canonical_account_for_source_tests(monkeypatch):
+    """Unit tests exercise dispatch after a mocked canonical auth preflight."""
+    monkeypatch.setenv("YTIS_NLM_ACCOUNT_PROFILE", "a.hominidae")
+
+
 def _load_csf_source_module(*, stub_ensure_auth: bool = False):
     """Load the extensionless bin/csf-source script as a module."""
     path = _REPO_ROOT / "bin" / "csf-source"
@@ -27,8 +35,94 @@ def _load_csf_source_module(*, stub_ensure_auth: bool = False):
         raise RuntimeError("Could not load csf-source")
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
-    if stub_ensure_auth:
-        module._ensure_nlm_auth = lambda: True
+
+    # Keep source-dispatch tests from launching a real NotebookLM worker. The
+    # production boundary uses Popen so descendants can be killed on timeout;
+    # the test proxy returns a realistic worker receipt while leaving this
+    # test module's real subprocess module untouched.
+    real_subprocess = module.subprocess
+
+    class FakeWorkerProcess:
+        pid = 12345
+        returncode = 0
+
+        def __init__(self, command):
+            self.command = command
+
+        def communicate(self, timeout=None):
+            input_path = Path(self.command[self.command.index("--input") + 1])
+            result_path = Path(self.command[self.command.index("--result-path") + 1])
+            batches = json.loads(input_path.read_text(encoding="utf-8"))
+            video_count = sum(len(batch) for batch in batches)
+            runner = module.subprocess.run
+            completed = runner(
+                self.command,
+                capture_output=True,
+                text=True,
+                env=None,
+            )
+            if not result_path.exists():
+                result_path.write_text(
+                    json.dumps(
+                        {
+                            "batch_count": len(batches),
+                            "video_count": video_count,
+                            "succeeded": video_count,
+                            "failed": 0,
+                            "elapsed_s": 0.01,
+                            "content_fetch_status_counts_total": {"ready": video_count},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            return completed.stdout or "", completed.stderr or ""
+
+        def kill(self):
+            return None
+
+    def fake_popen(command, **_kwargs):
+        return FakeWorkerProcess(command)
+
+    def default_run(command, **_kwargs):
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    module.subprocess = types.SimpleNamespace(
+        PIPE=real_subprocess.PIPE,
+        DEVNULL=real_subprocess.DEVNULL,
+        TimeoutExpired=real_subprocess.TimeoutExpired,
+        CREATE_NEW_PROCESS_GROUP=getattr(real_subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        run=default_run,
+        Popen=fake_popen,
+    )
+
+    def fake_ensure_account_session(account_profile, *, worker_id="coordinator", allow_bootstrap=False):
+        assert allow_bootstrap is False
+        identity = {
+            "a.hominidae": (
+                "a.hominidae@gmail.com",
+                "P:/.data/yt-is/nlm-auth/storage_state.json",
+            ),
+            "troup.hominidae": (
+                "troup.hominidae@gmail.com",
+                "P:/.data/yt-is/nlm-auth/storage_state_troup_hominidae.json",
+            ),
+            "brsthomson": (
+                "brsthomson@hotmail.com",
+                "P:/.data/yt-is/nlm-auth/storage_state_brsthomson.json",
+            ),
+        }[account_profile]
+        return types.SimpleNamespace(
+            account_profile=account_profile,
+            worker_id=worker_id,
+            expected_email=identity[0],
+            observed_email=identity[0],
+            storage_path=identity[1],
+            ok=True,
+            reason="ok",
+        )
+
+    module.ensure_account_session = fake_ensure_account_session
+    del stub_ensure_auth  # retained so older test callers remain source-compatible
     return module
 
 
@@ -48,6 +142,68 @@ def test_industrial_worker_env_uses_lane_profile_prefix(tmp_path, monkeypatch):
     assert worker["env"]["YTIS_NLM_OWNER_STATE_PATH"] == worker["state_path"]
     assert worker["env"]["YTIS_NLM_OWNER_NOTEBOOK_TITLE"] == "benchmark-shard-pro-03"
     assert worker["env"]["NOTEBOOKLM_PROFILE"] == "ytis-pro-worker-03"
+
+
+def test_industrial_run_id_preserves_coordinator_identity(monkeypatch):
+    mod = _load_csf_source_module()
+    monkeypatch.delenv("YTIS_INDUSTRIAL_RUN_ID", raising=False)
+    monkeypatch.setenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", "coordinator-run")
+    assert mod._resolve_industrial_run_id() == "coordinator-run"
+
+
+def test_industrial_run_id_prefers_explicit_industrial_identity(monkeypatch):
+    mod = _load_csf_source_module()
+    monkeypatch.setenv("YTIS_INDUSTRIAL_RUN_ID", "industrial-run")
+    monkeypatch.setenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", "coordinator-run")
+    assert mod._resolve_industrial_run_id() == "industrial-run"
+
+
+def test_industrial_worker_launch_propagates_account_profile(tmp_path, monkeypatch):
+    mod = _load_csf_source_module()
+    monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", str(tmp_path / "states"))
+    monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX", "adaptive-free")
+    monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILE_PREFIX", "ytis-free-worker")
+    monkeypatch.setenv("YTIS_NLM_ACCOUNT_PROFILE", "troup.hominidae")
+
+    worker = mod._build_industrial_worker_launch(worker_id=2, worker_batches=[["vid001"]])
+
+    assert worker["notebooklm_profile"] == "ytis-free-worker-02"
+    assert worker["account_profile"] == "troup.hominidae"
+    assert worker["env"]["YTIS_NLM_ACCOUNT_PROFILE"] == "troup.hominidae"
+
+
+def test_industrial_worker_launch_contract_survives_real_subprocess(tmp_path, monkeypatch):
+    """The exact worker environment must cross a real process boundary."""
+    mod = _load_csf_source_module()
+    monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", str(tmp_path / "states"))
+    monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX", "adaptive-a-hominidae")
+    monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILE_PREFIX", "a.hominidae-worker")
+
+    worker = mod._build_industrial_worker_launch(worker_id=2, worker_batches=[["aaaaaaaaaaa"]])
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, os; print(json.dumps({k: os.environ.get(k) for k in "
+                "['YTIS_NLM_ACCOUNT_PROFILE','NOTEBOOKLM_PROFILE',"
+                "'YTIS_NLM_WORKER_ID','YTIS_NLM_OWNER_STATE_PATH',"
+                "'YTIS_NLM_OWNER_NOTEBOOK_TITLE']}))"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        env=worker["env"],
+        check=True,
+    )
+
+    assert json.loads(probe.stdout) == {
+        "YTIS_NLM_ACCOUNT_PROFILE": "a.hominidae",
+        "NOTEBOOKLM_PROFILE": "a.hominidae-worker-02",
+        "YTIS_NLM_WORKER_ID": "worker-02",
+        "YTIS_NLM_OWNER_STATE_PATH": worker["state_path"],
+        "YTIS_NLM_OWNER_NOTEBOOK_TITLE": "adaptive-a-hominidae-02",
+    }
 
 
 def test_video_manifest_dry_run_selects_exact_ids_without_channel_scan(tmp_path, monkeypatch):
@@ -91,6 +247,767 @@ def test_video_manifest_dry_run_selects_exact_ids_without_channel_scan(tmp_path,
     assert completed[0]["selection_mode"] == "video_manifest"
     assert completed[0]["channels_active_total"] == 0
     assert completed[0]["selection_fingerprint"].startswith("sha256:")
+    assert completed[0]["strategy"] == "industrial_cli_batch"
+    assert completed[0]["backend"] == "notebooklm_cli_batch"
+
+
+def test_account_scoped_small_manifest_uses_industrial_client_not_surgical_scraper(tmp_path, monkeypatch):
+    """Small account partitions must not reach the legacy profile-based scraper."""
+    mod = _load_csf_source_module()
+    manifest_path = tmp_path / "selection.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "small-account-selection",
+                "videos": [{"video_id": "aaaaaaaaaaa"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = []
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(
+        mod,
+        "get_entries_for_video_ids_details",
+        lambda ids: [
+            {
+                "video_id": "aaaaaaaaaaa",
+                "status": "pending",
+                "source": "source-a",
+                "has_captions": True,
+                "privacy_status": "public",
+                "upload_status": "uploaded",
+                "is_live_content": False,
+                "unavailable_reason": None,
+            }
+        ],
+    )
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+    monkeypatch.setattr(
+        mod,
+        "process_industrial_batch_reusable",
+        lambda video_ids: {video_id: (True, "direct transcript", None) for video_id in video_ids},
+    )
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
+    monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
+    monkeypatch.setattr(mod, "set_cached_transcript", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mod, "mark_complete", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "csf.transcript.fetch_transcript_chain",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("account-scoped manifest reached the surgical transcript chain")
+        ),
+    )
+
+    mod.cmd_fetch(video_manifest=manifest_path, dry_run=False, workers=1, max_items=1)
+
+    strategy = next(payload for name, payload in events if name == "fetch_strategy_selected")
+    completed = next(payload for name, payload in events if name == "fetch_completed")
+    assert strategy["industrial_selected"] is True
+    assert strategy["use_industrial"] is True
+    assert completed["success_count"] == 1
+
+
+def test_fallback_only_manifest_bypasses_notebooklm_and_records_route(tmp_path, monkeypatch):
+    """The explicit recovery route must never enqueue an exact item for NLM."""
+    mod = _load_csf_source_module()
+    manifest_path = tmp_path / "fallback-only-selection.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "fallback-only-selection",
+                "videos": [{"video_id": "aaaaaaaaaaa"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    entry = {
+        "video_id": "aaaaaaaaaaa",
+        "status": "pending",
+        "source": "source-a",
+        "video_url": "https://www.youtube.com/watch?v=aaaaaaaaaaa",
+        "has_captions": None,
+        "privacy_status": "public",
+        "upload_status": "uploaded",
+        "is_live_content": False,
+        "unavailable_reason": None,
+    }
+    events = []
+    transcript_result = mock.Mock(
+        transcript="fallback transcript",
+        lang="en",
+        source="ytdlp",
+        view_count=None,
+        like_count=None,
+        comment_count=None,
+        duration=None,
+        video_title=None,
+        video_description=None,
+        error=None,
+        failure_reason=None,
+        last_stage=None,
+    )
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda ids: [entry])
+    monkeypatch.setattr(mod, "get_entries_for_source_details", lambda source: [entry])
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_MIN_START_INTERVAL_S", "0")
+    queue_path = tmp_path / "fallback-queue.sqlite"
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_DURABLE_QUEUE_ENABLED", "1")
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_QUEUE_PATH", str(queue_path))
+    monkeypatch.setattr(mod, "process_industrial_batch_reusable", mock.Mock())
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
+    monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
+    monkeypatch.setattr(mod, "set_cached_transcript", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mod, "mark_complete", lambda *args, **kwargs: None)
+    with mock.patch("csf.transcript.fetch_transcript_chain", return_value=transcript_result) as mock_fetch:
+        mod.cmd_fetch(
+            video_manifest=manifest_path,
+            fallback_only=True,
+            dry_run=False,
+            workers=1,
+            max_items=1,
+        )
+
+    mod.process_industrial_batch_reusable.assert_not_called()
+    mock_fetch.assert_called_once()
+    assert mock_fetch.call_args.kwargs["skip_notebooklm"] is True
+    assert mock_fetch.call_args.kwargs["skip_oembed"] is True
+    invoked = next(payload for name, payload in events if name == "fetch_invoked")
+    completed = next(payload for name, payload in events if name == "fetch_completed")
+    assert invoked["fallback_only"] is True
+    assert completed["fallback_only"] is True
+    assert completed["notebooklm_pending_count"] == 0
+    assert completed["success_count"] == 1
+    with sqlite3.connect(queue_path) as conn:
+        assert conn.execute(
+            "SELECT state FROM durable_fallback_queue WHERE video_id=?",
+            ("aaaaaaaaaaa",),
+        ).fetchone() == ("completed",)
+
+
+def test_fallback_only_failure_persists_reason_and_stage(tmp_path, monkeypatch):
+    """Surgical fallback failures must remain classifiable after the run."""
+    mod = _load_csf_source_module()
+    manifest_path = tmp_path / "fallback-only-failure-selection.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "fallback-only-failure-selection",
+                "videos": [{"video_id": "bbbbbbbbbbb"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    entry = {
+        "video_id": "bbbbbbbbbbb",
+        "status": "pending",
+        "source": "source-b",
+        "video_url": "https://www.youtube.com/watch?v=bbbbbbbbbbb",
+        "has_captions": None,
+        "privacy_status": "public",
+        "upload_status": "uploaded",
+        "is_live_content": False,
+        "unavailable_reason": None,
+    }
+    transcript_result = mock.Mock(
+        transcript="",
+        lang="en",
+        source="none",
+        view_count=None,
+        like_count=None,
+        comment_count=None,
+        duration=None,
+        video_title=None,
+        video_description=None,
+        error="audio download failed",
+        failure_reason="unknown",
+        last_stage="whisper",
+    )
+    persisted = []
+    monkeypatch.setattr(mod, "log_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda ids: [entry])
+    monkeypatch.setattr(mod, "get_entries_for_source_details", lambda source: [entry])
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+    monkeypatch.setattr(mod, "set_status", lambda *args, **kwargs: persisted.append((args, kwargs)))
+    monkeypatch.setattr(mod, "process_industrial_batch_reusable", mock.Mock())
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
+    monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
+    with mock.patch("csf.transcript.fetch_transcript_chain", return_value=transcript_result):
+        mod.cmd_fetch(
+            video_manifest=manifest_path,
+            fallback_only=True,
+            dry_run=False,
+            workers=1,
+            max_items=1,
+        )
+
+    assert len(persisted) == 1
+    args, kwargs = persisted[0]
+    assert args == ("bbbbbbbbbbb", "failed")
+    assert kwargs["last_stage"] == "whisper"
+    assert kwargs["failure_reason"] == "unknown: audio download failed"
+
+
+def test_fallback_timeout_classification_reaches_db_failure_path(tmp_path, monkeypatch):
+    mod = _load_csf_source_module()
+    manifest_path = tmp_path / "fallback-timeout-selection.json"
+    manifest_path.write_text(
+        json.dumps({
+            "manifest_version": 1,
+            "generated_at": "now",
+            "selection_name": "fallback-timeout-selection",
+            "videos": [{"video_id": "ccccccccccc"}],
+        }),
+        encoding="utf-8",
+    )
+    entry = {
+        "video_id": "ccccccccccc",
+        "status": "pending",
+        "source": "source-c",
+        "video_url": "https://www.youtube.com/watch?v=ccccccccccc",
+        "has_captions": None,
+        "privacy_status": "public",
+        "upload_status": "uploaded",
+        "is_live_content": False,
+        "unavailable_reason": None,
+    }
+    persisted = []
+    result = mock.Mock(
+        transcript="", failure_reason="termination_unconfirmed",
+        last_stage="transcript_fallback", error="cleanup was not confirmed",
+        lang="en", source="none", view_count=None, like_count=None,
+        comment_count=None, duration=None, video_title=None, video_description=None,
+    )
+    monkeypatch.setattr(mod, "log_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda ids: [entry])
+    monkeypatch.setattr(mod, "get_entries_for_source_details", lambda source: [entry])
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+    monkeypatch.setattr(mod, "set_status", lambda *args, **kwargs: persisted.append((args, kwargs)))
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
+    monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
+    with mock.patch("csf.transcript.fetch_transcript_chain", return_value=result):
+        mod.cmd_fetch(video_manifest=manifest_path, fallback_only=True, dry_run=False, workers=1, max_items=1)
+
+    assert persisted == [
+        (("ccccccccccc", "failed"), {
+            "last_stage": "transcript_fallback",
+            "failure_reason": "termination_unconfirmed: cleanup was not confirmed",
+        })
+    ]
+
+
+def test_durable_fallback_failure_preserves_admission_provenance(tmp_path, monkeypatch):
+    """A recovered fallback item keeps its original source-add failure class."""
+    mod = _load_csf_source_module()
+    manifest_path = tmp_path / "durable-fallback-provenance-selection.json"
+    manifest_path.write_text(
+        json.dumps({
+            "manifest_version": 1,
+            "generated_at": "now",
+            "selection_name": "durable-fallback-provenance-selection",
+            "videos": [{"video_id": "ddddddddddd"}],
+        }),
+        encoding="utf-8",
+    )
+    entry = {
+        "video_id": "ddddddddddd",
+        "status": "pending",
+        "source": "source-d",
+        "video_url": "https://www.youtube.com/watch?v=ddddddddddd",
+        "has_captions": None,
+        "privacy_status": "public",
+        "upload_status": "uploaded",
+        "is_live_content": False,
+        "unavailable_reason": None,
+    }
+    queue_path = tmp_path / "durable-fallback-provenance.sqlite"
+    queue_scope = "durable-fallback-provenance-test"
+    original_reason = (
+        "Source add failed; materialization terminal error: "
+        "SourceAddError (cause=RPCError, rpc_code=9)"
+    )
+    queue = mod.DurableFallbackQueue(
+        queue_path,
+        queue_id="industrial-transcript-fallback",
+        run_scope=queue_scope,
+    )
+    queue.enqueue(
+        video_id="ddddddddddd",
+        source_url=entry["video_url"],
+        skip_notebooklm=True,
+        failure_reason=original_reason,
+        route_version="fallback-v1",
+    )
+    queue.close()
+
+    transcript_result = mock.Mock(
+        transcript="",
+        lang="en",
+        source="none",
+        view_count=None,
+        like_count=None,
+        comment_count=None,
+        duration=None,
+        video_title=None,
+        video_description=None,
+        error="transcript fallback deadline exhausted",
+        failure_reason="unknown",
+        last_stage="transcript_fallback",
+    )
+    persisted = []
+    monkeypatch.setattr(mod, "log_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda ids: [entry])
+    monkeypatch.setattr(mod, "get_entries_for_source_details", lambda source: [entry])
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+    monkeypatch.setattr(mod, "set_status", lambda *args, **kwargs: persisted.append((args, kwargs)))
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
+    monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_DURABLE_QUEUE_ENABLED", "1")
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_QUEUE_PATH", str(queue_path))
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_QUEUE_SCOPE", queue_scope)
+    with mock.patch("csf.transcript.fetch_transcript_chain", return_value=transcript_result):
+        mod.cmd_fetch(
+            video_manifest=manifest_path,
+            fallback_only=True,
+            dry_run=False,
+            workers=1,
+            max_items=1,
+        )
+
+    assert persisted[0][1]["failure_reason"].startswith(original_reason)
+    with sqlite3.connect(queue_path) as conn:
+        row = conn.execute(
+            "SELECT state, failure_reason FROM durable_fallback_queue WHERE video_id=?",
+            ("ddddddddddd",),
+        ).fetchone()
+    assert row[0] == "failed"
+    assert row[1].startswith(original_reason)
+
+
+def test_source_add_failure_recovery_admits_only_exact_rows(monkeypatch):
+    mod = _load_csf_source_module()
+    worker_payload = [
+        mod._IndustrialQueuedBatch(
+            "batch-1",
+            ["source-add-1", "addressability-1", "other-1"],
+            {
+                "source-add-1": "https://www.youtube.com/watch?v=source-add-1",
+                "addressability-1": "https://www.youtube.com/watch?v=addressability-1",
+                "other-1": "https://www.youtube.com/watch?v=other-1",
+            },
+        )
+    ]
+    rows = [
+        {
+            "video_id": "source-add-1",
+            "status": "failed",
+            "failure_reason": "Source add failed: rpc_code=9",
+            "source": "https://www.youtube.com/watch?v=source-add-1",
+        },
+        {
+            "video_id": "addressability-1",
+            "status": "failed",
+            "failure_reason": "SourceNotFoundError: source unavailable",
+            "source": "https://www.youtube.com/watch?v=addressability-1",
+        },
+        {
+            "video_id": "other-1",
+            "status": "failed",
+            "failure_reason": "command_failed",
+            "source": "https://www.youtube.com/watch?v=other-1",
+        },
+    ]
+    queued = mod.deque()
+    events = []
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda _ids: rows)
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+
+    assert mod._queue_confirmed_worker_failures_for_fallback(
+        worker_payload,
+        fallback_queue=queued,
+        source_urls={},
+        source_add_only=True,
+    ) == 1
+    assert list(queued) == [
+        ("source-add-1", "https://www.youtube.com/watch?v=source-add-1", True)
+    ]
+    queued_events = [payload for name, payload in events if name == "industrial_failure_fallback_queued"]
+    assert [payload["video_id"] for payload in queued_events] == ["source-add-1"]
+    assert queued_events[0]["status_preserved"] == "failed"
+    assert queued_events[0]["requeue_skipped"] is True
+
+
+def test_source_addressability_recovery_admits_only_exact_rows(monkeypatch):
+    mod = _load_csf_source_module()
+    worker_payload = [
+        mod._IndustrialQueuedBatch(
+            "batch-1",
+            ["addressability-1", "source-add-1"],
+            {},
+        )
+    ]
+    rows = [
+        {
+            "video_id": "addressability-1",
+            "status": "failed",
+            "failure_reason": "SourceNotFoundError: source unavailable",
+            "source": "https://www.youtube.com/watch?v=addressability-1",
+        },
+        {
+            "video_id": "source-add-1",
+            "status": "failed",
+            "failure_reason": "Source add failed",
+            "source": "https://www.youtube.com/watch?v=source-add-1",
+        },
+    ]
+    queued = mod.deque()
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda _ids: rows)
+
+    assert mod._queue_confirmed_worker_failures_for_fallback(
+        worker_payload,
+        fallback_queue=queued,
+        source_urls={
+            "addressability-1": "https://www.youtube.com/watch?v=addressability-1",
+            "source-add-1": "https://www.youtube.com/watch?v=source-add-1",
+        },
+        source_addressability_only=True,
+    ) == 1
+    assert list(queued) == [
+        ("addressability-1", "https://www.youtube.com/watch?v=addressability-1", True)
+    ]
+
+
+def test_cleanup_worker_notebooks_requires_delete_for_active_scope(monkeypatch, capsys):
+    mod = _load_csf_source_module()
+    assert mod.cmd_cleanup_worker_notebooks(delete=False, include_active=True) == 2
+    assert "requires --delete" in capsys.readouterr().err
+
+
+def test_cleanup_worker_notebooks_requires_active_scope_for_current_state(capsys):
+    mod = _load_csf_source_module()
+    assert mod.cmd_cleanup_worker_notebooks(
+        delete=True, include_active=False, only_current_state=True
+    ) == 2
+    assert "requires --include-active" in capsys.readouterr().err
+
+
+def test_cleanup_worker_notebooks_returns_cleanup_failure(monkeypatch, capsys):
+    mod = _load_csf_source_module()
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **_kwargs: (2, 1))
+    assert mod.cmd_cleanup_worker_notebooks(delete=True, include_active=True) == 1
+    assert "deleted=2 failed=1" in capsys.readouterr().out
+
+
+def test_adaptive_manifest_dispatch_has_run_id_after_auth_preflight(tmp_path, monkeypatch):
+    """Adaptive dispatch must be reachable without an uninitialized run identity."""
+    mod = _load_csf_source_module()
+    manifest_path = tmp_path / "selection.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "adaptive-preflight-order",
+                "videos": [{"video_id": "aaaaaaaaaaa"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = []
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(
+        mod,
+        "get_entries_for_video_ids_details",
+        lambda ids: [
+            {
+                "video_id": "aaaaaaaaaaa",
+                "status": "pending",
+                "source": "source-a",
+                "has_captions": True,
+                "privacy_status": "public",
+                "upload_status": "uploaded",
+                "is_live_content": False,
+                "unavailable_reason": None,
+            }
+        ],
+    )
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
+    monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
+
+    def fake_worker_process(command, **kwargs):
+        result_path = Path(command[command.index("--result-path") + 1])
+        result_path.write_text(
+            json.dumps(
+                {
+                    "batch_count": 1,
+                    "video_count": 1,
+                    "succeeded": 1,
+                    "failed": 0,
+                    "elapsed_s": 0.1,
+                    "content_fetch_status_counts_total": {"ready": 1},
+                    "failure_reason_counts": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        class FailedWorkerProcess:
+            pid = 12346
+            returncode = 0
+
+            def communicate(self, timeout=None):
+                return "", ""
+
+        return FailedWorkerProcess()
+
+    monkeypatch.setattr(mod.subprocess, "Popen", fake_worker_process)
+
+    mod.cmd_fetch(
+        video_manifest=manifest_path,
+        dry_run=False,
+        workers=1,
+        max_items=1,
+        adaptive_workers=True,
+        adaptive_min_workers=1,
+        adaptive_max_workers=2,
+        adaptive_scale_up_backlog=1,
+        adaptive_scale_down_backlog=0,
+        adaptive_cooldown_s=0,
+        adaptive_health_window=1,
+    )
+
+    initialized = next(payload for name, payload in events if name == "adaptive_scheduler_initialized")
+    started = next(payload for name, payload in events if name == "adaptive_worker_starting")
+    assert initialized["run_id"]
+    assert started["run_id"] == initialized["run_id"]
+    auth_index = next(index for index, (name, _payload) in enumerate(events) if name == "nlm_auth_storage_probe_ok")
+    worker_index = next(index for index, (name, _payload) in enumerate(events) if name == "adaptive_worker_starting")
+    assert auth_index < worker_index
+
+
+def test_adaptive_scheduler_exhaustion_emits_recoverable_failure_receipt(tmp_path, monkeypatch):
+    """Queued work must remain attributable when every adaptive slot is quarantined."""
+    mod = _load_csf_source_module()
+    mod.DEFAULT_NOTEBOOKLM_BATCH_SIZE = 1
+    manifest_path = tmp_path / "selection.json"
+    video_ids = ["aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc", "ddddddddddd"]
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_version": 1,
+                "generated_at": "now",
+                "selection_name": "adaptive-exhaustion",
+                "videos": [{"video_id": video_id} for video_id in video_ids],
+            }
+        ),
+        encoding="utf-8",
+    )
+    events = []
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+    monkeypatch.setattr(mod, "_get_batch_status_storage", lambda: object())
+    monkeypatch.setattr(
+        mod,
+        "get_entries_for_video_ids_details",
+        lambda ids: [
+            {
+                "video_id": video_id,
+                "status": "pending",
+                "source": "source-a",
+                "has_captions": True,
+                "privacy_status": "public",
+                "upload_status": "uploaded",
+                "is_live_content": False,
+                "unavailable_reason": None,
+            }
+            for video_id in ids
+        ],
+    )
+    monkeypatch.setattr(mod, "has_cached_transcript", lambda video_id: False)
+    monkeypatch.setattr(mod, "get_negative_cache", lambda video_id: None)
+    monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
+    monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
+
+    def fake_worker_process(command, **kwargs):
+        result_path = Path(command[command.index("--result-path") + 1])
+        result_path.write_text(
+            json.dumps(
+                {
+                    "batch_count": 1,
+                    "video_count": 1,
+                    "succeeded": 0,
+                    "failed": 1,
+                    "elapsed_s": 0.1,
+                    "content_fetch_status_counts_total": {"source_add_failed": 1},
+                    "failure_reason_counts": {"source_add_failed": 1},
+                }
+            ),
+            encoding="utf-8",
+        )
+        class FailedWorkerProcess:
+            pid = 12346
+            returncode = 0
+
+            def communicate(self, timeout=None):
+                return "", ""
+
+        return FailedWorkerProcess()
+
+    monkeypatch.setattr(mod.subprocess, "Popen", fake_worker_process)
+
+    mod.cmd_fetch(
+        video_manifest=manifest_path,
+        dry_run=False,
+        workers=2,
+        max_items=4,
+        adaptive_workers=True,
+        adaptive_min_workers=1,
+        adaptive_max_workers=2,
+        adaptive_scale_up_backlog=1,
+        adaptive_scale_down_backlog=0,
+        adaptive_cooldown_s=0,
+        adaptive_health_window=1,
+    )
+
+    completed = next(payload for name, payload in events if name == "fetch_completed")
+    assert completed["status"] == "partial"
+    assert completed["processed_count"] < completed["pending_total"]
+    assert completed["unprocessed_count"] == 1
+    assert completed["failure_reason"] == "unprocessed_outcomes:1"
+    assert any(name == "adaptive_worker_recovered" for name, _payload in events)
+
+
+def test_coordinator_owned_single_worker_uses_isolated_worker_boundary(monkeypatch):
+    """Coordinator runs must not use the in-process serial industrial path."""
+    mod = _load_csf_source_module()
+    monkeypatch.delenv("YTIS_DISABLE_INDUSTRIAL_PARALLEL", raising=False)
+    monkeypatch.setenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", "run01")
+
+    # Exercise the same predicate used by cmd_fetch.  The existing launch
+    # contract tests prove that the isolated boundary receives account state,
+    # profile, title, and worker identity.
+    assert mod._industrial_parallel_enabled_for_runtime(workers=1) is True
+
+    monkeypatch.delenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", raising=False)
+    assert mod._industrial_parallel_enabled_for_runtime(workers=1) is False
+
+
+def test_cli_passes_adaptive_worker_options_to_fetch_boundary(monkeypatch):
+    """The live CLI must preserve adaptive options at the cmd_fetch boundary."""
+    mod = _load_csf_source_module()
+    calls = []
+    monkeypatch.setattr(mod, "cmd_fetch", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(
+        mod.sys,
+        "argv",
+        [
+            "csf-source",
+            "fetch",
+            "--dry-run",
+            "--workers",
+            "2",
+            "--adaptive-workers",
+            "--adaptive-min-workers",
+            "1",
+            "--adaptive-max-workers",
+            "4",
+            "--adaptive-scale-up-backlog",
+            "3",
+            "--adaptive-scale-down-backlog",
+            "0",
+            "--adaptive-cooldown-s",
+            "12.5",
+            "--adaptive-health-window",
+            "3",
+            "--limit",
+            "5",
+        ],
+    )
+
+    mod.main()
+
+    assert len(calls) == 1
+    assert calls[0]["workers"] == 2
+    assert calls[0]["adaptive_workers"] is True
+    assert calls[0]["adaptive_min_workers"] == 1
+    assert calls[0]["adaptive_max_workers"] == 4
+    assert calls[0]["adaptive_scale_up_backlog"] == 3
+    assert calls[0]["adaptive_scale_down_backlog"] == 0
+    assert calls[0]["adaptive_cooldown_s"] == 12.5
+    assert calls[0]["adaptive_health_window"] == 3
+
+
+def test_account_preflight_fixture_preserves_named_identity_mapping():
+    """Test auth fixtures must distinguish all canonical account identities."""
+    mod = _load_csf_source_module()
+
+    troup = mod.ensure_account_session("troup.hominidae", worker_id="coordinator")
+    brsthomson = mod.ensure_account_session("brsthomson", worker_id="coordinator")
+
+    assert troup.expected_email == "troup.hominidae@gmail.com"
+    assert troup.storage_path.endswith("storage_state_troup_hominidae.json")
+    assert brsthomson.expected_email == "brsthomson@hotmail.com"
+    assert brsthomson.storage_path.endswith("storage_state_brsthomson.json")
+
+
+def test_adaptive_launch_identity_pool_is_unique_and_can_scale():
+    """Launch-built worker identities must feed the real scheduler policy."""
+    mod = _load_csf_source_module()
+    identities = []
+    for worker_id in range(1, 5):
+        launch = mod._build_industrial_worker_launch(
+            worker_id=worker_id,
+            worker_batches=[],
+            create_state_root=False,
+        )
+        identities.append(
+            mod.WorkerIdentity(
+                worker_id,
+                str(launch["notebooklm_profile"]),
+                str(launch["notebook_title"]),
+                str(launch["state_path"]),
+                f"{launch['notebooklm_profile']}::{launch['notebook_title']}",
+                str(launch["account_profile"]),
+            )
+        )
+
+    scheduler = mod.AdaptiveWorkerScheduler(
+        tuple(identities),
+        mod.SchedulerConfig(2, 4, min_workers=1, cooldown_s=0, health_window=2),
+    )
+    decision = scheduler.choose(
+        mod.SchedulerSnapshot(
+            1.0,
+            4,
+            active_worker_ids=frozenset({1, 2}),
+            health_samples=(mod.HealthSample(1, True), mod.HealthSample(1, True)),
+        )
+    )
+
+    assert len({item.profile for item in identities}) == 4
+    assert len({item.notebook_title for item in identities}) == 4
+    assert len({item.state_path for item in identities}) == 4
+    assert decision.target_workers == 3
+    scheduler.apply(decision, now_s=1.0)
+    assert scheduler.target_workers == 3
 
 
 def test_industrial_worker_env_can_use_explicit_lane_profiles(tmp_path, monkeypatch):
@@ -134,152 +1051,228 @@ def test_industrial_worker_default_notebook_title_uses_explicit_profile(tmp_path
     assert worker["env"]["YTIS_NLM_OWNER_NOTEBOOK_TITLE"] == "ytis-free2-worker-02"
 
 
-def test_parent_nlm_auth_uses_first_explicit_worker_profile(monkeypatch):
-    """Live industrial fetches should not require a separate parent NotebookLM profile."""
+def test_industrial_worker_timeout_is_finite_for_coordinator_owned_runs(monkeypatch):
     mod = _load_csf_source_module()
-    calls: list[list[str]] = []
+    monkeypatch.delenv("YTIS_INDUSTRIAL_WORKER_TIMEOUT_S", raising=False)
+    monkeypatch.setenv("YTIS_COORDINATOR_RUN_ID", "run-123")
 
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        return types.SimpleNamespace(returncode=0, stdout="Account: a.hominidae@gmail.com\n", stderr="")
+    assert mod._industrial_worker_timeout_s() == 4 * 60 * 60
 
-    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
-    monkeypatch.setenv(
-        "YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILES",
-        "ytis-pro-worker-01,ytis-pro-worker-02",
+    monkeypatch.delenv("YTIS_COORDINATOR_RUN_ID", raising=False)
+    monkeypatch.setenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", "run-456")
+    assert mod._industrial_worker_timeout_s() == 4 * 60 * 60
+
+
+def test_industrial_worker_timeout_stays_unbounded_for_standalone_runs(monkeypatch):
+    mod = _load_csf_source_module()
+    monkeypatch.delenv("YTIS_INDUSTRIAL_WORKER_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("YTIS_COORDINATOR_RUN_ID", raising=False)
+
+    assert mod._industrial_worker_timeout_s() is None
+
+
+def test_industrial_worker_timeout_accepts_explicit_positive_override(monkeypatch):
+    mod = _load_csf_source_module()
+    monkeypatch.setenv("YTIS_INDUSTRIAL_WORKER_TIMEOUT_S", "12.5")
+
+    assert mod._industrial_worker_timeout_s() == 12.5
+
+
+def test_transcript_fallback_timeout_is_finite_for_coordinator_and_validates_config(monkeypatch):
+    mod = _load_csf_source_module()
+    monkeypatch.delenv("YTIS_TRANSCRIPT_FALLBACK_TIMEOUT_S", raising=False)
+    monkeypatch.setenv("YTIS_COORDINATOR_RUN_ID", "run-123")
+    assert mod._transcript_fallback_timeout_s() == 30 * 60
+
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_TIMEOUT_S", "12.5")
+    assert mod._transcript_fallback_timeout_s() == 12.5
+
+    monkeypatch.setenv("YTIS_TRANSCRIPT_FALLBACK_TIMEOUT_S", "nan")
+    assert mod._transcript_fallback_timeout_s() == 30 * 60
+
+
+def test_transcript_fallback_timeout_terminates_owned_process_and_classifies_timeout(monkeypatch):
+    mod = _load_csf_source_module()
+    calls: list[tuple[str, object]] = []
+
+    class HangingProcess:
+        pid = 9876
+        returncode = None
+        stdout = None
+        stderr = None
+
+        def communicate(self, timeout=None):
+            calls.append(("communicate", timeout))
+            if len(calls) == 1:
+                raise mod.subprocess.TimeoutExpired("worker", timeout)
+            return "", ""
+
+        def wait(self, timeout=None):
+            self.returncode = -9
+            return self.returncode
+
+        def kill(self):
+            calls.append(("kill", self.pid))
+
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *args, **kwargs: HangingProcess())
+    monkeypatch.setattr(
+        mod,
+        "_terminate_process_tree_pid",
+        lambda pid: calls.append(("terminate", pid)),
     )
-    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-    monkeypatch.setattr(mod.nlm_auth_guard, "run_nlm", fake_run)
+    result = mod._run_transcript_fallback_subprocess(
+        "dQw4w9WgXcQ", True, True, None, 3
+    )
 
-    assert mod._ensure_nlm_auth() is True
-    assert calls == [["login", "--check", "--profile", "ytis-pro-worker-01"]]
-    assert mod.os.environ["NOTEBOOKLM_PROFILE"] == "ytis-pro-worker-01"
+    assert result.failure_reason == "timeout"
+    assert result.last_stage == "transcript_fallback"
+    assert ("terminate", 9876) in calls
+    assert calls[0] == ("communicate", 3)
 
 
-def test_ensure_nlm_auth_noninteractive_uses_force_refresh(monkeypatch):
-    """Benchmark runs may use bounded force refresh, but not plain interactive login."""
+def test_transcript_fallback_timeout_marks_termination_unconfirmed(monkeypatch):
     mod = _load_csf_source_module()
-    calls: list[list[str]] = []
+    calls: list[tuple[str, object]] = []
 
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        if len(calls) == 1:
-            return types.SimpleNamespace(returncode=1, stdout="", stderr="expired")
-        return types.SimpleNamespace(returncode=0, stdout="Account: troup.hominidae@gmail.com\n", stderr="")
+    class Pipe:
+        def __init__(self, name):
+            self.name = name
 
-    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free1-worker-01")
-    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-    monkeypatch.setattr(mod.nlm_auth_guard, "run_nlm", fake_run)
-    monkeypatch.setattr(mod, "refresh_source_profile", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(mod, "sync_worker_profiles", lambda *_args, **_kwargs: None)
+        def close(self):
+            calls.append(("close", self.name))
 
-    assert mod._ensure_nlm_auth() is True
+    class UnreapedProcess:
+        pid = 9878
+        returncode = None
+        stdout = Pipe("stdout")
+        stderr = Pipe("stderr")
 
+        def communicate(self, timeout=None):
+            calls.append(("communicate", timeout))
+            raise mod.subprocess.TimeoutExpired("worker", timeout)
+
+        def kill(self):
+            calls.append(("kill", self.pid))
+
+        def wait(self, timeout=None):
+            calls.append(("wait", timeout))
+            raise mod.subprocess.TimeoutExpired("worker", timeout)
+
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *args, **kwargs: UnreapedProcess())
+    monkeypatch.setattr(mod, "_terminate_process_tree_pid", lambda pid: calls.append(("terminate", pid)))
+    result = mod._run_transcript_fallback_subprocess("dQw4w9WgXcQ", True, True, None, 3)
+
+    assert result.failure_reason == "termination_unconfirmed"
+    assert "termination=termination_unconfirmed" in result.error
     assert calls == [
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
+        ("communicate", 3),
+        ("terminate", 9878),
+        ("communicate", 30),
+        ("kill", 9878),
+        ("wait", 1),
+        ("close", "stdout"),
+        ("close", "stderr"),
     ]
 
 
-def test_ensure_nlm_auth_forced_refresh_emits_family_refresh_markers(monkeypatch):
-    """Forced refresh should hit the family refresh path and emit timing markers."""
+def test_transcript_fallback_subprocess_success_preserves_result(monkeypatch):
     mod = _load_csf_source_module()
-    calls: list[list[str]] = []
-    refresh_calls: list[str] = []
-    sync_calls: list[dict[str, object]] = []
 
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        return types.SimpleNamespace(returncode=0, stdout="Account: troup.hominidae@gmail.com\n", stderr="")
+    class CompletedProcess:
+        pid = 9877
+        returncode = 0
 
-    def fake_refresh_source_profile(family, **kwargs):
-        refresh_calls.append(family.source_profile)
-        return True
+        def __init__(self, command):
+            self.command = command
 
-    def fake_sync_worker_profiles(**kwargs):
-        sync_calls.append(kwargs)
-        return None
+        def communicate(self, timeout=None):
+            result_path = Path(self.command[self.command.index("--result-path") + 1])
+            result_path.write_text(
+                json.dumps({
+                    "video_id": "dQw4w9WgXcQ", "lang": "en", "raw_lang": "en",
+                    "was_translated": False, "transcript": "unchanged",
+                    "source": "ytdlp", "source_stage": 1, "detected_lang": "en",
+                    "error": None, "last_stage": None, "failure_reason": None,
+                }),
+                encoding="utf-8",
+            )
+            return "", ""
 
-    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free1-worker-01")
-    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-    monkeypatch.setenv("YTIS_NLM_AUTH_FORCE_REFRESH_EVERY_CHECKS", "1")
-    monkeypatch.setattr(mod.nlm_auth_guard, "run_nlm", fake_run)
-    monkeypatch.setattr(mod, "refresh_source_profile", fake_refresh_source_profile)
-    monkeypatch.setattr(mod, "sync_worker_profiles", fake_sync_worker_profiles)
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda command, **kwargs: CompletedProcess(command))
+    result = mod._run_transcript_fallback_subprocess(
+        "dQw4w9WgXcQ", False, False, {"duration": 12}, 3
+    )
 
-    with mock.patch.object(mod, "log_action") as mock_log:
-        assert mod._ensure_nlm_auth() is True
-
-    assert calls == [
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-    ]
-    assert refresh_calls == ["ytis-free1-worker-01"]
-    assert sync_calls and sync_calls[0]["families"][0].source_profile == "ytis-free1-worker-01"
-    log_names = [call.args[0] for call in mock_log.call_args_list]
-    assert "nlm_auth_forced_refresh_scheduled" in log_names
-    assert "nlm_family_refresh_started" in log_names
-    assert "nlm_family_refresh_completed" in log_names
+    assert result.transcript == "unchanged"
+    assert result.source == "ytdlp"
 
 
-def test_ensure_nlm_auth_reaps_default_profile_before_check_and_continues(monkeypatch):
-    """A transient default chrome-profile before auth check should be reaped and retried, not abort the run."""
+def test_transcript_fallback_subprocess_passes_leading_hyphen_video_id_as_attached_option(monkeypatch):
+    """YouTube IDs beginning with '-' must not be parsed as CLI options."""
     mod = _load_csf_source_module()
-    calls: list[list[str]] = []
-    stop_calls: list[set[int]] = []
+    captured: dict[str, list[str]] = {}
 
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        return types.SimpleNamespace(returncode=0, stdout="Account: troup.hominidae@gmail.com\n", stderr="")
+    class CompletedProcess:
+        pid = 9880
+        returncode = 0
 
-    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free1-worker-01")
-    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-    monkeypatch.setattr(mod, "_default_nlm_chrome_profile_pids", mock.Mock(side_effect=[{12345}, set()]))
-    monkeypatch.setattr(mod, "_stop_chrome_pids", lambda pids: stop_calls.append(set(pids)))
-    monkeypatch.setattr(mod.nlm_auth_guard, "run_nlm", fake_run)
+        def __init__(self, command):
+            self.command = command
+            captured["command"] = command
 
-    assert mod._ensure_nlm_auth() is True
+        def communicate(self, timeout=None):
+            result_path = Path(self.command[self.command.index("--result-path") + 1])
+            result_path.write_text(
+                json.dumps({
+                    "video_id": "-nJIgUTc4N8", "lang": "en", "raw_lang": "en",
+                    "was_translated": False, "transcript": "leading hyphen works",
+                    "source": "ytdlp", "source_stage": 1, "detected_lang": "en",
+                    "error": None, "last_stage": None, "failure_reason": None,
+                }),
+                encoding="utf-8",
+            )
+            return "", ""
 
-    assert calls == [
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-    ]
-    assert stop_calls == [{12345}]
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda command, **kwargs: CompletedProcess(command))
+    result = mod._run_transcript_fallback_subprocess(
+        "-nJIgUTc4N8", False, False, None, 3
+    )
+
+    assert result.transcript == "leading hyphen works"
+    assert "--video-id=-nJIgUTc4N8" in captured["command"]
+    deadline_index = captured["command"].index("--deadline-s")
+    assert float(captured["command"][deadline_index + 1]) == 0.1
 
 
-def test_ensure_nlm_auth_reaps_default_profile_after_check_and_continues(monkeypatch):
-    """A transient default chrome-profile after auth check should be reaped and logged, not abort the run."""
+def test_transcript_fallback_empty_worker_result_preserves_process_diagnostics(monkeypatch):
+    """A crashed child must be diagnosable even when its precreated file is empty."""
     mod = _load_csf_source_module()
-    calls: list[list[str]] = []
-    stop_calls: list[set[int]] = []
 
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        return types.SimpleNamespace(returncode=0, stdout="Account: troup.hominidae@gmail.com\n", stderr="")
+    class CrashedProcess:
+        pid = 9879
+        returncode = 1
 
-    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-free1-worker-01")
-    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-    monkeypatch.setattr(mod, "_default_nlm_chrome_profile_pids", mock.Mock(side_effect=[set(), {12345}]))
-    monkeypatch.setattr(mod, "_stop_chrome_pids", lambda pids: stop_calls.append(set(pids)))
-    monkeypatch.setattr(mod.nlm_auth_guard, "run_nlm", fake_run)
+        def communicate(self, timeout=None):
+            return "", "worker traceback"
 
-    with mock.patch.object(mod, "log_action") as mock_log:
-        assert mod._ensure_nlm_auth() is True
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda command, **kwargs: CrashedProcess())
+    result = mod._run_transcript_fallback_subprocess(
+        "dQw4w9WgXcQ", True, True, None, 3
+    )
 
-    assert calls == [
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-    ]
-    assert stop_calls == [{12345}]
-    log_names = [call.args[0] for call in mock_log.call_args_list]
-    assert "nlm_auth_recovered" in log_names
+    assert result.failure_reason == "unknown"
+    assert "invalid transcript worker result (1)" in result.error
+    assert "JSONDecodeError" in result.error
+    assert "worker traceback" in result.error
 
 
 def test_cmd_fetch_logs_terminal_failure_when_auth_guard_aborts():
-    """cmd_fetch should still emit a terminal fetch record when auth aborts before dispatch."""
+    """cmd_fetch should emit a terminal record when canonical preflight fails."""
     mod = _load_csf_source_module()
     channel_rows = [("https://www.youtube.com/@example", "pl-1")]
     pending_entries = [
         {
-            "video_id": "vid001",
+            "video_id": "dQw4w9WgXcQ",
             "status": "pending",
             "has_captions": True,
             "privacy_status": "public",
@@ -319,7 +1312,18 @@ def test_cmd_fetch_logs_terminal_failure_when_auth_guard_aborts():
             with mock.patch.object(mod, "is_channel_blocked", return_value=False):
                 with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
                     with mock.patch.object(mod, "has_cached_transcript", return_value=False):
-                        with mock.patch.object(mod, "_ensure_nlm_auth", side_effect=SystemExit(1)):
+                        with mock.patch.object(
+                            mod,
+                            "ensure_account_session",
+                            return_value=types.SimpleNamespace(
+                                account_profile="a.hominidae",
+                                worker_id="coordinator",
+                                expected_email="a.hominidae@gmail.com",
+                                storage_path="P:/.data/yt-is/nlm-auth/storage_state.json",
+                                ok=False,
+                                reason="expired_session",
+                            ),
+                        ):
                             with mock.patch.object(mod, "log_action") as mock_log:
                                 with pytest.raises(SystemExit):
                                     mod.cmd_fetch(source_filter="https://www.youtube.com/@example", dry_run=False, workers=1)
@@ -328,7 +1332,22 @@ def test_cmd_fetch_logs_terminal_failure_when_auth_guard_aborts():
     assert "fetch_completed" in log_names
     completed = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_completed")
     assert completed["status"] == "failed"
-    assert "SystemExit" in completed["failure_reason"]
+    assert completed["failure_reason"] == "canonical_auth_preflight:expired_session"
+
+
+def test_dispatch_queue_reuses_stable_batch_id_after_requeue():
+    """A requeued queue item keeps its logical identity across dispatch attempts."""
+    mod = _load_csf_source_module()
+    queued = mod._IndustrialQueuedBatch("input-batch-a", ["aaaaaaaaaaa"])
+    queue = [queued]
+
+    first_dispatch = mod._take_industrial_dispatch_groups(queue, 1, 1)
+    assert first_dispatch[0][0] is queued
+
+    queue[0:0] = first_dispatch[0]
+    second_dispatch = mod._take_industrial_dispatch_groups(queue, 1, 1)
+    assert second_dispatch[0][0] is queued
+    assert second_dispatch[0][0].batch_id == "input-batch-a"
 
 
 def test_cmd_fetch_logs_fetch_start_and_first_download_started_industrial():
@@ -1274,6 +2293,27 @@ def test_take_industrial_dispatch_groups_uses_warm_batch_bundles():
     assert groups[0][0] == ["vid000"]
 
 
+def test_bounded_dispatch_slot_count_never_exceeds_eligible_workers():
+    """Quarantined slots must not cause queued batches to be removed unassigned."""
+    mod = _load_csf_source_module()
+
+    assert mod._bounded_dispatch_slot_count(4, 2) == 2
+    assert mod._bounded_dispatch_slot_count(1, 0) == 0
+    assert mod._bounded_dispatch_slot_count(-1, 3) == 0
+
+
+def test_bounded_dispatch_preserves_unassigned_queue_batches():
+    """When a slot is quarantined, unassignable batches remain queued."""
+    mod = _load_csf_source_module()
+    queue = [["batch-a"], ["batch-b"], ["batch-c"]]
+    dispatch_slots = mod._bounded_dispatch_slot_count(4, 2)
+
+    groups = mod._take_industrial_dispatch_groups(queue, dispatch_slots, 1)
+
+    assert groups == [[["batch-a"]], [["batch-b"]]]
+    assert queue == [["batch-c"]]
+
+
 def test_load_worker_summary_falls_back_when_result_file_missing():
     """Worker summary parsing should fall back to stdout when the result file is missing."""
     mod = _load_csf_source_module()
@@ -1286,6 +2326,297 @@ def test_load_worker_summary_falls_back_when_result_file_missing():
     assert summary["succeeded"] == 7
     assert summary["failed"] == 2
     assert summary["status"] == "ok"
+
+
+@pytest.mark.parametrize("payload", ["[]", '"malformed"', "null", "17"])
+def test_load_worker_summary_rejects_non_object_json(payload, tmp_path):
+    """Non-object worker output must become an empty summary, not crash the coordinator."""
+    mod = _load_csf_source_module()
+    result_path = tmp_path / "worker-result.json"
+    result_path.write_text(payload, encoding="utf-8")
+
+    assert mod._load_worker_summary(result_path, "") == {}
+
+
+def test_adaptive_health_blocks_missing_telemetry_and_disqualifying_reasons():
+    mod = _load_csf_source_module()
+
+    assert mod._classify_adaptive_worker_health({}) == (False, "worker_result")
+    assert mod._classify_adaptive_worker_health({"status": "ok"}) == (
+        False,
+        "health_telemetry_missing",
+    )
+    assert mod._classify_adaptive_worker_health(
+        {
+            "content_fetch_status_counts_total": {"auth_failed": 1},
+            "succeeded": 0,
+            "failed": 1,
+        }
+    ) == (False, "auth_failed")
+    assert mod._classify_adaptive_worker_health(
+        {
+            "content_fetch_status_counts_total": {"ready": 3},
+            "succeeded": 3,
+            "failed": 0,
+        }
+    ) == (True, "")
+
+
+def test_adaptive_health_blocks_failure_rate_above_scheduler_limit():
+    mod = _load_csf_source_module()
+
+    assert mod._classify_adaptive_worker_health(
+        {
+            "content_fetch_status_counts_total": {"ready": 7, "command_failed": 3},
+            "succeeded": 7,
+            "failed": 3,
+        },
+        max_failure_rate=0.25,
+    ) == (False, "failure_rate_exceeded")
+    assert mod._classify_adaptive_worker_health(
+        {
+            "content_fetch_status_counts_total": {"ready": 9, "command_failed": 3},
+            "succeeded": 9,
+            "failed": 3,
+        },
+        max_failure_rate=0.25,
+    ) == (True, "")
+
+
+def test_adaptive_health_requires_result_counts_for_scale_up():
+    mod = _load_csf_source_module()
+
+    assert mod._classify_adaptive_worker_health(
+        {"content_fetch_status_counts_total": {"ready": 3}}
+    ) == (False, "worker_result_counts_missing")
+
+
+def test_adaptive_result_requeues_only_when_completion_is_untrustworthy():
+    mod = _load_csf_source_module()
+
+    assert mod._adaptive_result_requires_requeue({}, "health_telemetry_missing") is True
+    assert mod._adaptive_result_requires_requeue({}, "auth_failed") is True
+    assert mod._adaptive_result_requires_requeue({}, "failure_rate_exceeded") is False
+    assert mod._adaptive_result_requires_requeue({}, "source_age_cliff") is False
+
+
+def test_adaptive_assignment_requeue_preserves_payload_and_ledger_identity():
+    mod = _load_csf_source_module()
+    ledger = mod.AssignmentLedger()
+    item = mod._IndustrialQueuedBatch("batch-a", ["aaaaaaaaaaa"])
+    ledger.register((item.batch_id,))
+    ledger.claim("assignment-a", (item.batch_id,))
+    queue = []
+
+    mod._requeue_adaptive_assignment(queue, [item], ledger, "assignment-a")
+
+    assert queue == [item]
+    accounting = ledger.accounting()
+    assert accounting.balanced
+    assert accounting.requeued == 1
+
+
+def test_adaptive_assignment_requeue_fails_closed_without_ownership_metadata():
+    mod = _load_csf_source_module()
+    item = mod._IndustrialQueuedBatch("batch-a", ["aaaaaaaaaaa"])
+
+    with pytest.raises(RuntimeError, match="no assignment ID"):
+        mod._requeue_adaptive_assignment([], [item], None, "")
+    with pytest.raises(RuntimeError, match="no batch payload"):
+        mod._requeue_adaptive_assignment([], [], None, "assignment-a")
+
+
+def test_worker_failure_fallback_reconciles_db_and_never_replays_notebooklm(monkeypatch):
+    """Only persisted failed rows with a source are queued without requeueing."""
+    mod = _load_csf_source_module()
+    item = mod._IndustrialQueuedBatch(
+        "batch-a",
+        ["failed-video", "still-pending", "no-source"],
+        {"failed-video": "https://www.youtube.com/watch?v=failed-video"},
+    )
+    rows = [
+        {
+            "video_id": "failed-video",
+            "status": "failed",
+            "source": None,
+            "failure_reason": "SourceNotFoundError",
+        },
+        {
+            "video_id": "still-pending",
+            "status": "pending",
+            "source": "https://www.youtube.com/watch?v=still-pending",
+            "failure_reason": None,
+        },
+        {
+            "video_id": "no-source",
+            "status": "failed",
+            "source": None,
+            "failure_reason": "command_failed",
+        },
+    ]
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda _ids: rows)
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+    fallback_queue = mod.deque()
+
+    queued = mod._queue_confirmed_worker_failures_for_fallback(
+        [item],
+        fallback_queue=fallback_queue,
+        source_urls={},
+    )
+
+    assert queued == 1
+    assert list(fallback_queue) == [
+        ("failed-video", "https://www.youtube.com/watch?v=failed-video", True)
+    ]
+    assert any(name == "industrial_failure_fallback_queued" for name, _ in events)
+    queued_event = next(payload for name, payload in events if name == "industrial_failure_fallback_queued")
+    assert queued_event["status_preserved"] == "failed"
+    assert queued_event["requeue_skipped"] is True
+    assert not any(name == "industrial_failure_fallback_not_queued" and payload.get("video_id") == "still-pending" for name, payload in events)
+
+
+def test_source_add_failure_fallback_routes_only_source_add_rows(monkeypatch):
+    """The narrow recovery route must not queue unrelated worker failures."""
+    mod = _load_csf_source_module()
+    item = mod._IndustrialQueuedBatch(
+        "batch-a",
+        ["source-add-video", "command-video"],
+        {
+            "source-add-video": "https://www.youtube.com/watch?v=source-add-video",
+            "command-video": "https://www.youtube.com/watch?v=command-video",
+        },
+    )
+    rows = [
+        {
+            "video_id": "source-add-video",
+            "status": "failed",
+            "failure_reason": "Source add failed",
+        },
+        {
+            "video_id": "command-video",
+            "status": "failed",
+            "failure_reason": "command_failed",
+        },
+    ]
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda _ids: rows)
+    monkeypatch.setattr(mod, "log_action", lambda *_args, **_kwargs: None)
+    fallback_queue = mod.deque()
+    failure_reasons = {}
+
+    queued = mod._queue_confirmed_worker_failures_for_fallback(
+        [item],
+        fallback_queue=fallback_queue,
+        source_urls={},
+        source_add_only=True,
+        failure_reasons=failure_reasons,
+    )
+
+    assert queued == 1
+    assert list(fallback_queue) == [
+        ("source-add-video", "https://www.youtube.com/watch?v=source-add-video", True)
+    ]
+    assert failure_reasons == {"source-add-video": "Source add failed"}
+
+
+def test_source_addressability_failure_predicate_is_narrow():
+    mod = _load_csf_source_module()
+
+    assert mod._is_source_addressability_failure_reason("SourceNotFoundError: source missing")
+    assert mod._is_source_addressability_failure_reason("source_not_found")
+    assert not mod._is_source_addressability_failure_reason("Source add failed")
+    assert not mod._is_source_addressability_failure_reason("command_failed")
+
+
+def test_source_add_failure_predicate_accepts_preserved_terminal_provenance():
+    mod = _load_csf_source_module()
+
+    assert mod._is_source_add_failure_reason(
+        "Source add failed; materialization terminal error: "
+        "SourceAddError (cause=RPCError, rpc_code=9)"
+    )
+    assert not mod._is_source_add_failure_reason(
+        "Source materialization terminal error"
+    )
+
+
+def test_fallback_failure_reason_retains_source_add_provenance():
+    mod = _load_csf_source_module()
+
+    persisted = mod._compose_fallback_failure_reason(
+        "Source add failed; materialization terminal error: "
+        "SourceAddError (cause=RPCError, rpc_code=9)",
+        "unknown",
+        "transcript fallback deadline exhausted",
+    )
+
+    assert persisted.startswith("Source add failed; materialization terminal error:")
+    assert "transcript_fallback: unknown: transcript fallback deadline exhausted" in persisted
+    assert mod._is_source_add_failure_reason(persisted)
+
+
+def test_source_addressability_fallback_routes_only_addressability_rows(monkeypatch):
+    """The addressability route must not absorb source-add or command failures."""
+    mod = _load_csf_source_module()
+    item = mod._IndustrialQueuedBatch(
+        "batch-a",
+        ["addressability-video", "source-add-video", "command-video"],
+        {
+            "addressability-video": "https://www.youtube.com/watch?v=addressability-video",
+            "source-add-video": "https://www.youtube.com/watch?v=source-add-video",
+            "command-video": "https://www.youtube.com/watch?v=command-video",
+        },
+    )
+    rows = [
+        {
+            "video_id": "addressability-video",
+            "status": "failed",
+            "failure_reason": "SourceNotFoundError: source content unavailable",
+        },
+        {
+            "video_id": "source-add-video",
+            "status": "failed",
+            "failure_reason": "Source add failed",
+        },
+        {
+            "video_id": "command-video",
+            "status": "failed",
+            "failure_reason": "command_failed",
+        },
+    ]
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(mod, "get_entries_for_video_ids_details", lambda _ids: rows)
+    monkeypatch.setattr(mod, "log_action", lambda name, payload: events.append((name, payload)))
+    fallback_queue = mod.deque()
+
+    queued = mod._queue_confirmed_worker_failures_for_fallback(
+        [item],
+        fallback_queue=fallback_queue,
+        source_urls={},
+        source_addressability_only=True,
+    )
+
+    assert queued == 1
+    assert list(fallback_queue) == [
+        ("addressability-video", "https://www.youtube.com/watch?v=addressability-video", True)
+    ]
+    skipped = {
+        payload["video_id"]: payload["reason"]
+        for name, payload in events
+        if name == "industrial_failure_fallback_not_queued"
+    }
+    assert skipped == {
+        "source-add-video": "failure_reason_not_source_addressability",
+        "command-video": "failure_reason_not_source_addressability",
+    }
+
+
+def test_take_industrial_dispatch_groups_handles_empty_queue():
+    mod = _load_csf_source_module()
+
+    queue = []
+    assert mod._take_industrial_dispatch_groups(queue, 4, 4) == []
+    assert queue == []
 
 
 def test_build_worker_health_warning_includes_key_context():
@@ -1507,6 +2838,65 @@ def test_cmd_fetch_routes_non_captioned_items_to_notebooklm_first():
     assert "transcript_fallback_queued" not in log_names
 
 
+def test_cmd_fetch_reconciles_cached_pending_manifest_items():
+    """A cached transcript must close its pending DB row in the industrial path."""
+    mod = _load_csf_source_module(stub_ensure_auth=True)
+    channel_rows = [("https://www.youtube.com/@active", "pl-1")]
+    pending_entries = [
+        {
+            "video_id": "cache000001",
+            "status": "pending",
+            "has_captions": True,
+            "privacy_status": "public",
+            "upload_status": "uploaded",
+            "is_live_content": False,
+            "unavailable_reason": None,
+            "source": "https://www.youtube.com/@active",
+        }
+    ]
+
+    class FakeCursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConn:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def execute(self, *_args, **_kwargs):
+            return FakeCursor(self._rows)
+
+        def close(self):
+            return None
+
+    class FakeStorage:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def _get_conn(self):
+            return FakeConn(self._rows)
+
+    with mock.patch.object(mod, "_get_batch_status_storage", return_value=FakeStorage(channel_rows)):
+        with mock.patch.object(mod, "is_channel_blocked", return_value=False):
+            with mock.patch.object(mod, "get_entries_for_source_details", return_value=pending_entries):
+                with mock.patch.object(mod, "has_cached_transcript", return_value=True):
+                    with mock.patch.object(mod.subprocess, "run") as mock_run:
+                        mock_run.return_value = mock.MagicMock(returncode=0, stdout="", stderr="")
+                        with mock.patch.object(mod, "mark_complete") as mock_mark_complete:
+                            with mock.patch.object(mod, "log_action") as mock_log:
+                                mod.cmd_fetch(dry_run=False, workers=1)
+
+    mock_mark_complete.assert_called_once_with("cache000001", last_stage="cache")
+    assert any(
+        call.args[0] == "transcript_cache_reconciled"
+        and call.args[1]["video_id"] == "cache000001"
+        for call in mock_log.call_args_list
+    )
+
+
 def test_cmd_fetch_routes_non_captioned_items_to_transcript_fallback_when_enabled():
     """The opt-in routing toggle should bypass NotebookLM for no-caption items."""
     mod = _load_csf_source_module(stub_ensure_auth=True)
@@ -1589,6 +2979,8 @@ def test_cmd_fetch_routes_non_captioned_items_to_transcript_fallback_when_enable
     assert "fetch_completed" in log_names
     assert mock_process.call_count == 0
     assert mock_fetch.call_count == 1
+    assert mock_fetch.call_args.kwargs["skip_notebooklm"] is True
+    assert mock_fetch.call_args.kwargs["skip_oembed"] is True
     fetch_invoked = next(call.args[1] for call in mock_log.call_args_list if call.args[0] == "fetch_invoked")
     assert fetch_invoked["route_no_captions_to_fallback"] is True
 

@@ -112,6 +112,11 @@ def main() -> None:
         default=2,
         help="Minimum videos watched from a channel to qualify (default: 2)",
     )
+    history_parser.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        help="Read YouTube cookies from a live browser profile, e.g. firefox:default-release",
+    )
 
     # watchlater command: import tracked channels from Watch Later
     watchlater_parser = subparsers.add_parser(
@@ -124,6 +129,11 @@ def main() -> None:
         type=int,
         default=2,
         help="Minimum videos in Watch Later from a channel to qualify (default: 2)",
+    )
+    watchlater_parser.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        help="Read YouTube cookies from a live browser profile, e.g. firefox:default-release",
     )
 
     # fetch command: download pending transcripts via the full fallback chain
@@ -165,6 +175,8 @@ def main() -> None:
             fetch_cmd.append("--dry-run")
         if args.min_history_videos != 2:
             fetch_cmd.extend(["--min-history-videos", str(args.min_history_videos)])
+        if args.cookies_from_browser:
+            fetch_cmd.extend(["--cookies-from-browser", args.cookies_from_browser])
         log_action(
             "yt_is_dispatch_started",
             {
@@ -191,6 +203,8 @@ def main() -> None:
             fetch_cmd.append("--dry-run")
         if args.min_watchlater_videos != 2:
             fetch_cmd.extend(["--min-watchlater-videos", str(args.min_watchlater_videos)])
+        if args.cookies_from_browser:
+            fetch_cmd.extend(["--cookies-from-browser", args.cookies_from_browser])
         log_action(
             "yt_is_dispatch_started",
             {

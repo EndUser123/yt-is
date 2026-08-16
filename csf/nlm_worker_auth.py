@@ -57,11 +57,29 @@ DEFAULT_FAMILIES = (
         source_profile="ytis-free2-worker-01",
         sibling_profiles=("ytis-free2-worker-02", "ytis-free2-worker-03", "ytis-free2-worker-04"),
         expected_email="brsthomson@hotmail.com",
-        cdp_browser_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-free-2",
+        # Reuse the verified account-owned browser root instead of creating a
+        # fresh blank sign-in profile for this account.
+        cdp_browser_root=r"P:\\\\\\.data\yt-is\nlm-auth\storage_state_brsthomson.json.browser_profile",
         cdp_browser_profile_directory="Default",
         cdp_port=18872,
     ),
 )
+
+# Active configs use these descriptive worker labels. The legacy family above
+# remains part of the compatibility surface for historical configs and tests.
+_CANONICAL_FREE_FAMILY = AuthFamily(
+    source_profile="ytis-free-worker-01",
+    sibling_profiles=("ytis-free-worker-02", "ytis-free-worker-03", "ytis-free-worker-04", "ytis-free-worker-05"),
+    expected_email="troup.hominidae@gmail.com",
+    cdp_browser_root=DEFAULT_FAMILIES[1].cdp_browser_root,
+    cdp_browser_profile_directory=DEFAULT_FAMILIES[1].cdp_browser_profile_directory,
+    cdp_port=DEFAULT_FAMILIES[1].cdp_port,
+)
+_ACCOUNT_PROFILE_EXPECTED_EMAILS = {
+    "a.hominidae": "a.hominidae@gmail.com",
+    "troup.hominidae": "troup.hominidae@gmail.com",
+    "brsthomson": "brsthomson@hotmail.com",
+}
 _PROFILE_STATE_FILES = ("cookies.json", "metadata.json")
 _PROFILE_SNAPSHOT_DIRNAME = "verified-worker-profile-snapshots"
 _PROFILE_SNAPSHOT_MANIFEST = "manifest.json"
@@ -109,7 +127,11 @@ def expected_email_for_profile(profile: str, families: tuple[AuthFamily, ...] = 
     profile = profile.strip()
     if not profile:
         return ""
-    mapped = _expected_email_by_profile(_validate_auth_families(families)).get(profile, "")
+    mapped = _ACCOUNT_PROFILE_EXPECTED_EMAILS.get(profile, "")
+    if not mapped:
+        mapped = _expected_email_by_profile(_validate_auth_families(families)).get(profile, "")
+    if not mapped:
+        mapped = _expected_email_by_profile((_CANONICAL_FREE_FAMILY,)).get(profile, "")
     return mapped or os.getenv("YTIS_NLM_EXPECTED_EMAIL", "").strip().lower()
 
 
@@ -124,6 +146,8 @@ def family_for_profile(
     for family in _validate_auth_families(families):
         if profile == family.source_profile or profile in family.sibling_profiles:
             return family
+    if profile in _expected_email_by_profile((_CANONICAL_FREE_FAMILY,)):
+        return _CANONICAL_FREE_FAMILY
     return None
 
 
@@ -457,8 +481,11 @@ def _noninteractive_auth_default():
 
 
 def _browser_launch_visible() -> bool:
-    value = os.getenv("YTIS_NLM_BROWSER_VISIBLE", "").strip().lower()
-    return value in {"1", "true", "yes", "on"}
+    values = (
+        os.getenv("YTIS_NLM_BROWSER_VISIBLE", ""),
+        os.getenv("YTIS_NLM_INTERACTIVE_BOOTSTRAP", ""),
+    )
+    return any(value.strip().lower() in {"1", "true", "yes", "on"} for value in values)
 
 
 def _browser_launch_startupinfo() -> subprocess.STARTUPINFO | None:
@@ -587,7 +614,7 @@ def _launch_cdp_browser(
     args = [
         _chrome_executable(),
     ]
-    if _is_noninteractive_auth():
+    if _is_noninteractive_auth() and not _browser_launch_visible():
         args.append("--headless=new")
     elif not _browser_launch_visible():
         args.append("--start-minimized")
@@ -930,10 +957,13 @@ def _sync_families_from_lane_config(lane_config: Path) -> tuple[AuthFamily, ...]
 
 
 def doctor_lane_setup(lane_config: Path, run_root: Path, *, timeout_s: float = 30.0) -> tuple[object, ...]:
-    """Validate lane auth and refuse stale or contaminated run roots before a benchmark starts."""
+    """Validate canonical lane sessions and run-root readiness before launch.
+
+    Legacy CLI auth-family validation belongs to the compatibility commands,
+    not to the active sharded launch gate.
+    """
     from csf.sharded_lane_series import load_lane_configs, preflight_lane_auth_profiles
 
-    _validate_auth_families()
     lanes = load_lane_configs(lane_config)
     run_root = Path(run_root)
     if run_root.exists():

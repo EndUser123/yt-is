@@ -45,8 +45,9 @@ failure mode).
 ### Scope rule (mandatory)
 
 Never run `bin/csf-source fetch` without `--limit` when the pending backlog
-exceeds 1,000 videos. The pending backlog is currently ~51,000 videos; an
-unbounded `fetch` will attempt all of them in one run.
+exceeds 1,000 videos. The pending backlog is dynamic and can be much larger;
+an unbounded `fetch` will attempt all of it in one run. Recompute the scope
+before every launch.
 
 To find the intended scope (recent sync batch), use the time-window query:
 
@@ -57,10 +58,13 @@ WHERE status = 'pending'
   AND updated_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-6 days');
 ```
 
-The current intended scope is **recently synced pending rows** (`has_captions IS NULL`,
-meaning not yet categorized), which is approximately 5,700 videos in the last 6
-days. Pass `--limit <that count>` at launch time. Recompute before each run —
-the window moves.
+The intended scope is **recently synced pending rows** (`has_captions IS NULL`,
+meaning not yet categorized), but the time window moves and must be measured at
+launch. A 2026-08-09 audit found 337,094 pending rows overall, including 7,509
+uncategorized NULL rows; it found no NULL rows in the six-day window. Do not
+copy those counts into a future command. Use the multi-account coordinator's
+bounded manifest selection, or pass an explicitly measured `--limit` after a
+fresh query.
 
 **Note on `has_captions`:** newly synced videos have `has_captions IS NULL` until
 categorization runs; older backlog rows have `has_captions = 0` (already
@@ -72,40 +76,74 @@ From [worker-count-trial-run-sheet.md](docs/operations/worker-count-trial-run-sh
 
 | Setting | Value | Source |
 |---|---|---|
-| Worker shape | **3+3** (3 Pro + 3 Free, sharded lanes) | current best sustained: 3,788.53 VPH on `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current` (hot-path-throughput-next-test-plan.md:29) |
+| Worker shape | **3+3** (3 Pro + 3 Free, sharded lanes) | current observed leader: 3,788.53 VPH on `fresh_state_3plus3_extract_schema_primary_command_projection_60_run02_current`; not proven optimal or a current full-backlog result |
 | Subbatch size | 50 | fixed control; 25 and 75/100 fail at materialization |
 | Worker notebooks | One per worker, reused across batches | worker-owned model |
-| Pro account | `a.hominidae@gmail.com` | single-account limitation |
-| Free accounts | `troup.hominidae`, `brsthomson` | documented but currently unused |
+| Pro account | `a.hominidae@gmail.com` | canonical profile `a.hominidae` |
+| Free accounts | `troup.hominidae`, `brsthomson` | canonical profiles; notebooks are created on demand |
 | Auth storage | `P:/.data/yt-is/nlm-auth/storage_state.json` | nlm-auth-architecture.md |
 
 **NOT 4 workers on one account.** The `3,928 VPH at 4 workers` figure from worker-count-trial-run-sheet.md:199 was a single-lane (Pro-only) benchmark candidate, not the validated production shape. The validated shape distributes load across Pro and Free lanes via the benchmark harness `bin/csf-sharded-lane-series`. Applying benchmark-harness config to the production binary was the third of five failures in the 2026-07-20 incident.
 
-**Known gap:** `bin/csf-source fetch` exposes only `--workers` and `--limit`.
-It does not expose `--batch-size`; the 50-video subbatch is hardcoded. The
-batch-size 200 figure in the trial sheet was validated on the benchmark
-harness `bin/csf-sharded-lane-series`, not the production fetcher. Do not
-assume production-fetch throughput matches benchmark-harness throughput.
+`bin/csf-source fetch` is one-account-per-process. For bounded production work
+across all three identities, use
+`scripts/run_multi_account_fetch.py`; it creates exact manifests, runs the
+children with account-scoped worker state, and relies on the existing
+create/reuse/delete worker-notebook lifecycle. An account with no existing
+notebooks is still eligible and will receive work. The production fetcher does
+not expose `--batch-size`; its 50-video subbatch is separate from the
+benchmark-harness batch-size experiments. Do not assume production-fetch
+throughput matches benchmark-harness throughput. The coordinator passes its
+resolved database path to every child and serializes same-database runs with an
+interprocess lock; lock contention or failed auth preflight yields a structured
+`blocked` summary and launches no child. Direct `bin/csf-source fetch` uses the
+same DB-scoped lock, while only coordinator-owned children receive the
+validated parent/run/database ownership envelope that prevents self-deadlock.
+
+Direct live `--all-pending` coordinator calls are capped at `400` rows unless
+the supervisor supplies its matching `supervisor_runtime.json` ownership
+marker. Use `scripts/run_unattended_backlog.py` for larger scopes; this guard
+does not itself authorize a full-backlog drain.
+
+For a large unattended-scope plan, use the coordinator's `--plan-only` mode.
+It writes and revalidates exact per-account manifests and selection receipts,
+rechecks that every selected row is still pending, and launches neither a
+child nor auth preflight. `status=planned` is a plan receipt, not completed
+transcript work. Do not use the older `--dry-run` child path as a substitute
+for full-backlog planning.
+
+The coordinator's fixed-worker mode is the default. For a homogeneous scope
+where every selected account should scale, pass `--adaptive-workers` with
+`--adaptive-max-workers N`; the coordinator forwards the existing adaptive
+worker scheduler's min/max, backlog, cooldown, and health-window controls to
+each account child and records the policy in its JSON receipt. For the normal
+mixed scope, keep `a.hominidae` adaptive and both Free accounts fixed through
+`--account-settings`, and omit the global `--adaptive-workers` flag: that flag
+applies one policy to every selected account and is rejected when a fixed Free
+profile is also selected. This does not change the validated fixed control or
+prove a VPH improvement. Use a separate decision packet and live control
+comparison before treating adaptive mode as a performance winner.
 
 ### Known failure modes
 
 | Failure | Symptom | Status | Detail |
 |---|---|---|---|
 | `source_add_failed` (partial) | Sub-batch returns N/50 added; fetcher continues without reset | By-design (zero-growth retry only fires on 0/50) | hot-path-throughput-next-test-plan.md |
-| `rpc_code=9` on ADD_SOURCE | gRPC `FAILED_PRECONDITION` (NOT rate limiting — `RateLimitError` is a different class) | Unresolved; multiple prior investigations (source_map v2–v6) did not pin a single cause | hot-path-throughput-next-test-plan.md |
+| `rpc_code=9` on ADD_SOURCE | gRPC `FAILED_PRECONDITION` (NOT rate limiting — `RateLimitError` is a different class) | Direct source-add/addressability remains unresolved; explicit industrial-failure fallback recovered 3/3 bounded failures, but its 145-563s tail keeps it off by default | `.logs/multi_account_fetch/20260810_industrial_failure_fallback_canary_run02_decision_packet.md` |
 | Notebook reuse degradation | Failure rate rises as sources accumulate in a reused notebook | Suspected but not confirmed; Pro tier documented at ~300 sources/notebook | worker-count-trial-run-sheet.md |
 | Google session expiry | Storage file present but cookies rejected | Observed 2.5h–7.5h lifespan; `ensure_storage()` checks file presence only, not liveness | nlm-auth-architecture.md |
 
-### Smoke test (minimum before any production run)
+### Historical smoke guidance (not a production-readiness gate)
 
 ```powershell
 python bin/csf-source fetch --limit 5 --workers 1
 ```
 
-Expect 4/5 transcripts via NLM in ~42–120 seconds. The 1/5 failure is the
-intermittent `rpc_code=9` (see above). A 5-video smoke test **does not**
-validate batch-scale behavior; a 400-video run is the minimum that validates
-throughput per the trial sheet's Phase 2 protocol.
+This is historical diagnostic guidance only. A small smoke test does not prove
+source-add stability, unattended recovery, or throughput. Before any live
+operation, read the current decision packet and use the canonical coordinator
+with exact account preflight, an early-abort gate, and post-run DB
+reconciliation. Do not interpret `rpc_code=9` as an authentication request.
 
 ## Operator Notes
 

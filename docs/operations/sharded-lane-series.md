@@ -4,6 +4,37 @@ Use this benchmark to test whether independent NotebookLM account lanes can exce
 
 Before trusting any throughput conclusion from this benchmark, read [Observability Contract Checklist](observability-contract-checklist.md). It is the default guardrail for metric meaning and producer/consumer schema agreement.
 
+## Current Active Contract (2026-08-06)
+
+The active runner is canonical-account and typed-client based. Use these exact
+external identities and storage files:
+
+| Account identity | Expected email | Canonical storage |
+|---|---|---|
+| `a.hominidae` | `a.hominidae@gmail.com` | `P:/.data/yt-is/nlm-auth/storage_state.json` |
+| `troup.hominidae` | `troup.hominidae@gmail.com` | `P:/.data/yt-is/nlm-auth/storage_state_troup_hominidae.json` |
+| `brsthomson` | `brsthomson@hotmail.com` | `P:/.data/yt-is/nlm-auth/storage_state_brsthomson.json` |
+
+Every active lane must set `account_profile` to one of those identities. Each
+worker gets a descriptive routing label such as `a.hominidae-worker-01`, its
+own typed client/event loop, notebook title, state root, and client namespace.
+Worker labels never select auth state. The active path performs an exact-account
+`ensure_account_session()` preflight: healthy storage is probed, missing or
+corrupt storage may be restored from the matching backup, and expired storage
+may be repaired from the per-account durable master token. If repair is not
+available, the run fails closed before source work. First-time repair may use
+the established dedicated headless CDP family; the package CLI also supports a
+one-time loopback `--cdp-url` attach for one exact profile when that family is
+not already signed in. It never uses the shared/default profile, copies cookies
+between accounts, or requests interactive authentication during an active run.
+
+The browser-root fields retained in `LaneConfig` are compatibility telemetry
+and configuration shape; `notebooklm-py` active authentication is
+storage-backed and the client/process/state boundaries above are the isolation
+boundary. The historical CLI-auth sections later in this document are retained
+for diagnosis only; the only current browser use is the account-specific
+headless bootstrap adapter described in `nlm-auth-architecture.md`.
+
 For the next controlled search across 2-lane and 3-lane candidates, use
 [`optimal-throughput-candidate-test-plan.md`](optimal-throughput-candidate-test-plan.md).
 
@@ -23,20 +54,20 @@ The sharded lane test runs matched CLI/browser account lanes concurrently and re
 
 Each lane must have an isolated namespace for:
 
-- `NOTEBOOKLM_PROFILE`
-- worker `NOTEBOOKLM_PROFILE` prefix
-- optional explicit worker `NOTEBOOKLM_PROFILE` list
-- explicit `expected_email` when the lane is not already covered by the auth-family map
-- Chrome browser profile root
-- Chrome browser profile directory
+- exact `account_profile` identity and canonical storage mapping
+- descriptive worker profile labels (routing only)
+- worker client/process boundary
 - worker state root
 - worker notebook title prefix
+- compatibility browser-root telemetry fields required by the lane schema
 
-The CLI profile and Chrome profile directory for a lane must represent the same Google account.
-The benchmark now fails closed if a lane profile has no account mapping. For a new lane, set `expected_email`
-in the lane JSON or add the profile to the auth-family map before starting a run.
+The active benchmark fails closed if `account_profile` is missing or its
+canonical session probe fails. `expected_email` and CLI auth-family mapping are
+historical compatibility concepts, not active account selection.
 Each lane also gets its own `YTIS_BATCH_STATUS_DB_PATH` and `YTIS_TRANSCRIPT_CACHE_DB_PATH` under the lane output root. The batch-status DB prevents synthetic source-seed races; the transcript-cache DB prevents one concurrent lane from turning the other lane's pending benchmark items into cache hits and silently reducing its processed count.
-When the worker auth profiles are not prefix-derived, set `notebooklm_profiles` to the exact CLI profile names in worker order.
+When worker labels are not prefix-derived, set `notebooklm_profiles` to the
+exact descriptive routing labels in worker order; they do not select auth
+state.
 The browser-health gate normalizes Chrome subprocess `--user-data-dir` paths before matching them against lane roots, so escaped subprocess cmdlines do not trip false `unexpected_process` reports during preflight.
 Each guarded sequence also writes `<run-root>/browser_ownership.json` and passes that manifest into browser-health, so the run-owned browser roots come from an explicit per-run contract instead of only from the in-memory lane list.
 The sharded lane runner now defaults to a fresh per-run worker-state root under `<run-root>/<lane>/worker_states`. Pass `--preserve-worker-state-root` only when you are explicitly testing reuse against the lane JSON fallback root.
@@ -49,6 +80,14 @@ For the YT-IS Pro/Free lanes, keep the browser roots lane-specific and persisten
 
 - Pro root: `P://.data/yt-is/browser/notebooklm-pro`
 - Free root: `P://.data/yt-is/browser/notebooklm-free`
+- Free2 lane root: `P://.data/yt-is/browser/notebooklm-free-2`
+
+The Free2 lane root above is the lane's worker/browser-state root. Its
+one-time auth bootstrap deliberately uses the already-authenticated,
+account-owned root `P://.data/yt-is/nlm-auth/storage_state_brsthomson.json.browser_profile`
+configured in `csf/nlm_worker_auth.py`; do not replace that bootstrap root
+with a fresh profile or ask for another sign-in unless its exact-account probe
+fails.
 
 For the current Pro/Free/Free2 run, the account mapping is:
 
@@ -61,16 +100,17 @@ If the new lane is not yet part of `DEFAULT_FAMILIES`, set `expected_email` in t
 
 ## Example Config
 
-Save a config like this as `P://packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json` after confirming which Chrome profile directory is Pro vs Free:
+Save a config like this as `P://packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json` only after the canonical storage files exist and pass the read-only session probe. The labels are descriptive routing names, not auth profiles:
 
 ```json
 [
   {
     "lane": "a_hominidae_pro",
     "account_class": "pro",
+    "account_profile": "a.hominidae",
     "workers": 4,
-    "notebooklm_profile_prefix": "ytis-pro-worker",
-    "notebooklm_profiles": ["ytis-pro-worker-01", "ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04"],
+    "notebooklm_profile_prefix": "a.hominidae-worker",
+    "notebooklm_profiles": ["a.hominidae-worker-01", "a.hominidae-worker-02", "a.hominidae-worker-03", "a.hominidae-worker-04"],
     "browser_profile_root": "P://.data/yt-is/browser/notebooklm-pro",
     "browser_profile_directory": "Profile",
     "worker_state_root": "P://packages/yt-is/.logs/sharded_lane_series/a_hominidae_pro/worker_states",
@@ -79,9 +119,10 @@ Save a config like this as `P://packages/yt-is/.logs/sharded_lane_series/pro_fre
   {
     "lane": "troup_hominidae_free",
     "account_class": "free",
+    "account_profile": "troup.hominidae",
     "workers": 4,
-    "notebooklm_profile_prefix": "ytis-free1-worker",
-    "notebooklm_profiles": ["ytis-free1-worker-01", "ytis-free1-worker-02", "ytis-free1-worker-03", "ytis-free1-worker-04"],
+    "notebooklm_profile_prefix": "troup.hominidae-worker",
+    "notebooklm_profiles": ["troup.hominidae-worker-01", "troup.hominidae-worker-02", "troup.hominidae-worker-03", "troup.hominidae-worker-04"],
     "browser_profile_root": "P://.data/yt-is/browser/notebooklm-free",
     "browser_profile_directory": "Default",
     "worker_state_root": "P://packages/yt-is/.logs/sharded_lane_series/troup_hominidae_free/worker_states",
@@ -90,14 +131,53 @@ Save a config like this as `P://packages/yt-is/.logs/sharded_lane_series/pro_fre
 ]
 ```
 
+## Cohort selection
+
+The sharded runner defaults to `--cohort-shape captioned` for historical trace
+benchmarks. To use the fixed manifest explicitly, pass both
+`--cohort-shape manifest` and `--manifest-json`; `--manifest-json` otherwise
+does not change a captioned cohort.
+
 ## Command
 
 Workers are lane-specific in the JSON config.
-Use `python P://packages/yt-is/bin/csf-sharded-lane-sequence --lane-config <lane-config> --run-root <run-root>` for the guarded sequence. It runs doctor, smoke, evidence check, then soak, writes smoke and soak outputs under `<run-root>/smoke` and `<run-root>/soak` by default, uses `<run-root>/<lane>/worker_states` unless you pass `--preserve-worker-state-root`, and reads the shared benchmark trace corpus from `P://packages/yt-is/.logs/worker_count_trials` unless you pass `--trace-root`. The same trace corpus is used for both phases. If you know the intended worker geometry, pass `--expected-worker-shape` so the smoke evidence check fails closed when a run is mislabeled.
+The active entrypoint is:
 
-For a deliberate warmup probe, `--preserve-worker-state-root` is acceptable only when the lane config points at fresh run-specific state roots under the new run root. That makes smoke warm the exact worker notebooks/state later used by soak without reusing stale global worker-state roots. Do not use the old shared `a_hominidae_pro/worker_states` or `troup_hominidae_free/worker_states` paths for this kind of probe.
+```powershell
+python P://packages/yt-is/bin/csf-sharded-lane-series `
+  --lane-config <lane-config> `
+  --output-root <fresh-run-root> `
+  --cohort-json <existing-or-new-cohort-base> `
+  --cohort-shape captioned `
+  --limit <limit> `
+  --batch-size <outer-batch-size> `
+  --reusable-pipeline-mode serial
+```
 
-## Dedicated Browser Auth Refresh
+The runner performs canonical account preflight, launches the lane processes,
+and writes a single `sharded_lane_series_summary.json`. It uses a fresh
+per-run worker-state root unless `--preserve-worker-state-root` is explicitly
+passed. `--cohort-shape manifest` is the only mode that consumes
+`--manifest-json`; the default `captioned` mode reuses/builds the frozen
+captioned cohort from the supplied cohort base and trace root.
+
+The older `csf-sharded-lane-sequence` doctor/smoke/evidence/soak workflow is
+historical and is not the active adaptive-scheduler launch path.
+
+For a deliberate reuse probe, `--preserve-worker-state-root` is acceptable
+only when the lane config points at fresh run-specific state roots. Do not use
+the old shared `a_hominidae_pro/worker_states` or
+`troup_hominidae_free/worker_states` paths for a fresh validation.
+
+## Historical CLI Auth Material (Not Active Instructions)
+
+The refresh, `nlm login`, profile-copy, family-sync, and browser-CDP commands
+in the remainder of this historical section describe the retired CLI-auth architecture.
+Keep them only as historical incident evidence and migration context. Do not
+execute them for an active sharded-lane run; use the canonical account storage
+and `ensure_account_session()` contract above.
+
+## Dedicated Browser Auth Refresh (Historical)
 
 Use a root-specific CDP port when refreshing lane auth. Plain `nlm login --profile ...` can attach to an already-running Chrome instance and capture the wrong account.
 
@@ -107,10 +187,15 @@ For a full repeated-refresh validation workflow, use [`notebooklm-auth-robustnes
 
 Use this order for a new benchmark root:
 
-1. `python P://packages/yt-is/bin/csf-sharded-lane-sequence --lane-config <lane-config> --run-root <run-root>`
-1. If you need the phases manually, run `doctor -> smoke -> evidence check -> soak` in that order and keep the smoke and soak output roots separate.
-1. `csf-run-evidence-check` only passes when the smoke root has a versioned summary with `report_version=1`, `status=ok`, and no forbidden markers.
-1. Long soak only after the doctor, smoke, and evidence check all pass
+1. Confirm the exact canonical account and run
+   `ensure_account_session()` immediately before launch so durable repair is
+   attempted before any lane process starts.
+2. Use a fresh output root and an existing frozen cohort when validating a
+   changed scheduler path.
+3. Run `csf-sharded-lane-series` once and inspect the durable summary plus each
+   lane's raw events before considering any larger run.
+4. Treat an invalidated or partial summary as diagnostic only; it is never
+   throughput evidence.
 
 `csf-sharded-lane-series` always rewrites `<run-root>/sharded_lane_series_summary.json`.
 New summaries are versioned with `report_version=1`.
@@ -125,7 +210,7 @@ Zero-growth NotebookLM source-add failures are not split into smaller chunks. If
 
 Reusable notebook-create failures are classified into the same evidence bucket. If a reusable batch cannot create or recover a notebook, the batch result now records one `source_add_failed` metric per requested video instead of leaving worker failures with empty content-fetch counts. That keeps source-add/setup failures from appearing as throughput-valid fetch-path outcomes.
 
-Source-materialization timeouts are also invalidating evidence. If a worker logs `nlm_batch_source_materialization_wait_failed` with `failure_reason="materialization_wait_failed"`, or the lane wrapper records a `fetch_worker_finished` event whose worker summary ends in `NotebookSourceMaterializationTimeout`, the sharded runner treats that lane as invalid instead of using partial fetch counters as throughput evidence; the smoke evidence checker also rejects the materialization-wait marker. This covers the run shape where a worker fetched some content metrics before a later subbatch failed to materialize sources and returned no completed processed outcomes.
+Source-materialization failures are also invalidating evidence. If a worker logs `nlm_batch_source_materialization_wait_failed` (including `failure_reason="materialization_wait_failed"` or `failure_reason="source_materialization_terminal_error"`), or the lane wrapper records a `fetch_worker_finished` event whose worker summary ends in `NotebookSourceMaterializationTimeout` or `NotebookSourceMaterializationTerminalError`, the sharded runner treats that lane as invalid instead of using partial fetch counters as throughput evidence; the smoke evidence checker also rejects the materialization-wait marker. The production readiness loop now fails fast on the installed NotebookLM `SourceStatus.ERROR` (`3`) state, while processing/preparing states continue polling. This covers both known terminal source failures and sources that remain non-ready through the configured timeout.
 
 After source-age or capacity rotation clears a reusable notebook, the materialization wait target is the current notebook source count plus the new subbatch size, not the cumulative position in the original worker batch. This keeps a rotated notebook from waiting forever for sources that belonged to the previous notebook contents.
 
@@ -137,7 +222,7 @@ After source-age or capacity rotation clears a reusable notebook, the materializ
 - The worker-notebook cleanup helper is fail closed: it only deletes notebooks whose titles match the configured industrial worker prefix, and it refuses to delete anything if that prefix is not industrial-scoped.
 - For the current source-add smoke series, `P://packages/yt-is/.logs/sharded_lane_series/pro_free_source_add_smoke_v5` is the clean successful root. The earlier `v1` through `v4` roots are disposable partial attempts and can be removed after their evidence has been captured in the docs or registry.
 
-Preferred worker-profile repair after worker `01` for each account is valid:
+Legacy worker-profile repair (historical compatibility only; not for the active typed-client runner):
 
 ```powershell
 python P://packages/yt-is/bin/csf-nlm-worker-auth sync
@@ -145,10 +230,11 @@ python P://packages/yt-is/bin/csf-nlm-worker-auth sync
 
 This command validates that `ytis-pro-worker-01` is `a.hominidae@gmail.com`, `ytis-free1-worker-01` is `troup.hominidae@gmail.com`, and `ytis-free2-worker-01` is `brsthomson@hotmail.com`, parses the account reported by `nlm login --check`, repairs worker `01` through the dedicated Pro/Free/Free2 CDP root when needed, backs up workers `02`-`04`, copies the refreshed worker `01` credentials to sibling profiles in the same account family, then account-checks all twelve worker profiles.
 
-Current auth contract:
+The active canonical auth contract:
 
-- `csf-nlm-worker-auth sync` checks each worker `01` source profile with `nlm login --check`, parses the reported `Account:`, and treats a valid session on the wrong account as a failed auth state.
-- When a source worker profile is expired or mapped to the wrong account, `csf-nlm-worker-auth sync` uses the configured root-specific hidden/headless CDP refresh path for worker `01` only. It fails closed on sign-in/challenge pages, timeout, or wrong-account capture and never requests user interaction.
+- `csf-sharded-lane-series` calls `ensure_account_session()` once per distinct exact account before launching the lanes. The helper first probes canonical storage, then refreshes from the matching durable master token under an account lock.
+- If no master token exists, the helper may use the matching dedicated headless CDP root to create one. It fails closed on sign-in/challenge pages, timeout, or wrong-account capture and never requests user interaction.
+- `csf/nlm_batch.py` receives the same account identity through `YTIS_NLM_ACCOUNT_PROFILE` and calls the same durable helper on its auth checks. Worker labels and legacy `ytis-*` names never select auth state.
 - `csf-nlm-worker-auth doctor` is the fast preflight gate for a benchmark root: it validates the lane config, confirms the run root is empty, and refuses to start a run on dirty evidence.
 - `csf-nlm-worker-auth doctor` also fails closed when a lane profile has no expected-account mapping.
 - `csf-sharded-lane-sequence` runs an objective pre-run browser health gate after doctor and before smoke. It writes `<run-root>/browser_health.json`, reaps transient shared default NotebookLM Chrome profile leaks only when the process matches the shared default-profile predicate and carries a NotebookLM-owned session marker, keeps sampling through the settle window and reap-checking the same predicate on each sample, and records the result in the top-level summary as `pre_run_browser_health`. The unrelated-Chrome budget now only scores Chrome processes that expose a NotebookLM-relevant `--user-data-dir` session marker, so plain user browser noise without a profile marker no longer trips the gate. If the gate reports that the unrelated Chrome process budget is exceeded, the sequence stops before smoke instead of continuing on a contaminated browser baseline.
@@ -160,14 +246,23 @@ Current auth contract:
 - The second free account lane is defined in [`P://packages/yt-is/.logs/sharded_lane_series/pro_free_hotmail_lanes.json`](../../.logs/sharded_lane_series/pro_free_hotmail_lanes.json) and uses `ytis-free2-worker-01` through `ytis-free2-worker-04` on `brsthomson@hotmail.com`.
 - The canonical evidence index is [Evidence Index](evidence/README.md); treat full run roots as runtime output, not the source of truth.
 - The auth family map in `csf/nlm_worker_auth.py` is still the primary source of truth. If you add a 4th family, update that file first, then mirror the new lane into the lane JSON, tests, and this doc. If the lane exists before the code map is extended, set `expected_email` in the lane JSON so doctor/preflight can still validate it.
-- `csf-sharded-lane-series` preflights every lane profile before launching Pro/Free lanes. Mapped families receive one bounded worker-01 renewal through their dedicated CDP root followed by same-account sibling sync; direct sibling login is forbidden.
-- Benchmark subprocesses run with `YTIS_NLM_AUTH_NONINTERACTIVE=1`. For mapped families this allows unattended dedicated-root worker-01 renewal but forbids shared/default-profile login, visible prompts, and user sign-in.
+- `csf-sharded-lane-series` preflights every distinct exact account before launching Pro/Free lanes. The normal path uses the durable master token; dedicated-root bootstrap is exceptional and account-specific; direct sibling login is forbidden.
+- Benchmark subprocesses run with `YTIS_NLM_AUTH_NONINTERACTIVE=1`. This forbids shared/default-profile login, visible prompts, and user sign-in.
 - `YTIS_NLM_EXPECTED_EMAIL` can be used as an explicit fallback for future lane profiles that are not yet part of the hard-coded auth-family map, but the preferred contract is still to set `expected_email` in the lane JSON or extend `DEFAULT_FAMILIES`.
 - `YTIS_NLM_AUTH_FORCE_REFRESH_EVERY_CHECKS` is a stress knob, not a default throughput setting. Use `1` only when the goal is to force browser churn on every auth probe. For routine validation or soak runs, prefer a higher cadence such as `5`, or leave the knob unset entirely if auth churn is not the thing being tested.
-- If automatic CDP renewal fails for `ytis-free1-worker-01` or `ytis-pro-worker-01`, stop the benchmark branch and preserve the failure evidence. Do not ask the user to sign in as part of benchmark execution; interactive maintenance, if ever chosen separately, must remain outside the benchmark workflow.
+- If `ensure_account_session()` cannot repair any exact account, stop the
+  benchmark branch and preserve the failure evidence. Do not ask the user to
+  sign in as part of benchmark execution; any exceptional first-time
+  bootstrap remains outside the benchmark workflow.
 - For a failure-mode map before long auth-heavy runs, see [NotebookLM Auth Pre-Mortem](notebooklm-auth-pre-mortem.md).
 - Zero-growth `source_add_failed` now has a bounded notebook-reset fallback in `csf/nlm_batch.py`; the `pro_free_source_map_v6` rerun showed that it reduces the failure class but still does not beat the current best sustained `pro_free_source_map_v1` result.
 - Cleanup-cost optimization was attempted with a bulk source-delete path, but `pro_free_cleanup_opt_v2` was negative and the prior chunked cleanup path was restored.
+
+## Historical CLI/CDP Recipes (do not execute for active runs)
+
+The following recipes are retained only to explain old run artifacts. They use
+the retired CLI profile store and must not be used to repair active accounts.
+Use `ensure_account_session()` and the durable master-token path instead.
 
 Pro lane refresh:
 
@@ -339,7 +434,11 @@ This rerun is an improvement over `pro_free_source_map_v2` and validates the add
 
 The attempted `pro_free_source_map_v4` follow-up is invalid. It was interrupted and stopped before a `sharded_lane_series_summary.json` was produced after `csf/nlm_batch.py` launched unprofiled `nlm login --force`, opening the default `C:\Users\brsth\.notebooklm-mcp-cli\chrome-profile` account chooser. Do not use `pro_free_source_map_v4` as throughput evidence.
 
-## Next LLM Bootstrap
+## Historical Next LLM Bootstrap
+
+> This is a retained June 2026 record, not an active bootstrap recipe. Do not
+> execute its legacy `csf-nlm-worker-auth` or `nlm login` commands. Use the
+> canonical account path and `csf-nlm-auth` instructions above.
 
 Current state as of 2026-06-22:
 

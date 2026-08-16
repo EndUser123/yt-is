@@ -45,6 +45,33 @@ class TestWorkerMain:
 
         assert batches == [["a", "b"]]
 
+    def test_normalise_result_map_treats_malformed_result_as_empty(self):
+        """A missing worker result map must not crash status reconciliation."""
+        assert worker_main._normalise_result_map(None) == {}
+        assert worker_main._normalise_result_map([]) == {}
+        result_map = {"a": (False, None, "failed")}
+        assert worker_main._normalise_result_map(result_map) is result_map
+
+    def test_normalise_video_result_rejects_malformed_entries(self):
+        """Malformed per-video results become retryable failures, not crashes."""
+        assert worker_main._normalise_video_result((False, None, "failed")) == (False, None, "failed")
+        assert worker_main._normalise_video_result((True, "text", None)) == (True, "text", None)
+        assert worker_main._normalise_video_result((False, None)) == (
+            False,
+            None,
+            "worker returned malformed result",
+        )
+        assert worker_main._normalise_video_result({"success": False}) == (
+            False,
+            None,
+            "worker returned malformed result",
+        )
+        assert worker_main._normalise_video_result((False, None, "Bearer secret-token")) == (
+            False,
+            None,
+            "worker failure",
+        )
+
     def test_main_processes_multiple_batches_in_one_worker(self, tmp_path, monkeypatch, capsys):
         """A worker should process multiple batches sequentially and summarize totals."""
         input_path = tmp_path / "batches.json"
@@ -425,6 +452,83 @@ class TestWorkerMain:
         assert result["status"] == "ok"
         assert result["returncode"] == 0
 
+    def test_main_persists_explicit_and_omitted_failures(self, tmp_path, monkeypatch, capsys):
+        """Every input video must leave the worker as complete or retryable failed."""
+        input_path = tmp_path / "batches.json"
+        input_path.write_text(json.dumps([["a", "b"]]), encoding="utf-8")
+        result_path = tmp_path / "result.json"
+        failed_calls: list[tuple[str, str, str]] = []
+
+        class DummyReusableIngestor:
+            def prepare(self):
+                return True, "create"
+
+            def get_last_prepare_metrics(self):
+                return {}
+
+            def get_last_process_metrics(self):
+                return {}
+
+        monkeypatch.setattr(
+            worker_main,
+            "process_industrial_batch_reusable",
+            lambda vids: {"a": (False, None, "Source add failed")},
+        )
+        monkeypatch.setattr(worker_main, "NLMReusableIngestor", DummyReusableIngestor)
+        monkeypatch.setattr(worker_main, "set_cached_transcript", lambda *args, **kwargs: None)
+        monkeypatch.setattr(worker_main, "mark_complete", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            worker_main,
+            "mark_failed",
+            lambda video_id, source=None, failure_reason=None: failed_calls.append(
+                (video_id, str(source), str(failure_reason))
+            ),
+        )
+        monkeypatch.setattr(worker_main, "close_reusable_ingestor", lambda delete=False: None)
+        monkeypatch.setattr(
+            worker_main,
+            "get_nlm_config",
+            lambda: type("Cfg", (), {"source_content_shared_retry_pool_enabled": False})(),
+        )
+        monkeypatch.setattr(
+            worker_main,
+            "summarize_video_ids",
+            lambda vids: {
+                **worker_main._empty_source_profile_totals(),
+                "total": len(vids),
+                "matched": len(vids),
+            },
+        )
+
+        rc = worker_main.main(
+            [
+                "--input",
+                str(input_path),
+                "--state-path",
+                str(tmp_path / "state.json"),
+                "--notebook-title",
+                "yt-is-worker-01",
+                "--notebooklm-profile",
+                "ytis-worker-01",
+                "--worker-id",
+                "worker-01",
+                "--result-path",
+                str(result_path),
+            ]
+        )
+
+        assert rc == 0
+        assert failed_calls == [
+            ("a", "notebooklm", "Source add failed"),
+            ("b", "notebooklm", "worker omitted result"),
+        ]
+        output = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+        assert output["succeeded"] == 0
+        assert output["failed"] == 2
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        assert result["status"] == "ok"
+        assert result["returncode"] == 0
+
     def test_main_uses_double_buffered_pipeline_when_enabled(self, tmp_path, monkeypatch, capsys):
         """The worker should switch to the double-buffered reusable pipeline when requested."""
         input_path = tmp_path / "batches.json"
@@ -434,6 +538,7 @@ class TestWorkerMain:
         process_batch_calls: list[list[str]] = []
         process_batches_calls: list[list[list[str]]] = []
         close_calls: list[bool] = []
+        failed_calls: list[tuple[str, str]] = []
 
         class DummyDoubleBufferedReusableIngestor:
             def __init__(self):
@@ -583,8 +688,7 @@ class TestWorkerMain:
             def process_batches(self, batch_groups):
                 process_batches_calls.append([list(batch) for batch in batch_groups])
                 return [
-                    {vid: (True, f"text-{vid}", None) for vid in batch_groups[0]},
-                    {vid: (True, f"text-{vid}", None) for vid in batch_groups[1]},
+                    {vid: (False, None, "double-buffer failure") for vid in batch_groups[0]},
                 ]
 
             def process_batch(self, video_ids):
@@ -611,6 +715,13 @@ class TestWorkerMain:
         monkeypatch.setattr(worker_main, "get_last_prepare_metrics", lambda: {})
         monkeypatch.setattr(worker_main, "set_cached_transcript", lambda *args, **kwargs: None)
         monkeypatch.setattr(worker_main, "mark_complete", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            worker_main,
+            "mark_failed",
+            lambda video_id, source=None, failure_reason=None: failed_calls.append(
+                (video_id, str(failure_reason))
+            ),
+        )
         monkeypatch.setattr(worker_main, "close_reusable_ingestor", lambda delete=False: close_calls.append(delete))
         monkeypatch.setattr(worker_main, "log_action", lambda *args, **kwargs: None)
         monkeypatch.setattr(
@@ -655,10 +766,14 @@ class TestWorkerMain:
         assert process_batches_calls == [[["a"], ["b"]]]
         assert process_batch_calls == []
         assert close_calls == [True]
+        assert failed_calls == [
+            ("a", "double-buffer failure"),
+            ("b", "worker omitted result"),
+        ]
         output = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
         assert output["batch_count"] == 2
-        assert output["succeeded"] == 2
-        assert output["failed"] == 0
+        assert output["succeeded"] == 0
+        assert output["failed"] == 2
         assert output["batch_elapsed_s_total"] == 7.5
         assert output["staging_overlap_elapsed_s_total"] == 0.55
         assert output["staging_wait_elapsed_s_total"] == 0.15
@@ -666,6 +781,6 @@ class TestWorkerMain:
         assert output["pipeline_strategy"] == "double_buffered_reusable"
         result = json.loads(result_path.read_text(encoding="utf-8"))
         assert result["batch_count"] == 2
-        assert result["succeeded"] == 2
-        assert result["failed"] == 0
+        assert result["succeeded"] == 0
+        assert result["failed"] == 2
         assert result["batch_elapsed_s_total"] == 7.5

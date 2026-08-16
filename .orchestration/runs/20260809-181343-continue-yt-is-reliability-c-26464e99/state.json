@@ -1,0 +1,678 @@
+{
+  "run_id": "20260809-181343-continue-yt-is-reliability-c-26464e99",
+  "task": "Continue yt-is reliability completion: reconcile multi-account live failure, strengthen worker status persistence, audit adaptive scaling and downstream handoffs, and prepare only evidence-backed next actions without unauthorized live reruns",
+  "mode": "root",
+  "status": "ok",
+  "context_capsule": "",
+  "created_at": "2026-08-09T18:13:43+00:00",
+  "updated_at": "2026-08-11T19:08:33+00:00",
+  "classification": {},
+  "phases": [],
+  "agents": {
+    "gpt-5.6-luna": {
+      "events": [
+        {
+          "ts": "2026-08-09T18:15:15+00:00",
+          "event": "worker_dispatched",
+          "status": "running",
+          "agent": "gpt-5.6-luna",
+          "summary": "Read-only map of remaining yt-is reliability and downstream work",
+          "reasoning": "low",
+          "scope": [
+            "coordinator",
+            "adaptive-scaling",
+            "downstream-handoffs"
+          ],
+          "files": [
+            "scripts/run_multi_account_fetch.py",
+            "dev/worker_pool/worker_main.py",
+            "bin/csf-source",
+            "docs/handoffs"
+          ]
+        },
+        {
+          "ts": "2026-08-09T18:17:07+00:00",
+          "event": "worker_handoff",
+          "status": "success",
+          "agent": "gpt-5.6-luna",
+          "summary": "Map complete: coordinator and adaptive offline test gaps identified; live source-add remains gated",
+          "reasoning": "low",
+          "scope": [
+            "coordinator",
+            "adaptive-scaling",
+            "downstream-handoffs"
+          ],
+          "files": [
+            "scripts/run_multi_account_fetch.py",
+            "tests/test_run_multi_account_fetch.py",
+            "csf/adaptive_worker_scheduler.py",
+            "tests/test_adaptive_worker_coordinator.py",
+            "P:/docs/handoffs/yt-is-progressive-visual-analysis-20260804/HANDOFF.md"
+          ]
+        },
+        {
+          "ts": "2026-08-09T18:17:30+00:00",
+          "event": "worker_dispatched",
+          "status": "running",
+          "agent": "gpt-5.6-luna",
+          "summary": "Implement coordinator reconciliation tests only",
+          "reasoning": "medium",
+          "scope": [
+            "coordinator",
+            "reconciliation",
+            "retry-selection"
+          ],
+          "files": [
+            "tests/test_run_multi_account_fetch.py"
+          ]
+        },
+        {
+          "ts": "2026-08-09T18:23:45+00:00",
+          "event": "worker_dispatched",
+          "status": "running",
+          "agent": "gpt-5.6-luna",
+          "summary": "Adversarial review of current reliability changes",
+          "reasoning": "medium",
+          "scope": [
+            "coordinator",
+            "worker-persistence",
+            "account-route",
+            "adaptive-boundary"
+          ],
+          "files": [
+            "scripts/run_multi_account_fetch.py",
+            "dev/worker_pool/worker_main.py",
+            "bin/csf-source",
+            "csf/nlm_batch.py",
+            "tests/test_run_multi_account_fetch.py",
+            "tests/test_dev_worker_pool.py",
+            "tests/test_csf_source_fetch_timing.py"
+          ]
+        }
+      ],
+      "status": "running",
+      "reasoning": "medium",
+      "scope": [
+        "coordinator",
+        "worker-persistence",
+        "account-route",
+        "adaptive-boundary"
+      ],
+      "files": [
+        "scripts/run_multi_account_fetch.py",
+        "dev/worker_pool/worker_main.py",
+        "bin/csf-source",
+        "docs/handoffs",
+        "tests/test_run_multi_account_fetch.py",
+        "csf/adaptive_worker_scheduler.py",
+        "tests/test_adaptive_worker_coordinator.py",
+        "P:/docs/handoffs/yt-is-progressive-visual-analysis-20260804/HANDOFF.md",
+        "csf/nlm_batch.py",
+        "tests/test_dev_worker_pool.py",
+        "tests/test_csf_source_fetch_timing.py"
+      ],
+      "last_event": {
+        "ts": "2026-08-09T18:23:45+00:00",
+        "event": "worker_dispatched",
+        "status": "running",
+        "agent": "gpt-5.6-luna",
+        "summary": "Adversarial review of current reliability changes",
+        "reasoning": "medium",
+        "scope": [
+          "coordinator",
+          "worker-persistence",
+          "account-route",
+          "adaptive-boundary"
+        ],
+        "files": [
+          "scripts/run_multi_account_fetch.py",
+          "dev/worker_pool/worker_main.py",
+          "bin/csf-source",
+          "csf/nlm_batch.py",
+          "tests/test_run_multi_account_fetch.py",
+          "tests/test_dev_worker_pool.py",
+          "tests/test_csf_source_fetch_timing.py"
+        ]
+      }
+    },
+    "019feac4-a513-7dd3-80d2-e30fe9527d5b": {
+      "events": [
+        {
+          "ts": "2026-08-10T08:23:17+00:00",
+          "event": "worker_dispatched",
+          "agent": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+          "summary": "Kant read-only readiness and performance audit dispatched",
+          "reasoning": "high",
+          "scope": [
+            "read-only",
+            "readiness",
+            "residuals",
+            "throughput"
+          ],
+          "files": [
+            "AGENTS.md",
+            "CLAUDE.md",
+            "HANDOFF.md",
+            "scripts/run_multi_account_fetch.py",
+            "bin/csf-source",
+            "scripts/audit_unattended_residuals.py",
+            "docs/operations/unattended-backlog-operation.md"
+          ]
+        }
+      ],
+      "status": "unknown",
+      "reasoning": "high",
+      "scope": [
+        "read-only",
+        "readiness",
+        "residuals",
+        "throughput"
+      ],
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "HANDOFF.md",
+        "scripts/run_multi_account_fetch.py",
+        "bin/csf-source",
+        "scripts/audit_unattended_residuals.py",
+        "docs/operations/unattended-backlog-operation.md"
+      ],
+      "last_event": {
+        "ts": "2026-08-10T08:23:17+00:00",
+        "event": "worker_dispatched",
+        "agent": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+        "summary": "Kant read-only readiness and performance audit dispatched",
+        "reasoning": "high",
+        "scope": [
+          "read-only",
+          "readiness",
+          "residuals",
+          "throughput"
+        ],
+        "files": [
+          "AGENTS.md",
+          "CLAUDE.md",
+          "HANDOFF.md",
+          "scripts/run_multi_account_fetch.py",
+          "bin/csf-source",
+          "scripts/audit_unattended_residuals.py",
+          "docs/operations/unattended-backlog-operation.md"
+        ]
+      }
+    }
+  },
+  "events": [
+    {
+      "ts": "2026-08-09T18:13:43+00:00",
+      "event": "run_created",
+      "status": "initialized",
+      "summary": "Continue yt-is reliability completion: reconcile multi-account live failure, strengthen worker status persistence, audit adaptive scaling and downstream handoffs, and prepare only evidence-backed next actions without unauthorized live reruns"
+    },
+    {
+      "ts": "2026-08-09T18:14:44+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Continue yt-is reliability completion",
+      "metadata": {
+        "must_read": 9,
+        "capsule": ".orchestration\\context_capsule.json"
+      }
+    },
+    {
+      "ts": "2026-08-09T18:14:53+00:00",
+      "event": "skill_invoked",
+      "status": "running",
+      "summary": "codex-spawn attached and AOC run initialized",
+      "scope": [
+        "orchestration",
+        "yt-is"
+      ],
+      "files": [
+        ".orchestration/context_capsule.json"
+      ]
+    },
+    {
+      "ts": "2026-08-09T18:14:53+00:00",
+      "event": "routing_decision",
+      "summary": "routing decision recorded",
+      "metadata": {
+        "shape": "size=M|risk=medium|ambiguity=high|surfaces=backend,database,docs,tests|intent=map",
+        "activation": "forced",
+        "size": "M",
+        "spawn_policy": "single",
+        "worker_count": 1,
+        "agents": [
+          "gpt-5.6-luna"
+        ],
+        "model": "gpt-5.6-luna",
+        "reasoning": "low",
+        "user_overrides": {
+          "user_requested_codex_spawn": true,
+          "live_rerun": false
+        }
+      }
+    },
+    {
+      "ts": "2026-08-09T18:15:01+00:00",
+      "event": "routing_decision",
+      "status": "running",
+      "summary": "M read-only map before implementation; one cheapest adequate worker",
+      "metadata": {
+        "shape": "size=M|risk=medium|ambiguity=high|surfaces=backend,database,docs,tests|intent=map",
+        "activation": "forced",
+        "size": "M",
+        "spawn_policy": "single_read_only_mapper",
+        "worker_count": 1,
+        "agents": [
+          "gpt-5.6-luna"
+        ],
+        "model": "gpt-5.6-luna",
+        "reasoning": "low",
+        "user_overrides": {
+          "user_requested_codex_spawn": true,
+          "live_rerun": false
+        }
+      }
+    },
+    {
+      "ts": "2026-08-09T18:15:15+00:00",
+      "event": "worker_dispatched",
+      "status": "running",
+      "agent": "gpt-5.6-luna",
+      "summary": "Read-only map of remaining yt-is reliability and downstream work",
+      "reasoning": "low",
+      "scope": [
+        "coordinator",
+        "adaptive-scaling",
+        "downstream-handoffs"
+      ],
+      "files": [
+        "scripts/run_multi_account_fetch.py",
+        "dev/worker_pool/worker_main.py",
+        "bin/csf-source",
+        "docs/handoffs"
+      ]
+    },
+    {
+      "ts": "2026-08-09T18:17:07+00:00",
+      "event": "worker_handoff",
+      "status": "success",
+      "agent": "gpt-5.6-luna",
+      "summary": "Map complete: coordinator and adaptive offline test gaps identified; live source-add remains gated",
+      "reasoning": "low",
+      "scope": [
+        "coordinator",
+        "adaptive-scaling",
+        "downstream-handoffs"
+      ],
+      "files": [
+        "scripts/run_multi_account_fetch.py",
+        "tests/test_run_multi_account_fetch.py",
+        "csf/adaptive_worker_scheduler.py",
+        "tests/test_adaptive_worker_coordinator.py",
+        "P:/docs/handoffs/yt-is-progressive-visual-analysis-20260804/HANDOFF.md"
+      ]
+    },
+    {
+      "ts": "2026-08-09T18:17:29+00:00",
+      "event": "routing_decision",
+      "status": "running",
+      "summary": "S bundled test worker for coordinator reconciliation gaps",
+      "metadata": {
+        "shape": "size=S|risk=medium|ambiguity=medium|surfaces=backend,database,tests|intent=implement-tests",
+        "activation": "forced",
+        "size": "S",
+        "spawn_policy": "single_bundled_worker",
+        "worker_count": 1,
+        "agents": [
+          "gpt-5.6-luna"
+        ],
+        "model": "gpt-5.6-luna",
+        "reasoning": "medium",
+        "user_overrides": {
+          "user_requested_codex_spawn": true,
+          "write_scope": "tests/test_run_multi_account_fetch.py",
+          "live_rerun": false
+        }
+      }
+    },
+    {
+      "ts": "2026-08-09T18:17:30+00:00",
+      "event": "worker_dispatched",
+      "status": "running",
+      "agent": "gpt-5.6-luna",
+      "summary": "Implement coordinator reconciliation tests only",
+      "reasoning": "medium",
+      "scope": [
+        "coordinator",
+        "reconciliation",
+        "retry-selection"
+      ],
+      "files": [
+        "tests/test_run_multi_account_fetch.py"
+      ]
+    },
+    {
+      "ts": "2026-08-09T18:23:45+00:00",
+      "event": "routing_decision",
+      "status": "running",
+      "summary": "Focused adversarial reviewer; budget gate downgraded high to medium",
+      "metadata": {
+        "shape": "size=S|risk=high|ambiguity=medium|surfaces=backend,database,tests,security|intent=adversarial-review",
+        "activation": "forced",
+        "size": "S",
+        "spawn_policy": "single_read_only_reviewer",
+        "worker_count": 1,
+        "agents": [
+          "gpt-5.6-luna"
+        ],
+        "model": "gpt-5.6-luna",
+        "reasoning": "medium",
+        "user_overrides": {
+          "user_requested_codex_spawn": true,
+          "budget_gate_downgrade": "high_to_medium",
+          "live_rerun": false
+        }
+      }
+    },
+    {
+      "ts": "2026-08-09T18:23:45+00:00",
+      "event": "worker_dispatched",
+      "status": "running",
+      "agent": "gpt-5.6-luna",
+      "summary": "Adversarial review of current reliability changes",
+      "reasoning": "medium",
+      "scope": [
+        "coordinator",
+        "worker-persistence",
+        "account-route",
+        "adaptive-boundary"
+      ],
+      "files": [
+        "scripts/run_multi_account_fetch.py",
+        "dev/worker_pool/worker_main.py",
+        "bin/csf-source",
+        "csf/nlm_batch.py",
+        "tests/test_run_multi_account_fetch.py",
+        "tests/test_dev_worker_pool.py",
+        "tests/test_csf_source_fetch_timing.py"
+      ]
+    },
+    {
+      "ts": "2026-08-10T00:01:37+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Supervisor contract review",
+      "metadata": {
+        "must_read": 5,
+        "capsule": ".orchestration\\context_capsule_supervisor_review.json"
+      }
+    },
+    {
+      "ts": "2026-08-10T00:01:47+00:00",
+      "event": "routing_decision",
+      "summary": "routing decision recorded",
+      "metadata": {
+        "shape": "size=M|risk=high|ambiguity=medium|surfaces=backend,tests,infra|intent=review-before-fix",
+        "activation": "forced",
+        "size": "M",
+        "spawn_policy": "parallel",
+        "worker_count": 2,
+        "agents": [
+          "explore",
+          "adversarial-review"
+        ],
+        "model": "gpt-5.6-luna",
+        "model_source": "user-cost-aware-routing",
+        "model_reason": "bounded independent supervisor review; Luna is adequate",
+        "escalation_from": "",
+        "escalation_prior_reasoning": "",
+        "escalation_evidence": "",
+        "reasoning": "medium",
+        "user_overrides": {
+          "explore": "low",
+          "adversarial-review": "medium"
+        }
+      }
+    },
+    {
+      "ts": "2026-08-10T08:23:17+00:00",
+      "event": "worker_dispatched",
+      "agent": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+      "summary": "Kant read-only readiness and performance audit dispatched",
+      "reasoning": "high",
+      "scope": [
+        "read-only",
+        "readiness",
+        "residuals",
+        "throughput"
+      ],
+      "files": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "HANDOFF.md",
+        "scripts/run_multi_account_fetch.py",
+        "bin/csf-source",
+        "scripts/audit_unattended_residuals.py",
+        "docs/operations/unattended-backlog-operation.md"
+      ]
+    },
+    {
+      "ts": "2026-08-10T11:48:38+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Bound per-item fallback deadline",
+      "metadata": {
+        "must_read": 5,
+        "capsule": "P:\\packages\\yt-is\\.orchestration\\context_capsule_fallback_deadline.json"
+      }
+    },
+    {
+      "ts": "2026-08-10T11:49:49+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Unattended readiness gates",
+      "metadata": {
+        "must_read": 6,
+        "capsule": "P:\\packages\\yt-is\\.orchestration\\context_capsule_readiness_gates.json"
+      }
+    },
+    {
+      "ts": "2026-08-10T11:56:12+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Adversarial readiness review",
+      "metadata": {
+        "must_read": 7,
+        "capsule": "P:\\packages\\yt-is\\.orchestration\\context_capsule_adversarial_readiness.json"
+      }
+    },
+    {
+      "ts": "2026-08-10T12:00:12+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Semantic selection receipt gate",
+      "metadata": {
+        "must_read": 3,
+        "capsule": "P:\\packages\\yt-is\\.orchestration\\context_capsule_receipt_gate.json"
+      }
+    },
+    {
+      "ts": "2026-08-10T12:00:12+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Confirmed fallback timeout boundary",
+      "metadata": {
+        "must_read": 3,
+        "capsule": "P:\\packages\\yt-is\\.orchestration\\context_capsule_timeout_boundary.json"
+      }
+    },
+    {
+      "ts": "2026-08-10T12:28:49+00:00",
+      "event": "context_capsule_created",
+      "status": "ok",
+      "summary": "Context Capsule created for Complete yt-is reliable unattended full-backlog operation and highest measured sustained throughput",
+      "metadata": {
+        "must_read": 14,
+        "capsule": ".orchestration\\runs\\20260809-181343-continue-yt-is-reliability-c-26464e99\\context\\yt-is-completion.json"
+      }
+    },
+    {
+      "ts": "2026-08-10T12:29:21+00:00",
+      "event": "routing_decision",
+      "summary": "routing decision recorded",
+      "metadata": {
+        "shape": "size=XL|risk=critical|ambiguity=high|surfaces=backend,database,infra,docs,tests,performance|intent=implementation-and-validation",
+        "activation": "forced",
+        "size": "XL",
+        "spawn_policy": "architecture_first_then_bounded_workers",
+        "worker_count": 4,
+        "agents": [
+          "strategy_architect_xhigh",
+          "complex_implementer_high",
+          "verification_engine_medium",
+          "security_reviewer_high"
+        ],
+        "model": "gpt-5.6-luna",
+        "model_source": "policy_default_luna",
+        "model_reason": "Luna is the policy default for large ambiguous planning; use bounded workers after source-of-truth reconciliation.",
+        "escalation_from": "",
+        "escalation_prior_reasoning": "",
+        "escalation_evidence": "",
+        "reasoning": "xhigh",
+        "user_overrides": {}
+      }
+    },
+    {
+      "ts": "2026-08-11T19:08:33+00:00",
+      "event": "routing_decision",
+      "summary": "routing decision recorded",
+      "metadata": {
+        "shape": "size=M|risk=high|ambiguity=high|surfaces=backend,database,docs,tests,performance|intent=read-only-residual-and-throughput-audit",
+        "activation": "auto",
+        "size": "M",
+        "spawn_policy": "single",
+        "worker_count": 1,
+        "agents": [
+          "gpt-5.6-luna"
+        ],
+        "model": "gpt-5.6-luna",
+        "model_source": "policy_default_luna",
+        "model_reason": "Bounded read-only review; Luna medium is adequate and budget-approved",
+        "escalation_from": "",
+        "escalation_prior_reasoning": "",
+        "escalation_evidence": "",
+        "reasoning": "medium",
+        "user_overrides": {
+          "live_runs": false,
+          "writes": false,
+          "cost_aware": true
+        }
+      }
+    }
+  ],
+  "files_claimed": {
+    "scripts/run_multi_account_fetch.py": "gpt-5.6-luna",
+    "dev/worker_pool/worker_main.py": "gpt-5.6-luna",
+    "bin/csf-source": "gpt-5.6-luna",
+    "docs/handoffs": "gpt-5.6-luna",
+    "tests/test_run_multi_account_fetch.py": "gpt-5.6-luna",
+    "csf/adaptive_worker_scheduler.py": "gpt-5.6-luna",
+    "tests/test_adaptive_worker_coordinator.py": "gpt-5.6-luna",
+    "P:/docs/handoffs/yt-is-progressive-visual-analysis-20260804/HANDOFF.md": "gpt-5.6-luna",
+    "csf/nlm_batch.py": "gpt-5.6-luna",
+    "tests/test_dev_worker_pool.py": "gpt-5.6-luna",
+    "tests/test_csf_source_fetch_timing.py": "gpt-5.6-luna",
+    "AGENTS.md": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+    "CLAUDE.md": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+    "HANDOFF.md": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+    "scripts/audit_unattended_residuals.py": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+    "docs/operations/unattended-backlog-operation.md": "019feac4-a513-7dd3-80d2-e30fe9527d5b"
+  },
+  "verification": [],
+  "budget": {},
+  "risks": [],
+  "last_event": {
+    "ts": "2026-08-11T19:08:33+00:00",
+    "event": "routing_decision",
+    "summary": "routing decision recorded",
+    "metadata": {
+      "shape": "size=M|risk=high|ambiguity=high|surfaces=backend,database,docs,tests,performance|intent=read-only-residual-and-throughput-audit",
+      "activation": "auto",
+      "size": "M",
+      "spawn_policy": "single",
+      "worker_count": 1,
+      "agents": [
+        "gpt-5.6-luna"
+      ],
+      "model": "gpt-5.6-luna",
+      "model_source": "policy_default_luna",
+      "model_reason": "Bounded read-only review; Luna medium is adequate and budget-approved",
+      "escalation_from": "",
+      "escalation_prior_reasoning": "",
+      "escalation_evidence": "",
+      "reasoning": "medium",
+      "user_overrides": {
+        "live_runs": false,
+        "writes": false,
+        "cost_aware": true
+      }
+    }
+  },
+  "ownership_conflicts": [
+    {
+      "file": "scripts/run_multi_account_fetch.py",
+      "current_owner": "gpt-5.6-luna",
+      "new_owner": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+      "event": {
+        "ts": "2026-08-10T08:23:17+00:00",
+        "event": "worker_dispatched",
+        "agent": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+        "summary": "Kant read-only readiness and performance audit dispatched",
+        "reasoning": "high",
+        "scope": [
+          "read-only",
+          "readiness",
+          "residuals",
+          "throughput"
+        ],
+        "files": [
+          "AGENTS.md",
+          "CLAUDE.md",
+          "HANDOFF.md",
+          "scripts/run_multi_account_fetch.py",
+          "bin/csf-source",
+          "scripts/audit_unattended_residuals.py",
+          "docs/operations/unattended-backlog-operation.md"
+        ]
+      }
+    },
+    {
+      "file": "bin/csf-source",
+      "current_owner": "gpt-5.6-luna",
+      "new_owner": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+      "event": {
+        "ts": "2026-08-10T08:23:17+00:00",
+        "event": "worker_dispatched",
+        "agent": "019feac4-a513-7dd3-80d2-e30fe9527d5b",
+        "summary": "Kant read-only readiness and performance audit dispatched",
+        "reasoning": "high",
+        "scope": [
+          "read-only",
+          "readiness",
+          "residuals",
+          "throughput"
+        ],
+        "files": [
+          "AGENTS.md",
+          "CLAUDE.md",
+          "HANDOFF.md",
+          "scripts/run_multi_account_fetch.py",
+          "bin/csf-source",
+          "scripts/audit_unattended_residuals.py",
+          "docs/operations/unattended-backlog-operation.md"
+        ]
+      }
+    }
+  ]
+}

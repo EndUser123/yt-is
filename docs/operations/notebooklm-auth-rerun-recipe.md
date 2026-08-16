@@ -1,5 +1,10 @@
 # NotebookLM Auth Rerun Recipe
 
+> **Historical, superseded:** Active yt-is runs use the canonical
+> account-storage design in `nlm-auth-architecture.md`. The profile-family,
+> CDP, and `csf-nlm-worker-auth` procedures below are retained as historical
+> incident evidence only. Do not execute them for a current run.
+
 > Compact handoff for the next agent. Use this when you need a clean rerun with account-correct auth and minimal browser churn.
 
 ## What This Is For

@@ -741,7 +741,7 @@ def test_format_run_aggregates_fetch_recovery_rows_by_worker_profile_and_pass(tm
     assert "Retry Gate Reasons" in rendered
     assert "Max Projected+Margin Age(s)" in rendered
     assert "Max Retry Age Margin(s)" in rendered
-    assert "| worker-01 | ytis-pro-worker-01 | primary | 1 | 1 | command_failed:1, ready:1 | 0.50 | 45.8 | 46.0 | 205.5 | 208.5 | 3.0 | 1 | ytdlp_ok:1 | projected_source_age_cliff:1 | 3.50 | 1 | 0.70 | 1.20 | 1 | 1 |" in rendered
+    assert "| worker-01 | ytis-pro-worker-01 | primary | 1 | 2 | command_failed:1, ready:1 | 0.50 | 45.8 | 46.0 | 205.5 | 208.5 | 3.0 | 1 | ytdlp_ok:2 | projected_source_age_cliff:1 | 3.50 | 1 | 0.70 | 1.20 | 1 | 1 |" in rendered
     assert "| worker-01 | ytis-pro-worker-01 | retry | 4 | 1 | source_age_cliff:1 | 0.00 | 250.0 | 250.0 | absent | absent | absent | 0 | ytdlp_ok:1 | none | 0.00 | 0 | 0.00 | 0.00 | 0 | 0 |" in rendered
 
 

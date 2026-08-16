@@ -1,0 +1,100 @@
+{
+  "created_at": "2026-08-15T14:54:38.117538+00:00",
+  "run_dir": "P:\\packages\\yt-is\\.logs\\discovery_cycle\\20260815T144938Z",
+  "settings_path": "P:\\packages\\yt-is\\config\\discovery-settings.json",
+  "steps": [
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\scripts\\refresh_youtube_cookies.py",
+        "--browser",
+        "firefox:dvrlqwow.default-release"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "step": "refresh_cookies"
+    },
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-source",
+        "--allow-spend",
+        "watchlater",
+        "--cookies-from-browser",
+        "firefox:dvrlqwow.default-release",
+        "--min-watchlater-videos",
+        "2",
+        "--dry-run"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "step": "watchlater_dryrun"
+    },
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-source",
+        "--allow-spend",
+        "watchlater",
+        "--cookies-from-browser",
+        "firefox:dvrlqwow.default-release",
+        "--min-watchlater-videos",
+        "2"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "step": "watchlater_import"
+    },
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-source",
+        "--allow-spend",
+        "history",
+        "--cookies-from-browser",
+        "firefox:dvrlqwow.default-release",
+        "--min-history-videos",
+        "2",
+        "--dry-run"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "step": "history_dryrun"
+    },
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-source",
+        "--allow-spend",
+        "history",
+        "--cookies-from-browser",
+        "firefox:dvrlqwow.default-release",
+        "--min-history-videos",
+        "2"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "step": "history_import"
+    },
+    {
+      "command": [
+        "C:\\Python314\\python.exe",
+        "P:\\packages\\yt-is\\bin\\csf-source",
+        "categorize",
+        "--workers",
+        "4"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "step": "categorize"
+    },
+    {
+      "skipped": "no excluded_categories configured",
+      "step": "promote_excluded"
+    },
+    {
+      "skipped": "run_sync false or --skip-sync",
+      "step": "sync"
+    }
+  ]
+}

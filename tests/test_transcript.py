@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import os
+import json
 import urllib.error
 import time as time_module
 from pathlib import Path
@@ -16,7 +18,12 @@ import pytest
 # Ensure the package is importable
 sys.path.insert(0, str(Path(r"P:\\\\\\\packages\\yt-is").absolute()))
 
-from csf.transcript import LanguageConfig, TranscriptResult, fetch_transcript_chain
+from csf import transcript as transcript_module
+from csf.transcript import (
+    LanguageConfig,
+    TranscriptResult,
+    fetch_transcript_chain,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +39,7 @@ class TestVideoIdValidation:
         assert isinstance(result, TranscriptResult)
         assert result.transcript == ""
         assert result.source == "none"
+
 
     def test_video_id_with_special_chars_returns_empty_result(self):
         result = fetch_transcript_chain("abc!@#$%^&*()", LanguageConfig())
@@ -71,6 +79,171 @@ class TestVideoIdValidation:
             assert isinstance(result, TranscriptResult)
             assert result.transcript == "transcript text"
             assert result.source == "ytdlp"
+
+
+def test_classify_failure_normalizes_machine_reason_tokens():
+    assert transcript_module._classify_failure(
+        "direct_api no_transcript: could not retrieve transcript", "direct_api"
+    ) == "no_transcript"
+    assert transcript_module._classify_failure(
+        "source_add_failed: provider rejected source", "notebooklm"
+    ) == "source_add_failed"
+
+
+class TestSeleniumTranscriptExtraction:
+    """Selenium must accept transcript DOM text, never arbitrary page text."""
+
+    class _By:
+        CSS_SELECTOR = "css selector"
+
+    class _Element:
+        def __init__(self, text):
+            self.text = text
+
+    class _Driver:
+        def __init__(self, elements_by_selector):
+            self.elements_by_selector = elements_by_selector
+            self.queries = []
+
+        def find_elements(self, by, selector):
+            self.queries.append((by, selector))
+            return self.elements_by_selector.get(selector, [])
+
+    def test_body_only_text_is_rejected(self):
+        driver = self._Driver({
+            "body": [self._Element("CA Sign in Home Recommended videos")],
+        })
+
+        transcript, error = transcript_module._extract_selenium_transcript_text(
+            driver, self._By
+        )
+
+        assert transcript is None
+        assert error == "transcript segments not found"
+        assert all(selector != "body" for _, selector in driver.queries)
+
+    def test_transcript_segments_are_extracted_without_page_chrome(self):
+        driver = self._Driver({
+            "ytd-transcript-segment-renderer": [
+                self._Element("First transcript segment."),
+                self._Element("Second transcript segment."),
+            ],
+            "ytd-transcript-renderer": [
+                self._Element("Transcript panel with page controls."),
+            ],
+        })
+
+        transcript, error = transcript_module._extract_selenium_transcript_text(
+            driver, self._By
+        )
+
+        assert error is None
+        assert transcript == "First transcript segment.\nSecond transcript segment."
+
+
+class TestWhisperProcessBoundary:
+    """The expensive Whisper stage must have a killable process boundary."""
+
+    def test_worker_result_is_read_and_deleted(self, tmp_path, monkeypatch):
+        result_path = tmp_path / "whisper-result.json"
+
+        def fake_mkstemp(*, prefix, suffix):
+            return os.open(result_path, os.O_CREAT | os.O_RDWR), str(result_path)
+
+        def fake_run(command, **kwargs):
+            Path(command[-1]).write_text(
+                '{"ok": true, "transcript": "hello"}\n', encoding="utf-8"
+            )
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        monkeypatch.setattr(transcript_module.tempfile, "mkstemp", fake_mkstemp)
+        monkeypatch.setattr(transcript_module.subprocess, "run", fake_run)
+
+        result = transcript_module._run_whisper_transcription_subprocess(
+            "audio.mp3", "en", timeout_s=12
+        )
+
+        assert result == (True, "hello", None)
+        assert not result_path.exists()
+
+    def test_worker_result_writer_replaces_precreated_path_atomically(self, tmp_path):
+        result_path = tmp_path / "transcript-result.json"
+        result_path.write_text("", encoding="utf-8")
+
+        transcript_module._write_json_result_atomically(
+            result_path,
+            {"ok": True, "transcript": "complete"},
+        )
+
+        assert json.loads(result_path.read_text(encoding="utf-8")) == {
+            "ok": True,
+            "transcript": "complete",
+        }
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_worker_timeout_is_reported_and_result_file_is_deleted(self, tmp_path, monkeypatch):
+        result_path = tmp_path / "whisper-timeout.json"
+
+        def fake_mkstemp(*, prefix, suffix):
+            return os.open(result_path, os.O_CREAT | os.O_RDWR), str(result_path)
+
+        def fake_run(command, **kwargs):
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+        monkeypatch.setattr(transcript_module.tempfile, "mkstemp", fake_mkstemp)
+        monkeypatch.setattr(transcript_module.subprocess, "run", fake_run)
+
+        result = transcript_module._run_whisper_transcription_subprocess(
+            "audio.mp3", "en", timeout_s=3
+        )
+
+        assert result == (False, None, "whisper transcription timed out (>3s)")
+        assert not result_path.exists()
+
+    @pytest.mark.parametrize("value", ["", "not-a-number", "0", "-1", "nan", "inf"])
+    def test_invalid_timeout_uses_finite_default(self, monkeypatch, value):
+        monkeypatch.setenv("YTIS_WHISPER_TRANSCRIPTION_TIMEOUT_S", value)
+        assert transcript_module._whisper_transcription_timeout_s() == 900.0
+
+    @pytest.mark.parametrize("value", ["", "not-a-number", "0", "-1", "nan", "inf"])
+    def test_invalid_audio_timeout_uses_finite_default(self, monkeypatch, value):
+        monkeypatch.setenv("YTIS_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S", value)
+        assert transcript_module._whisper_audio_download_timeout_s() == 300.0
+
+    def test_worker_deadline_is_available_to_transcript_chain(self, tmp_path, monkeypatch):
+        result_path = tmp_path / "transcript-result.json"
+        observed: dict[str, float | None] = {}
+
+        def fake_fetch(*args, **kwargs):
+            observed["remaining_s"] = transcript_module._remaining_transcript_deadline_s()
+            return TranscriptResult(
+                video_id="dQw4w9WgXcQ",
+                lang="en",
+                raw_lang=None,
+                was_translated=False,
+                transcript="",
+                source="none",
+                error="test",
+                last_stage="whisper",
+                failure_reason="timeout",
+            )
+
+        monkeypatch.setattr(transcript_module, "fetch_transcript_chain", fake_fetch)
+        assert transcript_module._transcript_worker_main(
+            [
+                "--video-id",
+                "dQw4w9WgXcQ",
+                "--result-path",
+                str(result_path),
+                "--deadline-s",
+                "12",
+            ]
+        ) == 0
+
+        assert observed["remaining_s"] is not None
+        assert 0 < observed["remaining_s"] <= 12
+        assert transcript_module._remaining_transcript_deadline_s() is None
+        assert json.loads(result_path.read_text(encoding="utf-8"))["failure_reason"] == "timeout"
 
 
 class TestFallbackChain:
@@ -130,6 +303,38 @@ class TestFallbackChain:
             assert failure_events
             assert failure_events[0]["last_stage"] == "oembed"
             assert failure_events[0]["failure_reason"] == "unavailable"
+
+    def test_fallback_only_bypasses_oembed_unavailable_and_continues(self, monkeypatch):
+        """An explicit fallback recovery may continue past an oEmbed 403."""
+        monkeypatch.setenv("YTIS_OEMBED_ENABLED", "1")
+        http_error = urllib.error.HTTPError(
+            "https://www.youtube.com/oembed",
+            403,
+            "Forbidden",
+            hdrs=None,
+            fp=None,
+        )
+        with (
+            mock.patch("csf.transcript.urllib.request.urlopen", side_effect=http_error),
+            mock.patch("csf.transcript._fetch_via_ytdlp", return_value=(True, "fallback transcript", None)) as mock_ytdlp,
+            mock.patch("csf.transcript.log_action") as mock_log,
+        ):
+            result = fetch_transcript_chain(
+                "dQw4w9WgXcQ",
+                LanguageConfig(prefer_lang="en"),
+                skip_notebooklm=True,
+                skip_oembed=True,
+            )
+
+        mock_ytdlp.assert_called_once()
+        assert result.transcript == "fallback transcript"
+        bypass_events = [
+            call.args[1]
+            for call in mock_log.call_args_list
+            if call.args[0] == "transcript_oembed_bypassed"
+        ]
+        assert bypass_events
+        assert bypass_events[0]["reason"] == "explicit_fallback_only"
 
     def test_direct_api_terminal_failure_short_circuits_later_stages(self):
         """direct_api unavailable should stop before Selenium/Whisper."""
@@ -694,6 +899,26 @@ class TestWhisperEmptyClassification:
             assert args[0] == "dQw4w9WgXcQ"
             assert args[1] == "no_transcript"
             assert kwargs["last_stage"] == "whisper"
+
+
+class TestTranscriptQualityMetrics:
+    def test_short_transcript_is_observable_without_rejection(self):
+        from csf.transcript import build_transcript_quality_metrics
+
+        metrics = build_transcript_quality_metrics('["Jingle Bells"]')
+
+        assert metrics["transcript_chars"] == 16
+        assert metrics["transcript_words"] == 2
+        assert metrics["transcript_length_band"] == "below_existing_minimum"
+        assert metrics["transcript_length_threshold_chars"] == 21
+
+    def test_normal_transcript_meets_existing_length_boundary(self):
+        from csf.transcript import build_transcript_quality_metrics
+
+        metrics = build_transcript_quality_metrics("This is a normal transcript.")
+
+        assert metrics["transcript_chars"] == 28
+        assert metrics["transcript_length_band"] == "meets_existing_minimum"
 
 
 class TestWhisperAdmission:
@@ -1549,6 +1774,35 @@ class TestDirectApiFallback:
 class TestWhisperFallback:
     """Tests for _fetch_via_whisper fallback."""
 
+    def test_whisper_audio_selector_attempts_use_configured_total_budget(self, monkeypatch):
+        """All selector attempts stay inside the one configured audio budget."""
+        from csf.transcript import _fetch_via_whisper
+
+        monkeypatch.setenv("YTIS_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S", "0.01")
+        calls: list[float] = []
+
+        def mock_run(command, **kwargs):
+            calls.append(float(kwargs["timeout"]))
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                "",
+                "Requested format is not available",
+            )
+
+        with (
+            mock.patch("csf.transcript.get_browser_cookies", return_value=[]),
+            mock.patch("csf.transcript.shutil.which", return_value=None),
+            mock.patch("csf.transcript.subprocess.run", side_effect=mock_run),
+        ):
+            success, transcript, error = _fetch_via_whisper("dQw4w9WgXcQ", "en")
+
+        assert success is False
+        assert transcript is None
+        assert error == "audio download failed: Requested format is not available"
+        assert len(calls) == 4
+        assert all(0 < timeout <= 0.01 for timeout in calls)
+
     def test_whisper_retries_broader_audio_formats_when_first_selector_fails(self):
         """Whisper should retry with broader audio selectors and a JS runtime before giving up."""
         from pathlib import Path
@@ -1560,6 +1814,12 @@ class TestWhisperFallback:
         calls: list[list[str]] = []
 
         def mock_run(cmd, **kwargs):
+            if "csf.whisper_worker" in cmd:
+                Path(cmd[-1]).write_text(
+                    '{"ok": true, "transcript": "hello from whisper"}\n',
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(cmd, 0, "", "")
             calls.append(list(cmd))
             output_base = cmd[cmd.index("--output") + 1]
             if len(calls) == 1:
@@ -1599,4 +1859,56 @@ class TestWhisperFallback:
         assert calls[0][calls[0].index("--js-runtimes") + 1] == "node"
         assert calls[0][calls[0].index("-f") + 1] == "bestaudio/best"
         assert calls[1][calls[1].index("-f") + 1] == "bestaudio"
+
+    def test_whisper_tries_default_selector_after_best_warning(self):
+        """A rejected explicit -f best must fall through to yt-dlp's default selection."""
+        from pathlib import Path
+        import sys
+        import tempfile as pytemp
+
+        from csf.transcript import _fetch_via_whisper
+
+        calls: list[list[str]] = []
+
+        def mock_run(cmd, **kwargs):
+            if "csf.whisper_worker" in cmd:
+                Path(cmd[-1]).write_text(
+                    '{"ok": true, "transcript": "default selector worked"}\n',
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            calls.append(list(cmd))
+            output_base = cmd[cmd.index("--output") + 1]
+            if len(calls) < 4:
+                stderr = "Requested format is not available"
+                if len(calls) == 3:
+                    stderr = 'WARNING: "-f best" selects the best pre-merged format'
+                return subprocess.CompletedProcess(cmd, 1, "", stderr)
+            Path(f"{output_base}.mp3").write_text("fake audio", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with pytemp.TemporaryDirectory() as tmp_dir:
+            with (
+                mock.patch("tempfile.mkdtemp", return_value=tmp_dir),
+                mock.patch("csf.transcript.get_browser_cookies", return_value=[]),
+                mock.patch("subprocess.run", side_effect=mock_run),
+            ):
+                fake_segment = mock.Mock()
+                fake_segment.text = "default selector worked"
+                fake_segment.no_speech_prob = 0.01
+                fake_model = mock.Mock()
+                fake_model.transcribe.return_value = ([fake_segment], None)
+                sys.modules["faster_whisper"] = mock.Mock(
+                    WhisperModel=mock.Mock(return_value=fake_model)
+                )
+                try:
+                    success, transcript, error = _fetch_via_whisper("dQw4w9WgXcQ", "en")
+                finally:
+                    sys.modules.pop("faster_whisper", None)
+
+        assert success is True
+        assert transcript == "default selector worked"
+        assert error is None
+        assert len(calls) == 4
+        assert "-f" not in calls[3]
 

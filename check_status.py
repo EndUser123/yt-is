@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
+from pathlib import Path
 import sqlite3
+import sys
 
-conn = sqlite3.connect('P:\\\\\\.data/yt-is/batch_status/batch_status.sqlite')
+PACKAGE_ROOT = Path(__file__).resolve().parent
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
+
+from csf.paths import get_batch_db_path
+
+conn = sqlite3.connect(get_batch_db_path())
 cursor = conn.execute('SELECT status, COUNT(*) FROM analysis_status GROUP BY status')
 print('Analysis status counts:')
 for row in cursor.fetchall():

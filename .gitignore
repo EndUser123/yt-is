@@ -21,7 +21,6 @@ htmlcov/
 # Data stores (local only - never push to GitHub)
 *.sqlite
 *.sqlite3
-*.db
 history.json
 youtube_cookies.txt
 
@@ -68,3 +67,15 @@ config/local.yml
 # NotebookLM auth storage - NEVER commit (contains live Google session cookies)
 # Backup lives in C:\Users\brsth\.ytis-nlm-auth-backup\ (bare repo, no remote, pre-push blocked)
 .data/yt-is/nlm-auth/
+
+# Browser profile data (runtime state, contains credentials - never track)
+.browser/
+
+# Local-only DB artifacts (extension mismatch vs the *.sqlite rule)
+*.db
+
+# Machine-local discovery cycle settings (browser profile etc.)
+config/discovery-settings.json
+
+# Multi-account fetch receipts (contain auth material - never commit)
+.logs/multi_account_fetch/

@@ -1,5 +1,10 @@
 # NotebookLM Auth Family Extension Guide
 
+> **Historical, superseded:** Active yt-is runs use the canonical
+> account-to-storage map in `nlm-auth-architecture.md`. Do not add lanes to
+> the legacy CDP/profile-family machinery described below. Extend the
+> canonical account map, tests, lane configuration, and current docs together.
+
 > For agentic workers: use this guide when adding another NotebookLM auth family or lane. The current implementation keeps auth families in `csf/nlm_worker_auth.py`, so adding a new lane is a code + docs + test change, not a JSON-only change.
 
 **Goal:** Add a new NotebookLM account lane without breaking account pinning, CDP isolation, or worker-profile sync.

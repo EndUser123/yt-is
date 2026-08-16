@@ -94,6 +94,61 @@ class TestAnalysisStatusTable:
         source = get_source("dQw4w9WgXcQ", db_path=_TEST_DB_PATH)
         assert source == "https://www.youtube.com/@example"
 
+    def test_bulk_update_does_not_mutate_complete_diagnostics(self):
+        """A bulk retry writer cannot stamp failure diagnostics onto complete work."""
+        set_status_batch(
+            [
+                BatchEntry(
+                    video_id="complete_diagnostics",
+                    status="complete",
+                    last_stage="whisper",
+                    failure_reason=None,
+                )
+            ],
+            db_path=_TEST_DB_PATH,
+        )
+
+        set_status_batch(
+            [
+                BatchEntry(
+                    video_id="complete_diagnostics",
+                    status="failed",
+                    last_stage="notebooklm",
+                    failure_reason="Source add failed; rpc_code=9",
+                )
+            ],
+            db_path=_TEST_DB_PATH,
+        )
+
+        row = get_entries_for_video_ids_details(
+            ["complete_diagnostics"], db_path=_TEST_DB_PATH
+        )[0]
+        assert row["status"] == "complete"
+        assert row["last_stage"] == "whisper"
+        assert row["failure_reason"] is None
+
+    def test_fallback_completion_preserves_prior_failure_provenance(self):
+        """A failed-to-complete recovery keeps the original failure reason for audit."""
+        mark_failed(
+            "fallback_provenance",
+            failure_reason="Source add failed; materialization terminal error: rpc_code=9",
+            db_path=_TEST_DB_PATH,
+        )
+        mark_complete(
+            "fallback_provenance",
+            last_stage="whisper",
+            db_path=_TEST_DB_PATH,
+        )
+
+        row = get_entries_for_video_ids_details(
+            ["fallback_provenance"], db_path=_TEST_DB_PATH
+        )[0]
+        assert row["status"] == "complete"
+        assert row["last_stage"] == "whisper"
+        assert row["failure_reason"] == (
+            "Source add failed; materialization terminal error: rpc_code=9"
+        )
+
     def test_get_analysis_status_returns_none_for_unknown(self):
         """Unknown video_id returns None."""
         status = get_analysis_status("unknown_video_id", db_path=_TEST_DB_PATH)

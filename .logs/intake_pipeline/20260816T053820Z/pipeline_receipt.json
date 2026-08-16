@@ -1,0 +1,39 @@
+{
+  "created_at": "2026-08-16T05:38:20.413701+00:00",
+  "db_path": "P:\\.data\\yt-is\\batch_status.sqlite",
+  "dry_run": false,
+  "fetch": {
+    "elapsed_s": 292.1,
+    "mode": "EXECUTE",
+    "phase": "fetch",
+    "returncode": 0,
+    "stdout_tail": "  ],\n    \"active_grace_hours\": 1,\n    \"bytes_deleted_or_planned\": 0,\n    \"directories_deleted\": 0,\n    \"dry_run\": false,\n    \"errors\": [],\n    \"experiments_scanned\": 33,\n    \"experiments_skipped_active\": 3,\n    \"files_deleted\": 0,\n    \"max_age_days\": 7,\n    \"now_epoch\": 1786858992.440907,\n    \"root\": \"P:\\\\packages\\\\yt-is\\\\.logs\\\\multi_account_fetch\",\n    \"root_exists\": true,\n    \"status\": \"completed\"\n  },\n  \"state_path\": \"P:\\\\.data\\\\yt-is\\\\unattended-backlog\\\\state.json\",\n  \"status\": \"paused\"\n}\n",
+    "supervisor_status": "partial"
+  },
+  "pre_sync_pending": 336032,
+  "skip_sync": true,
+  "status": "complete",
+  "storage_verification": {
+    "cached": 14295,
+    "clean": false,
+    "empty": 0,
+    "issues": [
+      "2 complete rows without transcript cache (orphans): ['Y_H7S8VfI1I', 't5-1HhEm2HQ']",
+      "33 suspect short transcripts (<50 chars): [{'video_id': 'iwqbjwsN22k', 'chars': 3, 'source': 'whisper'}, {'video_id': 'IEkatyz1GIY', 'chars': 3, 'source': 'whisper'}, {'video_id': 'jCXwVGuFfXQ', 'chars': 4, 'source': 'whisper'}, {'video_id': 'v-0ZHoJ9lFE', 'chars': 5, 'source': 'whisper'}, {'video_id': '3hOl8gSK0Eo', 'chars': 5, 'source': 'ytdlp'}]"
+    ],
+    "orphans": 2,
+    "suspects": 33
+  },
+  "verify": {
+    "blocked_pending": 126096,
+    "delta": 0,
+    "issues": [],
+    "ok": true,
+    "phase": "verify",
+    "post_pending": 336032,
+    "pre_pending": 336032,
+    "warnings": [
+      "126096 pending rows on blocked channels (coordinator will skip)"
+    ]
+  }
+}

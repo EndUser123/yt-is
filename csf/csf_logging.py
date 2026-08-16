@@ -15,8 +15,25 @@ from csf.terminal_context import resolve_tid
 
 _logger = logging.getLogger(__name__)
 
-# Allowed base directories for log output (prevents path traversal)
-_ALLOWED_LOG_BASES = (Path.cwd(), Path.home())
+
+def _default_log_root() -> Path:
+    """Return yt-is's package-owned default runtime log root."""
+    return Path(__file__).resolve().parents[1] / ".logs"
+
+
+def _allowed_log_bases() -> tuple[Path, ...]:
+    """Return trusted roots for explicit intelligence-stream log output.
+
+    The package-owned root is trusted even when an absolute script is launched
+    from another working directory.  The drive-level root remains trusted for
+    historical callers, alongside the existing cwd/home allowances for
+    explicit package-local and user-local run directories.
+    """
+    cwd = Path.cwd().resolve()
+    bases = [cwd, Path.home().resolve(), _default_log_root().resolve()]
+    if cwd.anchor:
+        bases.append((Path(cwd.anchor) / ".logs").resolve())
+    return tuple(dict.fromkeys(bases))
 
 # Rich print, lazy imported to avoid hard dependency
 _rich_print: Callable[..., None] | None = None
@@ -78,19 +95,19 @@ def _write_jsonl_entry(action: str, data: dict) -> None:
     import os
 
     try:
-        log_dir = Path(os.getenv("INTELLIGENCE_STREAM_LOG_DIR", ".logs"))
+        log_dir = Path(os.getenv("INTELLIGENCE_STREAM_LOG_DIR") or _default_log_root())
         # Resolve and validate log_dir is within allowed bases
         try:
             log_dir = log_dir.resolve()
         except (OSError, ValueError):
             _logger.warning("Invalid log directory, using default: %s", log_dir)
-            log_dir = Path(".logs").resolve()
+            log_dir = _default_log_root().resolve()
 
-        if not any(log_dir.is_relative_to(base) for base in _ALLOWED_LOG_BASES):
+        if not any(log_dir.is_relative_to(base) for base in _allowed_log_bases()):
             _logger.warning(
                 "Log directory outside allowed bases, using default: %s", log_dir
             )
-            log_dir = Path(".logs").resolve()
+            log_dir = _default_log_root().resolve()
 
         log_dir.mkdir(parents=True, exist_ok=True)
     except (OSError, PermissionError) as e:
@@ -100,11 +117,24 @@ def _write_jsonl_entry(action: str, data: dict) -> None:
     tid = resolve_tid()
     log_file = log_dir / f"{tid}.jsonl"
 
+    event_data = dict(data)
+    # Child processes inherit these non-sensitive ownership markers from the
+    # coordinator. The inherited envelope is authoritative: a legacy emitter
+    # cannot make an event appear to belong to another run or account.
+    for field, environment_name in (
+        ("run_id", "YTIS_INDUSTRIAL_RUN_ID"),
+        ("account_profile", "YTIS_NLM_ACCOUNT_PROFILE"),
+        ("execution_nonce", "YTIS_THROUGHPUT_PAIR_EXECUTION_NONCE"),
+    ):
+        value = os.getenv(environment_name, "").strip()
+        if value:
+            event_data[field] = value
+
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "trace_id": tid,
         "action": action,
-        "data": data,
+        "data": event_data,
     }
 
     try:

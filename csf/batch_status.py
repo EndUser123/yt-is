@@ -109,6 +109,7 @@ class BatchEntry:
     upload_status: str | None = None
     is_live_content: bool | None = None
     unavailable_reason: str | None = None
+    is_short: bool | None = None  # Discovered via the channel's shorts tab
     last_stage: str | None = None  # Which fetch stage succeeded
     failure_reason: str | None = None  # Why it failed
 
@@ -446,6 +447,46 @@ class _BatchStatusStorage:
                     conn.execute(f"SELECT {col} FROM channel_metadata LIMIT 1")
                 except sqlite3.OperationalError:
                     conn.execute(f"ALTER TABLE channel_metadata ADD COLUMN {col} {col_type}")
+            # is_short: video came from the channel's shorts tab (pipeline
+            # provenance for reporting/filtering; NULL = long-form path).
+            try:
+                conn.execute("SELECT is_short FROM analysis_status LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE analysis_status ADD COLUMN is_short INTEGER")
+            # Dead-channel state: 'terminated' (copyright/community-guideline
+            # removal) or 'deleted'; NULL = active. Set by detect_dead_channels.
+            for col in ("channel_status", "channel_status_at"):
+                try:
+                    conn.execute(f"SELECT {col} FROM channel_metadata LIMIT 1")
+                except sqlite3.OperationalError:
+                    conn.execute(f"ALTER TABLE channel_metadata ADD COLUMN {col} TEXT")
+            # Video-title cache: re-classification reads the DB instead of
+            # re-fetching RSS for titles it already collected once.
+            for col in ("recent_video_titles", "video_titles_fetched_at"):
+                try:
+                    conn.execute(f"SELECT {col} FROM channel_metadata LIMIT 1")
+                except sqlite3.OperationalError:
+                    conn.execute(f"ALTER TABLE channel_metadata ADD COLUMN {col} TEXT")
+            # Per-channel exception from category exclusion: 1 = promotion
+            # must never blocklist this channel even if its category is
+            # excluded (operator carve-outs like a kept News channel).
+            try:
+                conn.execute("SELECT exempt_from_exclusion FROM channel_metadata LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE channel_metadata ADD COLUMN exempt_from_exclusion INTEGER")
+            # Channel-shape stats for review: shorts and playlist counts
+            # (yt-dlp channel tabs; NULL = not fetched yet).
+            for col in ("shorts_count", "playlists_count"):
+                try:
+                    conn.execute(f"SELECT {col} FROM channel_metadata LIMIT 1")
+                except sqlite3.OperationalError:
+                    conn.execute(f"ALTER TABLE channel_metadata ADD COLUMN {col} INTEGER")
+            # category_source: 'manual' (operator/agent decision, sticky) vs
+            # 'llm' (auto-classified, re-reviewable). NULL = pre-column legacy.
+            try:
+                conn.execute("SELECT category_source FROM channel_metadata LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE channel_metadata ADD COLUMN category_source TEXT")
             # Migration for topic_categories (topicDetails.topicCategories from YouTube API)
             try:
                 conn.execute("SELECT topic_categories FROM channel_metadata LIMIT 1")
@@ -762,7 +803,7 @@ class _BatchStatusStorage:
                 placeholders = ",".join("?" * len(chunk))
                 rows.extend(conn.execute(
                     f"""
-                    SELECT video_id, status, source, published_at, has_captions, title, description,
+                    SELECT video_id, status, source, updated_at, published_at, has_captions, title, description,
                            channel_id, thumbnail, duration, privacy_status, upload_status,
                            is_live_content, unavailable_reason, last_stage, failure_reason
                     FROM analysis_status
@@ -775,19 +816,20 @@ class _BatchStatusStorage:
                 "video_id": row[0],
                 "status": row[1],
                 "source": row[2],
-                "published_at": row[3],
-                "has_captions": row[4],
-                "title": row[5],
-                "description": row[6],
-                "channel_id": row[7],
-                "thumbnail": row[8],
-                "duration": row[9],
-                "privacy_status": row[10],
-                "upload_status": row[11],
-                "is_live_content": row[12],
-                "unavailable_reason": row[13],
-                "last_stage": row[14],
-                "failure_reason": row[15],
+                "updated_at": row[3],
+                "published_at": row[4],
+                "has_captions": row[5],
+                "title": row[6],
+                "description": row[7],
+                "channel_id": row[8],
+                "thumbnail": row[9],
+                "duration": row[10],
+                "privacy_status": row[11],
+                "upload_status": row[12],
+                "is_live_content": row[13],
+                "unavailable_reason": row[14],
+                "last_stage": row[15],
+                "failure_reason": row[16],
             }
             for row in rows
         ]
@@ -1123,7 +1165,8 @@ class _BatchStatusStorage:
                 "last_full_enumeration, next_page_token, quota_exhausted_at, "
                 "channel_title, thumbnail_url, subscriber_count, view_count, "
                 "description, published_at, country, keywords, custom_url, "
-                "topic_categories, category "
+                "topic_categories, category, category_source, shorts_count, playlists_count, "
+                "exempt_from_exclusion, channel_status, channel_status_at "
                 "FROM channel_metadata WHERE channel_id = ? OR channel_url = ?",
                 (resolved_channel_id, canonical_url),
             )
@@ -1151,6 +1194,12 @@ class _BatchStatusStorage:
                     "custom_url": None,
                     "topic_categories": None,
                     "category": None,
+                    "category_source": None,
+                    "shorts_count": None,
+                    "playlists_count": None,
+                    "exempt_from_exclusion": None,
+                    "channel_status": None,
+                    "channel_status_at": None,
                 }
                 vals.update(kwargs)
                 vals["channel_id"] = resolved_channel_id
@@ -1161,8 +1210,8 @@ class _BatchStatusStorage:
                     "last_full_enumeration, next_page_token, quota_exhausted_at, "
                     "channel_title, thumbnail_url, subscriber_count, view_count, "
                     "description, published_at, country, keywords, custom_url, "
-                    "topic_categories, category, schema_version) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                    "topic_categories, category, category_source, shorts_count, playlists_count, exempt_from_exclusion, channel_status, channel_status_at, schema_version) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
                     (
                         vals["channel_url"],
                         vals["channel_id"],
@@ -1183,6 +1232,12 @@ class _BatchStatusStorage:
                         vals["custom_url"],
                         vals["topic_categories"],
                         vals["category"],
+                        vals["category_source"],
+                        vals["shorts_count"],
+                        vals["playlists_count"],
+                        vals["exempt_from_exclusion"],
+                        vals["channel_status"],
+                        vals["channel_status_at"],
                     ),
                 )
             else:
@@ -1206,6 +1261,12 @@ class _BatchStatusStorage:
                     "custom_url": row[16],
                     "topic_categories": row[17],
                     "category": row[18],
+                    "category_source": row[19],
+                    "shorts_count": row[20],
+                    "playlists_count": row[21],
+                    "exempt_from_exclusion": row[22],
+                    "channel_status": row[23],
+                    "channel_status_at": row[24],
                 }
                 for key in (
                     "playlist_id",
@@ -1225,6 +1286,12 @@ class _BatchStatusStorage:
                     "custom_url",
                     "topic_categories",
                     "category",
+                    "category_source",
+                    "shorts_count",
+                    "playlists_count",
+                    "exempt_from_exclusion",
+                    "channel_status",
+                    "channel_status_at",
                 ):
                     # C3 INT-002 fix: skip None values to preserve existing fields.
                     if key in kwargs and kwargs[key] is not None:
@@ -1238,7 +1305,8 @@ class _BatchStatusStorage:
                     "last_full_enumeration=?, next_page_token=?, quota_exhausted_at=?, "
                     "channel_title=?, thumbnail_url=?, subscriber_count=?, view_count=?, "
                     "description=?, published_at=?, country=?, keywords=?, custom_url=?, "
-                    "topic_categories=?, category=? "
+                    "topic_categories=?, category=?, category_source=?, shorts_count=?, playlists_count=?, "
+                    "exempt_from_exclusion=?, channel_status=?, channel_status_at=? "
                     "WHERE channel_id=? OR channel_url=?",
                     (
                         existing["channel_url"],
@@ -1260,6 +1328,12 @@ class _BatchStatusStorage:
                         existing.get("custom_url"),
                         existing.get("topic_categories"),
                         existing.get("category"),
+                        existing.get("category_source"),
+                        existing.get("shorts_count"),
+                        existing.get("playlists_count"),
+                        existing.get("exempt_from_exclusion"),
+                        existing.get("channel_status"),
+                        existing.get("channel_status_at"),
                         resolved_channel_id,
                         canonical_url,
                     ),
@@ -1327,7 +1401,8 @@ class _BatchStatusStorage:
                 CREATE TABLE IF NOT EXISTS channel_blocklist (
                     channel_url TEXT PRIMARY KEY,
                     channel_id TEXT,
-                    blocked_at TEXT NOT NULL
+                    blocked_at TEXT NOT NULL,
+                    reason TEXT
                 )
                 """
             )
@@ -1335,11 +1410,15 @@ class _BatchStatusStorage:
                 conn.execute("SELECT channel_id FROM channel_blocklist LIMIT 1")
             except sqlite3.OperationalError:
                 conn.execute("ALTER TABLE channel_blocklist ADD COLUMN channel_id TEXT")
+            try:
+                conn.execute("SELECT reason FROM channel_blocklist LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE channel_blocklist ADD COLUMN reason TEXT")
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_blocklist_channel_id ON channel_blocklist(channel_id)"
             )
 
-    def block_channel(self, channel_url: str) -> None:
+    def block_channel(self, channel_url: str, reason: str | None = None) -> None:
         """Add a channel to the blocklist (soft block; does not destroy metadata).
 
         C3 INT-008 fix: previous version hard-deleted channel_metadata and
@@ -1355,8 +1434,8 @@ class _BatchStatusStorage:
         try:
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "INSERT OR REPLACE INTO channel_blocklist (channel_url, channel_id, blocked_at) VALUES (?, ?, ?)",
-                (channel_url, channel_id, now),
+                "INSERT OR REPLACE INTO channel_blocklist (channel_url, channel_id, blocked_at, reason) VALUES (?, ?, ?, ?)",
+                (channel_url, channel_id, now, reason),
             )
             conn.commit()
         except Exception:
@@ -1531,8 +1610,10 @@ class _BatchStatusStorage:
         Never downgrades a 'complete' row: the UPSERT guard preserves
         status='complete' even when the incoming entry has a different value.
         Transient fields (last_stage, failure_reason, unavailable_reason) are
-        overwritten by incoming values; metadata fields (title, description,
-        channel_id, etc.) are preserved when incoming values are null via COALESCE.
+        overwritten by incoming values for non-complete rows; a complete row
+        freezes its diagnostics as well as its status. Metadata fields (title,
+        description, channel_id, etc.) are preserved when incoming values are
+        null via COALESCE.
 
         Args:
             entries: List of BatchEntry dataclass objects (or legacy tuples).
@@ -1565,6 +1646,7 @@ class _BatchStatusStorage:
                         upload_status = rest[6] if len(rest) > 6 else None
                         is_live_content = rest[7] if len(rest) > 7 else None
                         unavailable_reason = rest[8] if len(rest) > 8 else None
+                        is_short = rest[11] if len(rest) > 11 else None
                         last_stage = rest[9] if len(rest) > 9 else None
                         failure_reason = rest[10] if len(rest) > 10 else None
                     else:
@@ -1583,6 +1665,7 @@ class _BatchStatusStorage:
                         upload_status = entry.upload_status
                         is_live_content = entry.is_live_content
                         unavailable_reason = entry.unavailable_reason
+                        is_short = entry.is_short
                         last_stage = entry.last_stage
                         failure_reason = entry.failure_reason
 
@@ -1595,8 +1678,8 @@ class _BatchStatusStorage:
                         "INSERT INTO analysis_status "
                         "(video_id, status, updated_at, source, published_at, has_captions, "
                         "title, description, channel_id, thumbnail, duration, privacy_status, upload_status, "
-                        "is_live_content, unavailable_reason, last_stage, failure_reason) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        "is_live_content, unavailable_reason, is_short, last_stage, failure_reason) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                         "ON CONFLICT(video_id) DO UPDATE SET "
                         "status = CASE WHEN analysis_status.status = 'complete' "
                         "THEN 'complete' ELSE excluded.status END, "
@@ -1613,13 +1696,16 @@ class _BatchStatusStorage:
                         "upload_status = COALESCE(analysis_status.upload_status, excluded.upload_status), "
                         "is_live_content = COALESCE(analysis_status.is_live_content, excluded.is_live_content), "
                         "unavailable_reason = excluded.unavailable_reason, "
-                        "last_stage = excluded.last_stage, "
-                        "failure_reason = excluded.failure_reason",
+                        "is_short = COALESCE(analysis_status.is_short, excluded.is_short), "
+                        "last_stage = CASE WHEN analysis_status.status = 'complete' "
+                        "THEN analysis_status.last_stage ELSE excluded.last_stage END, "
+                        "failure_reason = CASE WHEN analysis_status.status = 'complete' "
+                        "THEN analysis_status.failure_reason ELSE excluded.failure_reason END",
                         (
                             video_id, status, now, source, published_at, has_captions,
                             title, description, channel_id, thumbnail, duration,
                             privacy_status, upload_status, is_live_content, unavailable_reason,
-                            last_stage, failure_reason,
+                            is_short, last_stage, failure_reason,
                         ),
                     )
                     # Delete negative cache when incoming status is 'complete'.
@@ -1685,6 +1771,7 @@ class _BatchStatusStorage:
             "duration",
             "privacy_status",
             "upload_status",
+            "is_short",
             "is_live_content",
         )
         ordered_ids: list[str] = []
@@ -1845,8 +1932,8 @@ class _BatchStatusStorage:
                     "INSERT INTO analysis_status "
                     "(video_id, status, updated_at, source, published_at, has_captions, "
                     "title, description, channel_id, thumbnail, duration, privacy_status, "
-                    "upload_status, is_live_content, unavailable_reason, last_stage, failure_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "upload_status, is_live_content, unavailable_reason, is_short, last_stage, failure_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(video_id) DO UPDATE SET "
                     "status = CASE WHEN analysis_status.status = 'complete' THEN 'complete' ELSE excluded.status END, "
                     "updated_at = excluded.updated_at, "
@@ -1862,6 +1949,7 @@ class _BatchStatusStorage:
                     "upload_status = COALESCE(analysis_status.upload_status, excluded.upload_status), "
                     "is_live_content = COALESCE(analysis_status.is_live_content, excluded.is_live_content), "
                     "unavailable_reason = COALESCE(analysis_status.unavailable_reason, excluded.unavailable_reason), "
+                    "is_short = COALESCE(analysis_status.is_short, excluded.is_short), "
                     "last_stage = COALESCE(analysis_status.last_stage, excluded.last_stage), "
                     "failure_reason = COALESCE(analysis_status.failure_reason, excluded.failure_reason)",
                     (
@@ -1880,6 +1968,7 @@ class _BatchStatusStorage:
                         entry.upload_status,
                         entry.is_live_content,
                         None,
+                        entry.is_short,
                         None,
                         None,
                     ),
@@ -2295,12 +2384,12 @@ def get_newest_published_for_source(
 # ---------------------------------------------------------------------------
 
 
-def block_channel(channel_url: str, db_path: Path | None = None) -> None:
+def block_channel(channel_url: str, db_path: Path | None = None, reason: str | None = None) -> None:
     """Add a channel to the blocklist."""
     if db_path is None:
-        _get_batch_status_storage().block_channel(channel_url)
+        _get_batch_status_storage().block_channel(channel_url, reason=reason)
     else:
-        _BatchStatusStorage(db_path=db_path).block_channel(channel_url)
+        _BatchStatusStorage(db_path=db_path).block_channel(channel_url, reason=reason)
 
 
 def unblock_channel(channel_url: str, db_path: Path | None = None) -> bool:

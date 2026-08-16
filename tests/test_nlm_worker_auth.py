@@ -13,6 +13,19 @@ import pytest
 from csf import nlm_worker_auth
 
 
+@pytest.fixture(autouse=True)
+def _isolate_worker_auth_environment(monkeypatch):
+    """Keep each worker-auth test explicit about auth mode and browser state."""
+    for name in (
+        "YTIS_NLM_AUTH_NONINTERACTIVE",
+        "YTIS_NLM_WORKER_AUTH_USE_CDP",
+        "YTIS_NLM_BROWSER_VISIBLE",
+        "YTIS_NLM_ACCOUNT_PROFILE",
+        "YTIS_NLM_EXPECTED_EMAIL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _write_profile(root, name: str, email: str, cookie_marker: str) -> None:
     profile = root / name
     profile.mkdir(parents=True)
@@ -227,6 +240,16 @@ def test_expected_email_for_profile_includes_fifth_workers_for_current_lanes():
     assert nlm_worker_auth.expected_email_for_profile("ytis-free1-worker-05") == "troup.hominidae@gmail.com"
 
 
+def test_external_account_profiles_and_canonical_free_workers_have_exact_identity():
+    assert nlm_worker_auth.expected_email_for_profile("a.hominidae") == "a.hominidae@gmail.com"
+    assert nlm_worker_auth.expected_email_for_profile("troup.hominidae") == "troup.hominidae@gmail.com"
+    assert nlm_worker_auth.expected_email_for_profile("brsthomson") == "brsthomson@hotmail.com"
+    assert nlm_worker_auth.expected_email_for_profile("ytis-free-worker-05") == "troup.hominidae@gmail.com"
+    family = nlm_worker_auth.family_for_profile("ytis-free-worker-01")
+    assert family is not None
+    assert family.source_profile == "ytis-free-worker-01"
+
+
 def test_expected_email_for_profile_falls_back_to_env_for_unmapped_profile(monkeypatch):
     monkeypatch.setenv("YTIS_NLM_EXPECTED_EMAIL", "future.account@example.com")
 
@@ -240,6 +263,18 @@ def test_default_pro_family_uses_signed_in_pro_chrome_profile():
     assert pro_family.expected_email == "a.hominidae@gmail.com"
     assert pro_family.cdp_browser_root == r"P:\\\\\\.data\yt-is\browser\notebooklm-pro"
     assert pro_family.cdp_browser_profile_directory == "Profile"
+
+
+def test_default_free2_family_uses_established_account_owned_bootstrap_root():
+    free2_family = nlm_worker_auth.DEFAULT_FAMILIES[2]
+
+    assert free2_family.source_profile == "ytis-free2-worker-01"
+    assert free2_family.expected_email == "brsthomson@hotmail.com"
+    assert str(free2_family.cdp_browser_root).replace("\\", "/").endswith(
+        "/.data/yt-is/nlm-auth/storage_state_brsthomson.json.browser_profile"
+    )
+    assert free2_family.cdp_browser_profile_directory == "Default"
+    assert free2_family.cdp_port == 18872
 
 
 def test_profile_session_is_valid_fails_closed_when_default_chrome_profile_is_running(monkeypatch):
@@ -275,6 +310,7 @@ def test_refresh_profile_session_fails_closed_without_cdp_in_noninteractive_mode
     monkeypatch.setenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "0")
     monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
     monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: set())
     called = []
 
     with mock.patch("csf.nlm_worker_auth.run_nlm") as mock_run:
@@ -955,6 +991,7 @@ def test_refresh_source_profile_noninteractive_blocks_accounts_google_challenge_
 
     monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
     monkeypatch.setattr(nlm_worker_auth, "DEFAULT_PROFILE_ROOT", root)
+    monkeypatch.setattr(nlm_worker_auth, "_chrome_pids_for_root", lambda browser_root: set())
     monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: stop_calls.append(browser_root))
     monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
     monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: True)
@@ -1085,6 +1122,30 @@ def test_refresh_source_profile_noninteractive_launches_headless_cdp_browser(tmp
     assert popen_calls
     chrome_args = list(popen_calls[0][0][0])
     assert "--headless=new" in chrome_args
+
+
+def test_interactive_bootstrap_keeps_cdp_browser_visible_when_noninteractive_flag_is_set(
+    tmp_path, monkeypatch
+):
+    family = nlm_worker_auth.DEFAULT_FAMILIES[0]
+    popen_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
+    monkeypatch.setenv("YTIS_NLM_INTERACTIVE_BOOTSTRAP", "1")
+    monkeypatch.setattr(nlm_worker_auth, "_stop_chrome_for_root", lambda browser_root: None)
+    monkeypatch.setattr(nlm_worker_auth, "_mark_browser_profile_clean", lambda browser_root, profile: None)
+    monkeypatch.setattr(nlm_worker_auth, "_wait_for_cdp", lambda port, timeout_s=20.0: True)
+
+    def fake_popen(*args, **kwargs):
+        popen_calls.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(nlm_worker_auth.subprocess, "Popen", fake_popen)
+
+    assert nlm_worker_auth._launch_cdp_browser(family, tmp_path, None, timeout_s=1) is True
+    chrome_args = list(popen_calls[0][0][0])
+    assert "--headless=new" not in chrome_args
+    assert "--start-minimized" not in chrome_args
 
 
 def test_refresh_source_profile_refuses_existing_default_chrome_profile_in_noninteractive_mode(

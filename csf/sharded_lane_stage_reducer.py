@@ -91,6 +91,16 @@ class FetchCompletedEntry:
     source_id_validated_after_not_found: bool | None
 
 
+def _fetch_totals_sort_key(
+    item: tuple[tuple[str, str, str, int | None], dict[str, Any]],
+) -> tuple[str, str, str, int, int]:
+    """Sort fetch totals without comparing a missing batch index to an int."""
+    (worker_id, profile, pass_name, batch_index), _stats = item
+    if batch_index is None:
+        return worker_id, profile, pass_name, 0, -1
+    return worker_id, profile, pass_name, 1, batch_index
+
+
 @dataclass(frozen=True, slots=True)
 class RetryQueueWindowEntry:
     timestamp_epoch: float | None
@@ -720,8 +730,12 @@ def _parse_worker_auth_recovered_entries(log_path: Path) -> tuple[AuthRecoveryEn
     return tuple(entries)
 
 
-def _parse_worker_fetch_completed_entries(log_path: Path) -> tuple[FetchCompletedEntry, ...]:
-    """Extract source-content fetch completion summaries from worker logs."""
+def _parse_worker_fetch_completed_entries(
+    log_path: Path,
+    *,
+    default_batch_index: int | None = None,
+) -> tuple[FetchCompletedEntry, ...]:
+    """Extract source-content fetch summaries, inheriting the enclosing batch when needed."""
     entries: list[FetchCompletedEntry] = []
     for obj in _iter_log_json_objects(log_path):
         payload = obj.get("data") if isinstance(obj.get("data"), dict) else obj
@@ -734,7 +748,7 @@ def _parse_worker_fetch_completed_entries(log_path: Path) -> tuple[FetchComplete
         else:
             validated = bool(raw_validated)
         raw_batch_index = payload.get("batch_index")
-        batch_index = int(raw_batch_index) if raw_batch_index is not None else None
+        batch_index = int(raw_batch_index) if raw_batch_index is not None else default_batch_index
         retry_queue_gate_reason = str(payload.get("retry_queue_gate_reason", "") or "").strip()
         if not retry_queue_gate_reason:
             pass_name = str(payload.get("pass_name", "") or "").strip().lower()
@@ -1059,6 +1073,8 @@ def _extract_lane_metrics(
                     break
             if sweep_dir is None:
                 continue
+            batch_match = re.fullmatch(r"batch_(\d+)", batch_dir.name)
+            default_batch_index = int(batch_match.group(1)) if batch_match else None
             batch_metrics = _extract_batch_metrics(sweep_dir, phase_name=phase_name, batch_name=batch_dir.name)
             if batch_metrics is None:
                 continue
@@ -1089,7 +1105,12 @@ def _extract_lane_metrics(
                         worker_batch_entries.extend(_parse_worker_batch_entries(log_path))
                         worker_command_entries.extend(_parse_worker_command_completed_entries(log_path))
                         worker_auth_recovery_entries.extend(_parse_worker_auth_recovered_entries(log_path))
-                        worker_fetch_completed_entries.extend(_parse_worker_fetch_completed_entries(log_path))
+                        worker_fetch_completed_entries.extend(
+                            _parse_worker_fetch_completed_entries(
+                                log_path,
+                                default_batch_index=default_batch_index,
+                            )
+                        )
                         worker_retry_queue_window_entries.extend(_parse_worker_extract_completed_entries(log_path))
                         worker_batch_metrics_entries.extend(_parse_worker_batch_metrics_entries(log_path))
                     all_auth_recovery_entries.extend(worker_auth_recovery_entries)
@@ -1887,7 +1908,9 @@ def format_run(run: RunMetrics) -> str:
 
                         lines.append("| Worker | Profile | Pass | Batch Index | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Gate Reasons | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |")
                         lines.append("|--------|---------|------|-------------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|--------------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|")
-                        for (worker_id, profile, pass_name, batch_index), stats in sorted(fetch_totals.items()):
+                        for (worker_id, profile, pass_name, batch_index), stats in sorted(
+                            fetch_totals.items(), key=_fetch_totals_sort_key
+                        ):
                             status_counts = stats["status_counts"]
                             status_distribution = ", ".join(
                                 f"{status}:{count}" for status, count in sorted(status_counts.items())
@@ -2140,7 +2163,9 @@ def format_run(run: RunMetrics) -> str:
 
                     lines.append("| Worker | Profile | Pass | Batch Index | Fetches | Status Distribution | Avg Attempts | Avg SR Age(s) | Max SR Age(s) | Max Projected Retry Age(s) | Max Projected+Margin Age(s) | Max Retry Age Margin(s) | Retry Queued | Retry Gate Reasons | Retry Queue Skipped | Cmd Total(s) | Source-List Probes | Source-List Probe(s) | YT-DLP Probe(s) | Source Validated | Source Missing |")
                     lines.append("|--------|---------|------|-------------|---------|---------------------|--------------|---------------|---------------|----------------------------|-----------------------------|-------------------------|--------------|--------------------|---------------------|--------------|--------------------|----------------------|-----------------|------------------|----------------|")
-                    for (worker_id, profile, pass_name, batch_index), stats in sorted(fetch_totals.items()):
+                    for (worker_id, profile, pass_name, batch_index), stats in sorted(
+                        fetch_totals.items(), key=_fetch_totals_sort_key
+                    ):
                         status_counts = stats["status_counts"]
                         status_distribution = ", ".join(
                             f"{status}:{count}" for status, count in sorted(status_counts.items())

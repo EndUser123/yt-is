@@ -11,7 +11,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from csf.batch_status import mark_complete, summarize_video_ids
+from csf.batch_status import mark_complete, mark_failed, summarize_video_ids
 from csf.cache import set_cached_transcript
 from csf.csf_logging import log_action
 from csf.nlm_config import get_nlm_config
@@ -28,6 +28,7 @@ from csf.shared_retry_pool import claim_ready as claim_shared_retry_ready
 from csf.shared_retry_pool import mark_complete as mark_shared_retry_complete
 from csf.shared_retry_pool import mark_permanent_failure as mark_shared_retry_permanent_failure
 from csf.shared_retry_pool import pending_count as shared_retry_pending_count
+from csf.shared_retry_pool import reschedule as reschedule_shared_retry
 
 
 def _load_batches(path: Path) -> list[list[str]]:
@@ -69,35 +70,94 @@ def _write_result_file(result_path: Path | None, data: dict[str, object]) -> Non
     tmp_path.replace(result_path)
 
 
+def _persist_video_result(
+    video_id: str,
+    result: object,
+) -> bool:
+    """Persist one industrial result so no completed worker leaves it pending."""
+    success, transcript, error = _normalise_video_result(result)
+    if success and transcript:
+        set_cached_transcript(video_id, "en", "notebooklm", transcript)
+        mark_complete(video_id, last_stage="notebooklm")
+        return True
+    mark_failed(
+        video_id,
+        source="notebooklm",
+        failure_reason=str(error or "notebooklm fetch failed"),
+    )
+    return False
+
+
+def _normalise_video_result(
+    result: object,
+) -> tuple[bool, str | None, str | None]:
+    """Convert an untrusted worker result into a fail-closed result tuple."""
+    if result is None:
+        return False, None, "worker omitted result"
+    if not isinstance(result, (tuple, list)) or len(result) != 3:
+        return False, None, "worker returned malformed result"
+    success, transcript, error = result
+    if not isinstance(success, bool):
+        return False, None, "worker returned malformed result"
+    if transcript is not None and not isinstance(transcript, str):
+        return False, None, "worker returned malformed result"
+    if error is not None and not isinstance(error, str):
+        error = f"{type(error).__name__}"
+    if isinstance(error, str):
+        lowered_error = error.lower()
+        if any(
+            marker in lowered_error
+            for marker in ("bearer ", "token=", "password", "secret", "cookie", "authorization:")
+        ):
+            error = "worker failure"
+        else:
+            error = error[:200]
+    return success, transcript, error
+
+
+def _normalise_result_map(
+    results: object,
+) -> dict[str, tuple[bool, str | None, str | None]]:
+    """Treat a malformed worker result as an empty result map."""
+    return results if isinstance(results, dict) else {}
+
+
 def _build_reusable_runtime_flags_payload(metrics: dict[str, object] | None = None) -> dict[str, object]:
     cfg = get_nlm_config()
     metrics = metrics or {}
+    config_value = lambda name, default: getattr(cfg, name, default)
+    active_window_size = config_value("reusable_active_window_size", 0)
+    extract_window_size = config_value("reusable_extract_window_size", 0)
+    cadence_enabled = config_value("reusable_source_age_cadence_enabled", False)
+    cadence_soft = config_value("reusable_source_age_cadence_soft_threshold_s", 160.0)
+    cadence_hard = config_value("reusable_source_age_cadence_hard_threshold_s", 190.0)
+    cadence_min_window = config_value("reusable_source_age_cadence_min_window_size", 5)
     return {
-        "active_window_size": int(metrics.get("active_window_size", cfg.reusable_active_window_size) or cfg.reusable_active_window_size),
+        "active_window_size": int(metrics.get("active_window_size", active_window_size) or active_window_size),
         "active_window_enabled": bool(metrics.get("active_window_enabled", False)),
-        "extract_window_size": int(metrics.get("extract_window_size", cfg.reusable_extract_window_size) or cfg.reusable_extract_window_size),
+        "extract_window_size": int(metrics.get("extract_window_size", extract_window_size) or extract_window_size),
         "extract_window_enabled": bool(metrics.get("extract_window_enabled", False)),
-        "source_age_cadence_enabled": bool(metrics.get("source_age_cadence_enabled", cfg.reusable_source_age_cadence_enabled)),
+        "source_age_cadence_enabled": bool(metrics.get("source_age_cadence_enabled", cadence_enabled)),
         "source_age_cadence_soft_threshold_s": float(
             metrics.get(
                 "source_age_cadence_soft_threshold_s",
-                cfg.reusable_source_age_cadence_soft_threshold_s,
+                cadence_soft,
             )
-            or cfg.reusable_source_age_cadence_soft_threshold_s
+            or cadence_soft
         ),
         "source_age_cadence_hard_threshold_s": float(
             metrics.get(
                 "source_age_cadence_hard_threshold_s",
-                cfg.reusable_source_age_cadence_hard_threshold_s,
+                cadence_hard,
             )
-            or cfg.reusable_source_age_cadence_hard_threshold_s
+            or cadence_hard
         ),
         "source_age_cadence_min_window_size": int(
             metrics.get(
                 "source_age_cadence_min_window_size",
-                cfg.reusable_source_age_cadence_min_window_size,
+                cadence_min_window,
             )
-            or cfg.reusable_source_age_cadence_min_window_size
+            or cadence_min_window
         ),
         "window_mode": str(metrics.get("window_mode", "") or ""),
         "window_size": int(metrics.get("window_size", 0) or 0),
@@ -202,7 +262,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--notebooklm-profile",
         default=None,
-        help="NotebookLM profile name for this worker process",
+        help="Worker routing label for telemetry (not an auth identity)",
+    )
+    parser.add_argument(
+        "--account-profile",
+        default=os.getenv("YTIS_NLM_ACCOUNT_PROFILE", "").strip(),
+        help="Exact external NotebookLM account identity, e.g. a.hominidae",
     )
     parser.add_argument("--worker-id", required=True, help="Worker label for logging")
     args = parser.parse_args(argv)
@@ -211,8 +276,14 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["YTIS_NLM_REUSABLE_NOTEBOOK_TITLE"] = args.notebook_title
     os.environ["YTIS_NLM_OWNER_STATE_PATH"] = args.state_path
     os.environ["YTIS_NLM_OWNER_NOTEBOOK_TITLE"] = args.notebook_title
-    notebooklm_profile = args.notebooklm_profile or f"ytis-{args.worker_id}"
+    account_profile = args.account_profile.strip()
+    notebooklm_profile = args.notebooklm_profile or (
+        f"{account_profile}-worker-{args.worker_id}" if account_profile else f"worker-{args.worker_id}"
+    )
     os.environ["NOTEBOOKLM_PROFILE"] = notebooklm_profile
+    if account_profile:
+        os.environ["YTIS_NLM_ACCOUNT_PROFILE"] = account_profile
+    os.environ["YTIS_NLM_WORKER_ID"] = args.worker_id
     watchdog_stop = _start_parent_watchdog()
     worker_result: dict[str, object] = {
         "worker_id": args.worker_id,
@@ -272,6 +343,8 @@ def main(argv: list[str] | None = None) -> int:
         "shared_retry_processed_count": 0,
         "pipeline_strategy": "reusable",
         "notebooklm_profile": notebooklm_profile,
+        "account_profile": args.account_profile.strip(),
+        "worker_identity": args.worker_id,
         "state_path": args.state_path,
         "notebook_title": args.notebook_title,
     }
@@ -385,7 +458,15 @@ def main(argv: list[str] | None = None) -> int:
 
         cfg = get_nlm_config()
         if pipeline_mode == "double_buffered" and len(batches) > 1:
-            double_buffered_batch_results = ingestor.process_batches(batches)
+            try:
+                double_buffered_batch_results = ingestor.process_batches(batches)
+            except Exception as exc:
+                for video_id in [video_id for batch in batches for video_id in batch]:
+                    _persist_video_result(
+                        video_id,
+                        (False, None, f"worker process failed: {type(exc).__name__}"),
+                    )
+                raise
             double_buffered_batch_metrics = ingestor.get_last_batch_metrics() or []
             double_buffered_pipeline_metrics = ingestor.get_last_process_metrics() or {}
             worker_result["pipeline_strategy"] = str(double_buffered_pipeline_metrics.get("strategy") or "double_buffered_reusable")
@@ -449,36 +530,67 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 claimed_video_ids = [entry.video_id for entry in claimed]
                 shared_retry_processed += len(claimed_video_ids)
-                shared_results = process_industrial_batch_reusable(claimed_video_ids)
-                shared_metrics = get_last_reusable_process_metrics() or {}
-                deferred = int(shared_metrics.get("shared_retry_deferred_count") or 0)
-                shared_retry_deferred_video_ids = set(
-                    shared_metrics.get("shared_retry_deferred_video_ids") or []
-                )
-                success_in_round = sum(1 for ok, transcript, _ in shared_results.values() if ok and transcript)
-                final_failed = max(0, len(claimed_video_ids) - success_in_round - deferred)
+                claimed_video_id_set = set(claimed_video_ids)
+                try:
+                    shared_results = _normalise_result_map(
+                        process_industrial_batch_reusable(claimed_video_ids)
+                    )
+                    shared_metrics = get_last_reusable_process_metrics() or {}
+                    shared_retry_deferred_video_ids = set(
+                        shared_metrics.get("shared_retry_deferred_video_ids") or []
+                    ) & claimed_video_id_set
+                except Exception as exc:
+                    shared_results = {}
+                    shared_retry_deferred_video_ids = claimed_video_id_set
+                    for entry in claimed:
+                        try:
+                            reschedule_shared_retry(
+                                entry.video_id,
+                                retry_count=entry.retry_count + 1,
+                                delay_s=drain_poll_s,
+                                last_error=f"worker exception: {type(exc).__name__}",
+                            )
+                        except Exception as reschedule_exc:
+                            log_action(
+                                "worker_shared_retry_reschedule_error",
+                                {
+                                    "worker_id": args.worker_id,
+                                    "video_id": entry.video_id,
+                                    "error_type": type(reschedule_exc).__name__,
+                                },
+                            )
+                    log_action(
+                        "worker_shared_retry_batch_error",
+                        {
+                            "worker_id": args.worker_id,
+                            "claimed_count": len(claimed_video_ids),
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                deferred = len(shared_retry_deferred_video_ids)
+                success_in_round = 0
+                final_failed = 0
                 shared_retry_deferred += deferred
-                shared_retry_recovered += success_in_round
-                shared_retry_final_failed += final_failed
-                total_succeeded += success_in_round
-                total_failed += final_failed
-                for video_id, (success, transcript, _error) in shared_results.items():
+                for video_id in claimed_video_ids:
+                    success, transcript, _error = _normalise_video_result(shared_results.get(video_id))
+                    if video_id in shared_retry_deferred_video_ids:
+                        continue
                     if success and transcript:
                         set_cached_transcript(video_id, "en", "notebooklm", transcript)
                         mark_complete(video_id, last_stage="notebooklm")
                         mark_shared_retry_complete(video_id, claimant_id=args.worker_id)
+                        success_in_round += 1
                     else:
-                        # C1 trust-floor: do NOT permanent-fail deferred video
-                        # IDs. They were enqueued to the shared retry pool for
-                        # a future claim window and the metrics layer already
-                        # counted them as deferred (not failed).
-                        if video_id in shared_retry_deferred_video_ids:
-                            continue
+                        final_failed += 1
                         mark_shared_retry_permanent_failure(
                             video_id,
                             str(_error or "shared retry failed"),
                             claimant_id=args.worker_id,
                         )
+                shared_retry_recovered += success_in_round
+                shared_retry_final_failed += final_failed
+                total_succeeded += success_in_round
+                total_failed += final_failed
                 log_action(
                     "worker_shared_retry_drain_batch_completed",
                     {
@@ -759,13 +871,15 @@ def main(argv: list[str] | None = None) -> int:
                 },
             )
             if pipeline_mode == "double_buffered" and len(batches) > 1:
-                results = double_buffered_batch_results[batch_index - 1] if double_buffered_batch_results is not None else {}
+                results = {}
+                if double_buffered_batch_results is not None and batch_index <= len(double_buffered_batch_results):
+                    candidate_results = double_buffered_batch_results[batch_index - 1]
+                    if isinstance(candidate_results, dict):
+                        results = candidate_results
                 batch_succeeded = 0
                 batch_failed = 0
-                for vid, (success, transcript, err) in results.items():
-                    if success and transcript:
-                        set_cached_transcript(vid, "en", "notebooklm", transcript)
-                        mark_complete(vid, last_stage="notebooklm")
+                for vid in video_ids:
+                    if _persist_video_result(vid, results.get(vid)):
                         total_succeeded += 1
                         batch_succeeded += 1
                     else:
@@ -812,13 +926,19 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 reusable_process_metrics = dict(metrics)
             else:
-                results = process_industrial_batch_reusable(video_ids)
+                try:
+                    results = _normalise_result_map(process_industrial_batch_reusable(video_ids))
+                except Exception as exc:
+                    for video_id in video_ids:
+                        _persist_video_result(
+                            video_id,
+                            (False, None, f"worker process failed: {type(exc).__name__}"),
+                        )
+                    raise
                 batch_succeeded = 0
                 batch_failed = 0
-                for vid, (success, transcript, err) in results.items():
-                    if success and transcript:
-                        set_cached_transcript(vid, "en", "notebooklm", transcript)
-                        mark_complete(vid, last_stage="notebooklm")
+                for vid in video_ids:
+                    if _persist_video_result(vid, results.get(vid)):
                         total_succeeded += 1
                         batch_succeeded += 1
                     else:

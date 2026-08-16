@@ -21,17 +21,7 @@ import psutil
 
 from csf.breadth_series import _aggregate_summary
 from csf.load_ladder import build_fallback_benchmark_command
-from csf import nlm_auth_guard
-from csf.nlm_worker_auth import (
-    AuthFamily,
-    expected_email_for_profile,
-    doctor_lane_setup,
-    family_for_profile,
-    refresh_source_profile,
-    sync_worker_profiles,
-)
-
-run_nlm = nlm_auth_guard.run_nlm
+from csf.nlm_client import ensure_account_session
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +35,28 @@ DEFAULT_LIMIT = 400
 DEFAULT_BATCH_SIZE = 200
 DEFAULT_MANIFEST_JSON = REPO_ROOT / "tests" / "fixtures" / "shared_benchmark_manifest.json"
 DEFAULT_REUSABLE_PIPELINE_MODE = "serial"
-DEFAULT_NLM_CHROME_PROFILE_ROOT = nlm_auth_guard.DEFAULT_NLM_CHROME_PROFILE_ROOT
+COHORT_SHAPES = ("trace", "captioned", "mixed", "manifest")
+
+_AUTH_INVALIDATION_MARKERS = ("default_profile_running",)
+_SOURCE_INVALIDATION_MARKERS = (
+    "source_add_failed",
+    "source_count_probe_failed",
+    "zero_growth_source_add",
+    "materialization_wait_failed",
+    "NotebookSourceMaterializationTimeout",
+    "source_materialization_terminal_error",
+    "NotebookSourceMaterializationTerminalError",
+    "nlm_batch_source_mapping_failed",
+)
+
+
+class LaneArtifactInvalidation(RuntimeError):
+    """Raised when completed lane artifacts make throughput evidence unusable."""
+
+    def __init__(self, *, lane: str, category: str, sample: str) -> None:
+        self.lane = lane
+        self.category = category
+        super().__init__(f"lane {lane} invalidated by {category}: {sample}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +70,15 @@ class LaneConfig:
     browser_profile_root: Path
     worker_state_root: Path
     notebook_prefix: str
+    # Exact external auth identity, kept separate from per-worker routing labels.
+    account_profile: str = ""
+    adaptive_workers: bool = False
+    adaptive_min_workers: int = 1
+    adaptive_max_workers: int | None = None
+    adaptive_scale_up_backlog: int = 2
+    adaptive_scale_down_backlog: int = 0
+    adaptive_cooldown_s: float = 60.0
+    adaptive_health_window: int = 2
     notebooklm_profiles: tuple[str, ...] = ()
     expected_email: str = ""
     browser_profile_directory: str = ""
@@ -93,15 +113,39 @@ def _lane_from_dict(raw: dict[str, object]) -> LaneConfig:
     workers = int(raw.get("workers") or 0)
     if workers < 1:
         raise ValueError(f"lane {lane}: workers must be >= 1")
+    adaptive_workers = bool(raw.get("adaptive_workers", False))
+    adaptive_min_workers = int(raw.get("adaptive_min_workers", 1))
+    raw_adaptive_max = raw.get("adaptive_max_workers")
+    adaptive_max_workers = int(raw_adaptive_max) if raw_adaptive_max is not None else None
+    if adaptive_min_workers < 1 or adaptive_min_workers > workers:
+        raise ValueError(f"lane {lane}: adaptive_min_workers must be between 1 and workers")
+    if adaptive_workers:
+        if adaptive_max_workers is None:
+            raise ValueError(f"lane {lane}: adaptive_max_workers is required when adaptive_workers is true")
+        if adaptive_max_workers < workers:
+            raise ValueError(f"lane {lane}: adaptive_max_workers must be >= workers")
+    elif adaptive_max_workers is not None and adaptive_max_workers < workers:
+        raise ValueError(f"lane {lane}: adaptive_max_workers must be >= workers")
+    adaptive_scale_up_backlog = int(raw.get("adaptive_scale_up_backlog", 2))
+    adaptive_scale_down_backlog = int(raw.get("adaptive_scale_down_backlog", 0))
+    adaptive_cooldown_s = float(raw.get("adaptive_cooldown_s", 60.0))
+    adaptive_health_window = int(raw.get("adaptive_health_window", 2))
+    if adaptive_scale_up_backlog < 0 or adaptive_scale_down_backlog < 0:
+        raise ValueError(f"lane {lane}: adaptive backlog thresholds must be >= 0")
+    if adaptive_cooldown_s < 0 or adaptive_health_window < 1:
+        raise ValueError(f"lane {lane}: adaptive cooldown/health settings are invalid")
     profile_prefix = str(raw.get("notebooklm_profile_prefix") or "").strip()
     raw_profiles = raw.get("notebooklm_profiles") or []
     if not isinstance(raw_profiles, list):
         raise ValueError(f"lane {lane}: notebooklm_profiles must be a list")
     profiles = tuple(str(item).strip() for item in raw_profiles if str(item).strip())
+    if len(set(profiles)) != len(profiles):
+        raise ValueError(f"lane {lane}: notebooklm_profiles must be unique")
     if not profile_prefix and not profiles:
         raise ValueError(f"lane {lane}: notebooklm_profile_prefix or notebooklm_profiles is required")
-    if profiles and len(profiles) < workers:
-        raise ValueError(f"lane {lane}: notebooklm_profiles must include at least {workers} profiles")
+    required_profiles = adaptive_max_workers if adaptive_workers and adaptive_max_workers else workers
+    if profiles and len(profiles) < required_profiles:
+        raise ValueError(f"lane {lane}: notebooklm_profiles must include at least {required_profiles} profiles")
     notebook_prefix = str(raw.get("notebook_prefix") or "").strip()
     if not notebook_prefix:
         raise ValueError(f"lane {lane}: notebook_prefix is required")
@@ -128,7 +172,15 @@ def _lane_from_dict(raw: dict[str, object]) -> LaneConfig:
     return LaneConfig(
         lane=lane,
         account_class=str(raw.get("account_class") or lane).strip(),
+        account_profile=str(raw.get("account_profile") or "").strip(),
         workers=workers,
+        adaptive_workers=adaptive_workers,
+        adaptive_min_workers=adaptive_min_workers,
+        adaptive_max_workers=adaptive_max_workers,
+        adaptive_scale_up_backlog=adaptive_scale_up_backlog,
+        adaptive_scale_down_backlog=adaptive_scale_down_backlog,
+        adaptive_cooldown_s=adaptive_cooldown_s,
+        adaptive_health_window=adaptive_health_window,
         notebooklm_profile_prefix=profile_prefix,
         notebooklm_profiles=profiles,
         browser_profile_root=browser_profile_root,
@@ -148,11 +200,13 @@ def _validate_lanes(lanes: Iterable[LaneConfig]) -> tuple[LaneConfig, ...]:
         raise ValueError("at least one lane is required")
     seen: dict[str, set[str]] = {
         "lane": set(),
+        "account_profile": set(),
         "notebooklm_profile_namespace": set(),
         "browser_profile_namespace": set(),
         "worker_state_root": set(),
         "notebook_prefix": set(),
     }
+    seen_worker_profiles: set[str] = set()
     for lane in lane_tuple:
         profile_namespace = ",".join(lane.notebooklm_profiles) if lane.notebooklm_profiles else lane.notebooklm_profile_prefix
         browser_namespace = str(lane.browser_profile_root / lane.browser_profile_directory) if lane.browser_profile_directory else str(lane.browser_profile_root)
@@ -167,153 +221,76 @@ def _validate_lanes(lanes: Iterable[LaneConfig]) -> tuple[LaneConfig, ...]:
             if value in seen[field]:
                 raise ValueError(f"duplicate lane {field}: {value}")
             seen[field].add(value)
+        if lane.account_profile and lane.account_profile in seen["account_profile"]:
+            raise ValueError(f"duplicate lane account_profile: {lane.account_profile}")
+        if lane.account_profile:
+            seen["account_profile"].add(lane.account_profile)
+        worker_capacity = lane.adaptive_max_workers if lane.adaptive_workers and lane.adaptive_max_workers else lane.workers
+        worker_profiles = (
+            set(lane.notebooklm_profiles[:worker_capacity])
+            if lane.notebooklm_profiles
+            else {f"{lane.notebooklm_profile_prefix}-{index:02d}" for index in range(1, worker_capacity + 1)}
+        )
+        overlap = seen_worker_profiles & worker_profiles
+        if overlap:
+            raise ValueError(f"duplicate worker profile across lanes: {sorted(overlap)[0]}")
+        seen_worker_profiles.update(worker_profiles)
     return lane_tuple
 
 
-def _extract_account(stdout: str, stderr: str = "") -> str:
-    for line in f"{stdout}\n{stderr}".splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("account:"):
-            return stripped.split(":", 1)[1].strip().lower()
-    return ""
+def _require_canonical_account_profiles(lanes: Iterable[LaneConfig]) -> tuple[LaneConfig, ...]:
+    lane_tuple = tuple(lanes)
+    missing = [lane.lane for lane in lane_tuple if not lane.account_profile]
+    if missing:
+        raise RuntimeError(
+            "canonical account_profile is required for active lanes: "
+            f"{', '.join(missing)}; legacy CLI profile-family auth is historical-only"
+        )
+    from csf.nlm_auth_check import expected_email_for_account_profile
 
-
-def _is_nlm_auth_noninteractive() -> bool:
-    value = os.getenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1").strip().lower()
-    return value in {"1", "true", "yes", "on"}
-
-
-def _default_chrome_profile_pids() -> set[int]:
-    return nlm_auth_guard.default_chrome_profile_pids()
-
-
-def _stop_chrome_pids(pids: set[int]) -> None:
-    nlm_auth_guard.stop_chrome_pids(pids)
-
-
-def _stop_default_chrome_profile_if_running(*, stage: str) -> bool:
-    """Close the shared legacy NLM Chrome profile and report whether cleanup happened."""
-    pids = _default_chrome_profile_pids()
-    if not pids:
-        return False
-    _stop_chrome_pids(pids)
-    print(
-        f"[sharded] closed default NotebookLM chrome-profile at {stage}: "
-        f"{DEFAULT_NLM_CHROME_PROFILE_ROOT} pids={sorted(pids)}",
-        file=sys.stderr,
-    )
-    return True
-
-
-def _lane_auth_profiles(lane: LaneConfig) -> list[str]:
-    profiles: list[str] = [lane.coordinator_profile]
-    if lane.notebooklm_profiles:
-        profiles.extend(lane.notebooklm_profiles[: lane.workers])
-    else:
-        profiles.extend(f"{lane.notebooklm_profile_prefix}-{idx:02d}" for idx in range(1, lane.workers + 1))
-    unique: list[str] = []
-    for profile in profiles:
-        if profile and profile not in unique:
-            unique.append(profile)
-    return unique
-
-
-def _lane_expected_email(lane: LaneConfig, profile: str) -> str:
-    explicit = lane.expected_email.strip().lower()
-    if explicit:
-        return explicit
-    return expected_email_for_profile(profile).strip().lower()
+    for lane in lane_tuple:
+        mapped_email = expected_email_for_account_profile(lane.account_profile)
+        expected_email = lane.expected_email.strip().lower() or mapped_email
+        if expected_email != mapped_email:
+            raise RuntimeError(
+                f"lane {lane.lane}: account {lane.account_profile!r} expected_email "
+                f"{expected_email!r} does not match canonical {mapped_email!r}"
+            )
+    return lane_tuple
 
 
 def preflight_lane_auth_profiles(lanes: Iterable[LaneConfig], *, timeout_s: float = 30.0) -> None:
-    """Validate all lane NotebookLM profiles before starting a benchmark run."""
-    _stop_default_chrome_profile_if_running(stage="preflight_start")
+    """Validate exact canonical account sessions before an active run."""
+    del timeout_s  # Kept for the stable doctor/preflight API; probes own their timeout.
+    lane_tuple = _require_canonical_account_profiles(_validate_lanes(lanes))
     checked: set[str] = set()
-    for lane in _validate_lanes(lanes):
-        lane_family = _lane_scoped_auth_family(lane)
-        for profile in _lane_auth_profiles(lane):
-            if profile in checked:
-                continue
-            checked.add(profile)
-            expected_email = _lane_expected_email(lane, profile)
-            if not expected_email:
-                raise RuntimeError(
-                    f"lane {lane.lane}: profile {profile} has no expected email mapping; "
-                    "add expected_email to the lane config or update the auth-family map"
-                )
-            if _profile_auth_check(profile, expected_email=expected_email, timeout_s=timeout_s):
-                continue
-            if not _profile_auth_force_refresh(
-                profile,
-                expected_email=expected_email,
-                timeout_s=max(120.0, timeout_s),
-                family=lane_family,
-            ):
-                raise RuntimeError(f"NotebookLM auth expired for profile {profile} and force refresh failed")
-            if _stop_default_chrome_profile_if_running(stage=f"preflight_refresh_{profile}"):
-                raise RuntimeError(
-                    f"NotebookLM auth refresh for profile {profile} opened the default chrome-profile"
-                )
+    for lane in lane_tuple:
+        if lane.account_profile in checked:
+            continue
+        checked.add(lane.account_profile)
+        probe = ensure_account_session(
+            lane.account_profile,
+            worker_id="coordinator",
+            allow_bootstrap=False,
+        )
+        if not probe.ok:
+            raise RuntimeError(
+                f"lane {lane.lane}: canonical account {lane.account_profile!r} "
+                f"preflight failed: {probe.reason}; storage={probe.storage_path}"
+            )
 
 
-def _profile_auth_check(profile: str, *, expected_email: str, timeout_s: float) -> bool:
-    if _stop_default_chrome_profile_if_running(stage=f"auth_check_before_{profile}"):
-        return False
-    res = run_nlm(["login", "--check", "--profile", profile], timeout_s=timeout_s)
-    if _stop_default_chrome_profile_if_running(stage=f"auth_check_after_{profile}"):
-        return False
-    if res.returncode != 0:
-        return False
-    if not expected_email:
-        return False
-    return _extract_account(res.stdout or "", res.stderr or "") == expected_email.lower()
-
-
-def _lane_scoped_auth_family(lane: LaneConfig) -> AuthFamily | None:
-    profiles = tuple(_lane_auth_profiles(lane))
-    if not profiles:
-        return None
-    source_profile = lane.coordinator_profile
-    family = family_for_profile(source_profile)
-    if family is None:
-        return None
-    return AuthFamily(
-        source_profile=family.source_profile,
-        sibling_profiles=tuple(profile for profile in profiles if profile != family.source_profile),
-        expected_email=family.expected_email,
-        cdp_browser_root=family.cdp_browser_root,
-        cdp_browser_profile_directory=family.cdp_browser_profile_directory,
-        cdp_port=family.cdp_port,
-    )
-
-
-def _profile_auth_force_refresh(
-    profile: str,
-    *,
-    expected_email: str,
-    timeout_s: float,
-    family: AuthFamily | None = None,
-) -> bool:
-    family = family or family_for_profile(profile)
-    if family is not None:
-        try:
-            sync_worker_profiles(families=(family,), backup=True)
-        except Exception:
-            return False
-        return _profile_auth_check(profile, expected_email=expected_email, timeout_s=timeout_s)
-
-    if _is_nlm_auth_noninteractive():
-        return False
-    if _stop_default_chrome_profile_if_running(stage=f"auth_refresh_before_{profile}"):
-        return False
-    res = run_nlm(["login", "--force", "--profile", profile], timeout_s=timeout_s)
-    if _stop_default_chrome_profile_if_running(stage=f"auth_refresh_after_{profile}"):
-        return False
-    if res.returncode != 0:
-        return False
-    if not expected_email:
-        return False
-    return _extract_account(res.stdout or "", res.stderr or "") == expected_email.lower()
+def doctor_lane_setup(lane_config: Path, run_root: Path, *, timeout_s: float = 30.0) -> tuple[LaneConfig, ...]:
+    """Validate canonical lane identity and an empty output root before launch."""
+    lanes = load_lane_configs(lane_config)
+    run_root = Path(run_root)
+    if run_root.exists():
+        if not run_root.is_dir():
+            raise RuntimeError(f"run root is not a directory: {run_root}")
+        if any(run_root.iterdir()):
+            raise RuntimeError(f"run root is not empty: {run_root}")
+    preflight_lane_auth_profiles(lanes, timeout_s=timeout_s)
+    return lanes
 
 
 def _iter_jsonl_events(root: Path) -> Iterable[tuple[Path, int, dict[str, Any]]]:
@@ -363,6 +340,7 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
             findings.append(
                 f"{path.relative_to(lane_output_root)}:{lineno}: "
                 f"{data.get('failure_reason') or 'materialization_wait_failed'} "
+                f"outcome={data.get('wait_outcome') or '<unknown>'} "
                 f"subbatch_index={data.get('subbatch_index') or '<unknown>'} "
                 f"expected_total={data.get('expected_total') or '<unknown>'} "
                 f"sources={data.get('source_count_before_wait') or 0}->{data.get('source_count_after_wait') or 0} "
@@ -379,9 +357,20 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
         if action == "fetch_worker_finished":
             summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
             worker_error = str(summary.get("error") or data.get("error") or "")
-            if summary.get("status") == "error" and "NotebookSourceMaterializationTimeout" in worker_error:
+            materialization_error_marker = next(
+                (
+                    marker
+                    for marker in (
+                        "NotebookSourceMaterializationTimeout",
+                        "NotebookSourceMaterializationTerminalError",
+                    )
+                    if marker in worker_error
+                ),
+                None,
+            )
+            if summary.get("status") == "error" and materialization_error_marker:
                 findings.append(
-                    f"{path.relative_to(lane_output_root)}:{lineno}: NotebookSourceMaterializationTimeout "
+                    f"{path.relative_to(lane_output_root)}:{lineno}: {materialization_error_marker} "
                     f"worker_id={data.get('worker_id') or summary.get('worker_id') or '<unknown>'} "
                     f"returncode={data.get('returncode') if data.get('returncode') is not None else '<unknown>'}"
                 )
@@ -393,6 +382,20 @@ def _find_invalid_lane_artifacts(lane_output_root: Path) -> list[str]:
                 f"batch_size={data.get('batch_size') or '<unknown>'}"
             )
     return findings
+
+
+def _classify_invalid_lane_artifacts(findings: Iterable[str]) -> str:
+    """Classify invalidation evidence so source failures are not called auth failures."""
+    finding_text = "\n".join(str(finding) for finding in findings)
+    has_auth = any(marker in finding_text for marker in _AUTH_INVALIDATION_MARKERS)
+    has_source = any(marker in finding_text for marker in _SOURCE_INVALIDATION_MARKERS)
+    if has_auth and has_source:
+        return "mixed_auth_and_source_artifacts"
+    if has_auth:
+        return "auth_or_profile_artifacts"
+    if has_source:
+        return "source_add_or_materialization_artifacts"
+    return "other_invalid_artifacts"
 
 
 def _lane_processed_count_reason(*, lane: LaneConfig, expected_processed_count: int, aggregate: dict[str, Any]) -> str | None:
@@ -491,6 +494,7 @@ def _stale_lane_process_report(
         "status": "invalidated",
         "lane": lane.lane,
         "account_class": lane.account_class,
+        "account_profile": lane.account_profile,
         "workers": lane.workers,
         "notebooklm_profile_prefix": lane.notebooklm_profile_prefix,
         "notebooklm_profiles": list(lane.notebooklm_profiles),
@@ -549,9 +553,15 @@ def _lane_env(
     _AMBUSH_VARS = {"YTIS_NLM_AUTH_FORCE_REFRESH_EVERY_CHECKS"}
     for var in _AMBUSH_VARS:
         base_env = {k: v for k, v in base_env.items() if k != var}
+    _require_canonical_account_profiles((lane,))
     env = dict(base_env)
     env.update(lane.env)
     env["NOTEBOOKLM_PROFILE"] = lane.coordinator_profile
+    env["YTIS_NLM_ACCOUNT_PROFILE"] = lane.account_profile
+    if lane.adaptive_workers:
+        env["YTIS_NLM_LANE"] = lane.lane
+    else:
+        env.pop("YTIS_NLM_LANE", None)
     env["INTELLIGENCE_STREAM_LOG_DIR"] = str(lane_output_root / "logs")
     env["YTIS_NLM_BROWSER_PROFILE_ROOT"] = str(lane.browser_profile_root)
     if lane.browser_profile_directory:
@@ -580,13 +590,19 @@ def _lane_env(
     if run_environment_label:
         env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] = run_environment_label
         env["YTIS_RUN_ENVIRONMENT_LABEL"] = run_environment_label
-        if run_environment_label == "hotel_wifi":
-            env["YTIS_NLM_WORKER_AUTH_USE_CDP"] = "0"
     else:
         env.pop("YTIS_NLM_RUN_ENVIRONMENT_LABEL", None)
         env.pop("YTIS_RUN_ENVIRONMENT_LABEL", None)
-        env.pop("YTIS_NLM_WORKER_AUTH_USE_CDP", None)
+    env.pop("YTIS_NLM_WORKER_AUTH_USE_CDP", None)
     env["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
+    if lane.adaptive_workers:
+        env["YTIS_INDUSTRIAL_ADAPTIVE_WORKERS"] = "1"
+        env["YTIS_INDUSTRIAL_ADAPTIVE_MIN_WORKERS"] = str(lane.adaptive_min_workers)
+        env["YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS"] = str(lane.adaptive_max_workers or lane.workers)
+        env["YTIS_INDUSTRIAL_ADAPTIVE_SCALE_UP_BACKLOG"] = str(lane.adaptive_scale_up_backlog)
+        env["YTIS_INDUSTRIAL_ADAPTIVE_SCALE_DOWN_BACKLOG"] = str(lane.adaptive_scale_down_backlog)
+        env["YTIS_INDUSTRIAL_ADAPTIVE_COOLDOWN_S"] = str(lane.adaptive_cooldown_s)
+        env["YTIS_INDUSTRIAL_ADAPTIVE_HEALTH_WINDOW"] = str(lane.adaptive_health_window)
     return env
 
 
@@ -613,6 +629,7 @@ def _lane_process_env_snapshot(env: dict[str, str]) -> dict[str, str]:
         ),
         "YTIS_NLM_RUN_ENVIRONMENT_LABEL": env.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL", ""),
         "YTIS_RUN_ENVIRONMENT_LABEL": env.get("YTIS_RUN_ENVIRONMENT_LABEL", ""),
+        "YTIS_NLM_ACCOUNT_PROFILE": env.get("YTIS_NLM_ACCOUNT_PROFILE", ""),
         "YTIS_NLM_WORKER_AUTH_USE_CDP": env.get("YTIS_NLM_WORKER_AUTH_USE_CDP", ""),
         "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": env.get(
             "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED", ""
@@ -628,6 +645,21 @@ def _lane_process_env_snapshot(env: dict[str, str]) -> dict[str, str]:
         ),
         "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": env.get("YTIS_NLM_SHARED_RETRY_POOL_DB_PATH", ""),
         "YTIS_TRANSCRIPT_CACHE_DB_PATH": env.get("YTIS_TRANSCRIPT_CACHE_DB_PATH", ""),
+        "YTIS_INDUSTRIAL_ADAPTIVE_WORKERS": env.get("YTIS_INDUSTRIAL_ADAPTIVE_WORKERS", ""),
+        "YTIS_INDUSTRIAL_ADAPTIVE_MIN_WORKERS": env.get("YTIS_INDUSTRIAL_ADAPTIVE_MIN_WORKERS", ""),
+        "YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS": env.get("YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS", ""),
+        "YTIS_INDUSTRIAL_ADAPTIVE_SCALE_UP_BACKLOG": env.get(
+            "YTIS_INDUSTRIAL_ADAPTIVE_SCALE_UP_BACKLOG", ""
+        ),
+        "YTIS_INDUSTRIAL_ADAPTIVE_SCALE_DOWN_BACKLOG": env.get(
+            "YTIS_INDUSTRIAL_ADAPTIVE_SCALE_DOWN_BACKLOG", ""
+        ),
+        "YTIS_INDUSTRIAL_ADAPTIVE_COOLDOWN_S": env.get(
+            "YTIS_INDUSTRIAL_ADAPTIVE_COOLDOWN_S", ""
+        ),
+        "YTIS_INDUSTRIAL_ADAPTIVE_HEALTH_WINDOW": env.get(
+            "YTIS_INDUSTRIAL_ADAPTIVE_HEALTH_WINDOW", ""
+        ),
     }
 
 
@@ -646,8 +678,10 @@ def _run_lane(
     reusable_pipeline_mode: str,
     env: dict[str, str],
     preserve_worker_state_root: bool = False,
+    cohort_shape: str = "captioned",
 ) -> dict[str, Any]:
     lane_output_root = output_root / lane.lane
+    _require_canonical_account_profiles((lane,))
     lane_output_root.mkdir(parents=True, exist_ok=True)
     effective_worker_state_root = _lane_worker_state_root(
         lane,
@@ -663,7 +697,6 @@ def _run_lane(
     throughput_finished_at = started_at
     if lane.startup_delay_s > 0:
         time.sleep(lane.startup_delay_s)
-    _stop_default_chrome_profile_if_running(stage=f"lane_start_{lane.lane}")
     throughput_started_at = time.monotonic()
     command = build_fallback_benchmark_command(
         python_executable=python_executable or sys.executable,
@@ -676,9 +709,9 @@ def _run_lane(
         limit=limit,
         batch_size=batch_size,
         policy=policy,
-        cohort_shape="captioned",
+        cohort_shape=cohort_shape,
         sample_label=f"shard_{lane.lane}",
-        manifest_json=None,
+        manifest_json=manifest_json,
         manifest_families=None,
         worker_state_root=effective_worker_state_root,
         preserve_worker_state_root=False,
@@ -697,54 +730,51 @@ def _run_lane(
     _write_lane_process_snapshot(lane_process_path, process_snapshot)
     proc: subprocess.Popen[str] | None = None
     returncode: int | None = None
-    try:
-        with lane_stdout_path.open("w", encoding="utf-8", newline="\n") as stdout_handle, lane_stderr_path.open(
-            "w",
-            encoding="utf-8",
-            newline="\n",
-        ) as stderr_handle:
-            try:
-                proc = subprocess.Popen(
-                    command,
-                    cwd=str(REPO_ROOT),
-                    env=env,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
-                    text=True,
-                )
-            except BaseException as exc:
-                process_snapshot.update(
-                    {
-                        "status": "launch_failed",
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                        "finished_at": round(time.monotonic(), 3),
-                    }
-                )
-                _write_lane_process_snapshot(lane_process_path, process_snapshot)
-                raise
-            process_snapshot.update({"status": "running", "pid": proc.pid})
+    with lane_stdout_path.open("w", encoding="utf-8", newline="\n") as stdout_handle, lane_stderr_path.open(
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as stderr_handle:
+        try:
+            proc = subprocess.Popen(
+                command,
+                cwd=str(REPO_ROOT),
+                env=env,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                text=True,
+            )
+        except BaseException as exc:
+            process_snapshot.update(
+                {
+                    "status": "launch_failed",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "finished_at": round(time.monotonic(), 3),
+                }
+            )
             _write_lane_process_snapshot(lane_process_path, process_snapshot)
-            try:
-                returncode = proc.wait()
-            except BaseException as exc:
-                process_snapshot.update(
-                    {
-                        "status": "wait_failed",
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                        "finished_at": round(time.monotonic(), 3),
-                        "pid": proc.pid,
-                    }
-                )
-                _write_lane_process_snapshot(lane_process_path, process_snapshot)
-                raise
-            finally:
-                stdout_handle.flush()
-                stderr_handle.flush()
-        throughput_finished_at = time.monotonic()
-    finally:
-        _stop_default_chrome_profile_if_running(stage=f"lane_complete_{lane.lane}")
+            raise
+        process_snapshot.update({"status": "running", "pid": proc.pid})
+        _write_lane_process_snapshot(lane_process_path, process_snapshot)
+        try:
+            returncode = proc.wait()
+        except BaseException as exc:
+            process_snapshot.update(
+                {
+                    "status": "wait_failed",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "finished_at": round(time.monotonic(), 3),
+                    "pid": proc.pid,
+                }
+            )
+            _write_lane_process_snapshot(lane_process_path, process_snapshot)
+            raise
+        finally:
+            stdout_handle.flush()
+            stderr_handle.flush()
+    throughput_finished_at = time.monotonic()
     finished_at = time.monotonic()
     throughput_wall_elapsed_s = round(throughput_finished_at - throughput_started_at, 3)
     process_snapshot.update(
@@ -768,8 +798,11 @@ def _run_lane(
     invalid_artifacts = _find_invalid_lane_artifacts(lane_output_root)
     if invalid_artifacts:
         sample = "; ".join(invalid_artifacts[:5])
-        raise RuntimeError(
-            f"lane {lane.lane} invalidated by NotebookLM auth/source failures: {sample}"
+        category = _classify_invalid_lane_artifacts(invalid_artifacts)
+        raise LaneArtifactInvalidation(
+            lane=lane.lane,
+            category=category,
+            sample=sample,
         )
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     aggregate = _aggregate_summary(summary, policy)
@@ -778,6 +811,7 @@ def _run_lane(
         "status": "partial" if partial_reason else "ok",
         "lane": lane.lane,
         "account_class": lane.account_class,
+        "account_profile": lane.account_profile,
         "workers": lane.workers,
         "notebooklm_profile_prefix": lane.notebooklm_profile_prefix,
         "notebooklm_profiles": list(lane.notebooklm_profiles),
@@ -816,11 +850,12 @@ def _invalidated_lane_report(
     traceback_text: str,
 ) -> dict[str, Any]:
     lane_output_root = output_root / lane.lane
-    return {
+    report = {
         "report_version": 1,
         "status": "invalidated",
         "lane": lane.lane,
         "account_class": lane.account_class,
+        "account_profile": lane.account_profile,
         "workers": lane.workers,
         "notebooklm_profile_prefix": lane.notebooklm_profile_prefix,
         "notebooklm_profiles": list(lane.notebooklm_profiles),
@@ -844,6 +879,9 @@ def _invalidated_lane_report(
         "fail_count_total": 0,
         "processed_count_total": 0,
     }
+    if isinstance(exc, LaneArtifactInvalidation):
+        report["failure_category"] = exc.category
+    return report
 
 
 def _lane_throughput_elapsed_s(report: dict[str, Any]) -> float | None:
@@ -1084,13 +1122,16 @@ def run_sharded_lane_series(
     limit: int = DEFAULT_LIMIT,
     batch_size: int = DEFAULT_BATCH_SIZE,
     manifest_json: Path = DEFAULT_MANIFEST_JSON,
+    cohort_shape: str = "captioned",
     python_executable: str | None = None,
     reusable_pipeline_mode: str = DEFAULT_REUSABLE_PIPELINE_MODE,
     preserve_worker_state_root: bool = False,
     run_environment_label: str | None = None,
 ) -> dict[str, Any]:
     """Run all NotebookLM lanes concurrently and aggregate hot-path VPH."""
-    lane_configs = _validate_lanes(lanes)
+    if cohort_shape not in COHORT_SHAPES:
+        raise ValueError(f"unsupported cohort_shape {cohort_shape!r}; expected one of {COHORT_SHAPES}")
+    lane_configs = _require_canonical_account_profiles(_validate_lanes(lanes))
     output_root.mkdir(parents=True, exist_ok=True)
     cohort_json.parent.mkdir(parents=True, exist_ok=True)
     report_path = output_root / "sharded_lane_series_summary.json"
@@ -1145,6 +1186,7 @@ def run_sharded_lane_series(
                 limit=limit,
                 batch_size=batch_size,
                 manifest_json=manifest_json,
+                cohort_shape=cohort_shape,
                 python_executable=python_executable,
                 reusable_pipeline_mode=reusable_pipeline_mode,
                 preserve_worker_state_root=preserve_worker_state_root,
@@ -1178,15 +1220,16 @@ def run_sharded_lane_series(
                     exc=exc,
                     traceback_text=traceback_text,
                 )
-                failures.append(
-                    {
-                        "lane": lane.lane,
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                        "traceback": traceback_text,
-                        "stderr_tail": _tail_text(output_root / lane.lane / "lane.stderr.txt"),
-                    }
-                )
+                failure = {
+                    "lane": lane.lane,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "traceback": traceback_text,
+                    "stderr_tail": _tail_text(output_root / lane.lane / "lane.stderr.txt"),
+                }
+                if isinstance(exc, LaneArtifactInvalidation):
+                    failure["failure_category"] = exc.category
+                failures.append(failure)
 
     lane_reports = [lane_reports_by_name[lane.lane] for lane in lane_configs]
     partial_lane_reports = [report for report in lane_reports if report.get("status") == "partial"]
@@ -1217,6 +1260,7 @@ def run_sharded_lane_series(
         "policy": policy,
         "limit": limit,
         "batch_size": batch_size,
+        "cohort_shape": cohort_shape,
         "reusable_pipeline_mode": reusable_pipeline_mode,
         "run_environment_label": run_environment_label,
         "worker_shape_signature": _worker_shape_signature(lane_configs),
@@ -1255,6 +1299,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--manifest-json", type=Path, default=DEFAULT_MANIFEST_JSON)
+    parser.add_argument(
+        "--cohort-shape",
+        choices=COHORT_SHAPES,
+        default="captioned",
+        help="Cohort source passed to the fallback runner; use manifest to honor --manifest-json.",
+    )
     parser.add_argument("--python-executable", default=None)
     parser.add_argument("--reusable-pipeline-mode", default=DEFAULT_REUSABLE_PIPELINE_MODE)
     parser.add_argument(
@@ -1284,6 +1334,7 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         batch_size=args.batch_size,
         manifest_json=args.manifest_json,
+        cohort_shape=args.cohort_shape,
         python_executable=args.python_executable,
         reusable_pipeline_mode=args.reusable_pipeline_mode,
         preserve_worker_state_root=args.preserve_worker_state_root,

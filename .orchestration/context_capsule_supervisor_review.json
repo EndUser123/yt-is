@@ -1,0 +1,45 @@
+{
+  "schema": "context_capsule",
+  "task_id": "",
+  "run_id": "20260809-181343-continue-yt-is-reliability-c-26464e99",
+  "task": "Supervisor contract review",
+  "parent_goal": "Find correctness gaps in run_unattended_backlog.py against the real multi-account coordinator before implementation.",
+  "created_at": "2026-08-10T00:01:37+00:00",
+  "updated_at": "2026-08-10T00:01:37+00:00",
+  "policy": "persistent storage, not prompt payload; dispatch only scoped slices",
+  "must_read": [
+    {
+      "path": "scripts/run_unattended_backlog.py"
+    },
+    {
+      "path": "tests/test_run_unattended_backlog.py"
+    },
+    {
+      "path": "scripts/run_multi_account_fetch.py"
+    },
+    {
+      "path": "AGENTS.md"
+    },
+    {
+      "path": "HANDOFF.md"
+    }
+  ],
+  "useful_optional": [],
+  "forbidden": [],
+  "confirmed_facts": [],
+  "rejected_assumptions": [],
+  "decisions": [],
+  "ownership": [],
+  "acceptance_criteria": [
+    {
+      "path": "Return file-line findings about DB propagation, account parallelism/settings, state/receipt/restart safety, and missing tests; do not edit files or run live work."
+    }
+  ],
+  "validation_commands": [
+    {
+      "path": "Inspect CLI signatures and focused tests; cite exact file and line."
+    }
+  ],
+  "blockers": [],
+  "evidence_refs": []
+}

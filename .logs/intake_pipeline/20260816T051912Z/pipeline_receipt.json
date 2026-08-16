@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-08-16T05:19:12.791408+00:00",
+  "db_path": "P:\\.data\\yt-is\\batch_status.sqlite",
+  "dry_run": true,
+  "pre_sync_pending": 333567,
+  "skip_sync": false,
+  "status": "verify_failed",
+  "sync": {
+    "mode": "dry-run",
+    "phase": "sync"
+  },
+  "verify": {
+    "blocked_pending": 125524,
+    "delta": 8,
+    "issues": [
+      "125524 pending rows on blocked channels (coordinator will skip)"
+    ],
+    "ok": false,
+    "phase": "verify",
+    "post_pending": 333575,
+    "pre_pending": 333567
+  }
+}

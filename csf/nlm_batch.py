@@ -14,9 +14,9 @@ import subprocess
 import time
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Mapping, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import fasteners
 from csf.batch_status import summarize_video_ids
@@ -24,16 +24,13 @@ from csf.display import format_result_row
 from csf.csf_logging import log_action
 from csf.nlm_config import get_nlm_config
 from csf import nlm_auth_guard
-from csf.nlm_worker_auth import (
-    DEFAULT_FAMILIES,
-    expected_email_for_profile,
-    refresh_source_profile,
-    sync_worker_profiles,
-)
 from csf.shared_retry_pool import enqueue as enqueue_shared_retry
 from csf.youtube_page_inspector import inspect_youtube_watch_page, inspect_youtube_watch_page_via_ytdlp
 
 run_nlm = nlm_auth_guard.run_nlm
+# Test-only compatibility seam. The active path never calls this unmodified
+# CLI function; tests may replace it to exercise CompletedProcess semantics.
+_LEGACY_RUN_NLM = run_nlm
 
 
 _DEFAULT_OWNER_NOTEBOOK_STATE_PATH = Path("P:\\\\\\.data/yt-is/owner_nlm_notebook.json")
@@ -197,19 +194,29 @@ def _should_skip_nlm_auth_check(
 
 def _build_content_fetch_attribution_context(auth_context: _NLMAuthContext) -> dict[str, object]:
     """Return stable auth/profile context for source-content fetch diagnostics."""
-    cache_hit, _ = nlm_auth_guard.auth_check_cache_hit(auth_context)
-    cache_session_age_s = nlm_auth_guard.auth_check_cache_session_age(auth_context)
+    canonical = bool(auth_context.account_profile)
+    cache_hit = False
+    cache_session_age_s = None
+    cache_ttl_s = None
+    if not canonical:
+        cache_hit, _ = nlm_auth_guard.auth_check_cache_hit(auth_context)
+        cache_session_age_s = nlm_auth_guard.auth_check_cache_session_age(auth_context)
+        cache_ttl_s = nlm_auth_guard.auth_check_cache_ttl_seconds()
     browser_profile_root = os.getenv("YTIS_NLM_BROWSER_PROFILE_ROOT", "").strip() or None
     browser_profile_directory = os.getenv("YTIS_NLM_BROWSER_PROFILE_DIRECTORY", "").strip() or None
     worker_state_root = os.getenv("YTIS_INDUSTRIAL_WORKER_STATE_ROOT", "").strip() or None
     return {
         "notebooklm_profile": auth_context.profile,
+        "worker_id": _get_worker_id(),
+        "account_profile": auth_context.account_profile or None,
+        "auth_backend": "notebooklm-py" if canonical else "legacy-compat",
+        "storage_path": auth_context.storage_path or None,
         "expected_email": auth_context.expected_email or None,
         "auth_requires_profile": auth_context.requires_profile,
         "auth_has_profile": auth_context.has_profile,
         "auth_cache_hit": cache_hit,
         "auth_cache_session_age_s": round(cache_session_age_s, 3) if cache_session_age_s is not None else None,
-        "auth_check_cache_ttl_s": nlm_auth_guard.auth_check_cache_ttl_seconds(),
+        "auth_check_cache_ttl_s": cache_ttl_s,
         "auth_check_interval_s": _NLM_CONFIG.auth_check_interval,
         "auth_cooldown_s": _NLM_CONFIG.auth_cooldown,
         "browser_profile_root": browser_profile_root,
@@ -285,6 +292,10 @@ def _log_nlm_auth_runtime_config_once(auth_context) -> None:
     payload = {
         "component": "nlm_batch",
         "notebooklm_profile": auth_context.profile,
+        "worker_id": _get_worker_id(),
+        "account_profile": auth_context.account_profile or None,
+        "auth_backend": "notebooklm-py" if auth_context.account_profile else "legacy-compat",
+        "storage_path": auth_context.storage_path or None,
         "account": auth_context.expected_email or None,
         "run_environment_label": (
             os.environ.get("YTIS_NLM_RUN_ENVIRONMENT_LABEL")
@@ -292,7 +303,7 @@ def _log_nlm_auth_runtime_config_once(auth_context) -> None:
             or None
         ),
         "env_auth_check_cache_ttl_raw": os.getenv("YTIS_NLM_AUTH_CHECK_CACHE_TTL_SECONDS") or None,
-        "resolved_auth_check_cache_ttl_s": nlm_auth_guard.auth_check_cache_ttl_seconds(),
+        "resolved_auth_check_cache_ttl_s": None if auth_context.account_profile else nlm_auth_guard.auth_check_cache_ttl_seconds(),
         "resolved_auth_check_interval_s": _NLM_CONFIG.auth_check_interval,
         "resolved_auth_cooldown_s": _NLM_CONFIG.auth_cooldown,
         "resolved_auth_force_refresh_every_checks": _get_nlm_auth_force_refresh_every_checks(),
@@ -333,6 +344,9 @@ def _auth_family_for_profile(profile: str):
     profile = profile.strip()
     if not profile:
         return None
+    # Compatibility-only CLI family auth is loaded only for legacy callers.
+    from csf.nlm_worker_auth import DEFAULT_FAMILIES
+
     for family in DEFAULT_FAMILIES:
         if profile == family.source_profile or profile in family.sibling_profiles:
             return family
@@ -403,6 +417,10 @@ def _refresh_family_nlm_auth_session(
     check_count: int | None = None,
 ) -> bool:
     """Refresh a mapped worker family through the canonical source profile path."""
+    # Compatibility-only CLI family auth is not part of the canonical account
+    # path and must not be imported by active workers at module load time.
+    from csf.nlm_worker_auth import refresh_source_profile, sync_worker_profiles
+
     started = time.perf_counter()
     log_action(
         "nlm_family_refresh_started",
@@ -466,6 +484,8 @@ class _NLMAuthContext:
     login_profile_args: list[str]
     requires_profile: bool
     expected_email: str = ""
+    account_profile: str = ""
+    storage_path: str = ""
 
     @property
     def has_profile(self) -> bool:
@@ -488,6 +508,7 @@ def _finalize_batch_outcomes(
     *,
     shared_retry_deferred: frozenset[str] | set[str] | None = None,
     error_message: str = "Source not found",
+    error_by_video_id: Mapping[str, str] | None = None,
 ) -> None:
     """C5a: unified fill-in for missing batch outcomes.
 
@@ -501,11 +522,23 @@ def _finalize_batch_outcomes(
     deferred = shared_retry_deferred or frozenset()
     for vid in batch_ids:
         if vid not in results and vid not in deferred:
-            results[vid] = (False, None, error_message)
+            results[vid] = (
+                False,
+                None,
+                (error_by_video_id or {}).get(vid, error_message),
+            )
 
 
-class NotebookSourceMaterializationTimeout(RuntimeError):
+class NotebookSourceMaterializationFailure(RuntimeError):
+    """Raised when a NotebookLM source readiness gate cannot succeed."""
+
+
+class NotebookSourceMaterializationTimeout(NotebookSourceMaterializationFailure):
     """Raised when NotebookLM sources never become ready within the wait window."""
+
+
+class NotebookSourceMaterializationTerminalError(NotebookSourceMaterializationFailure):
+    """Raised when a source list reports a terminal processing error."""
 
 
 def _get_owner_notebook_state_path() -> Path:
@@ -541,6 +574,17 @@ def _get_notebooklm_profile() -> str:
     return override or _DEFAULT_NOTEBOOKLM_PROFILE
 
 
+def _get_account_profile() -> str:
+    return os.getenv("YTIS_NLM_ACCOUNT_PROFILE", "").strip()
+
+
+def _get_worker_id() -> str:
+    explicit = os.getenv("YTIS_NLM_WORKER_ID", "").strip()
+    if explicit:
+        return explicit
+    return _derive_worker_id_from_notebooklm_profile(os.getenv("NOTEBOOKLM_PROFILE", "")) or "worker-unknown"
+
+
 def _get_nlm_login_profile_args() -> list[str]:
     """Return CLI args that target the active NotebookLM auth profile."""
     profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
@@ -554,7 +598,25 @@ def _is_nlm_auth_noninteractive() -> bool:
 
 
 def _get_nlm_auth_context() -> _NLMAuthContext:
-    """Centralize the profile pinning decision for NotebookLM auth refresh."""
+    """Resolve canonical account identity and separate worker telemetry."""
+    account_profile = _get_account_profile()
+    worker_profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip() or _DEFAULT_NOTEBOOKLM_PROFILE
+    if account_profile:
+        from csf.nlm_auth_check import expected_email_for_account_profile, storage_path_for_account_profile
+
+        expected_email = os.getenv("YTIS_NLM_EXPECTED_EMAIL", "").strip().lower() or expected_email_for_account_profile(account_profile)
+        return _NLMAuthContext(
+            profile=worker_profile,
+            login_profile_args=[account_profile],
+            requires_profile=True,
+            expected_email=expected_email,
+            account_profile=account_profile,
+            storage_path=str(storage_path_for_account_profile(account_profile)),
+        )
+    # Compatibility-only context for historical callers and unit tests. The
+    # active sharded path always sets YTIS_NLM_ACCOUNT_PROFILE in its lane env.
+    from csf.nlm_worker_auth import expected_email_for_profile
+
     profile_override = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
     profile = profile_override or _DEFAULT_NOTEBOOKLM_PROFILE
     login_profile_args = nlm_auth_guard.get_login_profile_args(profile_override or None)
@@ -927,6 +989,26 @@ def _source_count_probe_indicates_auth_failure(res: subprocess.CompletedProcess)
     return "AUTH FAILED" in upper_combined or "AUTHENTICATION ERROR" in upper_combined or "AUTH ERROR" in upper_combined
 
 
+def _source_content_error_is_not_found(value: object) -> bool:
+    """Recognize CLI and notebooklm-py spellings of a missing source."""
+    if isinstance(value, dict):
+        combined = "\n".join(
+            str(value.get(key) or "")
+            for key in ("error", "failure_reason", "stdout", "stderr")
+        ).upper()
+    else:
+        combined = f"{getattr(value, 'stdout', '') or ''}\n{getattr(value, 'stderr', '') or ''}".upper()
+    return any(
+        marker in combined
+        for marker in (
+            "NOT_FOUND",
+            "SOURCE NOT FOUND",
+            "SOURCENOTFOUNDERROR",
+            "SOURCE_NOT_FOUND",
+        )
+    )
+
+
 def _classify_source_content_retry_queue(
     ytdlp_probe: dict[str, object],
     status: str,
@@ -1007,6 +1089,67 @@ def _clear_reusable_notebook_state() -> None:
         pass
 
 
+_CLEANUP_TERMINAL_OUTCOMES = frozenset({"deleted", "not_found"})
+
+
+def _write_cleanup_receipt(payload: dict[str, object]) -> None:
+    """Persist an optional cleanup receipt for callers outside this process."""
+    receipt_path_raw = os.getenv("YTIS_NLM_CLEANUP_RECEIPT_PATH", "").strip()
+    if not receipt_path_raw:
+        return
+    try:
+        receipt_path = Path(receipt_path_raw)
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(
+            json.dumps(
+                {"receipt_version": 1, "written_at": time.time(), **payload},
+                indent=2,
+                sort_keys=True,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        log_action(
+            "nlm_worker_notebook_cleanup_receipt_failed",
+            {"error": _redact_diagnostic_text(exc)},
+        )
+
+
+def _record_cleanup_complete(payload: dict[str, object]) -> None:
+    """Emit the event and optional durable receipt from one authoritative payload."""
+    log_action("nlm_worker_notebook_cleanup_complete", payload)
+    _write_cleanup_receipt(payload)
+
+
+def _parse_notebook_list_result(res: subprocess.CompletedProcess) -> tuple[bool, list[object], str | None]:
+    """Parse a notebook list result without treating malformed data as empty."""
+    if res.returncode != 0:
+        return False, [], "command_failed"
+    try:
+        notebooks = json.loads(res.stdout)
+    except Exception:
+        return False, [], "parse_failed"
+    if isinstance(notebooks, dict):
+        notebooks = notebooks.get("notebooks", [])
+    if not isinstance(notebooks, list):
+        return False, [], "parse_failed"
+    return True, notebooks, None
+
+
+def _observed_notebook_ids(notebooks: list[object]) -> tuple[bool, set[str]]:
+    """Return IDs only when every list entry is observable by notebook ID."""
+    ids: set[str] = set()
+    for notebook in notebooks:
+        if not isinstance(notebook, dict):
+            return False, set()
+        notebook_id = _notebook_entry_id(notebook)
+        if not notebook_id:
+            return False, set()
+        ids.add(notebook_id)
+    return True, ids
+
+
 def _delete_notebook_with_retries(
     ingestor,
     nb_id: str,
@@ -1036,7 +1179,7 @@ def _delete_notebook_with_retries(
                 ["nlm", "notebook", "delete", nb_id, "--confirm"],
                 1,
                 "",
-                str(exc),
+                _redact_diagnostic_text(exc),
             )
         last_result = result
         if result.returncode == 0:
@@ -1051,7 +1194,7 @@ def _delete_notebook_with_retries(
             "timeout_s": timeout,
             "purpose": purpose,
             "returncode": None if last_result is None else last_result.returncode,
-            "stderr": "" if last_result is None else (last_result.stderr or "")[:200],
+            "stderr": "" if last_result is None else _redact_diagnostic_text(last_result.stderr, limit=200),
         },
     )
     return last_result or subprocess.CompletedProcess(
@@ -1084,6 +1227,7 @@ def retire_reusable_notebook_state() -> dict[str, object]:
 
     ingestor = NLMBatchIngestor()
     ingestor._nb_id = nb_id
+    clear_state = False
     try:
         started = time.monotonic()
         res = _delete_notebook_with_retries(
@@ -1095,15 +1239,29 @@ def retire_reusable_notebook_state() -> dict[str, object]:
         )
         result["returncode"] = res.returncode
         result["elapsed_s"] = round(time.monotonic() - started, 3)
-        result["status"] = "deleted" if res.returncode == 0 else "delete_failed"
-        if res.returncode != 0:
-            result["stdout"] = (res.stdout or "")[:200]
-            result["stderr"] = (res.stderr or "")[:200]
+        verify_res = ingestor._run_cmd(["notebook", "list", "--json"], timeout=30)
+        listed, notebooks, verify_error = _parse_notebook_list_result(verify_res)
+        observable, remaining_ids = _observed_notebook_ids(notebooks) if listed else (False, set())
+        result["postcondition"] = "notebook_absent" if listed and observable else "unavailable"
+        if listed and observable:
+            if nb_id not in remaining_ids:
+                result["status"] = "deleted" if res.returncode == 0 else "not_found"
+                clear_state = True
+            else:
+                result["status"] = "blocked"
+        else:
+            result["status"] = "unverified"
+            result["postcondition_error"] = verify_error or "notebook_ids_unobservable"
+        if result["status"] not in _CLEANUP_TERMINAL_OUTCOMES:
+            result["stdout"] = _redact_diagnostic_text(res.stdout, limit=200)
+            result["stderr"] = _redact_diagnostic_text(res.stderr, limit=200)
     except Exception as exc:
-        result["status"] = "delete_failed"
-        result["error"] = str(exc)
+        result["status"] = "unverified"
+        result["error"] = _redact_diagnostic_text(exc)
     finally:
-        _clear_reusable_notebook_state()
+        if clear_state:
+            _clear_reusable_notebook_state()
+    log_action("nlm_batch_reusable_notebook_retire_complete", result)
     return result
 
 
@@ -1114,7 +1272,12 @@ def _get_worker_state_root() -> Path:
 
 def _get_worker_notebook_prefix() -> str:
     override = os.getenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX", "").strip()
-    return override or _DEFAULT_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX
+    if override:
+        return override
+    account_profile = _get_account_profile()
+    if account_profile:
+        return f"{account_profile}-worker"
+    return _DEFAULT_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX
 
 
 def _get_worker_notebook_prefixes() -> tuple[str, ...]:
@@ -1122,13 +1285,21 @@ def _get_worker_notebook_prefixes() -> tuple[str, ...]:
     current = _get_worker_notebook_prefix().strip()
     if current:
         prefixes.append(current)
-    if _LEGACY_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX not in prefixes:
+    if not _get_account_profile() and _LEGACY_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX not in prefixes:
         prefixes.append(_LEGACY_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX)
     return tuple(prefixes)
 
 
 def _is_safe_worker_notebook_prefix(prefix: str) -> bool:
     prefix = prefix.strip()
+    account_profile = _get_account_profile()
+    if account_profile:
+        normalized_account = re.sub(r"[^a-z0-9]+", "-", account_profile.lower()).strip("-")
+        normalized_prefix = re.sub(r"[^a-z0-9]+", "-", prefix.lower()).strip("-")
+        return bool(normalized_account and normalized_account in normalized_prefix) or any(
+            prefix.startswith(benchmark_prefix)
+            for benchmark_prefix in _BENCHMARK_WORKER_NOTEBOOK_PREFIXES
+        )
     return (
         prefix.startswith(_DEFAULT_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX)
         or prefix.startswith(_LEGACY_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX)
@@ -1217,13 +1388,22 @@ def _clear_worker_notebook_state_files() -> int:
     return removed
 
 
-def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool = False) -> tuple[int, int]:
+def cleanup_stale_worker_notebooks(
+    *,
+    delete: bool = False,
+    include_active: bool = False,
+    only_current_state: bool = False,
+) -> tuple[int, int]:
     """Audit worker notebooks and optionally delete benchmark-owned stale ones.
 
     ``include_active`` is reserved for benchmark/trial boundaries where the run
     must start or end with no worker notebooks, including IDs still present in
-    the current worker state files.
+    the current worker state files. ``only_current_state`` is the safer
+    parent-timeout mode: it limits deletion to notebook IDs recovered from the
+    unique current state root instead of deleting every account-prefix match.
     """
+    if only_current_state and not include_active:
+        raise ValueError("only_current_state requires include_active")
     ingestor = NLMBatchIngestor()
     active_nb_ids = _load_current_worker_notebook_ids()
     prefix = _get_worker_notebook_prefix()
@@ -1236,15 +1416,17 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool
             "run_id": run_id or None,
             "active_nb_ids": len(active_nb_ids),
             "include_active": include_active,
+            "only_current_state": only_current_state,
         },
     )
     if not _is_safe_worker_notebook_prefix(prefix):
-        log_action(
-            "nlm_worker_notebook_cleanup_complete",
+        _record_cleanup_complete(
             {
                 "deleted": 0,
                 "failed": 0,
                 "status": "prefix_untrusted",
+                "outcome": "blocked",
+                "outcome_counts": {"blocked": 1},
                 "notebook_prefix": prefix,
                 "run_id": run_id or None,
                 "worker_notebook_count": 0,
@@ -1254,47 +1436,47 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool
                 "reason": "configured worker notebook prefix is not industrial-scoped",
             },
         )
-        return (0, 0)
+        return (0, 1 if delete else 0)
     safe_prefixes = tuple(worker_prefix for worker_prefix in _get_worker_notebook_prefixes() if _is_safe_worker_notebook_prefix(worker_prefix))
     res = ingestor._run_cmd(["notebook", "list", "--json"], timeout=30)
     if res.returncode != 0:
         if _is_default_chrome_profile_running_error(res.stderr or ""):
-            log_action(
-                "nlm_worker_notebook_cleanup_complete",
+            _record_cleanup_complete(
                 {
                     "deleted": 0,
-                    "failed": 0,
+                    "failed": 1 if delete else 0,
                     "status": "list_blocked_default_profile",
-                    "stderr": (res.stderr or "")[:200],
+                    "outcome": "blocked",
+                    "outcome_counts": {"blocked": 1},
+                    "stderr": _redact_diagnostic_text(res.stderr, limit=200),
                     "include_active": include_active,
                     "reason": "default NotebookLM chrome-profile is still in use; leaving it untouched",
                 },
             )
-            return (0, 0)
-        log_action(
-            "nlm_worker_notebook_cleanup_complete",
+            return (0, 1 if delete else 0)
+        _record_cleanup_complete(
             {
                 "deleted": 0,
                 "failed": 1 if delete else 0,
                 "status": "list_failed",
-                "stderr": (res.stderr or "")[:200],
+                "outcome": "blocked",
+                "outcome_counts": {"blocked": 1},
+                "stderr": _redact_diagnostic_text(res.stderr, limit=200),
                 "include_active": include_active,
             },
         )
         return (0, 1 if delete else 0)
 
-    try:
-        notebooks = json.loads(res.stdout)
-        if isinstance(notebooks, dict):
-            notebooks = notebooks.get("notebooks", [])
-    except Exception as exc:
-        log_action(
-            "nlm_worker_notebook_cleanup_complete",
+    parsed, notebooks, parse_error = _parse_notebook_list_result(res)
+    if not parsed:
+        _record_cleanup_complete(
             {
                 "deleted": 0,
                 "failed": 1 if delete else 0,
                 "status": "parse_failed",
-                "error": str(exc),
+                "outcome": "blocked",
+                "outcome_counts": {"blocked": 1},
+                "error": parse_error,
                 "include_active": include_active,
             },
         )
@@ -1309,13 +1491,19 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool
             for worker_prefix in safe_prefixes
         )
     ]
+    if only_current_state:
+        worker_notebooks = [
+            nb for nb in worker_notebooks
+            if _notebook_entry_id(nb) in active_nb_ids
+        ]
     if not delete:
-        log_action(
-            "nlm_worker_notebook_cleanup_complete",
+        _record_cleanup_complete(
             {
                 "deleted": 0,
                 "failed": 0,
                 "status": "audit_only",
+                "outcome": "audit_only",
+                "outcome_counts": {"not_found": 1} if not worker_notebooks else {},
                 "active_nb_ids": len(active_nb_ids),
                 "notebook_prefix": prefix,
                 "run_id": run_id or None,
@@ -1327,17 +1515,20 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool
         return (0, 0)
 
     deleted = 0
-    failed = 0
+    not_found = 0
+    blocked = 0
+    unverified = 0
     stale_worker_notebooks = []
     for nb in worker_notebooks:
         nb_id = _notebook_entry_id(nb)
-        if not nb_id:
-            continue
-        if include_active or nb_id not in active_nb_ids:
+        if include_active or not nb_id or nb_id not in active_nb_ids:
             stale_worker_notebooks.append(nb)
+    notebook_outcomes: list[dict[str, object]] = []
     for nb in sorted(stale_worker_notebooks, key=lambda item: (_notebook_entry_title(item), _notebook_entry_id(item))):
         nb_id = _notebook_entry_id(nb)
         if not nb_id:
+            unverified += 1
+            notebook_outcomes.append({"notebook_id": None, "outcome": "unverified", "reason": "missing_notebook_id"})
             continue
         ingestor._nb_id = nb_id
         try:
@@ -1355,17 +1546,76 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool
                 "",
                 "delete failed",
             )
-        if res.returncode == 0:
-            deleted += 1
+        notebook_outcomes.append(
+            {
+                "notebook_id": nb_id,
+                "delete_returncode": res.returncode,
+                "delete_stderr": _redact_diagnostic_text(res.stderr, limit=200),
+            }
+        )
+
+    if notebook_outcomes:
+        postcondition_res = ingestor._run_cmd(["notebook", "list", "--json"], timeout=30)
+        postcondition_ok, remaining_notebooks, postcondition_error = _parse_notebook_list_result(postcondition_res)
+        observable, remaining_ids = (
+            _observed_notebook_ids(remaining_notebooks) if postcondition_ok else (False, set())
+        )
+        postcondition_ok = postcondition_ok and observable
+        if not postcondition_ok:
+            unverified = len(notebook_outcomes)
+            for outcome in notebook_outcomes:
+                outcome.update({"outcome": "unverified", "postcondition": "unavailable"})
+            if not postcondition_error and not observable:
+                postcondition_error = "notebook_ids_unobservable"
         else:
-            failed += 1
+            for outcome in notebook_outcomes:
+                nb_id = str(outcome.get("notebook_id") or "")
+                if not nb_id:
+                    continue
+                if nb_id not in remaining_ids:
+                    if outcome.get("delete_returncode") == 0:
+                        outcome["outcome"] = "deleted"
+                        deleted += 1
+                    else:
+                        outcome["outcome"] = "not_found"
+                        not_found += 1
+                else:
+                    outcome["outcome"] = "blocked"
+                    blocked += 1
+                outcome["postcondition"] = "notebook_absent" if nb_id not in remaining_ids else "notebook_present"
+    else:
+        postcondition_ok = True
+        postcondition_error = None
+
+    failed = blocked + unverified
     state_files_removed = _clear_worker_notebook_state_files() if include_active and failed == 0 else 0
-    log_action(
-        "nlm_worker_notebook_cleanup_complete",
+    if unverified:
+        status = "unverified"
+        outcome = "unverified"
+    elif blocked:
+        status = "blocked"
+        outcome = "blocked"
+    elif deleted:
+        status = "deleted"
+        outcome = "deleted"
+    else:
+        status = "not_found"
+        outcome = "not_found"
+    _record_cleanup_complete(
         {
             "deleted": deleted,
             "failed": failed,
-            "status": "deleted" if failed == 0 else "delete_failed",
+            "status": status,
+            "outcome": outcome,
+            "outcome_counts": {
+                "deleted": deleted,
+                "not_found": not_found,
+                "blocked": blocked,
+                "unverified": unverified,
+            },
+            "postcondition": "notebook_list_verified" if postcondition_ok else "unavailable",
+            "postcondition_error": postcondition_error,
+            "notebook_outcomes": notebook_outcomes,
             "active_nb_ids": len(active_nb_ids),
             "notebook_prefix": prefix,
             "run_id": run_id or None,
@@ -1373,20 +1623,44 @@ def cleanup_stale_worker_notebooks(*, delete: bool = False, include_active: bool
             "stale_worker_notebook_count": len(stale_worker_notebooks),
             "state_files_removed": state_files_removed,
             "include_active": include_active,
+            "only_current_state": only_current_state,
         },
     )
     return (deleted, failed)
 
 
 def _ensure_nlm_auth() -> bool:
-    """Verify nlm CLI auth is valid, auto-recover if expired.
+    """Verify the canonical direct-client session for the active worker.
 
-    Known worker-family profiles refresh through the canonical source-profile
-    path so the probe never opens the shared default NotebookLM chrome-profile.
-    Unknown profiles still use the profile-pinned `nlm login --check` and
-    `nlm login --force` fallback. Returns True if auth is valid or was just
-    refreshed.
+    An active lane always sets YTIS_NLM_ACCOUNT_PROFILE and returns through the
+    YTIS durable non-interactive repair path. It never logs in, refreshes, or
+    copies CLI profiles. The legacy body below remains only for callers that do
+    not yet supply a canonical account identity.
     """
+    account_profile = _get_account_profile()
+    if account_profile:
+        from csf.nlm_client import ensure_account_session
+
+        # Active workers may repair token-backed state, but must never launch a
+        # browser or wait for account interaction after coordinator preflight.
+        probe = ensure_account_session(
+            account_profile,
+            worker_id=_get_worker_id(),
+            allow_bootstrap=False,
+        )
+        auth_context = _get_nlm_auth_context()
+        _log_nlm_auth_runtime_config_once(auth_context)
+        log_action(
+            "nlm_auth_checked",
+            {
+                "component": "nlm_batch",
+                **_build_nlm_auth_event_context(auth_context),
+                "status": "ok" if probe.ok else "failed",
+                "probe_reason": probe.reason,
+            },
+        )
+        return probe.ok
+
     import subprocess
 
     auth_context = _get_nlm_auth_context()
@@ -1931,6 +2205,42 @@ _MAX_DELAY = 60             # seconds max backoff
 _RATE_LIMIT_CODES = {429, 503}  # HTTP status codes indicating rate limiting
 _MAX_CONSECUTIVE_FAILURES = 3  # trigger backoff after this many failures
 
+# Opt-in rate-limit tracker trace. When enabled, every apply_delay / record_*
+# mutation and every sub-batch reset emits a single log_action payload. The
+# default-off design preserves hot-path cost (env var read + one comparison per
+# call) and keeps the existing log_action throughput intact. The flag is
+# process-global so all ingestors in a single Python process share one trace.
+_RATE_LIMIT_TRACKER_TRACE = (
+    os.getenv("YTIS_NLM_RATE_LIMIT_TRACKER_TRACE", "").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+
+
+def _emit_rate_limit_tracker_event(
+    event: str, tracker: "_RateLimitTracker", **payload: object
+) -> None:
+    """Emit one trace event for the rate-limit tracker.
+
+    Only called when ``_RATE_LIMIT_TRACKER_TRACE`` is truthy. The payload is
+    intentionally narrow: counters and flags only, never source IDs or video
+    metadata, so the trace is safe to leave enabled in production logs.
+    """
+    if not _RATE_LIMIT_TRACKER_TRACE:
+        return
+    try:
+        with tracker._lock:
+            snapshot = {
+                "consecutive_failures": tracker._consecutive_failures,
+                "current_delay_s": round(tracker._current_delay, 3),
+            }
+        log_action(
+            "nlm_batch_rate_limit_tracker_event",
+            {"event": event, **snapshot, **payload},
+        )
+    except Exception:
+        # Tracing must never break the hot path.
+        pass
+
 
 def _classify_subbatch_add_failure(
     res: subprocess.CompletedProcess,
@@ -1951,6 +2261,60 @@ def _classify_subbatch_add_failure(
     if res.returncode != 0:
         return "add_failed"
     return "unknown"
+
+
+def _format_typed_source_add_error(error: Exception) -> str:
+    """Preserve allowlisted provider diagnostics hidden by generic error text."""
+    details: list[str] = []
+    cause = getattr(error, "cause", None)
+    if cause is not None:
+        details.append(f"cause={type(cause).__name__}")
+        rpc_code = getattr(cause, "rpc_code", None)
+        if rpc_code is not None and re.fullmatch(r"-?\d{1,9}", str(rpc_code)):
+            details.append(f"rpc_code={rpc_code}")
+    timeout = getattr(error, "timeout", None)
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
+        details.append(f"timeout_s={float(timeout):.3f}")
+    last_status = getattr(error, "last_status", None)
+    if last_status is not None and re.fullmatch(r"-?\d{1,9}", str(last_status)):
+        details.append(f"last_status={last_status}")
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"{type(error).__name__}{suffix}"
+
+
+_SOURCE_ADD_NON_RETRYABLE_RPC_CODES = frozenset({9})
+_SOURCE_ADD_RPC9_RECONCILIATION_ATTEMPTS = 3
+_SOURCE_ADD_RPC9_RECONCILIATION_DELAY_S = 0.75
+
+
+def _source_add_retry_decision(error: Exception) -> tuple[bool, str]:
+    """Return whether a typed source-add failure is safe to repeat.
+
+    ``notebooklm-py`` classifies RPC code 9 as ``FAILED_PRECONDITION`` and
+    keeps it as a per-source ``SourceAddError``. Repeating that request cannot
+    repair the failed precondition and can duplicate a server-side partial
+    write, so it is terminal for this attempt. Other typed add errors retain
+    the existing bounded retry behavior until a more specific provider rule is
+    established.
+    """
+    cause = getattr(error, "cause", None)
+    rpc_code = getattr(cause, "rpc_code", None)
+    if str(rpc_code) in {str(code) for code in _SOURCE_ADD_NON_RETRYABLE_RPC_CODES}:
+        return False, f"rpc_code_{rpc_code}_failed_precondition"
+    return True, "typed_source_add_error"
+
+
+_SENSITIVE_DIAGNOSTIC_VALUE_RE = re.compile(
+    r"(?i)(?:bearer\s+\S+|basic\s+\S+|authorization\s*[:=]\s*(?:bearer\s+)?\S+|"
+    r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret|cookie)\s*[:=]\s*\S+)"
+)
+
+
+def _redact_diagnostic_text(value: object, *, limit: int = 500) -> str:
+    """Bound command diagnostics while removing credential-shaped values."""
+    text = "" if value is None else str(value)
+    text = _SENSITIVE_DIAGNOSTIC_VALUE_RE.sub("[REDACTED]", text)
+    return text[:limit]
 
 
 class _RateLimitTracker:
@@ -1980,21 +2344,38 @@ class _RateLimitTracker:
                     print(f"[Throttle] Rate limit detected ({self._consecutive_failures} consecutive failures) — throttling {self._current_delay:.1f}s")
                 else:
                     print(f"[Throttle] {self._consecutive_failures} consecutive failures — throttling {self._current_delay:.1f}s")
+        _emit_rate_limit_tracker_event(
+            "record_failure", self,
+            is_rate_limit=is_rate_limit,
+            crossed_threshold=(self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES),
+        )
 
     def record_success(self) -> None:
+        failures_before = 0
         with self._lock:
+            failures_before = self._consecutive_failures
             if self._consecutive_failures > 0:
                 print(f"[Throttle] Success restored after {self._consecutive_failures} failures — delay reset")
             self._consecutive_failures = 0
             self._current_delay = 0.0
+        _emit_rate_limit_tracker_event(
+            "record_success", self,
+            failures_before= failures_before,
+        )
 
     def apply_delay(self) -> None:
+        slept_s = 0.0
         with self._lock:
             if self._current_delay > 0:
                 elapsed = time.time() - self._last_failure_time
                 remaining = self._current_delay - elapsed
                 if remaining > 0:
                     time.sleep(remaining)
+                    slept_s = round(remaining, 3)
+        if _RATE_LIMIT_TRACKER_TRACE and slept_s > 0:
+            _emit_rate_limit_tracker_event(
+                "apply_delay_slept", self, slept_s=slept_s,
+            )
 
     @property
     def current_delay(self) -> float:
@@ -2016,12 +2397,104 @@ def _get_tracker() -> _RateLimitTracker:
     return _rate_limit_tracker
 
 
+def _direct_json_value(value: object) -> object:
+    """Convert notebooklm-py dataclasses into stable JSON-compatible values."""
+    if is_dataclass(value):
+        return {key: _direct_json_value(item) for key, item in asdict(value).items()}
+    if isinstance(value, dict):
+        return {str(key): _direct_json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_direct_json_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _direct_object_id(value: object) -> str:
+    """Read an id from a notebooklm-py object or a JSON-shaped test value."""
+    if isinstance(value, dict):
+        return str(value.get("id") or value.get("notebook_id") or value.get("source_id") or "").strip()
+    return str(getattr(value, "id", "") or getattr(value, "notebook_id", "") or "").strip()
+
+
+def _direct_source_url(value: object) -> str:
+    """Read a source URL from a notebooklm-py object or JSON-shaped value."""
+    if isinstance(value, dict):
+        return str(value.get("url") or "").strip()
+    return str(getattr(value, "url", "") or "").strip()
+
+
+def _source_list_entry_is_ready(value: object) -> bool | None:
+    """Return source-list readiness, or ``None`` when status is absent/unknown.
+
+    The direct client serializes ``notebooklm.types.Source.status`` as the
+    integer ``2`` (``SourceStatus.READY``). String and small nested variants
+    are accepted for compatibility with older CLI-shaped fixtures.
+    """
+    if not isinstance(value, dict) or "status" not in value:
+        return None
+    status = value.get("status")
+    if isinstance(status, dict):
+        status = status.get("code", status.get("value", status.get("name")))
+    if isinstance(status, str):
+        normalized = status.rsplit(".", 1)[-1].strip().lower()
+        if normalized in {"ready", "2"}:
+            return True
+        if normalized in {"processing", "preparing", "error", "1", "3", "5"}:
+            return False
+        return None
+    try:
+        return int(status) == 2
+    except (TypeError, ValueError):
+        return None
+
+
+def _source_list_entry_is_terminal_error(value: object) -> bool:
+    """Return whether a source-list entry reports the terminal ERROR state."""
+    if not isinstance(value, dict) or "status" not in value:
+        return False
+    status = value.get("status")
+    if isinstance(status, dict):
+        status = status.get("code", status.get("value", status.get("name")))
+    if isinstance(status, str):
+        return status.rsplit(".", 1)[-1].strip().lower() in {"error", "3"}
+    try:
+        return int(status) == 3
+    except (TypeError, ValueError):
+        return False
+
+
 class NLMBatchIngestor:
-    def __init__(self, batch_size: int = DEFAULT_NOTEBOOKLM_BATCH_SIZE):
+    def __init__(
+        self,
+        batch_size: int = DEFAULT_NOTEBOOKLM_BATCH_SIZE,
+        source_add_initial_window_size: int | None = None,
+    ):
         self.batch_size = batch_size
+        cfg = get_nlm_config()
+        self._source_add_initial_window_size = max(
+            0,
+            int(
+                source_add_initial_window_size
+                if source_add_initial_window_size is not None
+                else cfg.source_add_initial_window_size
+            ),
+        )
+        self._source_add_account_pacing_s = max(
+            0.0,
+            float(cfg.source_add_account_pacing_s),
+        )
+        self._source_add_account_gate_timeout_s = max(
+            0.0,
+            float(cfg.source_add_account_gate_timeout_s),
+        )
+        self._source_add_account_gate_root = str(cfg.source_add_account_gate_root)
         self._nb_id = None
         self._last_added_video_ids: List[str] | None = None
         self._last_subbatch_metrics: list[dict[str, object]] = []
+        self._last_video_failure_messages: dict[str, str] = {}
+        self._last_timeout_ready_video_ids: list[str] = []
+        self._last_timeout_failure_messages: dict[str, str] = {}
         self._last_add_failure_reason: Optional[str] = None
         self._last_add_returncode: Optional[int] = None
         self._last_add_cmd_elapsed_s: float = 0.0
@@ -2034,6 +2507,13 @@ class NLMBatchIngestor:
         self._previously_observed_source_ids_nb_id: str | None = None
         self._last_extract_metrics: dict[str, object] | None = None
         self._current_source_count: int = 0
+        self._last_source_ready_ids: set[str] = set()
+        self._last_source_expected_ids: set[str] = set()
+        self._last_source_missing_ids: list[str] = []
+        self._last_source_not_ready_ids: list[str] = []
+        self._last_source_status_by_id: dict[str, object] = {}
+        self._last_source_materialization_failure_reason: Optional[str] = None
+        self._last_source_terminal_error_ids: list[str] = []
         self._video_ready_epoch_by_id: dict[str, float] = {}
         self._last_source_count_probe_ok: bool = True
         self._last_source_count_probe_error: dict[str, object] | None = None
@@ -2041,6 +2521,74 @@ class NLMBatchIngestor:
         self._not_found_source_list_probe_lock = threading.Lock()
         self._not_found_source_list_probe_nb_id: str | None = None
         self._not_found_source_list_probe_count: int = 0
+        self._direct_client = None
+        # NLMSyncClient owns one loop-affined client.  Source extraction fans
+        # out across threads, so serialize calls into that shared client.
+        self._direct_client_lock = threading.RLock()
+
+    def _execute_direct_command(self, args: List[str], *, timeout: int = 300) -> subprocess.CompletedProcess:
+        """Execute the small command surface needed by the batch pipeline.
+
+        The default path is the typed notebooklm-py client. ``run_nlm`` is
+        consulted only when a test has explicitly replaced the compatibility
+        seam; production never falls back to the deprecated CLI.
+        """
+        if run_nlm is not _LEGACY_RUN_NLM:
+            compat_args = list(args)
+            profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
+            if profile:
+                compat_args = nlm_auth_guard.add_profile_args(compat_args, profile)
+            return run_nlm(compat_args, timeout_s=timeout)
+        command = ["notebooklm-py", *args]
+        with self._direct_client_lock:
+            try:
+                if self._direct_client is None:
+                    from csf.nlm_client import get_sync_client
+
+                    self._direct_client = get_sync_client(
+                        account_profile=_get_account_profile(),
+                        worker_id=_get_worker_id(),
+                        verify_session=True,
+                    )
+                client = self._direct_client
+                if args[:2] == ["notebook", "list"]:
+                    items = client.run(client.notebooks.list())
+                    stdout = json.dumps({"notebooks": _direct_json_value(items)}, default=str)
+                elif args[:2] == ["notebook", "create"] and len(args) >= 3:
+                    notebook = client.run(client.notebooks.create(title=" ".join(args[2:])))
+                    stdout = json.dumps(_direct_json_value(notebook), default=str)
+                elif args[:2] == ["notebook", "delete"] and len(args) >= 3:
+                    client.run(client.notebooks.delete(args[2]))
+                    stdout = json.dumps({"deleted": args[2]})
+                elif args[:2] == ["source", "list"] and len(args) >= 3:
+                    items = client.run(client.sources.list(args[2]))
+                    stdout = json.dumps({"sources": _direct_json_value(items)}, default=str)
+                elif args[:2] == ["source", "content"] and len(args) >= 3:
+                    if not self._nb_id:
+                        raise RuntimeError("source content requires an active notebook id")
+                    fulltext = client.run(client.sources.get_fulltext(self._nb_id, args[2], output_format="text"))
+                    content = str(getattr(fulltext, "content", "") or "")
+                    stdout = json.dumps({"value": {"content": content}, "content": content})
+                elif args[:2] == ["source", "delete"] and len(args) >= 4:
+                    notebook_id = args[2]
+                    source_ids = [item for item in args[4:] if item != "--confirm"]
+                    if not source_ids and len(args) > 3 and args[3] != "--confirm":
+                        source_ids = args[3:]
+                    for source_id in source_ids:
+                        client.run(client.sources.delete(notebook_id, source_id))
+                    stdout = json.dumps({"deleted": source_ids})
+                else:
+                    raise ValueError(f"unsupported direct NotebookLM command: {args!r}")
+                return subprocess.CompletedProcess(command, 0, stdout, "")
+            except Exception as exc:  # preserve the existing CompletedProcess contract
+                return subprocess.CompletedProcess(command, 1, "", f"{type(exc).__name__}: {exc}")
+
+    def _close_direct_client(self) -> None:
+        with self._direct_client_lock:
+            client = self._direct_client
+            self._direct_client = None
+            if client is not None:
+                client.close()
 
     def _run_cmd(
         self,
@@ -2101,65 +2649,45 @@ class NLMBatchIngestor:
             iter_returncode = -1
             tracker.apply_delay()
             auth_context = _get_nlm_auth_context()
-            cmd_args = nlm_auth_guard.add_profile_args(args, auth_context.profile if auth_context.has_profile else None)
-            _reap_default_chrome_profile_for_auth(
-                auth_context,
-                args=cmd_args,
-                phase="pre_auth",
-                allow_reap=True,
-            )
+            cmd_args = list(args)
             if instrumented:
                 phase_stamps["after_pre_auth_reap"] = time.time()
-            _auth_ok = _ensure_nlm_auth()
+            # Opening the direct client performs the canonical static identity
+            # check and one read-only session probe. No CLI login/check/refresh
+            # occurs on the active path.
+            auth_error = "Auth failed"
+            if run_nlm is not _LEGACY_RUN_NLM:
+                # Explicit test seam: do not open real storage while unit
+                # tests emulate the old CompletedProcess surface.
+                _auth_ok = _ensure_nlm_auth()
+            else:
+                try:
+                    if self._direct_client is None:
+                        from csf.nlm_client import get_sync_client
+
+                        self._direct_client = get_sync_client(
+                            account_profile=_get_account_profile(),
+                            worker_id=_get_worker_id(),
+                            verify_session=True,
+                        )
+                    _auth_ok = True
+                except Exception as exc:
+                    _auth_ok = False
+                    auth_error = f"{type(exc).__name__}: {exc}"
             if instrumented:
                 phase_stamps["after_auth"] = time.time()
             if not _auth_ok:
                 iter_branch = "auth_failed_pre_command"
                 iter_returncode = 1
                 _record_iter(iter_branch, iter_returncode)
-                return subprocess.CompletedProcess(["nlm"] + cmd_args, 1, "", "Auth failed")
-            default_profile_pids = _reap_default_chrome_profile_before_command(
-                auth_context,
-                args=cmd_args,
-                phase="pre_command",
-            )
+                return subprocess.CompletedProcess(["notebooklm-py"] + cmd_args, 1, "", auth_error)
             if instrumented:
                 phase_stamps["after_pre_command_reap"] = time.time()
-            if default_profile_pids:
-                tracker.record_failure(is_rate_limit=False)
-                if pre_command_retry_attempted:
-                    iter_branch = "profile_reap_blocked"
-                    iter_returncode = 1
-                    _record_iter(iter_branch, iter_returncode)
-                    return _default_profile_blocked_result(
-                        auth_context,
-                        args=cmd_args,
-                        phase="pre_command",
-                    )
-                iter_branch = "profile_reap_retry"
-                iter_returncode = 0
-                pre_command_retry_attempted = True
-                _record_iter(iter_branch, iter_returncode)
-                continue
-            res = run_nlm(cmd_args, timeout_s=timeout)
+            res = self._execute_direct_command(cmd_args, timeout=timeout)
             if instrumented:
                 phase_stamps["after_content"] = time.time()
-            default_profile_block = _fail_closed_on_default_chrome_profile(
-                auth_context,
-                args=cmd_args,
-                phase="post_command",
-                stdout=res.stdout or "",
-                stderr=res.stderr or "",
-                allow_post_command_recovery=True,
-                command_succeeded=res.returncode == 0,
-            )
             if instrumented:
                 phase_stamps["after_post_command"] = time.time()
-            if default_profile_block is not None:
-                iter_branch = "default_profile_block"
-                iter_returncode = int(default_profile_block.returncode)
-                _record_iter(iter_branch, iter_returncode)
-                return default_profile_block
 
             # Check for rate limit indicators — require BOTH a status code AND rate-limit context
             # to avoid false positives from bare 500/502 errors that happen to contain "503"
@@ -2186,29 +2714,15 @@ class NLMBatchIngestor:
                 _record_iter(iter_branch, iter_returncode)
                 continue
 
-            # Auth-error patterns in stderr (expired between _ensure_nlm_auth and command execution)
+            # Direct-client auth errors are terminal. Refreshing a different
+            # storage/profile would violate account identity binding.
             is_auth_error = any(
                 kw in combined
                 for kw in ["Authentication Error", "authentication error", "Auth Error", "auth error"]
             )
             if is_auth_error:
-                auth_context = _get_nlm_auth_context()
-                if auth_context.should_fail_closed:
-                    tracker.record_failure(is_rate_limit=False)
-                    iter_branch = "auth_error_fail_closed"
-                    iter_returncode = int(res.returncode)
-                    _record_iter(iter_branch, iter_returncode)
-                    return res
-                if _refresh_nlm_auth_session(auth_context, timeout_s=120):
-                    res = run_nlm(cmd_args, timeout_s=timeout)
-                    if res.returncode == 0:
-                        tracker.record_success()
-                        iter_branch = "auth_error_refresh_success"
-                        iter_returncode = 0
-                        _record_iter(iter_branch, iter_returncode)
-                        return res
                 tracker.record_failure(is_rate_limit=False)
-                iter_branch = "auth_error_refresh_failed"
+                iter_branch = "auth_error_fail_closed"
                 iter_returncode = int(res.returncode)
                 _record_iter(iter_branch, iter_returncode)
                 return res
@@ -2233,18 +2747,37 @@ class NLMBatchIngestor:
         timeout: int = DEFAULT_NOTEBOOKLM_SOURCE_MATERIALIZATION_TIMEOUT_S,
         *,
         source_count_before_wait: int = 0,
+        expected_source_ids: Optional[List[str]] = None,
         poll_interval_s: int = 10,
     ) -> bool:
-        """Poll source list until all expected sources are present and accounted for.
+        """Poll source list until expected sources are present and ready.
 
         Uses heartbeat polling because 'nlm source add --wait' only waits for the
         API call to return, not for NLM's async processing to complete. Sources can
-        be in a 'processing' state immediately after add returns.
+        be in a 'processing' state immediately after add returns. Production
+        callers pass the source IDs returned by the add operation; callers that
+        omit them retain the historical count-only behavior for compatibility.
         """
         import time
         start = time.time()
         poll_count = 0
         last_observed_total = source_count_before_wait
+        expected_ids = {
+            str(source_id).strip()
+            for source_id in (expected_source_ids or [])
+            if str(source_id or "").strip()
+        }
+        last_ready_count = 0
+        last_ready_ids: set[str] = set()
+        last_missing_ids: list[str] = []
+        last_not_ready_ids: list[str] = []
+        self._last_source_ready_ids = set()
+        self._last_source_expected_ids = set(expected_ids)
+        self._last_source_missing_ids = []
+        self._last_source_not_ready_ids = []
+        self._last_source_status_by_id = {}
+        self._last_source_materialization_failure_reason = None
+        self._last_source_terminal_error_ids = []
         while time.time() - start < timeout:
             res = self._run_cmd(["source", "list", self._nb_id, "--json"])
             poll_count += 1
@@ -2256,7 +2789,62 @@ class NLMBatchIngestor:
                     observed_total = len(sources)
                     last_observed_total = observed_total
                     materialization_started = observed_total > source_count_before_wait
-                    if observed_total >= expected_count:
+                    source_by_id = {
+                        _direct_object_id(source): source
+                        for source in sources
+                        if _direct_object_id(source)
+                    }
+                    present_ids = expected_ids & source_by_id.keys()
+                    ready_ids = {
+                        source_id
+                        for source_id in present_ids
+                        if _source_list_entry_is_ready(source_by_id[source_id]) is True
+                    }
+                    last_ready_ids = set(ready_ids)
+                    self._last_source_ready_ids = set(ready_ids)
+                    last_ready_count = len(ready_ids)
+                    last_missing_ids = sorted(expected_ids - present_ids)
+                    last_not_ready_ids = sorted(expected_ids - ready_ids)
+                    self._last_source_missing_ids = list(last_missing_ids)
+                    self._last_source_not_ready_ids = list(last_not_ready_ids)
+                    self._last_source_status_by_id = {
+                        source_id: source_by_id[source_id].get("status")
+                        for source_id in present_ids
+                        if isinstance(source_by_id[source_id], dict)
+                    }
+                    terminal_error_ids = sorted(
+                        source_id
+                        for source_id in present_ids
+                        if _source_list_entry_is_terminal_error(source_by_id[source_id])
+                    )
+                    self._last_source_terminal_error_ids = terminal_error_ids
+                    if terminal_error_ids:
+                        self._last_source_materialization_failure_reason = (
+                            "source_materialization_terminal_error"
+                        )
+                        log_action(
+                            "nlm_batch_source_materialization_wait_terminal_failure",
+                            {
+                                "nb_id": self._nb_id,
+                                "expected_total": expected_count,
+                                "observed_total": observed_total,
+                                "source_count_before_wait": source_count_before_wait,
+                                "expected_source_id_count": len(expected_ids),
+                                "ready_source_id_count": last_ready_count,
+                                "missing_source_id_count": len(last_missing_ids),
+                                "not_ready_source_id_count": len(last_not_ready_ids),
+                                "terminal_error_source_ids": terminal_error_ids,
+                                "source_status_by_id": dict(self._last_source_status_by_id),
+                                "poll_count": poll_count,
+                                "elapsed_s": round(time.time() - start, 3),
+                                "timeout_s": timeout,
+                                "poll_interval_s": poll_interval_s,
+                            },
+                        )
+                        return False
+                    count_gate_passed = observed_total >= expected_count
+                    readiness_gate_passed = not expected_ids or expected_ids <= ready_ids
+                    if count_gate_passed and readiness_gate_passed:
                         return True
                     if poll_count == 1 or poll_count % 3 == 0:
                         log_action(
@@ -2267,6 +2855,11 @@ class NLMBatchIngestor:
                                 "observed_total": observed_total,
                                 "source_count_before_wait": source_count_before_wait,
                                 "materialization_started": materialization_started,
+                                "expected_source_id_count": len(expected_ids),
+                                "ready_source_id_count": last_ready_count,
+                                "missing_source_id_count": len(last_missing_ids),
+                                "not_ready_source_id_count": len(last_not_ready_ids),
+                                "source_status_gate_enabled": bool(expected_ids),
                                 "poll_count": poll_count,
                                 "elapsed_s": round(time.time() - start, 3),
                                 "timeout_s": timeout,
@@ -2282,8 +2875,8 @@ class NLMBatchIngestor:
                             "source_count_before_wait": source_count_before_wait,
                             "poll_count": poll_count,
                             "elapsed_s": round(time.time() - start, 3),
-                            "stdout": (res.stdout or "")[:500],
-                            "stderr": (res.stderr or "")[:500],
+                            "stdout": _redact_diagnostic_text(res.stdout),
+                            "stderr": _redact_diagnostic_text(res.stderr),
                             "timeout_s": timeout,
                             "poll_interval_s": poll_interval_s,
                         },
@@ -2298,8 +2891,8 @@ class NLMBatchIngestor:
                         "poll_count": poll_count,
                         "elapsed_s": round(time.time() - start, 3),
                         "returncode": res.returncode,
-                        "stdout": (res.stdout or "")[:500],
-                        "stderr": (res.stderr or "")[:500],
+                        "stdout": _redact_diagnostic_text(res.stdout),
+                        "stderr": _redact_diagnostic_text(res.stderr),
                         "timeout_s": timeout,
                         "poll_interval_s": poll_interval_s,
                     },
@@ -2316,6 +2909,14 @@ class NLMBatchIngestor:
                 "timeout_s": timeout,
                 "last_observed_total": last_observed_total,
                 "materialization_started": last_observed_total > source_count_before_wait,
+                "expected_source_id_count": len(expected_ids),
+                "ready_source_id_count": last_ready_count,
+                "missing_source_id_count": len(last_missing_ids),
+                "not_ready_source_id_count": len(last_not_ready_ids),
+                "missing_source_ids": last_missing_ids[:10],
+                "not_ready_source_ids": last_not_ready_ids[:10],
+                "source_status_gate_enabled": bool(expected_ids),
+                "ready_source_ids": sorted(last_ready_ids)[:10],
                 "poll_interval_s": poll_interval_s,
             },
         )
@@ -2353,6 +2954,8 @@ class NLMBatchIngestor:
         self._last_add_returncode = None
         self._last_add_cmd_elapsed_s = 0.0
         self._last_materialization_wait_elapsed_s = 0.0
+        self._last_timeout_ready_video_ids = []
+        self._last_timeout_failure_messages = {}
         if source_profile is None:
             source_profile = summarize_video_ids(batch_ids)
         # Log source count before add — this is the diagnostic key for capacity correlation
@@ -2393,35 +2996,246 @@ class NLMBatchIngestor:
         self._last_materialization_ready_at_epoch = 0.0
         # notebooklm-py migration (Phase 2): per-video typed source adds via
         # NLMSyncClient instead of the nlm CLI batch shell-out. Each video is
-        # added with a single retry on SourceAddError/SourceTimeoutError.
+        # added with a bounded retry for unclassified SourceAddError or
+        # SourceTimeoutError; provider code 9 is a terminal precondition
+        # failure and is intentionally not repeated.
         # Local imports avoid module-level import cycles.
         from csf.nlm_client import get_sync_client
+        from csf.source_add_gate import SourceAddGateError, account_source_add_gate
         from notebooklm import SourceAddError, SourceTimeoutError
 
-        client = get_sync_client()
+        client = self._direct_client or get_sync_client(
+            account_profile=_get_account_profile(),
+            worker_id=_get_worker_id(),
+            verify_session=True,
+        )
+        self._direct_client = client
         self._last_added_source_ids = []
+        non_retryable_source_add_failure = False
+        source_add_gate_failure = False
+        typed_source_add_error_messages: dict[str, str] = {}
         add_results: list[tuple[str, str | None, str | None]] = []  # (video_id, source_id, error)
         add_started_at = time.monotonic()
-        for vid in batch_ids:
+        for source_position, vid in enumerate(batch_ids, start=1):
             url = f"https://www.youtube.com/watch?v={vid}"
             source_id: str | None = None
             error_msg: str | None = None
             for attempt_idx in range(2):  # initial + 1 retry
+                attempt_started_at = time.monotonic()
+                attempt_started_at_epoch = time.time()
+                attempt_identity = {
+                    "nb_id": self._nb_id,
+                    "account_profile": _get_account_profile(),
+                    "worker_id": _get_worker_id(),
+                    "notebooklm_profile": _get_notebooklm_profile(),
+                    "state_path": str(_get_owner_notebook_state_path()),
+                    "subbatch_index": subbatch_index,
+                    "subbatch_size": len(batch_ids),
+                    "source_position": source_position,
+                    "video_id": vid,
+                    "attempt": attempt_idx + 1,
+                    "started_at_epoch": attempt_started_at_epoch,
+                }
+                log_action("nlm_batch_source_add_attempt_started", attempt_identity)
                 try:
-                    src = client.run(client.sources.add_url(self._nb_id, url, wait=True, wait_timeout=120.0))
-                    source_id = str(src.id)
+                    with account_source_add_gate(
+                        _get_account_profile(),
+                        pacing_s=self._source_add_account_pacing_s,
+                        timeout_s=self._source_add_account_gate_timeout_s,
+                        root=self._source_add_account_gate_root,
+                    ) as gate_lease:
+                        if gate_lease.enabled:
+                            log_action(
+                                "nlm_batch_source_add_gate_acquired",
+                                {
+                                    **attempt_identity,
+                                    "gate_lock_path": gate_lease.lock_path,
+                                    "gate_state_path": gate_lease.state_path,
+                                    "gate_wait_elapsed_s": gate_lease.wait_elapsed_s,
+                                    "gate_pacing_s": gate_lease.pacing_s,
+                                    "gate_scheduled_at_epoch": gate_lease.scheduled_at_epoch,
+                                },
+                            )
+                        with self._direct_client_lock:
+                            src = client.run(client.sources.add_url(self._nb_id, url, wait=True, wait_timeout=120.0))
+                    source_id = _direct_object_id(src)
                     error_msg = None
+                    log_action(
+                        "nlm_batch_source_add_attempt_completed",
+                        {
+                            **attempt_identity,
+                            "status": "ok",
+                            "source_id": source_id,
+                            "elapsed_s": round(time.monotonic() - attempt_started_at, 3),
+                            "completed_at_epoch": time.time(),
+                        },
+                    )
+                    break
+                except SourceAddGateError as e:
+                    source_add_gate_failure = True
+                    error_msg = f"SourceAddGateError: {e}"
+                    log_action(
+                        "nlm_batch_source_add_gate_failed",
+                        {
+                            **attempt_identity,
+                            "error": _redact_diagnostic_text(e),
+                        },
+                    )
                     break
                 except (SourceAddError, SourceTimeoutError) as e:
-                    error_msg = f"{type(e).__name__}: {e}"
+                    error_msg = _format_typed_source_add_error(e)
+                    # Preserve the typed mutation failure even when a
+                    # read-only probe recovers a source ID and materialization
+                    # later reports a terminal status. Without this provenance
+                    # the worker persists only the generic materialization
+                    # reason, so the explicit fallback route cannot classify
+                    # the row without broadening its predicate unsafely.
+                    typed_source_add_error_messages[vid] = error_msg
+                    log_action(
+                        "nlm_batch_source_add_attempt_completed",
+                        {
+                            **attempt_identity,
+                            "status": "error",
+                            "error": error_msg,
+                            "elapsed_s": round(time.monotonic() - attempt_started_at, 3),
+                            "completed_at_epoch": time.time(),
+                        },
+                    )
+                    retry_allowed, retry_reason = _source_add_retry_decision(e)
+                    # ADD_SOURCE can commit before returning a typed provider
+                    # error. RPC9 is commonly returned before the committed
+                    # source is fully visible in GET_NOTEBOOK, so reconcile it
+                    # with a short, read-only poll. Never issue a second
+                    # mutation when a committed source is already observable.
+                    probe_attempts = (
+                        _SOURCE_ADD_RPC9_RECONCILIATION_ATTEMPTS
+                        if not retry_allowed
+                        else 1
+                    )
+                    listed_sources: list[object] = []
+                    recovered_id: str | None = None
+                    recovery_reason: str | None = None
+                    for probe_idx in range(probe_attempts):
+                        if probe_idx:
+                            time.sleep(_SOURCE_ADD_RPC9_RECONCILIATION_DELAY_S)
+                        probe_started_at = time.monotonic()
+                        matches: list[object] = []
+                        try:
+                            with self._direct_client_lock:
+                                listed_sources = client.run(client.sources.list(self._nb_id))
+                            matches = [
+                                item
+                                for item in (listed_sources or [])
+                                if _direct_source_url(item) == url
+                            ]
+                        except Exception as probe_error:
+                            listed_sources = []
+                            log_action(
+                                "nlm_batch_source_add_probe_failed",
+                                {
+                                    "video_id": vid,
+                                    "error_type": type(probe_error).__name__,
+                                    "original_error": error_msg,
+                                    "probe_attempt": probe_idx + 1,
+                                    "probe_attempts": probe_attempts,
+                                },
+                            )
+                        fallback_match = (
+                            listed_sources[0]
+                            if not matches
+                            and len(listed_sources) == 1
+                            and source_count_before_known
+                            and source_count_before == 0
+                            else None
+                        )
+                        log_action(
+                            "nlm_batch_source_add_probe_observed",
+                            {
+                                "video_id": vid,
+                                "listed_count": len(listed_sources),
+                                "matched_count": len(matches),
+                                "listed_source_ids": [
+                                    _direct_object_id(item) for item in listed_sources[:5]
+                                ],
+                                "listed_source_url_present_count": sum(
+                                    1 for item in listed_sources if _direct_source_url(item)
+                                ),
+                                "single_source_empty_notebook_fallback_eligible": fallback_match is not None,
+                                "probe_attempt": probe_idx + 1,
+                                "probe_attempts": probe_attempts,
+                                "probe_elapsed_s": round(time.monotonic() - probe_started_at, 3),
+                            },
+                        )
+                        if len(matches) == 1:
+                            recovered_id = _direct_object_id(matches[0])
+                            recovery_reason = "exact_url_post_error_probe"
+                            break
+                        if fallback_match is not None:
+                            recovered_id = _direct_object_id(fallback_match)
+                            recovery_reason = "single_source_empty_notebook_count_growth"
+                            break
+                        if len(matches) > 1:
+                            log_action(
+                                "nlm_batch_source_add_probe_ambiguous",
+                                {
+                                    "video_id": vid,
+                                    "match_count": len(matches),
+                                    "reason": "duplicate_exact_url_sources",
+                                    "original_error": error_msg,
+                                },
+                            )
+                            break
+                    if recovered_id:
+                        source_id = recovered_id
+                        error_msg = None
+                        log_action(
+                            "nlm_batch_source_add_recovered_after_error",
+                            {
+                                "video_id": vid,
+                                "source_id": recovered_id,
+                                "reason": recovery_reason,
+                                "probe_attempts": probe_idx + 1,
+                            },
+                        )
+                        break
                     if attempt_idx == 0:
-                        log_action("nlm_batch_source_add_retry", {"video_id": vid, "error": error_msg})
-                        continue
+                        if retry_allowed:
+                            log_action("nlm_batch_source_add_retry", {"video_id": vid, "error": error_msg})
+                            continue
+                        non_retryable_source_add_failure = True
+                        log_action(
+                            "nlm_batch_source_add_retry_skipped",
+                            {"video_id": vid, "error": error_msg, "reason": retry_reason},
+                        )
                     break
                 except Exception as e:
-                    error_msg = f"{type(e).__name__}: {e}"
+                    error_msg = _format_typed_source_add_error(e)
+                    log_action(
+                        "nlm_batch_source_add_attempt_completed",
+                        {
+                            **attempt_identity,
+                            "status": "error",
+                            "error": error_msg,
+                            "elapsed_s": round(time.monotonic() - attempt_started_at, 3),
+                            "completed_at_epoch": time.time(),
+                        },
+                    )
                     break
             add_results.append((vid, source_id, error_msg))
+            if source_add_gate_failure:
+                # A gate failure means the account-scoped serialization
+                # contract was unavailable. Do not continue mutating later
+                # sources in this chunk; record them as unattempted and let
+                # the caller classify the chunk as a terminal gate failure.
+                for pending_vid in batch_ids[source_position:]:
+                    add_results.append(
+                        (
+                            pending_vid,
+                            None,
+                            "SourceAddGateError: source-add gate unavailable; not attempted",
+                        )
+                    )
+                break
         add_cmd_elapsed_s = round(time.monotonic() - add_started_at, 3)
         self._last_add_cmd_elapsed_s = add_cmd_elapsed_s
         successful_adds = [r for r in add_results if r[1] is not None]
@@ -2435,9 +3249,101 @@ class NLMBatchIngestor:
         source_count_after = self._get_current_source_count()
         source_count_after_known = bool(self._last_source_count_probe_ok)
         source_count_after_error = self._last_source_count_probe_error
+        add_recovered = False
+        # RPC9 can be returned after ADD_SOURCE has committed, while the
+        # per-source response still has no id and the short URL probes are
+        # incomplete.  On an empty, single-owner notebook, a complete final
+        # count plus an unambiguous set difference can identify that one
+        # committed source without replaying the mutation.  Every condition
+        # is required; otherwise the provider error remains terminal.
+        rpc9_failed_adds = [
+            row for row in failed_adds
+            if row[2] and "rpc_code=9" in row[2]
+        ]
+        if (
+            source_count_before_known
+            and source_count_before == 0
+            and source_count_after_known
+            and source_count_after == expected_total == len(batch_ids)
+            and len(failed_adds) == 1
+            and len(rpc9_failed_adds) == 1
+            and all(source_id for _, source_id, _ in successful_adds)
+            and len({source_id for _, source_id, _ in successful_adds}) == len(successful_adds)
+        ):
+            failed_video_id = failed_adds[0][0]
+            known_source_ids = {source_id for _, source_id, _ in successful_adds}
+            final_listed_sources: list[object] = []
+            final_list_error: str | None = None
+            try:
+                with self._direct_client_lock:
+                    final_listed_sources = client.run(client.sources.list(self._nb_id)) or []
+                if isinstance(final_listed_sources, dict):
+                    final_listed_sources = final_listed_sources.get("sources", [])
+                final_listed_ids = [_direct_object_id(item) for item in final_listed_sources]
+                unclaimed_source_ids = [
+                    source_id for source_id in final_listed_ids
+                    if source_id and source_id not in known_source_ids
+                ]
+                final_list_is_complete = (
+                    len(final_listed_sources) == expected_total
+                    and len(final_listed_ids) == expected_total
+                    and len(set(final_listed_ids)) == expected_total
+                    and len(unclaimed_source_ids) == 1
+                )
+            except Exception as exc:
+                final_list_is_complete = False
+                final_listed_ids = []
+                unclaimed_source_ids = []
+                final_list_error = type(exc).__name__
+            log_action(
+                "nlm_batch_source_add_final_count_reconciliation",
+                {
+                    "video_id": failed_video_id,
+                    "expected_total": expected_total,
+                    "source_count_before": source_count_before,
+                    "source_count_after": source_count_after,
+                    "known_source_id_count": len(known_source_ids),
+                    "final_listed_source_id_count": len(final_listed_ids),
+                    "unclaimed_source_ids": unclaimed_source_ids,
+                    "final_list_is_complete": final_list_is_complete,
+                    "error_type": final_list_error,
+                },
+            )
+            if final_list_is_complete:
+                recovered_source_id = unclaimed_source_ids[0]
+                add_results = [
+                    (
+                        video_id,
+                        recovered_source_id if video_id == failed_video_id else source_id,
+                        None if video_id == failed_video_id else error,
+                    )
+                    for video_id, source_id, error in add_results
+                ]
+                successful_adds = [row for row in add_results if row[1] is not None]
+                failed_adds = [row for row in add_results if row[1] is None]
+                added_count = len(successful_adds)
+                synthetic_returncode = 0 if successful_adds else 1
+                self._last_add_returncode = synthetic_returncode
+                non_retryable_source_add_failure = False
+                add_recovered = True
+                log_action(
+                    "nlm_batch_source_add_recovered_after_error",
+                    {
+                        "video_id": failed_video_id,
+                        "source_id": recovered_source_id,
+                        "reason": "empty_notebook_final_count_growth_unclaimed_source",
+                        "source_count_before": source_count_before,
+                        "source_count_after": source_count_after,
+                        "expected_total": expected_total,
+                        "known_source_id_count": len(known_source_ids),
+                    },
+                )
+        if non_retryable_source_add_failure:
+            self._last_add_failure_reason = "source_add_non_retryable_rpc_code_9"
+        elif source_add_gate_failure:
+            self._last_add_failure_reason = "source_add_gate_failed"
         # Typed per-video results carry their own signal; CLI-era recovery and
         # probe-failed classifications are no longer relevant for the add path.
-        add_recovered = False
         count_probe_failed = False
         dead_notebook_probe_after_success = (
             added_count > 0
@@ -2567,6 +3473,9 @@ class NLMBatchIngestor:
                 expected_total,
                 timeout=DEFAULT_NOTEBOOKLM_SOURCE_MATERIALIZATION_TIMEOUT_S,
                 source_count_before_wait=source_count_after,
+                expected_source_ids=[
+                    source_id for _, source_id, _ in successful_adds if source_id is not None
+                ],
             )
             wait_elapsed_s = round(time.monotonic() - wait_started_at, 3)
             self._last_materialization_wait_elapsed_s = wait_elapsed_s
@@ -2574,8 +3483,63 @@ class NLMBatchIngestor:
             self._last_materialization_ready_at_epoch = wait_completed_at_epoch
             if not wait_succeeded:
                 timeout_s = DEFAULT_NOTEBOOKLM_SOURCE_MATERIALIZATION_TIMEOUT_S
-                print(f"[NLM-Batch]   ERROR: after {timeout_s}s sources still not ready; halting test.")
-                self._last_add_failure_reason = "materialization_wait_failed"
+                ready_source_ids = set(self._last_source_ready_ids)
+                materialization_failure_reason = (
+                    self._last_source_materialization_failure_reason
+                    or "materialization_wait_failed"
+                )
+                terminal_error_ids = set(self._last_source_terminal_error_ids)
+                self._last_timeout_ready_video_ids = [
+                    video_id
+                    for video_id, source_id, _ in successful_adds
+                    if source_id in ready_source_ids
+                ]
+                def _failure_message(video_id: str, source_id: str | None, error: str | None) -> str:
+                    typed_error = typed_source_add_error_messages.get(video_id)
+                    if source_id is None:
+                        return (
+                            f"Source add failed: {typed_error}"
+                            if typed_error
+                            else (error or "Source add failed")
+                        )
+                    materialization_outcome = (
+                        "terminal error"
+                        if source_id in terminal_error_ids
+                        else "timeout"
+                    )
+                    if typed_error:
+                        return (
+                            "Source add failed; materialization "
+                            f"{materialization_outcome}: {typed_error}"
+                        )
+                    return (
+                        "Source materialization terminal error"
+                        if source_id in terminal_error_ids
+                        else "Source materialization timeout"
+                    )
+
+                self._last_timeout_failure_messages = {
+                    video_id: _failure_message(video_id, source_id, error)
+                    for video_id, source_id, error in add_results
+                    if source_id not in ready_source_ids
+                }
+                self._last_added_source_ids = [
+                    source_id
+                    for _, source_id, _ in successful_adds
+                    if source_id in ready_source_ids
+                ]
+                self._last_materialization_ready_at_epoch = 0.0
+                if materialization_failure_reason == "source_materialization_terminal_error":
+                    print(
+                        "[NLM-Batch]   ERROR: source materialization reported a terminal "
+                        "error; quarantining sub-batch."
+                    )
+                else:
+                    print(
+                        f"[NLM-Batch]   ERROR: after {timeout_s}s sources still not ready; "
+                        "quarantining sub-batch."
+                    )
+                self._last_add_failure_reason = materialization_failure_reason
                 log_action(
                     "nlm_batch_source_materialization_wait_failed",
                     {
@@ -2587,17 +3551,39 @@ class NLMBatchIngestor:
                         "reset_depth": reset_depth,
                         "source_profile": source_profile,
                         "notebooklm_profile": notebooklm_profile,
-                        "failure_reason": "materialization_wait_failed",
+                        "failure_reason": materialization_failure_reason,
+                        "wait_outcome": (
+                            "terminal_source_error"
+                            if materialization_failure_reason == "source_materialization_terminal_error"
+                            else "timeout"
+                        ),
                         "elapsed_s": wait_elapsed_s,
                         "source_count_after_wait": self._get_current_source_count(),
                         "source_count_before_wait": source_count_after,
                         "timeout_s": timeout_s,
-                        "halted": True,
+                        "expected_source_id_count": len(self._last_source_expected_ids),
+                        "ready_source_id_count": len(ready_source_ids),
+                        "missing_source_id_count": len(self._last_source_missing_ids),
+                        "not_ready_source_id_count": len(self._last_source_not_ready_ids),
+                        "expected_source_ids": sorted(self._last_source_expected_ids),
+                        "ready_source_ids": sorted(ready_source_ids),
+                        "missing_source_ids": list(self._last_source_missing_ids),
+                        "not_ready_source_ids": list(self._last_source_not_ready_ids),
+                        "source_status_by_id": dict(self._last_source_status_by_id),
+                        "terminal_error_source_ids": sorted(terminal_error_ids),
+                        "halted": False,
+                        "continued_by_subbatch_loop": True,
                         "started_at_epoch": wait_started_at_epoch,
                         "completed_at_epoch": wait_completed_at_epoch,
                         "source_materialization_ready_at_epoch": 0.0,
                     },
                 )
+                if materialization_failure_reason == "source_materialization_terminal_error":
+                    raise NotebookSourceMaterializationTerminalError(
+                        "NotebookLM source list reported a terminal processing error "
+                        f"(nb_id={self._nb_id}, subbatch_index={subbatch_index}, "
+                        f"terminal_source_ids={sorted(terminal_error_ids)})"
+                    )
                 raise NotebookSourceMaterializationTimeout(
                     f"NotebookLM sources were not ready after {timeout_s}s "
                     f"(nb_id={self._nb_id}, subbatch_index={subbatch_index}, "
@@ -2619,6 +3605,16 @@ class NLMBatchIngestor:
                         "source_count_after_wait": self._get_current_source_count(),
                         "source_count_before_wait": source_count_after,
                         "timeout_s": DEFAULT_NOTEBOOKLM_SOURCE_MATERIALIZATION_TIMEOUT_S,
+                        "expected_source_id_count": len(successful_adds),
+                        "ready_source_id_count": len(self._last_source_ready_ids),
+                        "missing_source_id_count": len(self._last_source_missing_ids),
+                        "not_ready_source_id_count": len(self._last_source_not_ready_ids),
+                        "expected_source_ids": sorted(self._last_source_expected_ids),
+                        "missing_source_ids": list(self._last_source_missing_ids),
+                        "not_ready_source_ids": list(self._last_source_not_ready_ids),
+                        "source_status_by_id": dict(self._last_source_status_by_id),
+                        "source_status_gate_enabled": bool(successful_adds),
+                        "ready_source_ids": sorted(self._last_source_ready_ids),
                         "started_at_epoch": wait_started_at_epoch,
                         "completed_at_epoch": wait_completed_at_epoch,
                         "source_materialization_ready_at_epoch": wait_completed_at_epoch,
@@ -2680,7 +3676,11 @@ class NLMBatchIngestor:
         if res.stderr:
             print(f"[NLM-Batch]   stderr: {res.stderr[:200]}")
 
-        self._last_add_failure_reason = _classify_subbatch_add_failure(res, materialization_waited=False)
+        self._last_add_failure_reason = (
+            "source_add_gate_failed"
+            if source_add_gate_failure
+            else _classify_subbatch_add_failure(res, materialization_waited=False)
+        )
         if count_probe_failed:
             self._last_add_failure_reason = "source_count_probe_failed"
         zero_growth_add_failure = (
@@ -2689,7 +3689,11 @@ class NLMBatchIngestor:
             and source_count_after_known
             and source_count_after == source_count_before
         )
-        failure_is_probe_or_zero_growth = zero_growth_add_failure or count_probe_failed
+        failure_is_probe_or_zero_growth = (
+            not non_retryable_source_add_failure
+            and not source_add_gate_failure
+            and (zero_growth_add_failure or count_probe_failed)
+        )
         dead_notebook_probe = count_probe_failed and _source_count_probe_indicates_dead_notebook(source_count_after_error)
         if dead_notebook_probe and dead_notebook_recreate_depth == 0:
             log_action(
@@ -2708,8 +3712,8 @@ class NLMBatchIngestor:
                     "source_count_probe_ok_after": source_count_after_known,
                     "source_count_probe_error": source_count_after_error,
                     "failure_reason": self._last_add_failure_reason,
-                    "stdout": (res.stdout or "")[:500],
-                    "stderr": (res.stderr or "")[:500],
+                    "stdout": _redact_diagnostic_text(res.stdout),
+                    "stderr": _redact_diagnostic_text(res.stderr),
                 },
             )
             print(
@@ -2751,8 +3755,8 @@ class NLMBatchIngestor:
                     "source_count_after": source_count_after,
                     "source_count_probe_ok_after": source_count_after_known,
                     "failure_reason": self._last_add_failure_reason,
-                    "stdout": (res.stdout or "")[:500],
-                    "stderr": (res.stderr or "")[:500],
+                    "stdout": _redact_diagnostic_text(res.stdout),
+                    "stderr": _redact_diagnostic_text(res.stderr),
                 },
             )
             print(
@@ -2793,8 +3797,8 @@ class NLMBatchIngestor:
                     "source_count_after": source_count_after,
                     "source_count_probe_ok_after": source_count_after_known,
                     "failure_reason": self._last_add_failure_reason,
-                    "stdout": (res.stdout or "")[:500],
-                    "stderr": (res.stderr or "")[:500],
+                    "stdout": _redact_diagnostic_text(res.stdout),
+                    "stderr": _redact_diagnostic_text(res.stderr),
                 },
             )
             print(
@@ -2844,8 +3848,8 @@ class NLMBatchIngestor:
                     "source_count_probe_error_after": source_count_after_error,
                     "source_count_probe_error": source_count_probe_error,
                     "failure_reason": self._last_add_failure_reason,
-                    "stdout": (res.stdout or "")[:500],
-                    "stderr": (res.stderr or "")[:500],
+                    "stdout": _redact_diagnostic_text(res.stdout),
+                    "stderr": _redact_diagnostic_text(res.stderr),
                     "dead_notebook_recreate_depth": dead_notebook_recreate_depth,
                 },
             )
@@ -2873,8 +3877,8 @@ class NLMBatchIngestor:
                     "source_count_probe_error_after": source_count_after_error,
                     "source_count_probe_error": source_count_probe_error,
                     "failure_reason": self._last_add_failure_reason,
-                    "stdout": (res.stdout or "")[:500],
-                    "stderr": (res.stderr or "")[:500],
+                    "stdout": _redact_diagnostic_text(res.stdout),
+                    "stderr": _redact_diagnostic_text(res.stderr),
                 },
             )
         log_action(
@@ -2900,8 +3904,8 @@ class NLMBatchIngestor:
                 "source_count_probe_error": source_count_probe_error,
                 "reset_depth": reset_depth,
                 "failure_reason": self._last_add_failure_reason,
-                "stdout": (res.stdout or "")[:500],
-                "stderr": (res.stderr or "")[:500],
+                "stdout": _redact_diagnostic_text(res.stdout),
+                "stderr": _redact_diagnostic_text(res.stderr),
             },
         )
         return []
@@ -2917,6 +3921,7 @@ class NLMBatchIngestor:
         total = len(batch_ids)
         added_ids: List[str] = []
         self._last_subbatch_metrics = []
+        self._last_video_failure_messages = {}
         self._video_ready_epoch_by_id = {}
         current_subbatch_size = max(1, subbatch_size)
         next_index = 0
@@ -3008,13 +4013,49 @@ class NLMBatchIngestor:
                     },
                 )
                 window_size = capacity_remaining
+            source_count_before_known = bool(self._last_source_count_probe_ok and self._nb_id)
+            initial_window_applied = False
+            initial_window_requested = self._source_add_initial_window_size
+            if (
+                subbatch_index == 1
+                and initial_window_requested > 0
+                and source_count_before_known
+                and source_count_before == 0
+            ):
+                selected_window_size = min(window_size, initial_window_requested)
+                initial_window_applied = selected_window_size < window_size
+                log_action(
+                    "nlm_batch_subbatch_initial_window_applied",
+                    {
+                        "nb_id": self._nb_id,
+                        "subbatch_index": subbatch_index,
+                        "source_count_before": source_count_before,
+                        "source_count_probe_ok_before": source_count_before_known,
+                        "requested_subbatch_size": window_size,
+                        "initial_window_size": initial_window_requested,
+                        "selected_subbatch_size": selected_window_size,
+                        "initial_window_applied": initial_window_applied,
+                        "reason": "empty_notebook_initial_window",
+                        "remaining": total - next_index,
+                    },
+                )
+                window_size = selected_window_size
             subbatch = batch_ids[next_index:next_index + window_size]
             # Reset throttle state at sub-batch boundary — prior failures shouldn't
             # penalize this independent sub-batch of NLM operations
             tracker = _get_tracker()
             with tracker._lock:
+                pre_reset_failures = tracker._consecutive_failures
+                pre_reset_delay_s = round(tracker._current_delay, 3)
                 tracker._consecutive_failures = 0
                 tracker._current_delay = 0.0
+            _emit_rate_limit_tracker_event(
+                "subbatch_reset", tracker,
+                subbatch_index=subbatch_index,
+                subbatch_size=window_size,
+                pre_reset_failures=pre_reset_failures,
+                pre_reset_delay_s=pre_reset_delay_s,
+            )
             print(f"[NLM-Batch]   Adding sources {next_index+1}-{min(next_index+window_size, total)}/{total}...")
             source_profile = summarize_video_ids(subbatch)
             log_action(
@@ -3025,6 +4066,8 @@ class NLMBatchIngestor:
                     "subbatch_size": window_size,
                     "remaining": total - next_index,
                     "target_subbatch_size": current_subbatch_size,
+                    "initial_window_size": initial_window_requested,
+                    "initial_window_applied": initial_window_applied,
                 },
             )
             try:
@@ -3037,29 +4080,75 @@ class NLMBatchIngestor:
                     source_count_probe_ok_before=bool(self._last_source_count_probe_ok),
                     source_count_probe_error_before=self._last_source_count_probe_error,
                 )
-            except NotebookSourceMaterializationTimeout:
-                self._last_subbatch_metrics.append(
+            except NotebookSourceMaterializationFailure as materialization_error:
+                added_chunk_ids = list(self._last_timeout_ready_video_ids)
+                self._last_video_failure_messages.update(self._last_timeout_failure_messages)
+                self._current_source_count = self._get_current_source_count()
+                materialization_failure_reason = (
+                    getattr(self, "_last_add_failure_reason", None)
+                    or (
+                        "source_materialization_terminal_error"
+                        if isinstance(materialization_error, NotebookSourceMaterializationTerminalError)
+                        else "materialization_wait_failed"
+                    )
+                )
+                terminal_source_error = materialization_failure_reason == "source_materialization_terminal_error"
+                elapsed_s = float(
+                    (getattr(self, "_last_add_cmd_elapsed_s", 0.0) or 0.0)
+                    + (getattr(self, "_last_materialization_wait_elapsed_s", 0.0) or 0.0)
+                )
+                timeout_metrics = {
+                    "subbatch_index": subbatch_index,
+                    "subbatch_size": window_size,
+                    "target_subbatch_size": current_subbatch_size,
+                    "attempted_count": len(subbatch),
+                    "added_count": len(added_chunk_ids),
+                    "quarantined_count": len(self._last_timeout_failure_messages),
+                    "add_cmd_elapsed_s": float(getattr(self, "_last_add_cmd_elapsed_s", 0.0) or 0.0),
+                    "materialization_wait_elapsed_s": float(getattr(self, "_last_materialization_wait_elapsed_s", 0.0) or 0.0),
+                    "elapsed_s": elapsed_s,
+                    "returncode": self._last_add_returncode,
+                    "failure_reason": self._last_add_failure_reason,
+                    "source_profile": source_profile,
+                    "current_source_count": self._current_source_count,
+                    "status": (
+                        "materialization_wait_terminal_error_continued"
+                        if terminal_source_error
+                        else "materialization_wait_timeout_continued"
+                    ),
+                    "materialization_failure_kind": (
+                        "terminal_source_error" if terminal_source_error else "timeout"
+                    ),
+                    "source_materialization_ready_at_epoch": 0.0,
+                }
+                self._last_subbatch_metrics.append(timeout_metrics)
+                self._last_subbatch_elapsed_s = elapsed_s
+                added_ids.extend(added_chunk_ids)
+                added_source_ids.extend(self._last_added_source_ids)
+                log_action(
+                    (
+                        "nlm_batch_subbatch_materialization_error_continuing"
+                        if terminal_source_error
+                        else "nlm_batch_subbatch_materialization_timeout_continuing"
+                    ),
                     {
+                        "nb_id": self._nb_id,
                         "subbatch_index": subbatch_index,
                         "subbatch_size": window_size,
-                        "target_subbatch_size": current_subbatch_size,
-                        "attempted_count": len(subbatch),
-                        "added_count": len(subbatch),
-                        "add_cmd_elapsed_s": float(getattr(self, "_last_add_cmd_elapsed_s", 0.0) or 0.0),
-                        "materialization_wait_elapsed_s": float(getattr(self, "_last_materialization_wait_elapsed_s", 0.0) or 0.0),
-                        "elapsed_s": float(
-                            (getattr(self, "_last_add_cmd_elapsed_s", 0.0) or 0.0)
-                            + (getattr(self, "_last_materialization_wait_elapsed_s", 0.0) or 0.0)
+                        "ready_video_count": len(added_chunk_ids),
+                        "quarantined_video_count": len(self._last_timeout_failure_messages),
+                        "remaining_count": total - (next_index + window_size),
+                        "failure_messages": dict(self._last_timeout_failure_messages),
+                        "reason": (
+                            "terminal_source_status"
+                            if terminal_source_error
+                            else "strict_source_ready_gate_failed_for_subbatch"
                         ),
-                        "returncode": self._last_add_returncode,
-                        "failure_reason": self._last_add_failure_reason,
-                        "source_profile": source_profile,
-                        "current_source_count": self._get_current_source_count(),
-                        "status": "materialization_wait_timeout",
-                        "source_materialization_ready_at_epoch": 0.0,
-                    }
+                        "notebook_reused": True,
+                    },
                 )
-                raise
+                next_index += window_size
+                continue
             # Track running source count after each subbatch
             self._current_source_count = self._get_current_source_count()
             added_ids.extend(added_chunk_ids)
@@ -3068,6 +4157,8 @@ class NLMBatchIngestor:
                 "subbatch_index": subbatch_index,
                 "subbatch_size": window_size,
                 "target_subbatch_size": current_subbatch_size,
+                "initial_window_size": initial_window_requested,
+                "initial_window_applied": initial_window_applied,
                 "attempted_count": len(subbatch),
                 "added_count": len(added_chunk_ids),
                 "add_cmd_elapsed_s": float(getattr(self, "_last_add_cmd_elapsed_s", 0.0) or 0.0),
@@ -3145,41 +4236,35 @@ class NLMBatchIngestor:
                 "notebooklm_profile": notebooklm_profile,
             },
         )
-        res = self._run_cmd(["notebook", "create", nb_name])
-
-        parsed_nb_id = _parse_notebook_create_output(res.stdout or "") if res.returncode == 0 else ""
-        if not parsed_nb_id:
-            # CLI notebook creation failed (likely expired CLI auth — the CLI
-            # has its own cookie storage separate from storage_state.json).
-            # Fall back to the Python API, which uses storage_state.json
-            # directly and does not depend on the deprecated CLI path.
-            # This is Phase 3 of the nlm-CLI → notebooklm-py migration.
-            log_action(
-                "nlm_batch_notebook_create_cli_failed_fallback_to_api",
-                {
-                    "batch_size": len(batch_ids),
-                    "nb_name": nb_name,
-                    "notebooklm_profile": notebooklm_profile,
-                    "returncode": res.returncode,
-                    "stderr": (res.stderr or "")[:300],
-                },
-            )
-            try:
+        # Notebook creation is direct-client-only. There is no CLI-first path
+        # and therefore no cross-store fallback that could hide an account
+        # mismatch.
+        try:
+            if self._direct_client is None:
                 from csf.nlm_client import get_sync_client
-                client = get_sync_client()
-                nb = client.run(client.notebooks.create(title=nb_name))
-                parsed_nb_id = str(nb.id) if nb and nb.id else ""
-            except Exception as e:
-                log_action(
-                    "nlm_batch_notebook_create_api_failed",
-                    {
-                        "batch_size": len(batch_ids),
-                        "nb_name": nb_name,
-                        "notebooklm_profile": notebooklm_profile,
-                        "error": f"{type(e).__name__}: {e}",
-                    },
+
+                self._direct_client = get_sync_client(
+                    account_profile=_get_account_profile(),
+                    worker_id=_get_worker_id(),
+                    verify_session=True,
                 )
-                return None
+            with self._direct_client_lock:
+                notebook = self._direct_client.run(self._direct_client.notebooks.create(title=nb_name))
+            parsed_nb_id = _direct_object_id(notebook)
+            res = subprocess.CompletedProcess(
+                ["notebooklm-py", "notebook", "create", nb_name],
+                0 if parsed_nb_id else 1,
+                json.dumps(_direct_json_value(notebook), default=str) if parsed_nb_id else "",
+                "" if parsed_nb_id else "NotebookLM returned no notebook id",
+            )
+        except Exception as exc:
+            parsed_nb_id = ""
+            res = subprocess.CompletedProcess(
+                ["notebooklm-py", "notebook", "create", nb_name],
+                1,
+                "",
+                f"{type(exc).__name__}: {exc}",
+            )
         if parsed_nb_id:
             self._nb_id = parsed_nb_id
             log_action(
@@ -3199,8 +4284,8 @@ class NLMBatchIngestor:
                     "nb_name": nb_name,
                     "notebooklm_profile": notebooklm_profile,
                     "returncode": res.returncode,
-                    "stdout": (res.stdout or "")[:500],
-                    "stderr": (res.stderr or "")[:500],
+                    "stdout": _redact_diagnostic_text(res.stdout),
+                    "stderr": _redact_diagnostic_text(res.stderr),
                 },
             )
             return None
@@ -3527,8 +4612,8 @@ class NLMBatchIngestor:
                         "usable_text_chars": 0,
                         "source_ready_age_s": ready_age_s,
                         "materialization_ready_at_epoch": ready_reference_epoch,
-                        "stdout": (res.stdout or "")[:500],
-                        "stderr": (res.stderr or "")[:500],
+                        "stdout": _redact_diagnostic_text(res.stdout),
+                        "stderr": _redact_diagnostic_text(res.stderr),
                     },
                 )
                 _record_source_content_readiness_elapsed_metrics(
@@ -3664,6 +4749,74 @@ class NLMBatchIngestor:
 
             def _emit_retry_loop_elapsed() -> float:
                 return round(content_fetch_command_elapsed_s_total, 3)
+
+            def _probe_not_found_source_presence() -> dict[str, object]:
+                """Probe source presence once before admitting a NOT_FOUND retry."""
+                nonlocal not_found_probe_done, not_found_probe
+                if not_found_probe_done:
+                    return not_found_probe
+                not_found_probe_done = True
+                if not self._consume_not_found_source_list_probe_budget():
+                    return not_found_probe
+
+                probe_start = time.time()
+                list_res = self._run_cmd(["source", "list", self._nb_id, "--json"])
+                not_found_probe_elapsed_s = round(time.time() - probe_start, 3)
+                _record_source_list_probe_elapsed_metrics(not_found_probe_elapsed_s)
+                nonlocal source_list_probe_elapsed_s_total, source_list_probe_elapsed_s_max, source_list_probe_count
+                source_list_probe_elapsed_s_total += not_found_probe_elapsed_s
+                source_list_probe_elapsed_s_max = max(source_list_probe_elapsed_s_max, not_found_probe_elapsed_s)
+                source_list_probe_count += 1
+                source_id_present: bool | None = None
+                source_list_probe_match_index: int | None = None
+                source_list_probe_match_title: str | None = None
+                source_list_probe_match_url: str | None = None
+                if list_res.returncode == 0:
+                    try:
+                        srcs = json.loads(list_res.stdout)
+                        if isinstance(srcs, dict):
+                            srcs = srcs.get("sources", [])
+                        source_id_present = False
+                        for idx, source in enumerate(srcs if isinstance(srcs, list) else []):
+                            if str(source.get("id") or "").strip() == source_id:
+                                source_id_present = True
+                                source_list_probe_match_index = idx
+                                source_list_probe_match_title = str(source.get("title") or "").strip()[:300] or None
+                                source_list_probe_match_url = str(source.get("url") or "").strip()[:300] or None
+                                break
+                    except Exception:
+                        pass
+                if source_id_present is True:
+                    content_fetch_stats["source_id_validated_after_not_found_true_count"] += 1
+                elif source_id_present is False:
+                    content_fetch_stats["source_id_validated_after_not_found_false_count"] += 1
+                else:
+                    content_fetch_stats["source_id_validated_after_not_found_unknown_count"] += 1
+                not_found_probe = {
+                    "source_list_probe_returncode": list_res.returncode,
+                    "source_list_probe_count": 1,
+                    "source_list_probe_elapsed_s": not_found_probe_elapsed_s,
+                    "source_id_present_in_source_list": source_id_present,
+                    "source_list_probe_match_index": source_list_probe_match_index,
+                    "source_list_probe_match_title": source_list_probe_match_title,
+                    "source_list_probe_match_url": source_list_probe_match_url,
+                }
+                log_action(
+                    "nlm_batch_source_content_not_found_probe_completed",
+                    {
+                        "nb_id": self._nb_id,
+                        "source_id": source_id,
+                        "video_id": vid_hint,
+                        **not_found_probe,
+                        "retry_admitted": source_id_present is True,
+                        "retry_admission_reason": (
+                            "source_present_in_source_list"
+                            if source_id_present is True
+                            else "source_absent_or_probe_unknown"
+                        ),
+                    },
+                )
+                return not_found_probe
 
             source_ready_age_s_breakdown_value: dict[str, float | None] = _emit_breakdown_snapshot()
             retry_loop_elapsed_s_value: float = _emit_retry_loop_elapsed()
@@ -3964,6 +5117,10 @@ class NLMBatchIngestor:
                                     "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                                     "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                                     "source_list_probe_count": source_list_probe_count,
+                                    "source_id_validated_after_not_found": not_found_probe.get("source_id_present_in_source_list"),
+                                    "source_list_probe_match_index": not_found_probe.get("source_list_probe_match_index"),
+                                    "source_list_probe_match_title": not_found_probe.get("source_list_probe_match_title"),
+                                    "source_list_probe_match_url": not_found_probe.get("source_list_probe_match_url"),
                                     "retry_queue_gate_reason": "status_not_retryable",
                                     "retry_queue_skipped_reason": None,
                                     "projected_retry_ready_age_s": None,
@@ -3993,6 +5150,10 @@ class NLMBatchIngestor:
                                 "source_list_probe_elapsed_s_total": source_list_probe_elapsed_s_total,
                                 "source_list_probe_elapsed_s_max": source_list_probe_elapsed_s_max,
                                 "source_list_probe_count": source_list_probe_count,
+                                "source_id_validated_after_not_found": not_found_probe.get("source_id_present_in_source_list"),
+                                "source_list_probe_match_index": not_found_probe.get("source_list_probe_match_index"),
+                                "source_list_probe_match_title": not_found_probe.get("source_list_probe_match_title"),
+                                "source_list_probe_match_url": not_found_probe.get("source_list_probe_match_url"),
                                 "retry_queue_skipped_reason": None,
                                 "projected_retry_ready_age_s": None,
                                 "youtube_ytdlp_classification": None,
@@ -4026,12 +5187,27 @@ class NLMBatchIngestor:
                     "content_length": content_length,
                     "failure_reason": failure_reason,
                     "returncode": res.returncode,
-                    "stdout": res.stdout or "",
-                    "stderr": res.stderr or "",
+                    "stdout": _redact_diagnostic_text(res.stdout),
+                    "stderr": _redact_diagnostic_text(res.stderr),
                     "completed_at_epoch": attempt_completed_at_epoch,
                     "attempts": attempt,
                     "content": None,
                 }
+                if status == "command_failed" and _source_content_error_is_not_found(last_result):
+                    presence_probe = _probe_not_found_source_presence()
+                    source_id_present = presence_probe.get("source_id_present_in_source_list")
+                    if source_id_present is True:
+                        # The spaced notebooklm-py spelling is only admitted
+                        # after the source is positively present in the notebook.
+                        retryable = True
+                    elif source_id_present is False:
+                        # A confirmed source-list miss is terminal for this
+                        # source ID; do not spend local or queued retries.
+                        retryable = False
+                    elif "SOURCE NOT FOUND" in f"{res.stdout or ''}\n{res.stderr or ''}".upper() or "SOURCENOTFOUNDERROR" in f"{res.stdout or ''}\n{res.stderr or ''}".upper():
+                        # A spaced/notebooklm-py error without positive source
+                        # proof must fail closed rather than retry blindly.
+                        retryable = False
                 if retry_deadline is not None and time.time() >= retry_deadline:
                     retry_exit_reason_value = "budget_exhausted"
                     break
@@ -4070,55 +5246,12 @@ class NLMBatchIngestor:
             # defined earlier in this fetch, so every
             # nlm_batch_source_content_fetch_completed site (including early-return
             # paths) already carries meaningful values.
-            # Probe source list only when NOT_FOUND was seen in a failed outcome — avoids
-            # unconditional overhead on every failure. Captures whether the source_id is
-            # still present in the notebook, distinguishing stale-id failures from
-            # genuine transient unavailability.
+            # The retry-loop admission path probes early so a positive source
+            # presence can authorize a bounded retry. Keep this final guard for
+            # unusual exits that bypass the normal command-failure branch.
             if final_status == "command_failed" and not not_found_probe_done:
-                combined_last = f"{last_result.get('stdout', '') or ''}\n{last_result.get('stderr', '') or ''}".upper()
-                if "NOT_FOUND" in combined_last and self._consume_not_found_source_list_probe_budget():
-                    probe_start = time.time()
-                    list_res = self._run_cmd(["source", "list", self._nb_id, "--json"])
-                    not_found_probe_elapsed_s = round(time.time() - probe_start, 3)
-                    _record_source_list_probe_elapsed_metrics(not_found_probe_elapsed_s)
-                    source_list_probe_elapsed_s_total += not_found_probe_elapsed_s
-                    source_list_probe_elapsed_s_max = max(source_list_probe_elapsed_s_max, not_found_probe_elapsed_s)
-                    source_list_probe_count += 1
-                    source_id_present: bool | None = None
-                    source_list_probe_match_index: int | None = None
-                    source_list_probe_match_title: str | None = None
-                    source_list_probe_match_url: str | None = None
-                    if list_res.returncode == 0:
-                        try:
-                            srcs = json.loads(list_res.stdout)
-                            if isinstance(srcs, dict):
-                                srcs = srcs.get("sources", [])
-                            source_id_present = False
-                            for idx, s in enumerate(srcs if isinstance(srcs, list) else []):
-                                if str(s.get("id") or "").strip() == source_id:
-                                    source_id_present = True
-                                    source_list_probe_match_index = idx
-                                    source_list_probe_match_title = str(s.get("title") or "").strip()[:300] or None
-                                    source_list_probe_match_url = str(s.get("url") or "").strip()[:300] or None
-                                    break
-                        except Exception:
-                            pass
-                    if source_id_present is True:
-                        content_fetch_stats["source_id_validated_after_not_found_true_count"] += 1
-                    elif source_id_present is False:
-                        content_fetch_stats["source_id_validated_after_not_found_false_count"] += 1
-                    else:
-                        content_fetch_stats["source_id_validated_after_not_found_unknown_count"] += 1
-                    not_found_probe = {
-                        "source_list_probe_returncode": list_res.returncode,
-                        "source_list_probe_count": 1,
-                        "source_list_probe_elapsed_s": not_found_probe_elapsed_s,
-                        "source_id_present_in_source_list": source_id_present,
-                        "source_list_probe_match_index": source_list_probe_match_index,
-                        "source_list_probe_match_title": source_list_probe_match_title,
-                        "source_list_probe_match_url": source_list_probe_match_url,
-                    }
-                    not_found_probe_done = True
+                if _source_content_error_is_not_found(last_result):
+                    _probe_not_found_source_presence()
             youtube_ytdlp_probe: dict[str, object] = {}
             youtube_page_probe: dict[str, object] = {}
             if final_status != "ready" and vid_hint:
@@ -4131,6 +5264,22 @@ class NLMBatchIngestor:
                 final_status,
                 youtube_page_probe,
             )
+            if (
+                final_status == "command_failed"
+                and _source_content_error_is_not_found(last_result)
+                and not_found_probe.get("source_id_present_in_source_list")
+                is False
+            ):
+                retry_queue_deferable = False
+                retry_queue_gate_reason = "source_id_absent_after_not_found"
+            final_error = _redact_diagnostic_text(last_result["failure_reason"])
+            if _source_content_error_is_not_found(last_result):
+                diagnostic = _redact_diagnostic_text(last_result.get("stderr"))
+                if diagnostic and diagnostic not in final_error:
+                    # Preserve the narrow addressability marker for the
+                    # coordinator's exact fallback predicate. Keep the
+                    # existing summary first and retain redaction/limits.
+                    final_error = f"{final_error}; {diagnostic}"
             retry_queue_skipped_reason: str | None = None
             retry_queue_candidate = (
                 allow_retry_queue
@@ -4219,10 +5368,10 @@ class NLMBatchIngestor:
                         "usable_text_chars": 0,
                         "source_ready_age_s": final_ready_age_s,
                         "materialization_ready_at_epoch": ready_reference_epoch,
-                        "failure_reason": str(last_result["failure_reason"]),
+                        "failure_reason": final_error,
                         "attempts": int(last_result["attempts"]),
-                        "stdout": str(last_result["stdout"])[:500],
-                        "stderr": str(last_result["stderr"])[:500],
+                        "stdout": _redact_diagnostic_text(last_result["stdout"]),
+                        "stderr": _redact_diagnostic_text(last_result["stderr"]),
                         **fetch_attribution_context,
                         "retry_initial_delay_s": _SOURCE_CONTENT_RETRY_INITIAL_DELAY_S,
                         "retry_max_delay_s": _SOURCE_CONTENT_RETRY_MAX_DELAY_S,
@@ -4327,7 +5476,7 @@ class NLMBatchIngestor:
                     "success": False,
                     "content": None,
                     "error": None,
-                    "failure_reason": str(last_result["failure_reason"]),
+                    "failure_reason": final_error,
                     "status": final_status,
                     "queued_for_retry": True,
                     "retry_queue_queued_at_epoch": final_completed_at_epoch,
@@ -4364,8 +5513,8 @@ class NLMBatchIngestor:
                     "projected_local_retry_completion_age_s": projected_local_retry_completion_age_s,
                     "retry_queue_age_margin_s": _SOURCE_CONTENT_RETRY_QUEUE_AGE_MARGIN_S,
                     "extraction_outcome": final_status,
-                    "stdout": str(last_result["stdout"])[:500],
-                    "stderr": str(last_result["stderr"])[:500],
+                    "stdout": _redact_diagnostic_text(last_result["stdout"]),
+                    "stderr": _redact_diagnostic_text(last_result["stderr"]),
                     "youtube_ytdlp_classification": youtube_ytdlp_probe.get("classification"),
                     "youtube_ytdlp_available": youtube_ytdlp_probe.get("available"),
                     "youtube_ytdlp_availability": youtube_ytdlp_probe.get("availability"),
@@ -4418,10 +5567,10 @@ class NLMBatchIngestor:
                     "usable_text_chars": 0,
                     "source_ready_age_s": final_ready_age_s,
                     "materialization_ready_at_epoch": ready_reference_epoch,
-                    "failure_reason": str(last_result["failure_reason"]),
+                    "failure_reason": final_error,
                     "attempts": int(last_result["attempts"]),
-                    "stdout": str(last_result["stdout"])[:500],
-                    "stderr": str(last_result["stderr"])[:500],
+                    "stdout": _redact_diagnostic_text(last_result["stdout"]),
+                    "stderr": _redact_diagnostic_text(last_result["stderr"]),
                     **fetch_attribution_context,
                     "retry_initial_delay_s": _SOURCE_CONTENT_RETRY_INITIAL_DELAY_S,
                     "retry_max_delay_s": _SOURCE_CONTENT_RETRY_MAX_DELAY_S,
@@ -4492,7 +5641,7 @@ class NLMBatchIngestor:
                 "source_id": source_id,
                 "success": False,
                 "content": None,
-                "error": str(last_result["failure_reason"]),
+                "error": final_error,
                 "status": final_status,
                 "queued_for_retry": False,
                 "attempts": int(last_result["attempts"]),
@@ -4501,8 +5650,8 @@ class NLMBatchIngestor:
                 "nlm_content_chars": int(last_result["content_length"]),
                 "usable_text_chars": 0,
                 "extraction_outcome": final_status,
-                "stdout": str(last_result["stdout"])[:500],
-                "stderr": str(last_result["stderr"])[:500],
+                "stdout": _redact_diagnostic_text(last_result["stdout"]),
+                "stderr": _redact_diagnostic_text(last_result["stderr"]),
                 "youtube_ytdlp_classification": youtube_ytdlp_probe.get("classification"),
                 "youtube_ytdlp_available": youtube_ytdlp_probe.get("available"),
                 "youtube_ytdlp_availability": youtube_ytdlp_probe.get("availability"),
@@ -5236,8 +6385,11 @@ class NLMBatchIngestor:
 
     def close(self):
         """Delete the notebook entirely (final cleanup after all batches)."""
-        if self._nb_id:
-            _delete_notebook_with_retries(self, self._nb_id, timeout=120, retries=2, purpose="close")
+        try:
+            if self._nb_id:
+                _delete_notebook_with_retries(self, self._nb_id, timeout=120, retries=2, purpose="close")
+        finally:
+            self._close_direct_client()
 
     def _get_current_source_count(self) -> int:
         """Query the current source count in the active notebook."""
@@ -5273,9 +6425,9 @@ class NLMBatchIngestor:
                         "notebooklm_profile": auth_context.profile,
                         "expected_email": auth_context.expected_email or None,
                         "error_type": type(exc).__name__,
-                        "error": str(exc)[:500],
-                        "stdout": (res.stdout or "")[:500],
-                        "stderr": (res.stderr or "")[:500],
+                        "error": _redact_diagnostic_text(exc),
+                        "stdout": _redact_diagnostic_text(res.stdout),
+                        "stderr": _redact_diagnostic_text(res.stderr),
                     }
                     log_action("nlm_batch_source_count_probe_failed", self._last_source_count_probe_error)
                     return 0
@@ -5286,8 +6438,8 @@ class NLMBatchIngestor:
                 "returncode": res.returncode,
                 "notebooklm_profile": auth_context.profile,
                 "expected_email": auth_context.expected_email or None,
-                "stdout": (res.stdout or "")[:500],
-                "stderr": (res.stderr or "")[:500],
+                "stdout": _redact_diagnostic_text(res.stdout),
+                "stderr": _redact_diagnostic_text(res.stderr),
             }
             log_action("nlm_batch_source_count_probe_failed", self._last_source_count_probe_error)
             return 0
@@ -5305,9 +6457,9 @@ class NLMBatchIngestor:
                 "notebooklm_profile": auth_context.profile,
                 "expected_email": auth_context.expected_email or None,
                 "error_type": type(exc).__name__,
-                "error": str(exc)[:500],
-                "stdout": (res.stdout or "")[:500],
-                "stderr": (res.stderr or "")[:500],
+                "error": _redact_diagnostic_text(exc),
+                "stdout": _redact_diagnostic_text(res.stdout),
+                "stderr": _redact_diagnostic_text(res.stderr),
             }
             log_action("nlm_batch_source_count_probe_failed", self._last_source_count_probe_error)
             return 0
@@ -5390,7 +6542,10 @@ class NLMBatchIngestor:
 
     def cleanup(self):
         """Delete all sources from the notebook (keeps notebook for reuse)."""
-        self.reset_sources()
+        try:
+            self.reset_sources()
+        finally:
+            self._close_direct_client()
 
     def experiment_add_acceptance(
         self,
@@ -5434,8 +6589,8 @@ class NLMBatchIngestor:
                         "nb_name": nb_name,
                         "status": "create_failed",
                         "returncode": res.returncode,
-                        "stdout": (res.stdout or "")[:500],
-                        "stderr": (res.stderr or "")[:500],
+                        "stdout": _redact_diagnostic_text(res.stdout),
+                        "stderr": _redact_diagnostic_text(res.stderr),
                     },
                 )
                 return []
@@ -5503,8 +6658,12 @@ class NLMReusableIngestor:
         source_age_cadence_min_window_size: int | None = None,
         source_age_cadence_first_window_size: int | None = None,
         source_age_cadence_rotate_threshold_s: float | None = None,
+        source_add_initial_window_size: int | None = None,
     ):
-        self._ingestor = NLMBatchIngestor(batch_size)
+        self._ingestor = NLMBatchIngestor(
+            batch_size,
+            source_add_initial_window_size=source_add_initial_window_size,
+        )
         self._nb_id: Optional[str] = _load_reusable_notebook_id()
         self._last_prepare_metrics: dict[str, object] | None = None
         self._last_process_metrics: dict[str, object] | None = None
@@ -5559,6 +6718,7 @@ class NLMReusableIngestor:
                 else cfg.reusable_source_age_cadence_rotate_threshold_s
             ),
         )
+        self._source_add_initial_window_size = self._ingestor._source_add_initial_window_size
         self._last_source_age_cadence_window_elapsed_s = 0.0
         self._batches_since_cleanup = 0
         log_action(
@@ -5577,6 +6737,7 @@ class NLMReusableIngestor:
                 "source_age_cadence_min_window_size": self._source_age_cadence_min_window_size,
                 "source_age_cadence_first_window_size": self._source_age_cadence_first_window_size,
                 "source_age_cadence_rotate_threshold_s": self._source_age_cadence_rotate_threshold_s,
+                "source_add_initial_window_size": self._source_add_initial_window_size,
             },
         )
 
@@ -6180,7 +7341,12 @@ class NLMReusableIngestor:
                     if window_metrics:
                         extract_metric_snapshots.append(dict(window_metrics))
                     if len(added_video_ids) != len(window_video_ids):
-                        _finalize_batch_outcomes(window_results, window_video_ids, error_message="Source add failed")
+                        _finalize_batch_outcomes(
+                            window_results,
+                            window_video_ids,
+                            error_message="Source add failed",
+                            error_by_video_id=self._ingestor._last_video_failure_messages,
+                        )
                     results.update(window_results)
                     window_cleanup_started_at = time.monotonic()
                     window_cleanup_elapsed_s = 0.0
@@ -6345,7 +7511,12 @@ class NLMReusableIngestor:
                     if window_metrics:
                         extract_metric_snapshots.append(dict(window_metrics))
                     if len(added_video_ids) != len(window_video_ids):
-                        _finalize_batch_outcomes(window_results, window_video_ids, error_message="Source add failed")
+                        _finalize_batch_outcomes(
+                            window_results,
+                            window_video_ids,
+                            error_message="Source add failed",
+                            error_by_video_id=self._ingestor._last_video_failure_messages,
+                        )
                     results.update(window_results)
                     window_total_elapsed_s = round(time.monotonic() - window_started_at, 3)
                     self._last_source_age_cadence_window_elapsed_s = window_total_elapsed_s
@@ -6391,7 +7562,12 @@ class NLMReusableIngestor:
                 if window_metrics:
                     extract_metric_snapshots.append(dict(window_metrics))
                 if len(added_video_ids) != len(video_ids):
-                    _finalize_batch_outcomes(results, video_ids, error_message="Source add failed")
+                    _finalize_batch_outcomes(
+                        results,
+                        video_ids,
+                        error_message="Source add failed",
+                        error_by_video_id=self._ingestor._last_video_failure_messages,
+                    )
             extract_elapsed_s = round(time.monotonic() - extract_started_at, 3)
         finally:
             cleanup_started_at = time.monotonic()
@@ -6627,9 +7803,17 @@ class NLMReusableIngestor:
         self._ingestor._nb_id = self._nb_id
         if delete:
             try:
-                _delete_worker_notebooks_by_title_with_cdp(_get_reusable_notebook_title())
+                if self._nb_id:
+                    _delete_notebook_with_retries(
+                        self._ingestor,
+                        self._nb_id,
+                        timeout=120,
+                        retries=2,
+                        purpose="reusable_close_delete",
+                    )
             finally:
                 _clear_reusable_notebook_state()
+                self._ingestor._close_direct_client()
             return
         self._ingestor.cleanup()
         if self._nb_id:
@@ -6827,7 +8011,12 @@ def process_industrial_batch(video_ids: List[str]) -> Dict[str, Tuple[bool, Opti
         added_video_ids = ingestor._last_added_video_ids if ingestor._last_added_video_ids is not None else list(video_ids)
         results = ingestor.extract_transcripts(added_video_ids)
         if len(added_video_ids) != len(video_ids):
-            _finalize_batch_outcomes(results, video_ids, error_message="Source add failed")
+            _finalize_batch_outcomes(
+                results,
+                video_ids,
+                error_message="Source add failed",
+                error_by_video_id=ingestor._last_video_failure_messages,
+            )
         return results
     finally:
         ingestor.cleanup()

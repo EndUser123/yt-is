@@ -9,6 +9,8 @@ tests). No real ``storage_state.json`` is read.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
@@ -28,6 +30,9 @@ from csf.nlm_client import (
 # =============================================================================
 
 _EXPECTED_PROFILES = {
+    "a.hominidae",
+    "troup.hominidae",
+    "brsthomson",
     # pro (5)
     "ytis-pro-worker-01",
     "ytis-pro-worker-02",
@@ -40,6 +45,11 @@ _EXPECTED_PROFILES = {
     "ytis-free1-worker-03",
     "ytis-free1-worker-04",
     "ytis-free1-worker-05",
+    "ytis-free-worker-01",
+    "ytis-free-worker-02",
+    "ytis-free-worker-03",
+    "ytis-free-worker-04",
+    "ytis-free-worker-05",
     # free2 (4)
     "ytis-free2-worker-01",
     "ytis-free2-worker-02",
@@ -85,6 +95,15 @@ class TestProfileToAccount:
         for i in range(1, 6):
             assert PROFILE_TO_ACCOUNT[f"ytis-free1-worker-{i:02d}"] == "ytis-free1-account"
 
+    def test_external_account_profiles_route_to_their_accounts(self):
+        assert PROFILE_TO_ACCOUNT["a.hominidae"] == "ytis-pro-account"
+        assert PROFILE_TO_ACCOUNT["troup.hominidae"] == "ytis-free1-account"
+        assert PROFILE_TO_ACCOUNT["brsthomson"] == "ytis-free2-account"
+
+    def test_canonical_free_worker_profiles_route_to_free1_account(self):
+        for i in range(1, 6):
+            assert PROFILE_TO_ACCOUNT[f"ytis-free-worker-{i:02d}"] == "ytis-free1-account"
+
     def test_free2_workers_route_to_free2_account(self):
         for i in range(1, 5):
             assert PROFILE_TO_ACCOUNT[f"ytis-free2-worker-{i:02d}"] == "ytis-free2-account"
@@ -98,6 +117,63 @@ class TestProfileToAccount:
         assert DEFAULT_PROFILE_STORAGE_ROOT == (
             __import__("pathlib").Path.home() / ".notebooklm" / "profiles"
         )
+
+
+class TestEventLoopFactory:
+    def test_windows_client_loop_uses_selector_without_global_policy(self, monkeypatch):
+        """Account clients avoid the Proactor pipe-teardown path on Windows."""
+        sentinel_loop = object()
+        monkeypatch.setattr(nlm_client.sys, "platform", "win32")
+        monkeypatch.setattr(
+            nlm_client.asyncio,
+            "SelectorEventLoop",
+            lambda: sentinel_loop,
+            raising=False,
+        )
+
+        assert nlm_client._new_event_loop() is sentinel_loop
+
+
+class TestRuntimeAccountBinding:
+    def test_accepts_exact_runtime_account_route_and_storage(self, monkeypatch):
+        from csf.nlm_auth_check import storage_path_for_account_profile
+
+        account = "a.hominidae"
+        storage_path = storage_path_for_account_profile(account)
+        client = SimpleNamespace(
+            auth=SimpleNamespace(
+                account_email="a.hominidae@gmail.com",
+                account_route="a.hominidae@gmail.com",
+                authuser=0,
+                storage_path=storage_path,
+            )
+        )
+        events = []
+        monkeypatch.setattr(nlm_client, "log_action", lambda name, data: events.append((name, data)))
+
+        nlm_client._validate_runtime_account_binding(client, account, "worker-03")
+
+        assert events[-1][0] == "nlm_client_account_binding_checked"
+        assert events[-1][1]["status"] == "ok"
+        assert events[-1][1]["observed_email"] == "a.hominidae@gmail.com"
+
+    def test_rejects_runtime_account_route_mismatch(self, monkeypatch):
+        account = "a.hominidae"
+        client = SimpleNamespace(
+            auth=SimpleNamespace(
+                account_email="a.hominidae@gmail.com",
+                account_route="0",
+                authuser=0,
+                storage_path=Path("P:/.data/yt-is/nlm-auth/storage_state.json"),
+            )
+        )
+        events = []
+        monkeypatch.setattr(nlm_client, "log_action", lambda name, data: events.append((name, data)))
+
+        with pytest.raises(RuntimeError, match="runtime_account_route_mismatch"):
+            nlm_client._validate_runtime_account_binding(client, account, "worker-03")
+
+        assert events[-1][1]["status"] == "runtime_account_route_mismatch"
 
 
 # =============================================================================
@@ -254,9 +330,11 @@ class TestFromStorage:
         try:
             wrapper = NLMSyncClient.from_storage("ytis-free2-worker-03")
             try:
-                # The library was asked to load the resolved account, not the routing label.
+                # The canonical adapter currently uses one managed storage path;
+                # account remains resolved identity metadata until per-account
+                # storage selection is implemented.
                 nlm_client.NotebookLMClient.from_storage.assert_called_once_with(
-                    profile="ytis-free2-account"
+                    path=str(__import__("csf.nlm_auth_check", fromlist=["STORAGE_PATH"]).STORAGE_PATH)
                 )
                 assert wrapper.client is fake_client
                 assert wrapper.profile == "ytis-free2-worker-03"
@@ -329,7 +407,7 @@ class TestGetSyncClient:
             wrapper = get_sync_client("ytis-free1-worker-04")
             try:
                 nlm_client.NotebookLMClient.from_storage.assert_called_once_with(
-                    profile="ytis-free1-account"
+                    path=str(__import__("csf.nlm_auth_check", fromlist=["STORAGE_PATH"]).STORAGE_PATH)
                 )
                 assert wrapper.client is fake_client
                 assert wrapper.profile == "ytis-free1-worker-04"
@@ -347,7 +425,7 @@ class TestGetSyncClient:
             wrapper = get_sync_client(None)
             try:
                 nlm_client.NotebookLMClient.from_storage.assert_called_once_with(
-                    profile="ytis-free2-account"
+                    path=str(__import__("csf.nlm_auth_check", fromlist=["STORAGE_PATH"]).STORAGE_PATH)
                 )
                 assert wrapper.profile == "ytis-free2-worker-02"
             finally:

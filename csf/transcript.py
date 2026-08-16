@@ -6,14 +6,18 @@ Each method returns: (success: bool, transcript: str | None, error: str | None).
 """
 
 import glob
+import argparse
+from contextvars import ContextVar
 import json
 import logging
+import math
 import os
 import random
 import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -73,6 +77,30 @@ def _get_nlm_login_profile_args() -> list[str]:
 _nlm_scraper: "NLMIndustrialScraper | None" = None
 
 
+def _write_json_result_atomically(path: Path, payload: dict[str, object]) -> None:
+    """Publish a worker result only after the complete JSON is on disk."""
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(payload, temporary, ensure_ascii=True)
+            temporary.write("\n")
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
 def _get_nlm_scraper() -> "NLMIndustrialScraper":
     global _nlm_scraper
     if _nlm_scraper is None:
@@ -101,6 +129,15 @@ _SOURCE_SELENIUM = "selenium"
 _SOURCE_NLM = "notebooklm"
 _SOURCE_EXTERNAL = "external"
 _SOURCE_DIRECT_API = "direct_api"
+
+_DEFAULT_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S = 300.0
+_DEFAULT_WHISPER_TRANSCRIPTION_TIMEOUT_S = 900.0
+_MIN_WHISPER_TRANSCRIPTION_RESERVE_S = 30.0
+_TRANSCRIPT_DEADLINE_CHECK_MARGIN_S = 2.0
+_TRANSCRIPT_DEADLINE_MONOTONIC: ContextVar[float | None] = ContextVar(
+    "transcript_deadline_monotonic",
+    default=None,
+)
 
 _WHISPER_STRONG_NON_SPEECH_PHRASES = (
     "official audio",
@@ -166,17 +203,21 @@ _COOLDOWN_SECONDS = 300  # 5 minutes
 _BACKOFF_BASE = 2  # jitter multiplier per consecutive 429
 _MAX_BACKOFF_MULTIPLIER = 32  # cap jitter at 32x to prevent pathological sleeps
 
-# Minimum transcript content length in characters (accepted at 21 chars, rejected below)
+# Minimum transcript content length used by the existing caption/NLM extractors.
+# Fallback observability reports this boundary as a length band; it does not
+# silently reject fallback output because short real videos can be legitimate.
 _NLM_MIN_CONTENT_CHARS = 21
+TRANSCRIPT_QUALITY_MIN_CHARS = _NLM_MIN_CONTENT_CHARS
 
 # Whisper fallback — set YTIS_WHISPER_ENABLED=false to disable
 
 # Whisper audio download prefers broad selectors so we do not fail valid
 # videos just because a particular extension is unavailable.
-_WHISPER_AUDIO_FORMATS: tuple[str, ...] = (
+_WHISPER_AUDIO_FORMATS: tuple[str | None, ...] = (
     "bestaudio/best",
     "bestaudio",
     "best",
+    None,  # let yt-dlp choose when the explicit -f best selector is rejected
 )
 
 # Cookie file cache - avoid repeated Firefox cookies.sqlite extraction per video
@@ -434,13 +475,38 @@ def _extract_video_metadata(info: dict) -> dict:
     }
 
 
+def build_transcript_quality_metrics(transcript: str | None) -> dict[str, object]:
+    """Return length evidence without claiming semantic transcript quality.
+
+    A non-empty fallback result is operationally complete, but that alone does
+    not establish that downstream consumers will find it useful. Persisting
+    this small, deterministic evidence lets readiness and quality reviews
+    distinguish short observations from ordinary-length output without adding
+    a behavior-changing rejection threshold.
+    """
+    raw_text = str(transcript or "")
+    normalized = " ".join(raw_text.split())
+    chars = len(raw_text)
+    return {
+        "transcript_chars": chars,
+        "transcript_normalized_chars": len(normalized),
+        "transcript_words": len(normalized.split()),
+        "transcript_length_threshold_chars": TRANSCRIPT_QUALITY_MIN_CHARS,
+        "transcript_length_band": (
+            "below_existing_minimum"
+            if chars < TRANSCRIPT_QUALITY_MIN_CHARS
+            else "meets_existing_minimum"
+        ),
+    }
+
+
 def build_transcript_cache_metadata(
     result: TranscriptResult, extra: dict[str, object] | None = None
 ) -> dict[str, object]:
     """Build a lossless metadata payload for the transcript cache."""
     metadata = {field.name: getattr(result, field.name, None) for field in fields(TranscriptResult)}
     metadata.pop("transcript", None)
-    metadata["transcript_chars"] = len(result.transcript)
+    metadata.update(build_transcript_quality_metrics(result.transcript))
     if extra:
         metadata.update(extra)
     return metadata
@@ -1191,6 +1257,131 @@ def _fetch_via_sdk(video_id: str, lang: str) -> tuple[bool, str | None, str | No
         return (False, None, "SDK timeout (>60s)")
 
 
+def _whisper_transcription_timeout_s() -> float:
+    """Return a finite per-video deadline for the process-isolated Whisper stage."""
+    raw = os.getenv("YTIS_WHISPER_TRANSCRIPTION_TIMEOUT_S", "")
+    if not raw.strip():
+        return _DEFAULT_WHISPER_TRANSCRIPTION_TIMEOUT_S
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logging.warning(
+            "[transcript] invalid YTIS_WHISPER_TRANSCRIPTION_TIMEOUT_S=%r; "
+            "using %.1fs",
+            raw,
+            _DEFAULT_WHISPER_TRANSCRIPTION_TIMEOUT_S,
+        )
+        return _DEFAULT_WHISPER_TRANSCRIPTION_TIMEOUT_S
+    if not math.isfinite(value) or value <= 0:
+        logging.warning(
+            "[transcript] YTIS_WHISPER_TRANSCRIPTION_TIMEOUT_S must be finite and > 0; "
+            "using %.1fs",
+            _DEFAULT_WHISPER_TRANSCRIPTION_TIMEOUT_S,
+        )
+        return _DEFAULT_WHISPER_TRANSCRIPTION_TIMEOUT_S
+    return value
+
+
+def _whisper_audio_download_timeout_s() -> float:
+    """Return the total budget shared by all yt-dlp audio selectors."""
+    raw = os.getenv("YTIS_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S", "")
+    if not raw.strip():
+        return _DEFAULT_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logging.warning(
+            "[transcript] invalid YTIS_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S=%r; "
+            "using %.1fs",
+            raw,
+            _DEFAULT_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S,
+        )
+        return _DEFAULT_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S
+    if not math.isfinite(value) or value <= 0:
+        logging.warning(
+            "[transcript] YTIS_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S must be finite "
+            "and > 0; using %.1fs",
+            _DEFAULT_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S,
+        )
+        return _DEFAULT_WHISPER_AUDIO_DOWNLOAD_TIMEOUT_S
+    return value
+
+
+def _remaining_transcript_deadline_s() -> float | None:
+    """Return the remaining coordinator-owned child deadline, if one exists."""
+    deadline = _TRANSCRIPT_DEADLINE_MONOTONIC.get()
+    if deadline is None:
+        return None
+    return max(0.0, deadline - time.monotonic())
+
+
+def _transcript_deadline_exhausted() -> bool:
+    remaining_s = _remaining_transcript_deadline_s()
+    return remaining_s is not None and remaining_s <= _TRANSCRIPT_DEADLINE_CHECK_MARGIN_S
+
+
+def _run_whisper_transcription_subprocess(
+    audio_file: str,
+    lang: str,
+    *,
+    timeout_s: float,
+) -> tuple[bool, str | None, str | None]:
+    """Run the CPU-heavy model outside the pipeline thread with a hard deadline."""
+    result_fd, result_name = tempfile.mkstemp(prefix="whisper_result_", suffix=".json")
+    os.close(result_fd)
+    result_path = Path(result_name)
+    command = [
+        sys.executable,
+        "-m",
+        "csf.whisper_worker",
+        "--audio-file",
+        audio_file,
+        "--lang",
+        lang,
+        "--result-path",
+        str(result_path),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(Path(__file__).resolve().parents[1]),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        result_path.unlink(missing_ok=True)
+        return (
+            False,
+            None,
+            f"whisper transcription timed out (>{timeout_s:g}s)",
+        )
+    except Exception as exc:
+        result_path.unlink(missing_ok=True)
+        return False, None, f"whisper worker launch error: {type(exc).__name__}: {exc}"
+
+    try:
+        if not result_path.exists():
+            detail = (completed.stderr or completed.stdout or "").strip()[:300]
+            return (
+                False,
+                None,
+                f"whisper worker exited without result ({completed.returncode})"
+                + (f": {detail}" if detail else ""),
+            )
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return False, None, "whisper worker returned a non-object result"
+        if payload.get("ok") and isinstance(payload.get("transcript"), str):
+            return True, payload["transcript"], None
+        return False, None, str(payload.get("error") or "whisper worker failed")
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, None, f"invalid whisper worker result: {type(exc).__name__}: {exc}"
+    finally:
+        result_path.unlink(missing_ok=True)
+
+
 def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str | None]:
     """Transcribe audio using faster-whisper as final fallback.
 
@@ -1213,16 +1404,33 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
     audio_path = os.path.join(tmp_dir, "audio")
     try:
         # Download audio only via yt-dlp. Use broad selectors so we still
-        # capture videos that do not expose an m4a stream.
+        # capture videos that do not expose an m4a stream. All selectors share
+        # one total budget; otherwise four 300-second subprocess deadlines can
+        # outlive the coordinator's per-item deadline without a stage result.
         last_audio_error: str | None = None
         js_runtime_args = ["--js-runtimes", "node"] if shutil.which("node") else []
+        audio_budget_s = _whisper_audio_download_timeout_s()
+        remaining_s = _remaining_transcript_deadline_s()
+        if remaining_s is not None:
+            audio_budget_s = min(
+                audio_budget_s,
+                max(0.1, remaining_s - _MIN_WHISPER_TRANSCRIPTION_RESERVE_S),
+            )
+        audio_deadline = time.monotonic() + audio_budget_s
         for audio_format in _WHISPER_AUDIO_FORMATS:
+            selector_remaining_s = audio_deadline - time.monotonic()
+            if selector_remaining_s <= 0:
+                return (
+                    False,
+                    None,
+                    f"audio download timed out (>{audio_budget_s:g}s total budget)",
+                )
+            format_args = ["-f", audio_format] if audio_format else []
             cmd = [
                 "yt-dlp",
                 *get_browser_cookies("firefox"),
                 *js_runtime_args,
-                "-f",
-                audio_format,
+                *format_args,
                 "--extract-audio",
                 "--audio-format",
                 "mp3",
@@ -1230,12 +1438,19 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
                 audio_path,
                 video_url,
             ]
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=selector_remaining_s,
+                )
+            except subprocess.TimeoutExpired:
+                return (
+                    False,
+                    None,
+                    f"audio download timed out (>{audio_budget_s:g}s total budget)",
+                )
             if proc.returncode == 0:
                 break
 
@@ -1263,6 +1478,7 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
                     "sign in to confirm",
                     "not a bot",
                     "challenge solving failed",
+                    "selects the best pre-merged format",
                 )
             ):
                 continue
@@ -1278,25 +1494,21 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
 
         audio_file = str(audio_files[0])
 
-        # Run faster-whisper transcription
-        try:
-            from faster_whisper import WhisperModel
-        except ImportError:
-            return (False, None, "faster-whisper not installed")
-
-        # Use medium model for better accuracy; falls back automatically
-        model = WhisperModel("medium", device="cpu", compute_type="int8")
-        segments, _ = model.transcribe(
-            audio_file, language=lang if lang != "en" else None
+        transcription_timeout_s = _whisper_transcription_timeout_s()
+        remaining_s = _remaining_transcript_deadline_s()
+        if remaining_s is not None:
+            transcription_timeout_s = min(
+                transcription_timeout_s,
+                max(0.1, remaining_s - 1.0),
+            )
+        return _run_whisper_transcription_subprocess(
+            audio_file,
+            lang,
+            timeout_s=transcription_timeout_s,
         )
-        segments = list(segments)
-        text = " ".join(segment.text for segment in segments)
-        if not text.strip():
-            return (False, None, _summarize_whisper_empty_result(segments))
-        return (True, text.strip(), None)
 
     except subprocess.TimeoutExpired:
-        return (False, None, "audio download timed out (>300s)")
+        return (False, None, "audio download timed out (stage budget exhausted)")
     except Exception as e:
         return (False, None, f"whisper transcription error: {e}")
     finally:
@@ -1495,13 +1707,13 @@ def _fetch_via_selenium_firefox(
             if not transcript_clicked:
                 return (False, None, "transcript button not found")
 
-            # Extract all transcript text from the rendered page
-            body_text = driver.find_element(By.TAG_NAME, "body").text
+            transcript_text, extraction_error = _extract_selenium_transcript_text(
+                driver, By
+            )
+            if transcript_text is None:
+                return (False, None, extraction_error or "transcript panel was empty")
 
-            if not body_text or len(body_text) < 20:
-                return (False, None, "transcript panel was empty")
-
-            return (True, body_text, None)
+            return (True, transcript_text, None)
 
         finally:
             driver.quit()
@@ -1510,14 +1722,67 @@ def _fetch_via_selenium_firefox(
         return (False, None, f"selenium error: {e}")
 
 
+def _extract_selenium_transcript_text(
+    driver: object, by: object
+) -> tuple[str | None, str | None]:
+    """Extract transcript text from transcript DOM nodes, never page chrome.
+
+    YouTube renders the transcript in custom elements after the transcript
+    button is clicked.  The page body's text also contains titles, controls,
+    comments, and sign-in UI, so it is not a valid transcript fallback.
+    """
+    selectors = (
+        "ytd-transcript-segment-renderer",
+        "ytd-transcript-segment-list-renderer",
+        "ytd-transcript-renderer",
+        "[target-id='engagement-panel-searchable-transcript']",
+    )
+    for selector in selectors:
+        elements = driver.find_elements(by.CSS_SELECTOR, selector)
+        texts = []
+        for element in elements:
+            text = str(getattr(element, "text", "") or "").strip()
+            if text:
+                texts.append(text)
+        if texts:
+            transcript_text = "\n".join(texts).strip()
+            if len(transcript_text) >= 20:
+                return (transcript_text, None)
+
+    return (None, "transcript segments not found")
+
+
 def _ensure_nlm_auth() -> bool:
     """Check NLM auth and auto-recover if expired.
 
-    Integration: AuthRateLimiter gate + CookieFreshnessTracker probe + nlm login.
-    Cooldown trigger is split: only --force login failures count toward the
-    3-failure cooldown. A --check probe failure followed by successful --force
-    recovery does NOT count as a failure.
+    Account-aware production workers use the canonical token-backed YTIS auth
+    path. The legacy CLI login/check ladder remains only for compatibility
+    callers that do not provide ``YTIS_NLM_ACCOUNT_PROFILE``.
     """
+    account_profile = os.environ.get("YTIS_NLM_ACCOUNT_PROFILE", "").strip()
+    if account_profile:
+        from csf.nlm_client import ensure_account_session
+
+        worker_id = os.environ.get("YTIS_NLM_WORKER_ID", "transcript").strip() or "transcript"
+        probe = ensure_account_session(
+            account_profile,
+            worker_id=worker_id,
+            allow_bootstrap=False,
+        )
+        log_action(
+            "nlm_auth_checked",
+            {
+                "component": "transcript",
+                "account_profile": probe.account_profile,
+                "expected_email": probe.expected_email,
+                "storage_path": probe.storage_path,
+                "status": "ok" if probe.ok else "failed",
+                "probe_reason": probe.reason,
+                "mode": "canonical_account_session",
+            },
+        )
+        return probe.ok
+
     rate_limiter = _get_auth_rate_limiter()
 
     # 1. AuthRateLimiter gate — block if rate limit exceeded or in cooldown
@@ -1895,27 +2160,28 @@ def _classify_failure(error: str | None, stage: str) -> str:
     if not error:
         return "unknown"
     err_lower = error.lower()
-    if "429" in err_lower or "rate limit" in err_lower or "quota" in err_lower:
+    classification_text = err_lower.replace("_", " ")
+    if "429" in classification_text or "rate limit" in classification_text or "quota" in classification_text:
         return "quota_exceeded"
-    if "region" in err_lower or "not available" in err_lower or "geo" in err_lower:
+    if "region" in classification_text or "not available" in classification_text or "geo" in classification_text:
         return "region_block"
-    if "auth" in err_lower or "login" in err_lower or "credential" in err_lower:
+    if "auth" in classification_text or "login" in classification_text or "credential" in classification_text:
         return "auth_failed"
-    if "captcha" in err_lower or "bot detection" in err_lower:
+    if "captcha" in classification_text or "bot detection" in classification_text:
         return "captcha"
-    if "timeout" in err_lower or "timed out" in err_lower:
+    if "timeout" in classification_text or "timed out" in classification_text:
         return "timeout"
-    if "no transcript" in err_lower or "transcript unavailable" in err_lower:
+    if "no transcript" in classification_text or "transcript unavailable" in classification_text:
         return "no_transcript"
-    if "source add failed" in err_lower or "could not add url source" in err_lower:
+    if "source add failed" in classification_text or "could not add url source" in classification_text:
         return "source_add_failed"
-    if "no speech detected" in err_lower or "likely music or silence" in err_lower:
+    if "no speech detected" in classification_text or "likely music or silence" in classification_text:
         return "no_transcript"
-    if "whisper produced empty transcript" in err_lower:
+    if "whisper produced empty transcript" in classification_text:
         return "no_transcript"
-    if "unavailable" in err_lower or "deleted" in err_lower or "private" in err_lower:
+    if "unavailable" in classification_text or "deleted" in classification_text or "private" in classification_text:
         return "unavailable"
-    if "not found" in err_lower or "404" in err_lower:
+    if "not found" in classification_text or "404" in classification_text:
         return "unavailable"
     return "unknown"
 
@@ -2082,11 +2348,30 @@ def _finalize_success(
     return result
 
 
-def _check_oembed(video_id: str, prefer_lang: str, chain_started_at: float) -> TranscriptResult | None:
+def _check_oembed(
+    video_id: str,
+    prefer_lang: str,
+    chain_started_at: float,
+    *,
+    skip_oembed: bool = False,
+) -> TranscriptResult | None:
     """Run the oEmbed reachability probe. Returns a failure result if the video
-    is unavailable, or None to continue the chain."""
+    is unavailable, or None to continue the chain.
+
+    An explicit fallback-only recovery may bypass this cheap probe because a
+    provider-side oEmbed 403 is not sufficient evidence that the transcript
+    itself is unavailable. The default route remains unchanged.
+    """
     oembed_enabled = os.getenv("YTIS_OEMBED_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
     if not oembed_enabled:
+        return None
+    if skip_oembed:
+        _log_transcript_chain_event(
+            "transcript_oembed_bypassed",
+            video_id,
+            enabled=True,
+            reason="explicit_fallback_only",
+        )
         return None
     oembed_started_at = time.perf_counter()
     oembed_ok, oembed_error = _probe_oembed(video_id)
@@ -2245,6 +2530,9 @@ def _try_generic(
 ) -> tuple[TranscriptResult | None, str | None]:
     last_error: str | None = None
     for lang in lang_fallbacks:
+        if _transcript_deadline_exhausted():
+            last_error = "transcript fallback deadline exhausted"
+            break
         try_lang = lang if lang is not None else "en"
         stage_started_at = _log_stage_started(video_id, source, try_lang)
         result = fetch_fn(video_id, try_lang)
@@ -2536,6 +2824,7 @@ def fetch_transcript_chain(
     config: LanguageConfig,
     *,
     skip_notebooklm: bool = False,
+    skip_oembed: bool = False,
     admission_metadata: dict[str, object] | None = None,
     has_captions: bool | int | None = None,
 ) -> TranscriptResult:
@@ -2552,6 +2841,8 @@ def fetch_transcript_chain(
         config: LanguageConfig specifying prefer_lang and allow_translation
         skip_notebooklm: If True, skip the NotebookLM stage and fall back to
             Selenium, Whisper, and direct API only.
+        skip_oembed: If True, bypass the oEmbed preflight. This is reserved for
+            an explicit fallback-only recovery route; the default is False.
         admission_metadata: Optional cheap metadata used to decide whether
             Whisper should run for this candidate.
 
@@ -2598,7 +2889,12 @@ def fetch_transcript_chain(
 
     whisper_enabled = os.getenv("YTIS_WHISPER_ENABLED", "true").lower() == "true"
 
-    oembed_result = _check_oembed(video_id, prefer_lang, chain_started_at)
+    oembed_result = _check_oembed(
+        video_id,
+        prefer_lang,
+        chain_started_at,
+        skip_oembed=skip_oembed,
+    )
     if oembed_result is not None:
         return oembed_result
 
@@ -2641,6 +2937,9 @@ def fetch_transcript_chain(
             methods_to_try.insert(3, (_SOURCE_NLM, _fetch_via_notebooklm, STAGE_VERSION_NOTEBOOKLM))
 
     for source, fetch_fn, stage in methods_to_try:
+        if _transcript_deadline_exhausted():
+            last_error = "transcript fallback deadline exhausted"
+            break
         if _is_source_rate_limited(source):
             continue
         if source in _EXPENSIVE_SOURCES and not expensive_fallback_enabled:
@@ -2669,6 +2968,18 @@ def fetch_transcript_chain(
         if error:
             last_error = error
 
+    # Do not start another provider after an expensive child deadline expires.
+    # The remaining margin belongs to terminal classification and result
+    # serialization, not another network/model attempt.
+    if _transcript_deadline_exhausted():
+        return _archive_failed_result(
+            video_id,
+            prefer_lang,
+            chain_started_at,
+            last_error or "transcript fallback deadline exhausted",
+            last_stage_reached,
+        )
+
     # External provider hook — last chance before giving up
     ext_result, ext_error = _try_external_provider(video_id, prefer_lang, config)
     if ext_result is not None:
@@ -2680,3 +2991,62 @@ def fetch_transcript_chain(
     # All methods failed; persist the final negative outcome using the same
     # terminal/soft-cache contract as early failure exits.
     return _archive_failed_result(video_id, prefer_lang, chain_started_at, last_error, last_stage_reached)
+
+
+def _transcript_worker_main(argv: list[str] | None = None) -> int:
+    """Run one transcript chain for the coordinator-owned item boundary."""
+    parser = argparse.ArgumentParser(description="Run one transcript fallback item")
+    parser.add_argument("--video-id", required=True)
+    parser.add_argument("--result-path", type=Path, required=True)
+    parser.add_argument("--skip-notebooklm", action="store_true")
+    parser.add_argument("--skip-oembed", action="store_true")
+    parser.add_argument("--admission-metadata", default="null")
+    parser.add_argument(
+        "--deadline-s",
+        type=float,
+        default=None,
+        help="Coordinator-owned child deadline used to budget expensive fallback stages",
+    )
+    args = parser.parse_args(argv)
+    deadline_token = None
+    if args.deadline_s is not None and math.isfinite(args.deadline_s) and args.deadline_s > 0:
+        deadline_token = _TRANSCRIPT_DEADLINE_MONOTONIC.set(
+            time.monotonic() + args.deadline_s
+        )
+    try:
+        admission_metadata = json.loads(args.admission_metadata)
+        if not isinstance(admission_metadata, dict):
+            admission_metadata = None
+        result = fetch_transcript_chain(
+            args.video_id,
+            LanguageConfig(prefer_lang="en", allow_translation=False),
+            skip_notebooklm=args.skip_notebooklm,
+            skip_oembed=args.skip_oembed,
+            admission_metadata=admission_metadata,
+        )
+        payload = {field.name: getattr(result, field.name) for field in fields(TranscriptResult)}
+        _write_json_result_atomically(args.result_path, payload)
+        return 0
+    except Exception as exc:
+        _write_json_result_atomically(
+            args.result_path,
+            {
+                "video_id": args.video_id,
+                "lang": "en",
+                "raw_lang": None,
+                "was_translated": False,
+                "transcript": "",
+                "source": "none",
+                "error": f"transcript worker error: {type(exc).__name__}: {exc}",
+                "failure_reason": "unknown",
+                "last_stage": "transcript_fallback",
+            },
+        )
+        return 1
+    finally:
+        if deadline_token is not None:
+            _TRANSCRIPT_DEADLINE_MONOTONIC.reset(deadline_token)
+
+
+if __name__ == "__main__":
+    raise SystemExit(_transcript_worker_main())

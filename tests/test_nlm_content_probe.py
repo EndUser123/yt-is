@@ -7,6 +7,12 @@ from unittest import mock
 from csf import nlm_content_probe
 
 
+def test_default_output_root_is_package_owned() -> None:
+    assert nlm_content_probe._DEFAULT_OUTPUT_ROOT == (
+        Path(__file__).resolve().parents[1] / ".logs" / "nlm_content_probe"
+    )
+
+
 def test_parse_source_ids_extracts_ordered_ids():
     stdout = "\n".join(
         [

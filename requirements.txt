@@ -7,3 +7,6 @@ google-genai>=2.0.0
 # youtube-transcript-api >=1.0 required: yt-is uses api.fetch().snippets (1.x API).
 youtube-transcript-api>=1.0.0
 fasteners>=0.19
+# Canonical NotebookLM client plus durable non-interactive auth repair.
+notebooklm-py[headless]>=0.8.0
+playwright>=1.40.0

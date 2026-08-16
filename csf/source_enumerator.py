@@ -33,6 +33,10 @@ class QuotaBudgetBlocked(RuntimeError):
 # Per-process spend authorization. Defaults to blocked.
 # Set via set_spend_authorized(True) — typically from a CLI flag like --allow-spend.
 _spend_authorized = False
+# Optional per-run spending ceiling (API units). None = unlimited (legacy
+# behavior). Set via set_spend_budget(); enforced in _api_request.
+_spend_budget: int | None = None
+_spend_used = 0
 
 
 def set_spend_authorized(authorized: bool) -> None:
@@ -43,6 +47,18 @@ def set_spend_authorized(authorized: bool) -> None:
     """
     global _spend_authorized
     _spend_authorized = authorized
+
+
+def set_spend_budget(units: int | None) -> None:
+    """Cap this run's total YouTube API unit spend (None = unlimited)."""
+    global _spend_budget, _spend_used
+    _spend_budget = units if units is None else max(0, int(units))
+    _spend_used = 0
+
+
+def spend_used() -> int:
+    """Units consumed by this process so far."""
+    return _spend_used
 
 
 def is_spend_authorized() -> bool:
@@ -257,6 +273,16 @@ def _api_request(endpoint: str, params: dict, record_quota: bool = True, unit_co
             f"or call set_spend_authorized(True) in scripts. Use free alternatives "
             f"(oEmbed, RSS, DB cache) when possible."
         )
+    # --- Per-run budget ceiling ---
+    global _spend_used
+    call_cost = unit_cost if unit_cost is not None else _API_UNIT_ESTIMATE_PER_CALL
+    if _spend_budget is not None and _spend_used + call_cost > _spend_budget:
+        raise QuotaBudgetBlocked(
+            f"YouTube API call to {endpoint} blocked — run budget exhausted: "
+            f"{_spend_used}/{_spend_budget} units used. Raise --spend-budget or "
+            f"split the run."
+        )
+    _spend_used += call_cost
 
     keys = _get_api_keys()
     if not keys:
@@ -892,6 +918,37 @@ def enumerate_recent(
         page_token = next_token
 
     return all_videos
+
+
+def check_shorts(channel_id: str, cap: int = 60) -> list[dict]:
+    """Enumerate a channel's shorts tab (yt-dlp flat, free, no API quota).
+
+    Returns [{"video_id", "title"}] in tab order (newest first, capped).
+    Channels without a shorts tab return []. The uploads playlist/RSS feed
+    only carries a fraction of shorts (measured: 0-11 of 30 recent), so this
+    tab enumeration is the only reliable shorts discovery path.
+    """
+    import yt_dlp
+
+    url = f"https://www.youtube.com/channel/{channel_id}/shorts"
+    opts = {
+        "quiet": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "playlist_items": f"1-{cap}",
+        "socket_timeout": 30,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception:
+        return []  # absent tab or fetch failure: no shorts to add
+    entries = (info or {}).get("entries") or []
+    return [
+        {"video_id": str(e["id"]), "title": (e.get("title") or "")[:200]}
+        for e in entries
+        if e and e.get("id")
+    ]
 
 
 def check_rss(channel_id: str) -> list[str]:

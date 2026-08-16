@@ -10,11 +10,13 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 from csf.nlm_batch import cleanup_stale_worker_notebooks
+from csf.nlm_auth_check import expected_email_for_account_profile
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CSF_SOURCE_SCRIPT = REPO_ROOT / "bin" / "csf-source"
@@ -23,6 +25,30 @@ DEFAULT_LIMIT = 1200
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / ".logs" / "worker_count_trials"
 DEFAULT_WORKER_NOTEBOOK_CLEANUP_RETRIES = 1
 DEFAULT_WORKER_NOTEBOOK_CLEANUP_RETRY_DELAY_S = 2.0
+
+
+@contextmanager
+def _canonical_account_scope(account_profile: str | None):
+    """Bind the requested account while parent-side notebook cleanup runs.
+
+    The child fetch already receives an explicit account environment. Cleanup
+    happens in this process, however, so it must use the same canonical
+    storage identity instead of inheriting whichever account a caller had set.
+    """
+    profile = str(account_profile or "").strip()
+    if not profile:
+        yield
+        return
+    expected_email_for_account_profile(profile)
+    previous = os.environ.get("YTIS_NLM_ACCOUNT_PROFILE")
+    os.environ["YTIS_NLM_ACCOUNT_PROFILE"] = profile
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("YTIS_NLM_ACCOUNT_PROFILE", None)
+        else:
+            os.environ["YTIS_NLM_ACCOUNT_PROFILE"] = previous
 
 
 @dataclass(slots=True)
@@ -694,13 +720,15 @@ def _run_fetch_trial(
     sample_label: str,
     output_dir: Path,
     source_filter: str | None = None,
+    account_profile: str | None = None,
     python_executable: str | None = None,
 ) -> TrialArtifact:
     run_dir = output_dir / f"workers_{workers:02d}"
     log_dir = run_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    deleted, failed = _cleanup_worker_notebooks_preflight()
+    with _canonical_account_scope(account_profile):
+        deleted, failed = _cleanup_worker_notebooks_preflight()
     if failed:
         print(
             f"[trial] preflight worker notebook cleanup continuing despite failure deleted={deleted} failed={failed}"
@@ -712,6 +740,8 @@ def _run_fetch_trial(
     stderr_path = run_dir / "stderr.txt"
     env = os.environ.copy()
     env["INTELLIGENCE_STREAM_LOG_DIR"] = str(log_dir)
+    if account_profile:
+        env["YTIS_NLM_ACCOUNT_PROFILE"] = account_profile
 
     started_at = time.monotonic()
     command = [
@@ -744,7 +774,8 @@ def _run_fetch_trial(
         stderr_text = proc.stderr or ""
         elapsed_s = round(time.monotonic() - started_at, 3)
     finally:
-        post_deleted, post_failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
+        with _canonical_account_scope(account_profile):
+            post_deleted, post_failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
         if post_failed:
             print(f"[trial] post-run worker notebook cleanup deleted={post_deleted} failed={post_failed}")
             # Post-run cleanup is best-effort hygiene. Keep the benchmark data
@@ -786,9 +817,19 @@ def run_worker_count_sweep(
     limit: int = DEFAULT_LIMIT,
     sample_label: str = "",
     source_filter: str | None = None,
+    account_profile: str | None = None,
     output_root: Path = DEFAULT_OUTPUT_ROOT,
     python_executable: str | None = None,
 ) -> dict[str, Any]:
+    resolved_account_profile = (
+        account_profile or os.environ.get("YTIS_NLM_ACCOUNT_PROFILE", "")
+    ).strip()
+    if not resolved_account_profile:
+        raise ValueError(
+            "account_profile is required; use a canonical identity such as a.hominidae, "
+            "troup.hominidae, or brsthomson"
+        )
+    expected_email_for_account_profile(resolved_account_profile)
     output_root.mkdir(parents=True, exist_ok=True)
     sweep_started_at = time.time()
     sweep_dir = output_root / time.strftime("%Y%m%d_%H%M%S", time.localtime(sweep_started_at))
@@ -802,6 +843,7 @@ def run_worker_count_sweep(
             sample_label=sample_label,
             output_dir=sweep_dir,
             source_filter=source_filter,
+            account_profile=resolved_account_profile,
             python_executable=python_executable,
         )
         row = trial.to_row()
@@ -819,6 +861,7 @@ def run_worker_count_sweep(
         "limit": limit,
         "sample_label": sample_label,
         "source_filter": source_filter,
+        "account_profile": resolved_account_profile,
         "worker_counts": list(worker_counts),
         "results": results,
     }
@@ -978,6 +1021,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional label for the sample family or load shape (for example fast_lane, slow_lane, mixed_lane)",
     )
     parser.add_argument(
+        "--account-profile",
+        default=os.environ.get("YTIS_NLM_ACCOUNT_PROFILE", ""),
+        help="Canonical NotebookLM account identity (a.hominidae, troup.hominidae, or brsthomson)",
+    )
+    parser.add_argument(
         "--output-root",
         default=str(DEFAULT_OUTPUT_ROOT),
         help=f"Root directory for sweep artifacts (default: {DEFAULT_OUTPUT_ROOT})",
@@ -994,6 +1042,7 @@ def main(argv: list[str] | None = None) -> int:
         worker_counts=worker_counts,
         limit=args.limit,
         sample_label=args.sample_label,
+        account_profile=args.account_profile,
         output_root=Path(args.output_root),
         python_executable=args.python,
     )

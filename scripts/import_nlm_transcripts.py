@@ -41,7 +41,7 @@ _PKG_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PKG_ROOT))  # noqa: E402
 
 # Import shared title-bridge functions from the extracted module
-from title_bridge import (  # noqa: E402
+from scripts.title_bridge import (  # noqa: E402
     normalize_title,
     build_bridge_from_clusters,
     build_bridge_from_analysis,

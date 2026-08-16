@@ -1,0 +1,21 @@
+{
+  "a.hominidae": {
+    "workers_per_account": 3,
+    "batch_size": 50,
+    "adaptive_workers": true,
+    "adaptive_min_workers": 1,
+    "adaptive_max_workers": 5,
+    "adaptive_scale_up_backlog": 2,
+    "adaptive_scale_down_backlog": 0,
+    "adaptive_cooldown_s": 60,
+    "adaptive_health_window": 2
+  },
+  "troup.hominidae": {
+    "workers_per_account": 3,
+    "batch_size": 50
+  },
+  "brsthomson": {
+    "workers_per_account": 3,
+    "batch_size": 50
+  }
+}

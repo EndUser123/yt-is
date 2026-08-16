@@ -43,6 +43,23 @@ class FetchSelection:
     fingerprint: str
 
 
+_DATABASE_FINGERPRINT_FIELDS = (
+    "video_id",
+    "status",
+    "source",
+    "updated_at",
+    "has_captions",
+)
+
+
+def _canonical_database_row(row: Mapping[str, object | None] | None) -> dict[str, object | None]:
+    """Project callers' DB rows onto one stable selection-fingerprint schema."""
+    return {
+        field: row.get(field) if row is not None else None
+        for field in _DATABASE_FINGERPRINT_FIELDS
+    }
+
+
 def _sha256_json(value: object) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
@@ -134,7 +151,7 @@ def select_manifest_entries(
     selected_ids = {str(row["video_id"]) for row in selected}
     limit_omitted = [video_id for video_id in eligible_ids if video_id not in selected_ids]
     database_snapshot = [
-        (item.video_id, rows_by_video_id.get(item.video_id))
+        (item.video_id, _canonical_database_row(rows_by_video_id.get(item.video_id)))
         for item in manifest.items
     ]
     database_fingerprint = _sha256_json(database_snapshot)
@@ -176,7 +193,18 @@ def build_selection_receipt(
         "manifest_fingerprint": manifest.fingerprint,
         "database_path": str(database_path),
         "database_fingerprint": selection.database_fingerprint,
+        # Keep the legacy name for compatibility, but make the logical
+        # snapshot scope explicit so receipts are not mistaken for file hashes.
+        "database_snapshot_fingerprint": selection.database_fingerprint,
+        "database_snapshot_schema": "analysis_status",
+        "database_snapshot_scope": "manifest_video_ids_in_manifest_order",
         "selection_fingerprint": selection.fingerprint,
+        "fingerprint_semantics": {
+            "manifest_fingerprint": "sha256_raw_manifest_json_bytes",
+            "input_database_fingerprint": "sha256_canonical_manifest_producer_row_list",
+            "database_fingerprint": "sha256_canonical_analysis_status_rows_in_manifest_order",
+            "selection_fingerprint": "sha256_canonical_selection_result",
+        },
         "selection_criteria": manifest.selection_criteria,
         "input_database_fingerprint": manifest.input_database_fingerprint,
         "max_items": max_items,

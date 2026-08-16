@@ -55,6 +55,38 @@ def test_load_lane_configs_requires_distinct_profile_and_state_namespaces(tmp_pa
         raise AssertionError("duplicate profile prefixes must be rejected")
 
 
+def test_lane_account_profile_is_parsed_and_propagated(tmp_path):
+    config_path = tmp_path / "lanes.json"
+    config_path.write_text(json.dumps([{
+        "lane": "free",
+        "account_class": "free",
+        "account_profile": "troup.hominidae",
+        "expected_email": "troup.hominidae@gmail.com",
+        "workers": 1,
+        "notebooklm_profiles": ["ytis-free-worker-01"],
+        "browser_profile_root": "P:\\\\ .data/yt-is/browser/notebooklm-free".replace(" ", ""),
+        "worker_state_root": str(tmp_path / "states"),
+        "notebook_prefix": "free",
+    }]), encoding="utf-8")
+    (lane,) = load_lane_configs(config_path)
+    env = _lane_env({}, lane, "serial", lane_output_root=tmp_path / "out", worker_state_root=tmp_path / "states")
+    assert lane.account_profile == "troup.hominidae"
+    assert env["YTIS_NLM_ACCOUNT_PROFILE"] == "troup.hominidae"
+    assert _lane_process_env_snapshot(env)["YTIS_NLM_ACCOUNT_PROFILE"] == "troup.hominidae"
+
+
+def test_lane_account_profile_must_be_unique(tmp_path):
+    config_path = tmp_path / "lanes.json"
+    lane = {
+        "account_class": "free", "account_profile": "troup.hominidae", "workers": 1,
+            "notebooklm_profiles": ["worker-01"], "browser_profile_root": "P:\\\\.data/free1",
+        "worker_state_root": str(tmp_path / "states"), "notebook_prefix": "free",
+    }
+    config_path.write_text(json.dumps([dict(lane, lane="one"), dict(lane, lane="two", notebooklm_profiles=["worker-02"], browser_profile_root="P:\\\\.data/free2", worker_state_root=str(tmp_path / "states2"), notebook_prefix="free2")]), encoding="utf-8")
+    with pytest.raises(ValueError, match="account_profile"):
+        load_lane_configs(config_path)
+
+
 def test_load_lane_configs_accepts_same_browser_root_with_distinct_directories(tmp_path):
     config_path = tmp_path / "lanes.json"
     config_path.write_text(
@@ -230,6 +262,129 @@ def test_load_lane_configs_accepts_lane_env_overrides(tmp_path):
     }
 
 
+def test_adaptive_lane_requires_and_exports_full_worker_capacity(tmp_path):
+    config_path = tmp_path / "adaptive-lanes.json"
+    config_path.write_text(
+        json.dumps(
+            [
+                {
+                    "lane": "adaptive",
+                    "account_class": "pro",
+                    "account_profile": "a.hominidae",
+                    "workers": 2,
+                    "adaptive_workers": True,
+                    "adaptive_max_workers": 4,
+                    "adaptive_scale_up_backlog": 3,
+                    "adaptive_scale_down_backlog": 0,
+                    "adaptive_cooldown_s": 45,
+                    "adaptive_health_window": 3,
+                    "notebooklm_profile_prefix": "adaptive-worker",
+                    "notebooklm_profiles": [
+                        "adaptive-worker-01",
+                        "adaptive-worker-02",
+                        "adaptive-worker-03",
+                        "adaptive-worker-04",
+                    ],
+                    "browser_profile_root": "P:\\\\.data/yt-is/browser/adaptive",
+                    "worker_state_root": "P:\\\\.logs/shards/adaptive/worker_states",
+                    "notebook_prefix": "adaptive-notebook",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    (lane,) = load_lane_configs(config_path)
+    env = _lane_env(
+        {},
+        lane,
+        "serial",
+        lane_output_root=tmp_path / "output",
+        worker_state_root=tmp_path / "states",
+    )
+    assert lane.adaptive_workers is True
+    assert lane.adaptive_max_workers == 4
+    assert env["YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS"] == "4"
+    assert env["YTIS_INDUSTRIAL_ADAPTIVE_HEALTH_WINDOW"] == "3"
+    snapshot = _lane_process_env_snapshot(env)
+    assert snapshot["YTIS_INDUSTRIAL_ADAPTIVE_WORKERS"] == "1"
+    assert snapshot["YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS"] == "4"
+
+
+def test_adaptive_lane_rejects_profile_capacity_below_max(tmp_path):
+    config_path = tmp_path / "adaptive-lanes.json"
+    config_path.write_text(
+        json.dumps(
+            [
+                {
+                    "lane": "adaptive",
+                    "workers": 2,
+                    "adaptive_workers": True,
+                    "adaptive_max_workers": 4,
+                    "notebooklm_profile_prefix": "adaptive-worker",
+                    "notebooklm_profiles": ["adaptive-worker-01", "adaptive-worker-02"],
+                    "browser_profile_root": "P:\\\\.data/yt-is/browser/adaptive",
+                    "worker_state_root": "P:\\\\.logs/shards/adaptive/worker_states",
+                    "notebook_prefix": "adaptive-notebook",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="at least 4 profiles"):
+        load_lane_configs(config_path)
+
+
+def test_adaptive_lane_rejects_duplicate_profiles_within_lane(tmp_path):
+    config_path = tmp_path / "adaptive-lanes.json"
+    config_path.write_text(
+        json.dumps([
+            {
+                "lane": "adaptive",
+                "workers": 2,
+                "adaptive_workers": True,
+                "adaptive_max_workers": 2,
+                "notebooklm_profiles": ["worker-01", "worker-01"],
+                "browser_profile_root": "P:\\\\.data/yt-is/browser/adaptive",
+                "worker_state_root": "P:\\\\.logs/shards/adaptive/worker_states",
+                "notebook_prefix": "adaptive-notebook",
+            }
+        ]),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="profiles must be unique"):
+        load_lane_configs(config_path)
+
+
+def test_lanes_reject_overlapping_worker_profiles(tmp_path):
+    config_path = tmp_path / "overlapping-lanes.json"
+    config_path.write_text(
+        json.dumps([
+            {
+                "lane": "pro",
+                "workers": 2,
+                "notebooklm_profiles": ["shared-worker", "pro-worker"],
+                "browser_profile_root": "P:\\\\.data/yt-is/browser/pro",
+                "worker_state_root": "P:\\\\.logs/shards/pro/worker_states",
+                "notebook_prefix": "pro-notebook",
+            },
+            {
+                "lane": "free",
+                "workers": 2,
+                "notebooklm_profiles": ["shared-worker", "free-worker"],
+                "browser_profile_root": "P:\\\\.data/yt-is/browser/free",
+                "worker_state_root": "P:\\\\.logs/shards/free/worker_states",
+                "notebook_prefix": "free-notebook",
+            },
+        ]),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate worker profile across lanes"):
+        load_lane_configs(config_path)
+
+
 def test_compute_combined_hot_path_vph_prefers_throughput_elapsed_over_wall_clock():
     lanes = [
         {
@@ -334,277 +489,108 @@ def test_compute_combined_hot_path_vph_propagates_stage_totals_from_lane_aggrega
     assert combined["source_content_readiness_probe_sleep_elapsed_s_total"] == pytest.approx(0.3)
 
 
-def test_preflight_lane_auth_profiles_syncs_expired_profile_without_injecting_false_refresher(monkeypatch):
-    calls: list[list[str]] = []
-    sync_calls: list[dict[str, object]] = []
-    repaired = False
-
-    def fake_run(cmd, **kwargs):
-        nonlocal repaired
-        calls.append(list(cmd))
-        if cmd == ["login", "--check", "--profile", "ytis-free1-worker-01"] and not repaired:
-            return type("CompletedProcess", (), {"returncode": 1, "stdout": "", "stderr": "expired"})()
-        if cmd == ["login", "--check", "--profile", "ytis-free1-worker-01"]:
-            return type("CompletedProcess", (), {"returncode": 0, "stdout": "Account: troup.hominidae@gmail.com\n", "stderr": ""})()
-        return type("CompletedProcess", (), {"returncode": 1, "stdout": "", "stderr": "unexpected"})()
-
-    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-    monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
-    monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
-
-    def fake_sync_worker_profiles(**kwargs):
-        nonlocal repaired
-        repaired = True
-        assert "source_session_refresher" not in kwargs
-        sync_calls.append(kwargs)
-
-    monkeypatch.setattr("csf.sharded_lane_series.sync_worker_profiles", fake_sync_worker_profiles)
-
-    preflight_lane_auth_profiles(
-        (
-            LaneConfig(
-                lane="free",
-                account_class="free",
-                workers=1,
-                notebooklm_profile_prefix="ytis-free1-worker",
-                notebooklm_profiles=("ytis-free1-worker-01",),
-                browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
-                worker_state_root=Path("P:\\\\\\.logs/shards/free/worker_states"),
-                notebook_prefix="benchmark-shard-free",
-            ),
-        )
+def test_preflight_lane_auth_profiles_requires_canonical_account_profile():
+    lane = LaneConfig(
+        lane="pro",
+        account_class="pro",
+        workers=1,
+        notebooklm_profile_prefix="a.hominidae-worker",
+        notebooklm_profiles=("a.hominidae-worker-01",),
+        browser_profile_root=Path("P:\\\\.data/yt-is/browser/notebooklm-pro"),
+        worker_state_root=Path("P:\\\\.logs/shards/pro/worker_states"),
+        notebook_prefix="benchmark-shard-pro",
     )
 
-    assert calls == [
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-    ]
-    assert sync_calls
+    with pytest.raises(RuntimeError, match="canonical account_profile is required"):
+        preflight_lane_auth_profiles((lane,))
 
 
-def test_preflight_lane_auth_profiles_syncs_only_configured_lane_family(monkeypatch):
-    repaired = False
-    observed_siblings: list[tuple[str, ...]] = []
-
-    def fake_run(cmd, **kwargs):
-        nonlocal repaired
-        profile = cmd[-1]
-        if profile == "ytis-free1-worker-02" and not repaired:
-            return type("CompletedProcess", (), {"returncode": 1, "stdout": "", "stderr": "expired"})()
-        return type(
-            "CompletedProcess",
-            (),
-            {"returncode": 0, "stdout": "Account: troup.hominidae@gmail.com\n", "stderr": ""},
-        )()
-
-    def fake_sync_worker_profiles(**kwargs):
-        nonlocal repaired
-        repaired = True
-        families = tuple(kwargs["families"])
-        assert len(families) == 1
-        observed_siblings.append(tuple(families[0].sibling_profiles))
-
-    monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-    monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
-    monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
-    monkeypatch.setattr("csf.sharded_lane_series.sync_worker_profiles", fake_sync_worker_profiles)
-
-    preflight_lane_auth_profiles(
-        (
-            LaneConfig(
-                lane="free",
-                account_class="free",
-                workers=3,
-                notebooklm_profile_prefix="ytis-free1-worker",
-                notebooklm_profiles=("ytis-free1-worker-01", "ytis-free1-worker-02", "ytis-free1-worker-03"),
-                browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
-                worker_state_root=Path("P:\\\\\\.logs/shards/free/worker_states"),
-                notebook_prefix="benchmark-shard-free",
-            ),
-        )
-    )
-
-    assert observed_siblings == [("ytis-free1-worker-02", "ytis-free1-worker-03")]
-
-
-def test_preflight_lane_auth_profiles_syncs_wrong_account_without_interactive_refresh(monkeypatch):
-    calls: list[list[str]] = []
-    refresh_calls: list[str] = []
-    sync_calls: list[dict[str, object]] = []
-    repaired = False
-
-    def fake_run(cmd, **kwargs):
-        nonlocal repaired
-        calls.append(list(cmd))
-        if cmd == ["login", "--check", "--profile", "ytis-free1-worker-01"] and not repaired:
-            return type("CompletedProcess", (), {"returncode": 0, "stdout": "Account: a.hominidae@gmail.com\n", "stderr": ""})()
-        if cmd == ["login", "--check", "--profile", "ytis-free1-worker-01"]:
-            return type("CompletedProcess", (), {"returncode": 0, "stdout": "Account: troup.hominidae@gmail.com\n", "stderr": ""})()
-        return type("CompletedProcess", (), {"returncode": 1, "stdout": "", "stderr": "unexpected"})()
-
-    monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
-    monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
-    monkeypatch.setattr(
-        "csf.sharded_lane_series.refresh_source_profile",
-        lambda family, timeout_s: refresh_calls.append(family.source_profile) or True,
-    )
-
-    def fake_sync_worker_profiles(**kwargs):
-        nonlocal repaired
-        repaired = True
-        sync_calls.append(kwargs)
-
-    monkeypatch.setattr("csf.sharded_lane_series.sync_worker_profiles", fake_sync_worker_profiles)
-
-    preflight_lane_auth_profiles(
-        (
-            LaneConfig(
-                lane="free",
-                account_class="free",
-                workers=1,
-                notebooklm_profile_prefix="ytis-free1-worker",
-                notebooklm_profiles=("ytis-free1-worker-01",),
-                browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
-                worker_state_root=Path("P:\\\\\\.logs/shards/free/worker_states"),
-                notebook_prefix="benchmark-shard-free",
-            ),
-        )
-    )
-
-    assert calls == [
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-    ]
-    assert refresh_calls == []
-    assert sync_calls
-
-
-def test_preflight_lane_auth_profiles_rejects_profile_when_refresh_fails(monkeypatch):
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        return type("CompletedProcess", (), {"returncode": 1, "stdout": "", "stderr": "expired"})()
-
-    monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
-    monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
-    monkeypatch.setattr("csf.sharded_lane_series.refresh_source_profile", lambda family, timeout_s: False)
-    monkeypatch.setattr(
-        "csf.sharded_lane_series.sync_worker_profiles",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("no valid source session")),
-    )
-
-    try:
-        preflight_lane_auth_profiles(
-            (
-                LaneConfig(
-                    lane="free",
-                    account_class="free",
-                    workers=1,
-                    notebooklm_profile_prefix="ytis-free1-worker",
-                    notebooklm_profiles=("ytis-free1-worker-01",),
-                    browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
-                    worker_state_root=Path("P:\\\\\\.logs/shards/free/worker_states"),
-                    notebook_prefix="benchmark-shard-free",
-                ),
-            )
-        )
-    except RuntimeError as exc:
-        assert "ytis-free1-worker-01" in str(exc)
-    else:
-        raise AssertionError("failed refresh should stop the benchmark before lane launch")
-
-    assert calls == [
-        ["login", "--check", "--profile", "ytis-free1-worker-01"],
-    ]
-
-
-def test_preflight_lane_auth_profiles_stops_default_profile_before_checks(monkeypatch):
-    """Series preflight should self-heal stale default Chrome before validating lane profiles."""
+def test_preflight_lane_auth_profiles_probes_each_canonical_account_once(monkeypatch):
     import csf.sharded_lane_series as mod
 
-    stop_calls: list[set[int]] = []
-    check_calls: list[tuple[str, float]] = []
+    calls: list[tuple[str, str, bool]] = []
 
-    monkeypatch.setattr(mod, "_default_chrome_profile_pids", lambda: {111, 222}, raising=False)
-    monkeypatch.setattr(mod, "_stop_chrome_pids", lambda pids: stop_calls.append(set(pids)), raising=False)
+    def fake_repair(account_profile, *, worker_id, allow_bootstrap):
+        calls.append((account_profile, worker_id, allow_bootstrap))
+        return type(
+            "Probe",
+            (),
+            {"ok": True, "reason": "ok", "storage_path": Path("P:\\\\.data/yt-is/nlm-auth/storage_state.json")},
+        )()
+
+    monkeypatch.setattr(mod, "ensure_account_session", fake_repair)
+    lane = LaneConfig(
+        lane="pro",
+        account_class="pro",
+        account_profile="a.hominidae",
+        workers=1,
+        notebooklm_profile_prefix="a.hominidae-worker",
+        notebooklm_profiles=("a.hominidae-worker-01",),
+        browser_profile_root=Path("P:\\\\.data/yt-is/browser/notebooklm-pro"),
+        worker_state_root=Path("P:\\\\.logs/shards/pro/worker_states"),
+        notebook_prefix="benchmark-shard-pro",
+    )
+
+    preflight_lane_auth_profiles((lane,))
+
+    assert calls == [("a.hominidae", "coordinator", False)]
+
+
+def test_preflight_lane_auth_profiles_rejects_account_email_mismatch(monkeypatch):
+    import csf.sharded_lane_series as mod
+
     monkeypatch.setattr(
         mod,
-        "_profile_auth_check",
-        lambda profile, expected_email, timeout_s: check_calls.append((profile, timeout_s)) or True,
+        "ensure_account_session",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("probe must not run")),
+    )
+    lane = LaneConfig(
+        lane="pro",
+        account_class="pro",
+        account_profile="a.hominidae",
+        expected_email="troup.hominidae@gmail.com",
+        workers=1,
+        notebooklm_profile_prefix="a.hominidae-worker",
+        notebooklm_profiles=("a.hominidae-worker-01",),
+        browser_profile_root=Path("P:\\\\.data/yt-is/browser/notebooklm-pro"),
+        worker_state_root=Path("P:\\\\.logs/shards/pro/worker_states"),
+        notebook_prefix="benchmark-shard-pro",
     )
 
-    preflight_lane_auth_profiles(
-        (
-            LaneConfig(
-                lane="free",
-                account_class="free",
-                workers=1,
-                notebooklm_profile_prefix="ytis-free1-worker",
-                notebooklm_profiles=("ytis-free1-worker-01",),
-                browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
-                worker_state_root=Path("P:\\\\\\.logs/shards/free/worker_states"),
-                notebook_prefix="benchmark-shard-free",
-            ),
-        )
+    with pytest.raises(RuntimeError, match="does not match canonical"):
+        preflight_lane_auth_profiles((lane,))
+
+
+def test_preflight_lane_auth_profiles_fails_closed_when_session_probe_fails(monkeypatch):
+    import csf.sharded_lane_series as mod
+
+    monkeypatch.setattr(
+        mod,
+        "ensure_account_session",
+        lambda *args, **kwargs: type(
+            "Probe",
+            (),
+            {
+                "ok": False,
+                "reason": "storage_missing",
+                "storage_path": Path("P:\\\\.data/yt-is/nlm-auth/storage_state.json"),
+            },
+        )(),
+    )
+    lane = LaneConfig(
+        lane="pro",
+        account_class="pro",
+        account_profile="a.hominidae",
+        workers=1,
+        notebooklm_profile_prefix="a.hominidae-worker",
+        notebooklm_profiles=("a.hominidae-worker-01",),
+        browser_profile_root=Path("P:\\\\.data/yt-is/browser/notebooklm-pro"),
+        worker_state_root=Path("P:\\\\.logs/shards/pro/worker_states"),
+        notebook_prefix="benchmark-shard-pro",
     )
 
-    assert stop_calls == [{111, 222}]
-    assert check_calls == [("ytis-free1-worker-01", 30.0)]
-
-
-def test_preflight_lane_auth_profiles_accepts_explicit_expected_email_for_unmapped_profile(monkeypatch):
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        return type("CompletedProcess", (), {"returncode": 0, "stdout": "Account: future.account@example.com\n", "stderr": ""})()
-
-    monkeypatch.setattr("csf.sharded_lane_series.run_nlm", fake_run)
-    monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
-
-    preflight_lane_auth_profiles(
-        (
-            LaneConfig(
-                lane="future",
-                account_class="future",
-                workers=1,
-                notebooklm_profile_prefix="ytis-future-worker",
-                notebooklm_profiles=("ytis-future-worker-01",),
-                expected_email="future.account@example.com",
-                browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-future"),
-                worker_state_root=Path("P:\\\\\\.logs/shards/future/worker_states"),
-                notebook_prefix="benchmark-shard-future",
-            ),
-        )
-    )
-
-    assert calls == [["login", "--check", "--profile", "ytis-future-worker-01"]]
-
-
-def test_preflight_lane_auth_profiles_rejects_unmapped_profile_without_expected_email(monkeypatch):
-    monkeypatch.setattr("csf.sharded_lane_series._default_chrome_profile_pids", lambda: set())
-
-    try:
-        preflight_lane_auth_profiles(
-            (
-                LaneConfig(
-                    lane="future",
-                    account_class="future",
-                    workers=1,
-                    notebooklm_profile_prefix="ytis-future-worker",
-                    notebooklm_profiles=("ytis-future-worker-01",),
-                    browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-future"),
-                    worker_state_root=Path("P:\\\\\\.logs/shards/future/worker_states"),
-                    notebook_prefix="benchmark-shard-future",
-                ),
-            )
-        )
-    except RuntimeError as exc:
-        assert "has no expected email mapping" in str(exc)
-        assert "ytis-future-worker-01" in str(exc)
-    else:
-        raise AssertionError("unmapped profile should fail closed before benchmark start")
+    with pytest.raises(RuntimeError, match="storage_missing"):
+        preflight_lane_auth_profiles((lane,))
 
 
 def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_path, monkeypatch):
@@ -623,6 +609,7 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
         limit,
         batch_size,
         manifest_json,
+        cohort_shape,
         python_executable,
         reusable_pipeline_mode,
         preserve_worker_state_root,
@@ -633,7 +620,8 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
                 "lane": lane.lane,
                 "output_root": output_root,
                 "preserve_worker_state_root": preserve_worker_state_root,
-                "cohort_json": cohort_json,
+                    "cohort_json": cohort_json,
+                    "cohort_shape": cohort_shape,
                 "env": {
                     key: env.get(key)
                     for key in (
@@ -674,10 +662,11 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
     report = run_sharded_lane_series(
         lanes=(
             LaneConfig(
-                lane="pro",
-                account_class="pro",
-                workers=4,
-                notebooklm_profile_prefix="ytis-pro-worker",
+               lane="pro",
+               account_class="pro",
+                account_profile="a.hominidae",
+               workers=4,
+               notebooklm_profile_prefix="ytis-pro-worker",
                 notebooklm_profiles=("alt", "ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04"),
                 browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-pro"),
                 browser_profile_directory="Profile 2",
@@ -685,10 +674,11 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
                 notebook_prefix="benchmark-shard-pro",
             ),
             LaneConfig(
-                lane="free",
-                account_class="free",
-                workers=4,
-                notebooklm_profile_prefix="ytis-free1-worker",
+               lane="free",
+               account_class="free",
+                account_profile="troup.hominidae",
+               workers=4,
+               notebooklm_profile_prefix="ytis-free1-worker",
                 notebooklm_profiles=("default", "ytis-free1-worker-02", "ytis-free1-worker-03", "ytis-free1-worker-04"),
                 browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
                 browser_profile_directory="Profile 1",
@@ -709,6 +699,7 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
     )
 
     assert [call["lane"] for call in calls] == ["pro", "free"]
+    assert [call["cohort_shape"] for call in calls] == ["captioned", "captioned"]
     assert calls[0]["preserve_worker_state_root"] is False
     assert calls[0]["env"]["INTELLIGENCE_STREAM_LOG_DIR"].endswith("out\\pro\\logs")
     assert calls[0]["env"]["YTIS_INDUSTRIAL_WORKER_STATE_ROOT"].endswith("out\\pro\\worker_states")
@@ -751,10 +742,11 @@ def test_run_sharded_lane_series_uses_fresh_worker_state_root_by_default(tmp_pat
 
 def test_lane_env_exports_run_environment_label(tmp_path):
     lane = LaneConfig(
-        lane="pro",
-        account_class="pro",
-        workers=4,
-        notebooklm_profile_prefix="ytis-pro-worker",
+               lane="pro",
+               account_class="pro",
+                account_profile="a.hominidae",
+               workers=4,
+               notebooklm_profile_prefix="ytis-pro-worker",
         notebooklm_profiles=("alt", "ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04"),
         browser_profile_root=Path("P:\\\\.data/yt-is/browser/notebooklm-pro"),
         browser_profile_directory="Profile 2",
@@ -799,7 +791,7 @@ def test_lane_env_exports_run_environment_label(tmp_path):
     assert snapshot["YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_MARGIN_S"] == "20"
     assert env["YTIS_NLM_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
     assert env["YTIS_RUN_ENVIRONMENT_LABEL"] == "hotel_wifi"
-    assert env["YTIS_NLM_WORKER_AUTH_USE_CDP"] == "0"
+    assert "YTIS_NLM_WORKER_AUTH_USE_CDP" not in env
 
 
 def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_path, monkeypatch):
@@ -818,6 +810,7 @@ def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_p
         limit,
         batch_size,
         manifest_json,
+        cohort_shape,
         python_executable,
         reusable_pipeline_mode,
         preserve_worker_state_root,
@@ -828,6 +821,7 @@ def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_p
                 "lane": lane.lane,
                 "preserve_worker_state_root": preserve_worker_state_root,
                 "env_root": env["YTIS_INDUSTRIAL_WORKER_STATE_ROOT"],
+                "cohort_shape": cohort_shape,
             }
         )
         return {
@@ -849,10 +843,11 @@ def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_p
     report = run_sharded_lane_series(
         lanes=(
             LaneConfig(
-                lane="pro",
-                account_class="pro",
-                workers=4,
-                notebooklm_profile_prefix="ytis-pro-worker",
+               lane="pro",
+               account_class="pro",
+                account_profile="a.hominidae",
+               workers=4,
+               notebooklm_profile_prefix="ytis-pro-worker",
                 notebooklm_profiles=("alt", "ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04"),
                 browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-pro"),
                 browser_profile_directory="Profile 2",
@@ -876,10 +871,12 @@ def test_run_sharded_lane_series_can_preserve_configured_worker_state_root(tmp_p
         batch_size=200,
         manifest_json=Path("P:\\\\\\packages/yt-is/tests/fixtures/shared_benchmark_manifest.json"),
         reusable_pipeline_mode="serial",
+        cohort_shape="manifest",
         preserve_worker_state_root=True,
     )
 
     assert calls[0]["preserve_worker_state_root"] is True
+    assert calls[0]["cohort_shape"] == "manifest"
     assert calls[0]["env_root"].endswith("pro\\worker_states")
     assert report["lanes"][0]["worker_state_root"].endswith("pro\\worker_states")
     assert report["lanes"][0]["configured_worker_state_root"].endswith("pro\\worker_states")
@@ -911,10 +908,11 @@ def test_run_sharded_lane_series_marks_partial_lane_reports_as_partial(tmp_path,
     report = run_sharded_lane_series(
         lanes=(
             LaneConfig(
-                lane="pro",
-                account_class="pro",
-                workers=4,
-                notebooklm_profile_prefix="ytis-pro-worker",
+               lane="pro",
+               account_class="pro",
+                account_profile="a.hominidae",
+               workers=4,
+               notebooklm_profile_prefix="ytis-pro-worker",
                 notebooklm_profiles=("alt", "ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04"),
                 browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-pro"),
                 browser_profile_directory="Profile 2",
@@ -922,10 +920,11 @@ def test_run_sharded_lane_series_marks_partial_lane_reports_as_partial(tmp_path,
                 notebook_prefix="benchmark-shard-pro",
             ),
             LaneConfig(
-                lane="free",
-                account_class="free",
-                workers=4,
-                notebooklm_profile_prefix="ytis-free1-worker",
+               lane="free",
+               account_class="free",
+                account_profile="troup.hominidae",
+               workers=4,
+               notebooklm_profile_prefix="ytis-free1-worker",
                 notebooklm_profiles=("default", "ytis-free1-worker-02", "ytis-free1-worker-03", "ytis-free1-worker-04"),
                 browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
                 browser_profile_directory="Profile 1",
@@ -977,10 +976,11 @@ def test_run_sharded_lane_series_ignores_shared_retry_attempts_in_partial_check(
     report = run_sharded_lane_series(
         lanes=(
             LaneConfig(
-                lane="free",
-                account_class="free",
-                workers=3,
-                notebooklm_profile_prefix="ytis-free1-worker",
+               lane="free",
+               account_class="free",
+                account_profile="troup.hominidae",
+               workers=3,
+               notebooklm_profile_prefix="ytis-free1-worker",
                 notebooklm_profiles=("default", "ytis-free1-worker-02", "ytis-free1-worker-03"),
                 browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
                 browser_profile_directory="Profile 1",
@@ -1024,10 +1024,11 @@ def test_run_sharded_lane_series_clears_stale_summary_before_run(tmp_path, monke
     report = run_sharded_lane_series(
         lanes=(
             LaneConfig(
-                lane="pro",
-                account_class="pro",
-                workers=1,
-                notebooklm_profile_prefix="ytis-pro-worker",
+               lane="pro",
+               account_class="pro",
+                account_profile="a.hominidae",
+               workers=1,
+               notebooklm_profile_prefix="ytis-pro-worker",
                 notebooklm_profiles=("ytis-pro-worker-01",),
                 browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-pro"),
                 worker_state_root=tmp_path / "pro" / "worker_states",
@@ -1090,10 +1091,11 @@ def test_run_sharded_lane_series_preserves_previous_summary_if_write_fails(tmp_p
         run_sharded_lane_series(
             lanes=(
                 LaneConfig(
-                    lane="pro",
-                    account_class="pro",
-                    workers=1,
-                    notebooklm_profile_prefix="ytis-pro-worker",
+                   lane="pro",
+                   account_class="pro",
+                    account_profile="a.hominidae",
+                   workers=1,
+                   notebooklm_profile_prefix="ytis-pro-worker",
                     notebooklm_profiles=("ytis-pro-worker-01",),
                     browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-pro"),
                     worker_state_root=tmp_path / "pro" / "worker_states",
@@ -1123,10 +1125,11 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
     import csf.sharded_lane_series as mod
 
     lane = LaneConfig(
-        lane="free",
-        account_class="free",
-        workers=1,
-        notebooklm_profile_prefix="ytis-free1-worker",
+       lane="free",
+       account_class="free",
+        account_profile="troup.hominidae",
+       workers=1,
+       notebooklm_profile_prefix="ytis-free1-worker",
         notebooklm_profiles=("ytis-free1-worker-01",),
         browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
         worker_state_root=tmp_path / "free" / "worker_states",
@@ -1139,11 +1142,9 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
 
     def fake_build_command(**kwargs):
         captured["output_root"] = kwargs["output_root"]
+        captured["manifest_json"] = kwargs["manifest_json"]
+        captured["cohort_shape"] = kwargs["cohort_shape"]
         return ["fake-benchmark"]
-
-    def fake_stop_default_profile(*, stage):
-        calls.append(stage)
-        return False
 
     def fake_popen(cmd, **kwargs):
         calls.append("popen")
@@ -1193,7 +1194,6 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
         return FakePopen()
 
     monkeypatch.setattr(mod, "build_fallback_benchmark_command", fake_build_command)
-    monkeypatch.setattr(mod, "_stop_default_chrome_profile_if_running", fake_stop_default_profile)
     monkeypatch.setattr(mod.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(mod.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run should not be used")))
 
@@ -1213,7 +1213,9 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
     )
 
     assert report["status"] == "ok"
-    assert calls == ["lane_start_free", "popen", "wait", "lane_complete_free"]
+    assert calls == ["popen", "wait"]
+    assert Path(captured["manifest_json"]).name == "shared_benchmark_manifest.json"
+    assert captured["cohort_shape"] == "captioned"
     assert (lane_root / "lane.stdout.txt").read_text(encoding="utf-8") == "lane stdout line\n"
     assert (lane_root / "lane.stderr.txt").read_text(encoding="utf-8") == "lane stderr line\n"
     snapshot = json.loads((lane_root / "lane_process.json").read_text(encoding="utf-8"))
@@ -1229,6 +1231,7 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
         "YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S": "",
         "YTIS_NLM_RUN_ENVIRONMENT_LABEL": "",
         "YTIS_RUN_ENVIRONMENT_LABEL": "",
+        "YTIS_NLM_ACCOUNT_PROFILE": "",
         "YTIS_NLM_WORKER_AUTH_USE_CDP": "",
         "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
         "YTIS_NLM_SOURCE_CONTENT_PRIMARY_COMMAND_AGE_PROJECTION_S": "",
@@ -1236,6 +1239,13 @@ def test_run_lane_stops_default_profile_before_launching(tmp_path, monkeypatch):
         "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED": "",
         "YTIS_NLM_SHARED_RETRY_POOL_DB_PATH": "",
         "YTIS_TRANSCRIPT_CACHE_DB_PATH": "",
+        "YTIS_INDUSTRIAL_ADAPTIVE_WORKERS": "",
+        "YTIS_INDUSTRIAL_ADAPTIVE_MIN_WORKERS": "",
+        "YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS": "",
+        "YTIS_INDUSTRIAL_ADAPTIVE_SCALE_UP_BACKLOG": "",
+        "YTIS_INDUSTRIAL_ADAPTIVE_SCALE_DOWN_BACKLOG": "",
+        "YTIS_INDUSTRIAL_ADAPTIVE_COOLDOWN_S": "",
+        "YTIS_INDUSTRIAL_ADAPTIVE_HEALTH_WINDOW": "",
     }
 
 
@@ -1245,6 +1255,7 @@ def test_run_sharded_lane_series_reclassifies_stale_running_lane_process(tmp_pat
     lane = LaneConfig(
         lane="free",
         account_class="free",
+        account_profile="troup.hominidae",
         workers=1,
         notebooklm_profile_prefix="ytis-free1-worker",
         notebooklm_profiles=("ytis-free1-worker-01",),
@@ -1313,6 +1324,7 @@ def test_run_lane_rejects_partial_processed_count(tmp_path, monkeypatch):
     lane = LaneConfig(
         lane="free",
         account_class="free",
+        account_profile="troup.hominidae",
         workers=1,
         notebooklm_profile_prefix="ytis-free1-worker",
         notebooklm_profiles=("ytis-free1-worker-01",),
@@ -1392,7 +1404,6 @@ def test_run_lane_rejects_partial_processed_count(tmp_path, monkeypatch):
         return FakePopen()
 
     monkeypatch.setattr(mod, "build_fallback_benchmark_command", fake_build_command)
-    monkeypatch.setattr(mod, "_stop_default_chrome_profile_if_running", lambda stage: False)
     monkeypatch.setattr(mod, "_find_invalid_lane_artifacts", lambda lane_root: [])
     monkeypatch.setattr(mod.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(mod.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run should not be used")))
@@ -1426,10 +1437,11 @@ def test_run_lane_accepts_shared_retry_processed_count_overrun(tmp_path, monkeyp
     import csf.sharded_lane_series as mod
 
     lane = LaneConfig(
-        lane="free",
-        account_class="free",
-        workers=1,
-        notebooklm_profile_prefix="ytis-free1-worker",
+       lane="free",
+       account_class="free",
+        account_profile="troup.hominidae",
+       workers=1,
+       notebooklm_profile_prefix="ytis-free1-worker",
         notebooklm_profiles=("ytis-free1-worker-01",),
         browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
         worker_state_root=tmp_path / "free" / "worker_states",
@@ -1508,7 +1520,6 @@ def test_run_lane_accepts_shared_retry_processed_count_overrun(tmp_path, monkeyp
         return FakePopen()
 
     monkeypatch.setattr(mod, "build_fallback_benchmark_command", fake_build_command)
-    monkeypatch.setattr(mod, "_stop_default_chrome_profile_if_running", lambda stage: False)
     monkeypatch.setattr(mod, "_find_invalid_lane_artifacts", lambda lane_root: [])
     monkeypatch.setattr(mod.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(mod.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("subprocess.run should not be used")))
@@ -1547,10 +1558,11 @@ def test_lane_processed_count_reason_subtracts_shared_retry_outcomes_not_claims(
     import csf.sharded_lane_series as mod
 
     lane = LaneConfig(
-        lane="free",
-        account_class="free",
-        workers=1,
-        notebooklm_profile_prefix="ytis-free1-worker",
+       lane="free",
+       account_class="free",
+        account_profile="troup.hominidae",
+       workers=1,
+       notebooklm_profile_prefix="ytis-free1-worker",
         notebooklm_profiles=("ytis-free1-worker-01",),
         browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
         worker_state_root=Path("P:\\\\\\.data/yt-is/worker-states/free"),
@@ -1576,10 +1588,11 @@ def test_run_lane_rejects_default_profile_contaminated_logs(tmp_path, monkeypatc
     import csf.sharded_lane_series as mod
 
     lane = LaneConfig(
-        lane="free",
-        account_class="free",
-        workers=1,
-        notebooklm_profile_prefix="ytis-free1-worker",
+       lane="free",
+       account_class="free",
+        account_profile="troup.hominidae",
+       workers=1,
+       notebooklm_profile_prefix="ytis-free1-worker",
         notebooklm_profiles=("ytis-free1-worker-01",),
         browser_profile_root=Path("P:\\\\\\.data/yt-is/browser/notebooklm-free"),
         worker_state_root=tmp_path / "free" / "worker_states",
@@ -1666,10 +1679,24 @@ def test_run_lane_rejects_default_profile_contaminated_logs(tmp_path, monkeypatc
             env={},
         )
     except RuntimeError as exc:
-        assert "invalidated by NotebookLM auth/source failures" in str(exc)
+        assert "invalidated by auth_or_profile_artifacts" in str(exc)
         assert "default_profile_running" in str(exc)
     else:
         raise AssertionError("lane should fail closed when it observes the shared default profile")
+
+
+def test_classify_invalid_lane_artifacts_separates_auth_from_source_failures():
+    import csf.sharded_lane_series as mod
+
+    assert mod._classify_invalid_lane_artifacts(["source_add_failed count=1"]) == (
+        "source_add_or_materialization_artifacts"
+    )
+    assert mod._classify_invalid_lane_artifacts(["default_profile_running"]) == (
+        "auth_or_profile_artifacts"
+    )
+    assert mod._classify_invalid_lane_artifacts(
+        ["default_profile_running", "source_add_failed"]
+    ) == "mixed_auth_and_source_artifacts"
 
 
 def test_find_invalid_lane_artifacts_flags_default_profile_running(tmp_path):
@@ -1870,6 +1897,61 @@ def test_find_invalid_lane_artifacts_flags_materialization_timeout(tmp_path):
     assert "worker_id=worker-03" in findings[1]
 
 
+def test_find_invalid_lane_artifacts_flags_terminal_materialization_error(tmp_path):
+    import csf.sharded_lane_series as mod
+
+    lane_root = tmp_path / "lane"
+    log_dir = lane_root / "batch_01" / "logs"
+    log_dir.mkdir(parents=True)
+    (log_dir / "term.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "action": "nlm_batch_source_materialization_wait_failed",
+                        "data": {
+                            "failure_reason": "source_materialization_terminal_error",
+                            "wait_outcome": "terminal_source_error",
+                            "subbatch_index": 1,
+                            "expected_total": 1,
+                            "source_count_before_wait": 0,
+                            "source_count_after_wait": 1,
+                            "timeout_s": 600,
+                            "terminal_error_source_ids": ["source-v1"],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "action": "fetch_worker_finished",
+                        "data": {
+                            "worker_id": "worker-01",
+                            "returncode": 1,
+                            "summary": {
+                                "status": "error",
+                                "error": (
+                                    "NotebookSourceMaterializationTerminalError: "
+                                    "source list reported a terminal processing error"
+                                ),
+                            },
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    findings = mod._find_invalid_lane_artifacts(lane_root)
+
+    assert len(findings) == 2
+    assert "source_materialization_terminal_error" in findings[0]
+    assert "terminal_source_error" in findings[0]
+    assert "NotebookSourceMaterializationTerminalError" in findings[1]
+    assert "worker_id=worker-01" in findings[1]
+
+
 def test_main_refuses_to_start_when_doctor_fails(tmp_path, monkeypatch):
     import csf.sharded_lane_series as mod
 
@@ -1909,6 +1991,62 @@ def test_main_refuses_to_start_when_doctor_fails(tmp_path, monkeypatch):
     assert called == []
 
 
+def test_main_passes_explicit_cohort_shape_and_manifest(tmp_path, monkeypatch):
+    import csf.sharded_lane_series as mod
+
+    config_path = tmp_path / "lanes.json"
+    config_path.write_text("[]", encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    lanes = (
+        LaneConfig(
+            lane="pro",
+            account_class="pro",
+            account_profile="a.hominidae",
+            workers=1,
+            notebooklm_profile_prefix="a.hominidae-worker",
+            notebooklm_profiles=("a.hominidae-worker-01",),
+            browser_profile_root=Path(r"P:\.data\yt-is\browser\notebooklm-pro"),
+            worker_state_root=tmp_path / "worker_states",
+            notebook_prefix="benchmark-shard-pro",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(mod, "doctor_lane_setup", lambda *args, **kwargs: lanes)
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "ok",
+            "report_path": str(tmp_path / "summary.json"),
+            "combined": {
+                "hot_path_videos_per_hour": 0.0,
+                "hot_path_success_count_total": 0,
+                "fail_count_total": 0,
+                "wall_elapsed_s": 0.0,
+            },
+        }
+
+    monkeypatch.setattr(mod, "run_sharded_lane_series", fake_run)
+    result = mod.main(
+        [
+            "--lane-config",
+            str(config_path),
+            "--output-root",
+            str(tmp_path / "out"),
+            "--manifest-json",
+            str(manifest_path),
+            "--cohort-shape",
+            "manifest",
+        ]
+    )
+
+    assert result == 0
+    assert captured["manifest_json"] == manifest_path
+    assert captured["cohort_shape"] == "manifest"
+
+
 def test_main_returns_nonzero_for_invalidated_report(tmp_path, monkeypatch):
     import csf.sharded_lane_series as mod
 
@@ -1920,6 +2058,7 @@ def test_main_returns_nonzero_for_invalidated_report(tmp_path, monkeypatch):
         LaneConfig(
             lane="free",
             account_class="free",
+            account_profile="troup.hominidae",
             workers=1,
             notebooklm_profile_prefix="ytis-free1-worker",
             notebooklm_profiles=("ytis-free1-worker-01",),
@@ -1968,6 +2107,7 @@ def test_main_reports_versioned_invalidated_summary(tmp_path, monkeypatch):
         LaneConfig(
             lane="free",
             account_class="free",
+            account_profile="troup.hominidae",
             workers=1,
             notebooklm_profile_prefix="ytis-free1-worker",
             notebooklm_profiles=("ytis-free1-worker-01",),

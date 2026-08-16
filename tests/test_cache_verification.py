@@ -25,7 +25,7 @@ from csf.cache import (
 )
 
 
-def test_method(videos: list[str], method: str) -> dict:
+def _run_method(videos: list[str], method: str) -> dict:
     """Test a method on videos and verify caching.
 
     Returns dict with success count, cache_verified count.
@@ -136,7 +136,7 @@ def main():
     # Test each method
     for method in ["ytdlp", "selenium", "notebooklm"]:
         videos = data[method]
-        result = test_method(videos, method)
+        result = _run_method(videos, method)
         all_results.append(result)
 
     # Summary

@@ -1,0 +1,28 @@
+{
+  "created_at": "2026-08-16T05:35:14.957927+00:00",
+  "db_path": "P:\\.data\\yt-is\\batch_status.sqlite",
+  "dry_run": false,
+  "fetch": {
+    "elapsed_s": 0.5,
+    "mode": "EXECUTE",
+    "phase": "fetch",
+    "returncode": 1,
+    "stdout_tail": "   \"active_grace_hours\": 1,\n    \"bytes_deleted_or_planned\": 972875,\n    \"directories_deleted\": 4,\n    \"dry_run\": false,\n    \"errors\": [],\n    \"experiments_scanned\": 37,\n    \"experiments_skipped_active\": 3,\n    \"files_deleted\": 0,\n    \"max_age_days\": 7,\n    \"now_epoch\": 1786858515.421468,\n    \"root\": \"P:\\\\packages\\\\yt-is\\\\.logs\\\\multi_account_fetch\",\n    \"root_exists\": true,\n    \"status\": \"completed\"\n  },\n  \"state_path\": \"P:\\\\.data\\\\yt-is\\\\unattended-backlog\\\\state.json\",\n  \"status\": \"stopped\"\n}\n",
+    "supervisor_status": "planned"
+  },
+  "pre_sync_pending": 336032,
+  "skip_sync": true,
+  "status": "fetch_failed",
+  "verify": {
+    "blocked_pending": 126096,
+    "delta": 0,
+    "issues": [],
+    "ok": true,
+    "phase": "verify",
+    "post_pending": 336032,
+    "pre_pending": 336032,
+    "warnings": [
+      "126096 pending rows on blocked channels (coordinator will skip)"
+    ]
+  }
+}

@@ -409,6 +409,7 @@ def _run_policy(
             limit=limit,
             sample_label=sample_label,
             source_filter=source_url,
+            account_profile=os.environ.get("YTIS_NLM_ACCOUNT_PROFILE"),
             output_root=policy_root,
             python_executable=python_executable,
         )

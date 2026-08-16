@@ -1,4 +1,63 @@
-# gitleaks allowlist — pre-existing keys already in git history
-# Format: <rule>:<fingerprint>
-# Add one entry per finding that gitleaks flags as a false positive.
-gcp-api-key:backfill_channel_metadata.py:YT_API_KEY_3
+# gitleaks ignore list
+# 2026-08-15: one-time fingerprints for the .browser/ REMOVAL diff —
+# these findings are secrets being deleted from tracking, not added.
+:generic-api-key:113694
+:generic-api-key:113822
+:generic-api-key:113846
+:generic-api-key:113910
+:generic-api-key:113942
+:generic-api-key:114054
+:generic-api-key:114094
+:generic-api-key:114110
+:generic-api-key:114158
+:generic-api-key:114174
+:generic-api-key:114190
+:generic-api-key:114286
+:generic-api-key:114350
+:generic-api-key:114406
+:generic-api-key:169822
+:generic-api-key:169950
+:generic-api-key:169974
+:generic-api-key:170038
+:generic-api-key:170070
+:generic-api-key:170182
+:generic-api-key:170222
+:generic-api-key:170238
+:generic-api-key:170286
+:generic-api-key:170302
+:generic-api-key:170318
+:generic-api-key:170414
+:generic-api-key:170478
+:generic-api-key:170534
+:generic-api-key:174218
+:generic-api-key:209555
+:generic-api-key:212867
+:jwt:252590
+:generic-api-key:252590
+:generic-api-key:252590
+:generic-api-key:252590
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:252631
+:generic-api-key:309766
+:generic-api-key:309800
+:generic-api-key:314089
+:generic-api-key:340537
+:generic-api-key:355782
+:generic-api-key:355783
+:generic-api-key:519322
+:generic-api-key:519666
+:generic-api-key:519693
+:generic-api-key:519693
+:generic-api-key:519693
+:generic-api-key:519693
+:generic-api-key:519693
+:generic-api-key:519958
+:generic-api-key:536256

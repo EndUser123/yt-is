@@ -44,9 +44,12 @@ Commands:
 import argparse
 from collections import Counter
 from collections import deque
+from dataclasses import dataclass, field
 import json
 import fasteners
+import math
 import os
+import signal
 import subprocess
 import re
 import sys
@@ -60,14 +63,11 @@ from pathlib import Path
 # Multi-terminal lock directory for sync operations
 _LOCK_DIR = Path("P:/.data/yt-is/locks")
 _LOCK_DIR.mkdir(parents=True, exist_ok=True)
-_NLM_AUTH_CHECK_COUNT = 0
-_NLM_AUTH_CHECK_COUNT_LOCK = threading.Lock()
 
 # Add csf to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from csf import batch
-from csf import nlm_auth_guard
 from csf.csf_logging import log_user_message, log_action
 from csf.nlm_batch import DEFAULT_NOTEBOOKLM_BATCH_SIZE
 from csf.cache import has_cached_transcript, set_cached_transcript
@@ -84,18 +84,20 @@ from csf.nlm_batch import (
     close_reusable_ingestor,
     cleanup_stale_worker_notebooks,
 )
-from csf.nlm_worker_auth import (
-    DEFAULT_NLM_CHROME_PROFILE_ROOT,
-    _chrome_pids_for_root,
-    _stop_chrome_pids,
-    expected_email_for_profile,
-    family_for_profile,
-    refresh_source_profile,
-    sync_worker_profiles,
+from csf.adaptive_worker_scheduler import (
+    AdaptiveWorkerScheduler,
+    AssignmentLedger,
+    HealthSample,
+    SchedulerConfig,
+    SchedulerSnapshot,
+    WorkerIdentity,
 )
+from csf.nlm_client import ensure_account_session
 from csf.transcript import (
     LanguageConfig,
+    TranscriptResult,
     build_transcript_cache_metadata,
+    build_transcript_quality_metrics,
     fetch_transcript_chain,
 )
 from csf.batch_status import (
@@ -127,7 +129,48 @@ from csf.video_selection_manifest import (
     verify_selection_receipt,
     write_selection_receipt,
 )
-from csf.paths import get_batch_db_path
+
+
+def _build_result_quality_metrics(result: TranscriptResult) -> str:
+    """Serialize deterministic transcript evidence for every completion path."""
+    metrics = build_transcript_quality_metrics(result.transcript)
+    for field_name in ("source", "last_stage", "raw_lang"):
+        value = getattr(result, field_name, None)
+        if value is None or isinstance(value, (str, int, float, bool)):
+            metrics[field_name] = value
+    for field_name in (
+        "view_count",
+        "like_count",
+        "comment_count",
+        "duration",
+    ):
+        value = getattr(result, field_name, None)
+        if value is None or isinstance(value, (str, int, float, bool)):
+            metrics[field_name] = value
+    for field_name in ("video_title", "video_description"):
+        value = getattr(result, field_name, None)
+        if value is None or isinstance(value, str):
+            metrics["title" if field_name == "video_title" else "description"] = (
+                value[:500] if isinstance(value, str) else value
+            )
+    view_count = metrics.get("view_count")
+    like_count = metrics.get("like_count")
+    comment_count = metrics.get("comment_count")
+    if isinstance(view_count, (int, float)) and view_count:
+        if isinstance(like_count, (int, float)):
+            metrics["like_rate"] = round(like_count / view_count, 6)
+        else:
+            metrics["like_rate"] = None
+        if isinstance(comment_count, (int, float)):
+            metrics["comment_rate"] = round(comment_count / view_count, 6)
+        else:
+            metrics["comment_rate"] = None
+    return json.dumps(metrics, ensure_ascii=True, sort_keys=True)
+
+
+from csf.paths import get_batch_db_path, load_workspace_env
+from csf.fetch_run_lock import FetchRunLockError, fetch_run_lock
+from csf.durable_fallback_queue import DurableFallbackQueue
 from csf.source_enumerator import (
     parse_channel_url,
     parse_playlist_url,
@@ -147,13 +190,381 @@ from csf.display import format_sync_results
 from csf.channel_filtering import analyze_channel_filter_signals
 
 
+class AdaptiveSchedulerExhausted(RuntimeError):
+    """Raised when adaptive dispatch has queued work but no usable worker slot."""
+
+    def __init__(self, payload: dict[str, object]):
+        self.payload = dict(payload)
+        super().__init__(
+            "adaptive scheduler exhausted: "
+            f"queued_batches={self.payload.get('queued_batch_count', 0)} "
+            f"queued_videos={self.payload.get('queued_video_count', 0)}"
+        )
+
+
+@dataclass(slots=True)
+class _IndustrialQueuedBatch:
+    """Stable logical batch identity plus the video IDs awaiting dispatch."""
+
+    batch_id: str
+    video_ids: list[str]
+    source_urls: dict[str, str] = field(default_factory=dict)
+
+
+_IndustrialQueueItem = _IndustrialQueuedBatch | list[str]
+
+_DEFAULT_INDUSTRIAL_WORKER_TIMEOUT_S = 4 * 60 * 60
+_DEFAULT_TRANSCRIPT_FALLBACK_TIMEOUT_S = 30 * 60
+
+
+def _transcript_fallback_timeout_s() -> float | None:
+    """Return the per-item fallback deadline for unattended coordinator work."""
+    raw = os.getenv("YTIS_TRANSCRIPT_FALLBACK_TIMEOUT_S", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = None
+        if value is not None and math.isfinite(value) and value > 0:
+            return value
+        print(
+            "[source] YTIS_TRANSCRIPT_FALLBACK_TIMEOUT_S must be finite and > 0; "
+            f"using {_DEFAULT_TRANSCRIPT_FALLBACK_TIMEOUT_S:.0f}s for coordinator-owned work",
+            file=sys.stderr,
+        )
+    if (
+        os.getenv("YTIS_COORDINATOR_RUN_ID", "").strip()
+        or os.getenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", "").strip()
+    ):
+        return float(_DEFAULT_TRANSCRIPT_FALLBACK_TIMEOUT_S)
+    return None
+
+
+def _run_transcript_fallback_subprocess(
+    video_id: str,
+    skip_notebooklm: bool,
+    skip_oembed: bool,
+    admission_metadata: dict[str, object] | None,
+    timeout_s: float,
+) -> TranscriptResult:
+    """Run one fallback chain in an owned process that can be killed on deadline."""
+    result_fd, result_name = tempfile.mkstemp(prefix="transcript_fallback_", suffix=".json")
+    os.close(result_fd)
+    result_path = Path(result_name)
+    command = [
+        sys.executable,
+        "-m",
+        "csf.transcript",
+        f"--video-id={video_id}",
+        "--result-path",
+        str(result_path),
+    ]
+    if skip_notebooklm:
+        command.append("--skip-notebooklm")
+    if skip_oembed:
+        command.append("--skip-oembed")
+    command.extend(["--admission-metadata", json.dumps(admission_metadata)])
+    # Leave a small margin for the child to serialize its result before the
+    # supervisor's hard deadline expires. The child uses this deadline to
+    # budget nested expensive stages such as Whisper audio and inference.
+    command.extend(["--deadline-s", str(max(0.1, timeout_s - 30.0))])
+    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+    proc = subprocess.Popen(
+        command,
+        cwd=str(Path(__file__).resolve().parents[1]),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=creationflags,
+        start_new_session=os.name != "nt",
+    )
+    stdout_text = ""
+    stderr_text = ""
+    try:
+        try:
+            stdout_text, stderr_text = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            _terminate_process_tree_pid(proc.pid)
+            termination_confirmed = _cleanup_timed_out_process(proc)
+            termination_state = "confirmed" if termination_confirmed else "termination_unconfirmed"
+            return TranscriptResult(
+                video_id=video_id, lang="en", raw_lang=None, was_translated=False,
+                transcript="", source="none",
+                error=(
+                    f"transcript fallback timed out (>{timeout_s:g}s); "
+                    f"termination={termination_state}"
+                ),
+                last_stage="transcript_fallback",
+                failure_reason="timeout" if termination_confirmed else "termination_unconfirmed",
+            )
+        if not result_path.exists():
+            detail = (stderr_text or stdout_text or "").strip()[:300]
+            return TranscriptResult(
+                video_id=video_id, lang="en", raw_lang=None, was_translated=False,
+                transcript="", source="none",
+                error=(
+                    f"transcript worker exited without result ({proc.returncode})"
+                    + (f": {detail}" if detail else "")
+                ),
+                last_stage="transcript_fallback", failure_reason="unknown",
+            )
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        return TranscriptResult(**payload)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        detail = (stderr_text or stdout_text or "").strip()[:300]
+        return TranscriptResult(
+            video_id=video_id, lang="en", raw_lang=None, was_translated=False,
+            transcript="", source="none",
+            error=(
+                f"invalid transcript worker result ({proc.returncode}): "
+                f"{type(exc).__name__}: {exc}"
+                + (f": {detail}" if detail else "")
+            ),
+            last_stage="transcript_fallback", failure_reason="unknown",
+        )
+    finally:
+        result_path.unlink(missing_ok=True)
+
+
+def _cleanup_timed_out_process(proc) -> bool:
+    """Bound cleanup after a fallback worker deadline.
+
+    A completed second ``communicate`` is the only confirmation that the
+    process and captured pipes were reaped. If that wait expires or cleanup
+    raises, close the pipe handles and make the uncertainty explicit.
+    """
+    try:
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except (AttributeError, OSError, ProcessLookupError):
+                pass
+            try:
+                proc.wait(timeout=1)
+            except (AttributeError, OSError, ChildProcessError, subprocess.TimeoutExpired):
+                return False
+            return False
+        except (AttributeError, OSError, ChildProcessError):
+            return False
+        return True
+    finally:
+        for stream_name in ("stdout", "stderr"):
+            stream = getattr(proc, stream_name, None)
+            close = getattr(stream, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except (OSError, ValueError):
+                    pass
+
+
+def _industrial_worker_timeout_s() -> float | None:
+    """Return the worker deadline for coordinator-owned industrial children.
+
+    Direct ``csf-source`` callers keep the historical unbounded behavior unless
+    they opt into ``YTIS_INDUSTRIAL_WORKER_TIMEOUT_S``.  The unattended
+    coordinator always supplies an ownership marker, so its children receive a
+    finite default even when the ambient environment is empty.
+    """
+    raw = os.getenv("YTIS_INDUSTRIAL_WORKER_TIMEOUT_S", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            print(
+                f"[source] invalid YTIS_INDUSTRIAL_WORKER_TIMEOUT_S={raw!r}; "
+                f"using {_DEFAULT_INDUSTRIAL_WORKER_TIMEOUT_S:.0f}s for coordinator-owned work",
+                file=sys.stderr,
+            )
+        else:
+            if math.isfinite(value) and value > 0:
+                return value
+            print(
+                "[source] YTIS_INDUSTRIAL_WORKER_TIMEOUT_S must be finite and > 0; "
+                f"using {_DEFAULT_INDUSTRIAL_WORKER_TIMEOUT_S:.0f}s for coordinator-owned work",
+                file=sys.stderr,
+            )
+    if (
+        os.getenv("YTIS_COORDINATOR_RUN_ID", "").strip()
+        or os.getenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", "").strip()
+    ):
+        return float(_DEFAULT_INDUSTRIAL_WORKER_TIMEOUT_S)
+    return None
+
+
+def _terminate_process_tree_pid(pid: int) -> None:
+    """Terminate one owned worker process and its descendants."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except (AttributeError, OSError, ProcessLookupError):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+
+
+def _is_source_add_failure_reason(value: object) -> bool:
+    normalized = str(value or "").strip().lower().replace("_", " ")
+    return "source add failed" in normalized or "could not add url source" in normalized
+
+
+def _is_source_addressability_failure_reason(value: object) -> bool:
+    """Recognize source-content failures caused by an unaddressable source ID."""
+    normalized = str(value or "").strip().lower().replace("_", " ")
+    return "sourcenotfounderror" in normalized or "source not found" in normalized
+
+
+def _compose_fallback_failure_reason(
+    original_failure_reason: str | None,
+    fallback_failure_reason: str,
+    error_text: str,
+) -> str:
+    """Keep the admission cause visible after a fallback attempt fails."""
+    fallback_reason = str(fallback_failure_reason or "unknown").strip()
+    detail = str(error_text or "").strip()
+    fallback_failure = f"{fallback_reason}: {detail}" if detail else fallback_reason
+    original = str(original_failure_reason or "").strip()
+    if original and original not in fallback_failure:
+        return f"{original}; transcript_fallback: {fallback_failure}"[:1000]
+    return fallback_failure[:1000]
+
+
+def _fallback_failure_provenance(value: object) -> str | None:
+    """Return a real upstream cause, excluding synthetic route labels."""
+    reason = str(value or "").strip()
+    if reason.lower() in {
+        "explicit_fallback_only",
+        "pending_fallback",
+        "fallback_admitted",
+    }:
+        return None
+    return reason or None
+
+
+def _queue_confirmed_worker_failures_for_fallback(
+    worker_payload: list[_IndustrialQueuedBatch],
+    *,
+    fallback_queue: deque[tuple[str, str, bool]],
+    source_urls: dict[str, str],
+    source_add_only: bool = False,
+    source_addressability_only: bool = False,
+    failure_reasons: dict[str, str] | None = None,
+) -> int:
+    """Reconcile persisted worker failures and queue fallback work once.
+
+    The worker has already persisted each failed ID. Reconcile that receipt
+    from the authoritative DB before queuing; never infer a failed ID from an
+    aggregate worker count, and never send the ID back through NotebookLM on
+    this branch. Keep the failed status while the in-run fallback queue owns
+    the item. A process restart must leave it failed for explicit residual
+    recovery, rather than silently turning it into a fresh primary-path job.
+    """
+    video_ids = [
+        video_id
+        for item in worker_payload
+        for video_id in item.video_ids
+    ]
+    if not video_ids:
+        return 0
+    try:
+        rows = get_entries_for_video_ids_details(video_ids)
+    except Exception as exc:
+        log_action(
+            "industrial_failure_fallback_reconciliation_failed",
+            {
+                "video_count": len(video_ids),
+                "error": f"{type(exc).__name__}: {exc}",
+                "reason": "authoritative_status_read_failed",
+            },
+        )
+        return 0
+    rows_by_video_id = {
+        str(row.get("video_id")): row
+        for row in rows
+        if isinstance(row, dict) and row.get("video_id")
+    }
+    queued = 0
+    seen: set[str] = set()
+    for item in worker_payload:
+        for video_id in item.video_ids:
+            if video_id in seen:
+                continue
+            seen.add(video_id)
+            row = rows_by_video_id.get(video_id)
+            if not row or str(row.get("status") or "") != "failed":
+                continue
+            source_url = str(
+                item.source_urls.get(video_id)
+                or row.get("source")
+                or source_urls.get(video_id)
+                or ""
+            ).strip()
+            if not source_url:
+                log_action(
+                    "industrial_failure_fallback_not_queued",
+                    {"video_id": video_id, "reason": "source_url_missing"},
+                )
+                continue
+            failure_reason = str(row.get("failure_reason") or "industrial_worker_failed")
+            if source_add_only and not _is_source_add_failure_reason(failure_reason):
+                log_action(
+                    "industrial_failure_fallback_not_queued",
+                    {
+                        "video_id": video_id,
+                        "source_url": source_url,
+                        "failure_reason": failure_reason[:120],
+                        "reason": "failure_reason_not_source_add",
+                    },
+                )
+                continue
+            if source_addressability_only and not _is_source_addressability_failure_reason(failure_reason):
+                log_action(
+                    "industrial_failure_fallback_not_queued",
+                    {
+                        "video_id": video_id,
+                        "source_url": source_url,
+                        "failure_reason": failure_reason[:120],
+                        "reason": "failure_reason_not_source_addressability",
+                    },
+                )
+                continue
+            fallback_queue.append((video_id, source_url, True))
+            if failure_reasons is not None:
+                failure_reasons[video_id] = failure_reason[:1000]
+            queued += 1
+            log_action(
+                "industrial_failure_fallback_queued",
+                {
+                    "video_id": video_id,
+                    "source_url": source_url,
+                    "failure_reason": failure_reason[:120],
+                    "skip_notebooklm": True,
+                    "status_preserved": "failed",
+                    "requeue_skipped": True,
+                    "requeue_reason": "in_run_fallback_queue_not_durable_across_restart",
+                    "queue_depth": len(fallback_queue),
+                },
+            )
+    return queued
+
+
 def _take_industrial_dispatch_groups(
-    batch_queue: list[list[str]],
+    batch_queue: list[_IndustrialQueueItem],
     worker_slots: int,
     batches_per_worker: int = 4,
     *,
     rotate_by: int = 0,
-) -> list[list[list[str]]]:
+) -> list[list[_IndustrialQueueItem]]:
     """Take up to a bounded bundle of batches per available worker slot.
 
     `rotate_by` shifts which worker slot receives the first batch so repeated
@@ -166,7 +577,7 @@ def _take_industrial_dispatch_groups(
     if not batch_queue:
         return []
     dispatch_count = min(worker_slots, len(batch_queue))
-    groups: list[list[list[str]]] = [[] for _ in range(dispatch_count)]
+    groups: list[list[_IndustrialQueueItem]] = [[] for _ in range(dispatch_count)]
     while batch_queue and any(len(group) < batches_per_worker for group in groups):
         for group in groups:
             if not batch_queue:
@@ -179,6 +590,11 @@ def _take_industrial_dispatch_groups(
         if offset:
             groups = groups[offset:] + groups[:offset]
     return [group for group in groups if group]
+
+
+def _bounded_dispatch_slot_count(available_slots: int, eligible_slot_count: int) -> int:
+    """Bound queue removal by the number of identities that can receive work."""
+    return min(max(0, available_slots), max(0, eligible_slot_count))
 
 
 def _drain_balanced_pending_batches(
@@ -259,23 +675,100 @@ def _load_worker_summary(result_path: Path | None, stdout_text: str) -> dict[str
     summary: dict[str, object] = {}
     if result_path is not None and result_path.exists():
         try:
-            summary = json.loads(result_path.read_text(encoding="utf-8"))
+            parsed = json.loads(result_path.read_text(encoding="utf-8"))
+            summary = parsed if isinstance(parsed, dict) else {}
         except Exception:
             summary = {}
     if not summary and stdout_text:
         lines = stdout_text.rstrip().splitlines()
         if lines:
             try:
-                summary = json.loads(lines[-1])
+                parsed = json.loads(lines[-1])
+                summary = parsed if isinstance(parsed, dict) else {}
             except Exception:
                 summary = {}
     return summary
+
+
+def _classify_adaptive_worker_health(
+    summary: dict[str, object],
+    *,
+    max_failure_rate: float = 0.25,
+) -> tuple[bool, str]:
+    """Return whether a worker result is safe to use for scale-up health."""
+    if not summary or summary.get("error"):
+        return False, "worker_result"
+    if not 0 <= max_failure_rate <= 1:
+        raise ValueError("max_failure_rate must be between 0 and 1")
+    status_counts = summary.get("content_fetch_status_counts_total")
+    if not isinstance(status_counts, dict):
+        return False, "health_telemetry_missing"
+    failure_counts = summary.get("failure_reason_counts", {})
+    disqualifying_reason = ""
+    for counts in (status_counts, failure_counts):
+        if not isinstance(counts, dict):
+            continue
+        for raw_reason, raw_count in counts.items():
+            reason_text = str(raw_reason).lower()
+            if int(raw_count or 0) > 0 and (
+                "auth" in reason_text
+                or "source_age_cliff" in reason_text
+                or "launch" in reason_text
+            ):
+                disqualifying_reason = reason_text
+                break
+        if disqualifying_reason:
+            break
+    if disqualifying_reason:
+        return False, disqualifying_reason
+    try:
+        succeeded = int(summary["succeeded"])
+        failed = int(summary["failed"])
+    except (KeyError, TypeError, ValueError):
+        return False, "worker_result_counts_missing"
+    if succeeded < 0 or failed < 0 or succeeded + failed <= 0:
+        return False, "worker_result_counts_invalid"
+    if failed / (succeeded + failed) > max_failure_rate:
+        return False, "failure_rate_exceeded"
+    return True, ""
+
+
+def _adaptive_result_requires_requeue(summary: dict[str, object], health_reason: str) -> bool:
+    """Return whether the assignment lacks trustworthy per-video completion."""
+    if health_reason in {
+        "worker_result",
+        "health_telemetry_missing",
+        "worker_result_counts_missing",
+        "worker_result_counts_invalid",
+        "auth_failed",
+    }:
+        return True
+    return "launch" in health_reason
+
+
+def _requeue_adaptive_assignment(
+    batch_queue: list[_IndustrialQueuedBatch],
+    worker_payload: list[_IndustrialQueuedBatch],
+    assignment_ledger: AssignmentLedger | None,
+    assignment_id: str,
+) -> None:
+    """Restore a failed adaptive assignment without changing its batch IDs."""
+    if not assignment_id.strip():
+        raise RuntimeError("adaptive worker failure has no assignment ID")
+    if not worker_payload:
+        raise RuntimeError(
+            f"adaptive assignment {assignment_id} has no batch payload to requeue"
+        )
+    if assignment_ledger is not None:
+        assignment_ledger.fail(assignment_id, requeue=True)
+    batch_queue[0:0] = worker_payload
 
 
 def _build_industrial_worker_launch(
     *,
     worker_id: int,
     worker_batches: list[list[str]],
+    create_state_root: bool = True,
 ) -> dict[str, object]:
     """Build per-worker subprocess settings without mutating process-wide env."""
     state_root = Path(
@@ -286,16 +779,23 @@ def _build_industrial_worker_launch(
     )
     notebook_prefix_override = os.getenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOK_PREFIX", "").strip()
     notebook_prefix = notebook_prefix_override or "yt-is-worker"
+    account_profile = os.getenv("YTIS_NLM_ACCOUNT_PROFILE", "").strip()
+    if not account_profile:
+        raise ValueError("YTIS_NLM_ACCOUNT_PROFILE is required for every industrial worker")
+    from csf.nlm_auth_check import expected_email_for_account_profile
+
+    expected_email_for_account_profile(account_profile)
     profile_prefix = os.getenv(
         "YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILE_PREFIX",
-        "ytis-worker",
-    )
+        "",
+    ).strip() or f"{account_profile}-worker"
     explicit_profiles = [
         item.strip()
         for item in os.getenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILES", "").split(",")
         if item.strip()
     ]
-    state_root.mkdir(parents=True, exist_ok=True)
+    if create_state_root:
+        state_root.mkdir(parents=True, exist_ok=True)
     state_path = state_root / f"worker-{worker_id:02d}.json"
     if explicit_profiles:
         if worker_id > len(explicit_profiles):
@@ -310,21 +810,23 @@ def _build_industrial_worker_launch(
         notebook_title = f"{notebook_prefix}-{worker_id:02d}"
     elif explicit_profiles:
         notebook_title = notebooklm_profile
-    elif profile_prefix != "ytis-worker":
-        notebook_title = f"{profile_prefix}-{worker_id:02d}"
     else:
-        notebook_title = f"{notebook_prefix}-{worker_id:02d}"
+        notebook_title = f"{profile_prefix}-{worker_id:02d}"
     worker_env = os.environ.copy()
     worker_env["YTIS_NLM_OWNER_STATE_PATH"] = str(state_path)
     worker_env["YTIS_NLM_OWNER_NOTEBOOK_TITLE"] = notebook_title
     worker_env["YTIS_NLM_REUSABLE_STATE_PATH"] = str(state_path)
     worker_env["YTIS_NLM_REUSABLE_NOTEBOOK_TITLE"] = notebook_title
     worker_env["NOTEBOOKLM_PROFILE"] = notebooklm_profile
+    worker_env["YTIS_NLM_ACCOUNT_PROFILE"] = account_profile
+    worker_env["YTIS_NLM_WORKER_ID"] = f"worker-{worker_id:02d}"
     return {
         "worker_label": f"worker-{worker_id:02d}",
         "state_path": str(state_path),
         "notebook_title": notebook_title,
         "notebooklm_profile": notebooklm_profile,
+        "worker_id": f"worker-{worker_id:02d}",
+        "account_profile": account_profile,
         "batch_count": len(worker_batches),
         "video_count": sum(len(batch) for batch in worker_batches),
         "env": worker_env,
@@ -412,6 +914,7 @@ def _build_fetch_completed_payload(
         "fail_count": fail_count,
         "skip_count": skip_count,
         "processed_count": processed_count,
+        "unprocessed_count": max(0, pending_total - processed_count),
         "elapsed_s": elapsed_s,
         "success_per_min": round(success_count / elapsed_s * 60, 2) if elapsed_s > 0 else None,
         "processed_per_min": round(processed_count / elapsed_s * 60, 2) if elapsed_s > 0 else None,
@@ -419,216 +922,6 @@ def _build_fetch_completed_payload(
         "failure_reason": failure_reason,
         **(selection_metadata or {}),
     }
-
-
-def _get_nlm_login_profile_args() -> list[str]:
-    """Return CLI args that target the active NotebookLM auth profile."""
-    profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
-    if not profile:
-        return []
-    return nlm_auth_guard.get_login_profile_args(profile)
-
-
-def _resolve_parent_nlm_profile() -> str:
-    """Return the profile the parent process should use for auth checks."""
-    profile = os.getenv("NOTEBOOKLM_PROFILE", "").strip()
-    if profile:
-        return profile
-    explicit_profiles = [
-        item.strip()
-        for item in os.getenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILES", "").split(",")
-        if item.strip()
-    ]
-    if explicit_profiles:
-        profile = explicit_profiles[0]
-    else:
-        prefix = os.getenv("YTIS_INDUSTRIAL_WORKER_NOTEBOOKLM_PROFILE_PREFIX", "").strip()
-        profile = f"{prefix}-01" if prefix else ""
-    if profile:
-        os.environ["NOTEBOOKLM_PROFILE"] = profile
-    return profile
-
-
-def _get_nlm_auth_force_refresh_every_checks() -> int:
-    raw = os.getenv("YTIS_NLM_AUTH_FORCE_REFRESH_EVERY_CHECKS", "").strip()
-    if not raw:
-        return 0
-    try:
-        value = int(raw)
-    except ValueError:
-        return 0
-    return value if value > 0 else 0
-
-
-def _next_nlm_auth_check_count() -> int:
-    global _NLM_AUTH_CHECK_COUNT
-    with _NLM_AUTH_CHECK_COUNT_LOCK:
-        _NLM_AUTH_CHECK_COUNT += 1
-        return _NLM_AUTH_CHECK_COUNT
-
-
-def _is_nlm_auth_noninteractive() -> bool:
-    """Return whether auth checks must avoid browser/passkey prompts."""
-    return nlm_auth_guard.is_nlm_auth_noninteractive()
-
-
-def _extract_nlm_account(stdout: str, stderr: str = "") -> str:
-    for line in f"{stdout}\n{stderr}".splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("account:"):
-            return stripped.split(":", 1)[1].strip().lower()
-    return ""
-
-
-def _default_nlm_chrome_profile_pids() -> set[int]:
-    if not _is_nlm_auth_noninteractive():
-        return set()
-    return _chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT)
-
-
-def _stop_default_nlm_chrome_profile(stage: str) -> bool:
-    pids = _default_nlm_chrome_profile_pids()
-    if not pids:
-        return False
-    _stop_chrome_pids(pids)
-    print(
-        f"[source] closed default NotebookLM chrome-profile at {stage}: "
-        f"{DEFAULT_NLM_CHROME_PROFILE_ROOT} pids={sorted(pids)}",
-        file=sys.stderr,
-    )
-    return True
-
-
-def _ensure_nlm_auth() -> bool:
-    """Check NotebookLM auth and refresh it within the active profile if needed."""
-    profile = _resolve_parent_nlm_profile()
-    login_profile_args = _get_nlm_login_profile_args()
-    expected_email = expected_email_for_profile(profile).lower()
-    check_count = _next_nlm_auth_check_count()
-    force_every = _get_nlm_auth_force_refresh_every_checks()
-    force_scheduled = force_every > 0 and check_count % force_every == 0
-    if _is_nlm_auth_noninteractive() and not profile:
-        print("[source] FATAL: noninteractive NLM auth requires NOTEBOOKLM_PROFILE.", file=sys.stderr)
-        sys.exit(1)
-    _stop_default_nlm_chrome_profile("auth_check_before")
-    login_check = nlm_auth_guard.run_nlm(["login", "--check", *login_profile_args], timeout_s=30)
-    if login_check.stderr == "NLM command timed out":
-        print("[source] FATAL: NLM auth check timed out.", file=sys.stderr)
-        sys.exit(1)
-    if _stop_default_nlm_chrome_profile("auth_check_after"):
-        log_action(
-            "nlm_auth_recovered",
-            {
-                "component": "source",
-                "status": "default_profile_reaped_after_auth_check",
-                "notebooklm_profile": profile,
-                "expected_email": expected_email or None,
-                "check_count": check_count,
-            },
-        )
-    account = _extract_nlm_account(login_check.stdout or "", login_check.stderr or "")
-    if login_check.returncode == 0 and (not expected_email or account == expected_email) and not force_scheduled:
-        return True
-    if login_check.returncode == 0 and expected_email and account and account != expected_email:
-        print(
-            f"[source] NLM auth profile {profile} is mapped to {account}, expected {expected_email}.",
-            file=sys.stderr,
-        )
-    if force_scheduled:
-        log_action(
-            "nlm_auth_forced_refresh_scheduled",
-            {
-                "component": "source",
-                "notebooklm_profile": profile,
-                "expected_email": expected_email or None,
-                "check_count": check_count,
-            },
-        )
-    force_arg = ""
-    mode = "interactive"
-    # The initial auth check in csf-source is ALWAYS interactive (one-time
-    # bootstrap). After this succeeds, YTIS_NLM_AUTH_NONINTERACTIVE is set
-    # so worker-level auth checks in nlm_batch.py never open browsers.
-    # Previous code checked _is_nlm_auth_noninteractive() here, which meant
-    # the initial auth tried --force (non-interactive CDP) instead of
-    # letting the user log in interactively. The result was: expired sessions
-    # couldn't be refreshed without manual `nlm login` before fetch.
-    family = family_for_profile(profile)
-    if family is not None:
-        refresh_started = time.perf_counter()
-        session_established_at = round(time.monotonic(), 3)
-        log_action(
-            "nlm_family_refresh_started",
-            {
-                "component": "source",
-                "notebooklm_profile": profile,
-                "source_profile": family.source_profile,
-                "expected_email": expected_email or None,
-                "check_count": check_count,
-            },
-        )
-        try:
-            if not refresh_source_profile(family, timeout_s=120):
-                print("[source] FATAL: dedicated NLM source-profile refresh failed.", file=sys.stderr)
-                raise RuntimeError("dedicated NLM source-profile refresh failed")
-            sync_worker_profiles(families=(family,), backup=True)
-        except Exception as exc:
-            print(f"[source] FATAL: worker auth profile sync failed: {exc}", file=sys.stderr)
-            log_action(
-                "nlm_family_refresh_completed",
-                {
-                    "component": "source",
-                    "status": "failed",
-                    "elapsed_s": round(time.perf_counter() - refresh_started, 3),
-                    "notebooklm_profile": profile,
-                    "source_profile": family.source_profile,
-                    "expected_email": expected_email or None,
-                    "check_count": check_count,
-                },
-            )
-            sys.exit(1)
-        log_action(
-            "nlm_family_refresh_completed",
-            {
-                "component": "source",
-                "status": "ok",
-                "elapsed_s": round(time.perf_counter() - refresh_started, 3),
-                "notebooklm_profile": profile,
-                "source_profile": family.source_profile,
-                "expected_email": expected_email or None,
-                "check_count": check_count,
-                "session_established_at": session_established_at,
-            },
-        )
-    else:
-        login_cmd = ["login", *([force_arg] if force_arg else []), *login_profile_args]
-        login_res = nlm_auth_guard.run_nlm(login_cmd, timeout_s=120)
-        if login_res.stderr == "NLM command timed out":
-            print("[source] FATAL: NLM login timed out.", file=sys.stderr)
-            sys.exit(1)
-        if _stop_default_nlm_chrome_profile("auth_refresh_after"):
-            print("[source] FATAL: NLM login opened the default chrome-profile.", file=sys.stderr)
-            sys.exit(1)
-        if login_res.returncode != 0:
-            print(f"[source] FATAL: NLM login failed: {login_res.stderr}", file=sys.stderr)
-            sys.exit(1)
-    verify = nlm_auth_guard.run_nlm(["login", "--check", *login_profile_args], timeout_s=30)
-    if verify.stderr == "NLM command timed out":
-        print("[source] FATAL: NLM post-refresh auth check timed out.", file=sys.stderr)
-        sys.exit(1)
-    if _stop_default_nlm_chrome_profile("auth_verify_after"):
-        print("[source] FATAL: NLM post-refresh check opened the default chrome-profile.", file=sys.stderr)
-        sys.exit(1)
-    verify_account = _extract_nlm_account(verify.stdout or "", verify.stderr or "")
-    if verify.returncode != 0 or (expected_email and verify_account != expected_email):
-        print("[source] FATAL: NLM auth refresh did not produce the expected profile session.", file=sys.stderr)
-        sys.exit(1)
-    print("[source] NLM re-authenticated.", file=sys.stderr)
-    # Switch to non-interactive mode for all subsequent worker auth checks.
-    # The initial interactive login above established the session; workers
-    # should use the cached session/cookies without opening browsers.
-    os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
-    return True
 
 
 def _empty_source_profile_totals() -> dict[str, object]:
@@ -707,6 +1000,10 @@ def _log_fetch_completed(
     selection_metadata: dict[str, object] | None = None,
 ) -> None:
     processed_count = success_count + fail_count + skip_count
+    unprocessed_count = max(0, pending_total - processed_count)
+    if status == "completed" and unprocessed_count:
+        status = "partial"
+        failure_reason = failure_reason or f"unprocessed_outcomes:{unprocessed_count}"
     log_action(
         "fetch_completed",
         _build_fetch_completed_payload(
@@ -1432,6 +1729,39 @@ def cmd_check(source_id_or_url: str) -> None:
         })
         print(f"[source] Marked {new_count} new RSS videos as pending")
 
+        # Shorts tab enumeration: the uploads feed carries only a fraction of
+        # shorts (measured 0-11 of 30 recent), so poll the tab directly.
+        # Free (yt-dlp flat, no quota); opt out per-run with YTIS_SKIP_SHORTS=1.
+        if not os.environ.get("YTIS_SKIP_SHORTS"):
+            try:
+                from csf.source_enumerator import check_shorts
+
+                shorts = check_shorts(channel_id)
+                new_shorts = [
+                    item for item in shorts if item["video_id"] not in all_video_ids
+                ]
+                if new_shorts:
+                    short_entries = [
+                        BatchEntry(
+                            video_id=item["video_id"],
+                            status="pending",
+                            source=channel_url,
+                            channel_id=channel_id,
+                            title=item["title"] or None,
+                            is_short=True,
+                        )
+                        for item in new_shorts
+                    ]
+                    set_status_batch(short_entries)
+                    log_action("shorts_processing", {
+                        "channel_url": channel_url,
+                        "shorts_returned": len(shorts),
+                        "new_shorts": len(short_entries),
+                    })
+                    print(f"[source] Marked {len(short_entries)} new shorts as pending")
+            except Exception as exc:
+                print(f"[source] Shorts enumeration skipped: {type(exc).__name__}: {exc}", file=sys.stderr)
+
         # Increment video_count_estimate by the number of new videos found
         current_count = existing.get("video_count_estimate", 0)
         if new_count > 0 and current_count is not None:
@@ -1763,23 +2093,174 @@ def cmd_check_all(verbose: bool = False) -> None:
             print(f"  {video_count or 0} total")
             print("")
 
+    # Shorts visibility: the pending backlog now mixes long-form and shorts;
+    # surfacing the split prevents the "pending count exploded" surprise after
+    # shorts-aware enumeration.
+    try:
+        sc = storage._get_conn()
+        shorts_pending = sc.execute(
+            "SELECT COUNT(*) FROM analysis_status WHERE status='pending' AND is_short=1"
+        ).fetchone()[0]
+        long_pending = sc.execute(
+            "SELECT COUNT(*) FROM analysis_status WHERE status='pending' AND COALESCE(is_short,0)=0"
+        ).fetchone()[0]
+        sc.close()
+    except Exception:
+        shorts_pending, long_pending = None, None
+
     # Print summary (total_videos_all is calculated above from actual database counts)
     print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print(f"Summary: {len(channels_meta)} channels | {total_new_videos} new | {total_videos_all} total videos")
+    if shorts_pending is not None:
+        print(
+            f"Pending backlog: {long_pending + (shorts_pending or 0)} total "
+            f"({long_pending} long-form + {shorts_pending} shorts)"
+        )
 
 
-def cmd_categorize(workers: int = 1) -> None:
-    """Categorize all channels using Gemini CLI (idempotent — skips if already categorized)."""
+_TARGETED_URLS: set[str] = set()
+
+
+def _db_path_for_cache():
+    import csf.batch_status as _bs
+
+    return _bs._get_batch_status_storage()._db_path
+
+
+def cmd_categorize(
+    workers: int = 1,
+    retry_other: bool = False,
+    video_titles: bool = False,
+    channels: str | None = None,
+    category: str | None = None,
+    all_channels: bool = False,
+    refresh_video_titles: bool = False,
+) -> None:
+    """Categorize all channels using the provider chain (idempotent — skips categorized).
+
+    ``retry_other`` re-attempts channels stored as 'Other' (never manual
+    decisions) — use after backfilling descriptions/titles, since new signal
+    can resolve channels the title-only era could not.
+    """
     from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
     from csf.batch_status import _get_batch_status_storage
-    from csf.categorize import categorize_channel
+    from csf.categorize import categorize_channel, fetch_recent_video_titles
 
     storage = _get_batch_status_storage()
     storage._ensure_channel_metadata()
+    if all_channels:
+        # Full re-classification: resets EVERY classified channel — manual
+        # (sticky) marks included — and re-derives with full evidence. This
+        # is the mistake-fixing hammer; plain runs and --retry-other never
+        # override manual, while --all/--category/--channels always do.
+        conn = storage._get_conn()
+        conn.execute("UPDATE channel_metadata SET category=NULL")
+        conn.commit()
+        conn.close()
+        print(
+            "[source] FULL re-classification: every channel reset (including "
+            "manual/sticky marks) and re-derived with full evidence.",
+            flush=True,
+        )
+        video_titles = True
+        retry_other = False
+        channels = None
+        category = None
+    if category:
+        from csf.categorize import CATEGORIES as _KNOWN_CATS
+
+        if category not in _KNOWN_CATS and category != "Other":
+            print(f"[source] Unknown category {category!r}.", file=sys.stderr)
+            sys.exit(1)
+        conn = storage._get_conn()
+        conn.execute(
+            "UPDATE channel_metadata SET category=NULL WHERE category = ?", (category,)
+        )
+        conn.commit()
+        n_reset = conn.total_changes
+        conn.close()
+        print(f"[source] Reclassifying all channels previously marked {category!r} "
+              f"with full evidence.")
+        video_titles = True
+        channels = None  # category selection replaces channel-list selection
+    if channels:
+        # Targeted reclassification: explicit operator selection overrides
+        # stickiness (including manual marks) and always uses full evidence.
+        import sqlite3 as _sq
+
+        raw_items = []
+        for part in channels.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if part.startswith("@"):
+                raw_items.extend(
+                    ln.strip() for ln in Path(part[1:]).read_text(encoding="utf-8").splitlines()
+                    if ln.strip() and not ln.startswith("#")
+                )
+            else:
+                raw_items.append(part)
+        wanted_urls = {x for x in raw_items if x.startswith("http")}
+        wanted_ids = {x for x in raw_items if not x.startswith("http")}
+        conn = storage._get_conn()
+        rows_t: list = []
+        if wanted_urls:
+            ph_t = ",".join("?" * len(wanted_urls))
+            rows_t = conn.execute(
+                "SELECT channel_url FROM channel_metadata WHERE channel_url IN "
+                f"({ph_t})",
+                tuple(sorted(wanted_urls)),
+            ).fetchall()
+        rows_i: list = []
+        if wanted_ids:
+            ph_i = ",".join("?" * len(wanted_ids))
+            rows_i = conn.execute(
+                "SELECT channel_url FROM channel_metadata WHERE channel_id IN "
+                f"({ph_i})",
+                tuple(sorted(wanted_ids)),
+            ).fetchall()
+        targets = {r[0] for r in rows_t} | {r[0] for r in rows_i}
+        missing = (wanted_urls | wanted_ids) and (
+            len(targets) != len(wanted_urls) + len(wanted_ids)
+        )
+        if not targets:
+            print("[source] --channels matched no tracked channels.", file=sys.stderr)
+            sys.exit(1)
+        placeholders = ",".join("?" * len(targets))
+        conn.execute(
+            f"UPDATE channel_metadata SET category=NULL WHERE channel_url IN ({placeholders})",
+            tuple(sorted(targets)),
+        )
+        conn.commit()
+        conn.close()
+        print(f"[source] Reclassifying {len(targets)} selected channel(s) with full evidence.")
+        if missing:
+            print("[source] Note: some --channels entries did not match a tracked channel.", file=sys.stderr)
+        video_titles = True  # targeted runs always use the strongest evidence
+        global _TARGETED_URLS
+        _TARGETED_URLS = targets
+    if retry_other:
+        conn = storage._get_conn()
+        reset = conn.execute(
+            "UPDATE channel_metadata SET category=NULL "
+            "WHERE category='Other' AND (category_source IS NULL OR category_source != 'manual')"
+        ).rowcount
+        conn.commit()
+        conn.close()
+        if reset:
+            print(f"[source] retry-other: re-queuing {reset} stored 'Other' channels (manual decisions kept).")
     conn = storage._get_conn()
-    cursor = conn.execute(
-        "SELECT channel_url, channel_title, description FROM channel_metadata WHERE category IS NULL"
-    )
+    if channels and _TARGETED_URLS:
+        ph = ",".join("?" * len(_TARGETED_URLS))
+        cursor = conn.execute(
+            "SELECT channel_url, channel_title, description FROM channel_metadata "
+            f"WHERE channel_url IN ({ph})",
+            tuple(sorted(_TARGETED_URLS)),
+        )
+    else:
+        cursor = conn.execute(
+            "SELECT channel_url, channel_title, description FROM channel_metadata WHERE category IS NULL"
+        )
     rows = cursor.fetchall()
     conn.close()
 
@@ -1790,9 +2271,27 @@ def cmd_categorize(workers: int = 1) -> None:
     print(f"[source] Categorizing {len(rows)} uncategorized channels (workers={workers})...")
 
     def _categorize_one(url: str, title: str, desc: str) -> tuple[str, str | None]:
-        cat = categorize_channel(title or "", desc or "")
+        titles = None
+        if video_titles:
+            from csf.categorize import (
+                get_cached_video_titles,
+                store_video_titles,
+            )
+
+            titles = (
+                None if refresh_video_titles
+                else get_cached_video_titles(_db_path_for_cache(), url)
+            )
+            if titles is None:
+                titles = fetch_recent_video_titles(url)
+                if titles:
+                    try:
+                        store_video_titles(_db_path_for_cache(), url, titles)
+                    except Exception:
+                        pass  # cache write is best-effort
+        cat = categorize_channel(title or "", desc or "", video_titles=titles)
         if cat:
-            upsert_channel(url, category=cat)
+            upsert_channel(url, category=cat, category_source="llm")
         return url, cat
 
     total = 0
@@ -1806,6 +2305,16 @@ def cmd_categorize(workers: int = 1) -> None:
 
     categorized = sum(1 for _, c in [(f.result()) for f in futures] if c)
     print(f"[source] Done. Categorized {categorized}/{len(rows)} channels.")
+    if rows and categorized == 0:
+        # Zero success with candidates means systematic failure (dead
+        # classifier, exhausted providers) — exiting 0 here once caused a
+        # discovery cycle to report "ok" while categorizing nothing.
+        print(
+            "[source] ERROR: no channel could be categorized — check provider "
+            "keys/endpoints before re-running.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def cmd_sync(source_id_or_url: str) -> None:
@@ -1855,7 +2364,7 @@ def cmd_sync(source_id_or_url: str) -> None:
         print(f"[source] Failed video IDs: {', '.join(failed)}")
 
 
-def cmd_fetch(
+def _cmd_fetch_unlocked(
     source_filter: str | None = None,
     dry_run: bool = False,
     workers: int = 1,
@@ -1864,6 +2373,16 @@ def cmd_fetch(
     selection_receipt: Path | None = None,
     overwrite_selection_receipt: bool = False,
     verify_selection_receipt_path: Path | None = None,
+    adaptive_workers: bool = False,
+    adaptive_min_workers: int = 1,
+    adaptive_max_workers: int | None = None,
+    adaptive_scale_up_backlog: int = 2,
+    adaptive_scale_down_backlog: int = 0,
+    adaptive_cooldown_s: float = 60.0,
+    adaptive_health_window: int = 2,
+    fallback_only: bool = False,
+    route_source_add_failures_to_fallback: bool = False,
+    route_source_addressability_failures_to_fallback: bool = False,
 ) -> None:
     """Fetch transcripts for pending videos using the full fallback chain.
 
@@ -1876,12 +2395,15 @@ def cmd_fetch(
         dry_run: If True, show what would be fetched without actually fetching.
         workers: Number of parallel workers (default: 1).
         max_items: Optional cap on pending items to process in this run.
+        adaptive_workers: Enable opt-in bounded industrial worker scaling.
     """
     from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
     from csf.transcript import fetch_transcript_chain, LanguageConfig
 
     if video_manifest is not None and source_filter is not None:
         raise ValueError("video_manifest and source_filter are mutually exclusive")
+    if fallback_only and video_manifest is None:
+        raise ValueError("fallback_only requires an exact video_manifest")
     if selection_receipt is not None and video_manifest is None:
         raise ValueError("selection_receipt requires video_manifest")
     if verify_selection_receipt_path is not None and video_manifest is None:
@@ -1908,9 +2430,15 @@ def cmd_fetch(
         "selection_fingerprint": None,
         "selection_receipt": str(selection_receipt) if selection_receipt else None,
         "selection_receipt_verified": False if receipt_to_verify is not None else None,
+        "fallback_only": fallback_only,
     }
 
     fetch_started_at = time.monotonic()
+    # The industrial service loop can run before canonical auth preflight
+    # finishes (for example when a queued batch is drained during startup).
+    # Define the run identity before any nested service path can log it.
+    industrial_run_id = _resolve_industrial_run_id()
+    os.environ["YTIS_INDUSTRIAL_RUN_ID"] = industrial_run_id
     industrial_first_worker_finished_at: float | None = None
     industrial_last_worker_finished_at: float | None = None
     industrial_completion_stall_alert_logged = False
@@ -1940,11 +2468,92 @@ def cmd_fetch(
         "YTIS_TRANSCRIPT_ROUTE_NO_CAPTIONS_TO_FALLBACK",
         False,
     )
+    route_industrial_failures_to_fallback = _env_bool(
+        "YTIS_ROUTE_INDUSTRIAL_FAILURES_TO_FALLBACK",
+        "YTIS_TRANSCRIPT_ROUTE_INDUSTRIAL_FAILURES_TO_FALLBACK",
+        False,
+    )
+    route_source_add_failures_to_fallback = bool(
+        route_source_add_failures_to_fallback
+        or _env_bool(
+            "YTIS_ROUTE_SOURCE_ADD_FAILURES_TO_FALLBACK",
+            "YTIS_TRANSCRIPT_ROUTE_SOURCE_ADD_FAILURES_TO_FALLBACK",
+            False,
+        )
+    )
+    route_source_addressability_failures_to_fallback = bool(
+        route_source_addressability_failures_to_fallback
+        or _env_bool(
+            "YTIS_ROUTE_SOURCE_ADDRESSABILITY_FAILURES_TO_FALLBACK",
+            "YTIS_TRANSCRIPT_ROUTE_SOURCE_ADDRESSABILITY_FAILURES_TO_FALLBACK",
+            False,
+        )
+    )
     shared_retry_pool_enabled = _env_bool(
         "YTIS_NLM_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED",
         "YTIS_BENCHMARK_SOURCE_CONTENT_SHARED_RETRY_POOL_ENABLED",
         False,
     )
+    durable_fallback_queue_enabled = _env_bool(
+        "YTIS_TRANSCRIPT_FALLBACK_DURABLE_QUEUE_ENABLED",
+        None,
+        False,
+    )
+    durable_fallback_queue_path_raw = os.getenv(
+        "YTIS_TRANSCRIPT_FALLBACK_QUEUE_PATH", ""
+    ).strip()
+    fallback_route_enabled = bool(
+        fallback_only
+        or route_no_captions_to_fallback
+        or route_industrial_failures_to_fallback
+        or route_source_add_failures_to_fallback
+        or route_source_addressability_failures_to_fallback
+    )
+    if durable_fallback_queue_enabled and not fallback_route_enabled:
+        raise ValueError(
+            "YTIS_TRANSCRIPT_FALLBACK_DURABLE_QUEUE_ENABLED requires an explicit "
+            "fallback route"
+        )
+    if durable_fallback_queue_enabled and not durable_fallback_queue_path_raw:
+        raise ValueError(
+            "YTIS_TRANSCRIPT_FALLBACK_QUEUE_PATH is required when the durable "
+            "fallback queue is enabled"
+        )
+    durable_fallback_queue: DurableFallbackQueue | None = None
+    durable_fallback_queue_recovered_count = 0
+    durable_fallback_queue_requeued_count = 0
+    durable_fallback_claimant_id = f"{industrial_run_id}:{os.getpid()}"
+    if durable_fallback_queue_enabled:
+        fallback_timeout_s = _transcript_fallback_timeout_s()
+        default_lease_s = max(
+            3600.0,
+            (fallback_timeout_s * 2.0) if fallback_timeout_s is not None else 0.0,
+        )
+        lease_raw = os.getenv("YTIS_TRANSCRIPT_FALLBACK_QUEUE_LEASE_S", "").strip()
+        try:
+            lease_s = float(lease_raw) if lease_raw else default_lease_s
+        except ValueError as exc:
+            raise ValueError(
+                "YTIS_TRANSCRIPT_FALLBACK_QUEUE_LEASE_S must be numeric"
+            ) from exc
+        if not math.isfinite(lease_s) or lease_s <= 0:
+            raise ValueError(
+                "YTIS_TRANSCRIPT_FALLBACK_QUEUE_LEASE_S must be finite and > 0"
+            )
+        run_scope = os.getenv("YTIS_TRANSCRIPT_FALLBACK_QUEUE_SCOPE", "").strip()
+        if not run_scope:
+            run_scope = (
+                f"{get_batch_db_path().resolve()}::"
+                f"{os.getenv('YTIS_NLM_ACCOUNT_PROFILE', '').strip()}"
+            )
+        durable_fallback_queue = DurableFallbackQueue(
+            durable_fallback_queue_path_raw,
+            queue_id="industrial-transcript-fallback",
+            run_scope=run_scope,
+            lease_seconds=lease_s,
+        )
+        durable_fallback_queue_requeued_count = durable_fallback_queue.requeue_claimed()
+        durable_fallback_queue_recovered_count = len(durable_fallback_queue.queued())
 
     log_action(
         "fetch_invoked",
@@ -1955,6 +2564,14 @@ def cmd_fetch(
             "dry_run": dry_run,
             "workers": workers,
             "max_items": max_items,
+            "adaptive_workers": adaptive_workers,
+            "adaptive_min_workers": adaptive_min_workers,
+            "adaptive_max_workers": adaptive_max_workers,
+            "adaptive_scale_up_backlog": adaptive_scale_up_backlog,
+            "adaptive_scale_down_backlog": adaptive_scale_down_backlog,
+            "adaptive_cooldown_s": adaptive_cooldown_s,
+            "adaptive_health_window": adaptive_health_window,
+            "adaptive_policy_version": "adaptive-worker-scheduler-v1" if adaptive_workers else None,
             "transcript_fallback_workers": max(
                 1,
                 min(
@@ -1971,10 +2588,18 @@ def cmd_fetch(
                 1,
                 _env_int("YTIS_INDUSTRIAL_BATCHES_PER_WORKER", "YTIS_INDUSTRIAL_BATCHES_PER_LAUNCH", 4),
             ),
-                "route_no_captions_to_fallback": route_no_captions_to_fallback,
-                "shared_retry_pool_enabled": shared_retry_pool_enabled,
-                **selection_metadata,
-            },
+            "route_no_captions_to_fallback": route_no_captions_to_fallback,
+            "route_industrial_failures_to_fallback": route_industrial_failures_to_fallback,
+            "route_source_add_failures_to_fallback": route_source_add_failures_to_fallback,
+            "route_source_addressability_failures_to_fallback": route_source_addressability_failures_to_fallback,
+            "fallback_only": fallback_only,
+            "shared_retry_pool_enabled": shared_retry_pool_enabled,
+            "durable_fallback_queue_enabled": durable_fallback_queue is not None,
+            "durable_fallback_queue_path": durable_fallback_queue_path_raw or None,
+            "durable_fallback_queue_recovered_count": durable_fallback_queue_recovered_count,
+            "durable_fallback_queue_requeued_count": durable_fallback_queue_requeued_count,
+            **selection_metadata,
+        },
     )
     first_download_logged = False
     deleted = 0
@@ -2003,6 +2628,8 @@ def cmd_fetch(
         stage_totals = _build_worker_stage_totals_payload()
         worker_source_profile_totals = _build_worker_source_profile_totals_payload()
         elapsed_s = round(time.monotonic() - fetch_started_at, 3)
+        if adaptive_assignment_ledger is not None:
+            selection_metadata["adaptive_assignment_accounting"] = _adaptive_accounting_payload()
         _log_fetch_completed(
             source_filter=source_filter,
             strategy=strategy_name,
@@ -2116,18 +2743,40 @@ def cmd_fetch(
         1,
         _env_int("YTIS_INDUSTRIAL_BACKLOG_THRESHOLD", "YTIS_FETCH_BACKLOG_THRESHOLD", 50),
     )
+    # These defaults let the pre-scan auth gate emit a complete terminal
+    # receipt before the later scan-derived strategy values exist.
+    total_pending = 0
+    strategy_name = "preflight"
+    backend_name = "preflight"
     if max_items is not None and max_items < 0:
         raise ValueError("max_items must be >= 0")
-    industrial_selected = False
+
+    # Account-scoped manifest runs are the canonical non-interactive path.
+    # Keep them on the typed industrial client even when a per-account
+    # partition is smaller than the historical backlog threshold; otherwise
+    # the surgical chain can reach the legacy CLI/Selenium scraper, which has
+    # no exact-account token contract.
+    industrial_selected = bool(
+        selection_manifest is not None
+        and os.getenv("YTIS_NLM_ACCOUNT_PROFILE", "").strip()
+        and not fallback_only
+    )
     max_items_reached = False
     industrial_scraper = None
     industrial_batches_processed = 0
     industrial_dispatch_cycle = 0
-    industrial_batch_queue: list[list[str]] = []
+    industrial_batch_queue: list[_IndustrialQueuedBatch] = []
+    industrial_source_urls: dict[str, str] = {}
     industrial_worker_executor: ThreadPoolExecutor | None = None
     industrial_worker_futures: set = set()
     industrial_worker_slots_in_use: dict[object, int] = {}
+    industrial_worker_assignment_ids: dict[object, str] = {}
+    industrial_worker_assignment_batches: dict[object, list[str]] = {}
+    industrial_worker_assignment_payloads: dict[object, list[_IndustrialQueuedBatch]] = {}
+    adaptive_assignment_ledger: AssignmentLedger | None = AssignmentLedger() if adaptive_workers else None
     industrial_worker_slot_health: dict[int, dict[str, float]] = {}
+    industrial_worker_health_samples: deque[HealthSample] = deque(maxlen=64)
+    adaptive_scheduler: AdaptiveWorkerScheduler | None = None
     transcript_fallback_queue: deque[tuple[str, str, bool]] = deque()
     transcript_fallback_worker_executor: ThreadPoolExecutor | None = None
     transcript_fallback_worker_futures: set = set()
@@ -2161,9 +2810,131 @@ def cmd_fetch(
     )
     transcript_fallback_start_lock = threading.Lock()
     transcript_fallback_last_start_at = 0.0
-    industrial_parallel_enabled = workers > 1 and os.getenv(
-        "YTIS_DISABLE_INDUSTRIAL_PARALLEL", ""
-    ).strip().lower() not in {"1", "true", "yes", "on"}
+    adaptive_capacity = adaptive_max_workers if adaptive_workers and adaptive_max_workers is not None else workers
+    industrial_parallel_enabled = _industrial_parallel_enabled_for_runtime(
+        workers=adaptive_capacity
+    )
+    if adaptive_workers:
+        if adaptive_min_workers < 1 or adaptive_min_workers > workers:
+            raise ValueError("adaptive_min_workers must be between 1 and workers")
+        if adaptive_max_workers is None:
+            raise ValueError("adaptive_max_workers is required when adaptive_workers is enabled")
+        if adaptive_max_workers < workers:
+            raise ValueError("adaptive_max_workers must be >= workers")
+        identities: list[WorkerIdentity] = []
+        for worker_id in range(1, adaptive_max_workers + 1):
+            launch = _build_industrial_worker_launch(
+                worker_id=worker_id,
+                worker_batches=[],
+                create_state_root=False,
+            )
+            identities.append(
+                WorkerIdentity(
+                    worker_id=worker_id,
+                    profile=str(launch["notebooklm_profile"]),
+                    notebook_title=str(launch["notebook_title"]),
+                    state_path=str(launch["state_path"]),
+                    client_namespace=(
+                        f"{launch['notebooklm_profile']}::{launch['notebook_title']}"
+                    ),
+                    account_profile=str(launch["account_profile"]),
+                )
+            )
+        adaptive_scheduler = AdaptiveWorkerScheduler(
+            tuple(identities),
+            SchedulerConfig(
+                initial_workers=workers,
+                max_workers=adaptive_max_workers,
+                min_workers=adaptive_min_workers,
+                scale_up_backlog=adaptive_scale_up_backlog,
+                scale_down_backlog=adaptive_scale_down_backlog,
+                cooldown_s=adaptive_cooldown_s,
+                health_window=adaptive_health_window,
+            ),
+        )
+
+    def _enqueue_industrial_batches(batches: list[list[str]]) -> None:
+        """Register queue-owned IDs once; requeues preserve these objects."""
+        items = [
+            _IndustrialQueuedBatch(
+                batch_id=f"input-{uuid.uuid4().hex}",
+                video_ids=list(video_ids),
+                source_urls={
+                    video_id: industrial_source_urls[video_id]
+                    for video_id in video_ids
+                    if industrial_source_urls.get(video_id)
+                },
+            )
+            for video_ids in batches
+        ]
+        if adaptive_assignment_ledger is not None:
+            adaptive_assignment_ledger.register(tuple(item.batch_id for item in items))
+        industrial_batch_queue.extend(items)
+
+    def _adaptive_accounting_payload() -> dict[str, int]:
+        if adaptive_assignment_ledger is None:
+            return {}
+        accounting = adaptive_assignment_ledger.accounting()
+        return {
+            "input_batches": accounting.input_batches,
+            "completed_batches": accounting.completed,
+            "terminal_failed_batches": accounting.terminal_failed,
+            "requeued_batches": accounting.requeued,
+            "still_in_flight_batches": accounting.still_in_flight,
+        }
+
+    def _route_worker_failures_to_fallback(
+        worker_payload: list[_IndustrialQueuedBatch],
+    ) -> int:
+        if not (
+            route_industrial_failures_to_fallback
+            or route_source_add_failures_to_fallback
+            or route_source_addressability_failures_to_fallback
+        ) or transcript_fallback_workers <= 0:
+            return 0
+        prior_queue = list(transcript_fallback_queue)
+        queued = _queue_confirmed_worker_failures_for_fallback(
+            worker_payload,
+            fallback_queue=transcript_fallback_queue,
+            source_urls=industrial_source_urls,
+            source_add_only=(
+                route_source_add_failures_to_fallback
+                and not route_industrial_failures_to_fallback
+                and not route_source_addressability_failures_to_fallback
+            ),
+            source_addressability_only=(
+                route_source_addressability_failures_to_fallback
+                and not route_industrial_failures_to_fallback
+                and not route_source_add_failures_to_fallback
+            ),
+            failure_reasons=transcript_fallback_original_failure_reasons,
+        )
+        if durable_fallback_queue is None:
+            return queued
+        admitted: list[tuple[str, str, bool]] = []
+        for video_id, source_url, skip_notebooklm in list(transcript_fallback_queue)[len(prior_queue):]:
+            if video_id in transcript_fallback_memory_ids:
+                continue
+            record = durable_fallback_queue.enqueue(
+                video_id=video_id,
+                source_url=source_url,
+                skip_notebooklm=skip_notebooklm,
+                failure_reason=transcript_fallback_original_failure_reasons.get(
+                    video_id,
+                    "industrial_worker_failed",
+                ),
+                route_version="fallback-v1",
+            )
+            if record["state"] == "queued":
+                admitted.append((video_id, source_url, skip_notebooklm))
+            else:
+                transcript_fallback_original_failure_reasons.pop(video_id, None)
+        transcript_fallback_queue.clear()
+        transcript_fallback_queue.extend(prior_queue)
+        transcript_fallback_queue.extend(admitted)
+        for video_id, _source_url, _skip_notebooklm in admitted:
+            transcript_fallback_memory_ids.add(video_id)
+        return len(admitted)
     success_count = 0
     fail_count = 0
     skip_count = 0
@@ -2172,6 +2943,57 @@ def cmd_fetch(
     negative_cache_count = 0
     notebooklm_pending_count = 0
     transcript_fallback_queued_count = 0
+    transcript_fallback_memory_ids: set[str] = set()
+    transcript_fallback_original_failure_reasons: dict[str, str] = {}
+
+    def _queue_transcript_fallback(
+        video_id: str,
+        source_url: str,
+        skip_notebooklm: bool,
+        failure_reason: str,
+    ) -> bool:
+        """Admit one fallback item, durably first when the opt-in queue is on."""
+        if video_id in transcript_fallback_memory_ids:
+            return False
+        admission_failure_reason = str(failure_reason or "fallback_admitted")[:1000]
+        if durable_fallback_queue is not None:
+            record = durable_fallback_queue.enqueue(
+                video_id=video_id,
+                source_url=source_url,
+                skip_notebooklm=skip_notebooklm,
+                failure_reason=admission_failure_reason,
+                route_version="fallback-v1",
+            )
+            if record["state"] != "queued":
+                log_action(
+                    "transcript_fallback_durable_admission_skipped",
+                    {
+                        "video_id": video_id,
+                        "state": record["state"],
+                        "reason": "existing_terminal_or_claimed_record",
+                    },
+                )
+                return False
+            admission_failure_reason = str(
+                record.get("failure_reason") or admission_failure_reason
+            )[:1000]
+        transcript_fallback_queue.append((video_id, source_url, skip_notebooklm))
+        transcript_fallback_memory_ids.add(video_id)
+        provenance = _fallback_failure_provenance(admission_failure_reason)
+        if provenance is not None:
+            transcript_fallback_original_failure_reasons[video_id] = provenance
+        return True
+
+    if durable_fallback_queue is not None:
+        for record in durable_fallback_queue.queued():
+            if _queue_transcript_fallback(
+                str(record["video_id"]),
+                str(record["source_url"]),
+                bool(record["skip_notebooklm"]),
+                str(record.get("failure_reason") or "recovered_fallback"),
+            ):
+                transcript_fallback_queued_count += 1
+
     startup_retire_elapsed_s_total = 0.0
     startup_notebook_check_elapsed_s_total = 0.0
     startup_notebook_create_elapsed_s_total = 0.0
@@ -2254,6 +3076,8 @@ def cmd_fetch(
         terminal_reason = _terminal_failure_reason(entry)
         if terminal_reason:
             return "terminal", terminal_reason
+        if fallback_only:
+            return "transcript_fallback", "explicit_fallback_only"
         is_live_content = bool(entry.get("is_live_content"))
         upload_status = str(entry.get("upload_status") or "").strip().lower()
         if is_live_content or upload_status in {"live", "live_stream", "premiere"}:
@@ -2573,38 +3397,39 @@ def cmd_fetch(
             "failure_reason_counts": dict(industrial_source_profile_totals["failure_reason_counts"]),
         }
 
-    def _take_industrial_dispatch_groups(
-        batch_queue: list[list[str]],
-        worker_slots: int,
-        batches_per_worker: int,
-        *,
-        rotate_by: int = 0,
-    ) -> list[list[list[str]]]:
-        """Take up to a bounded bundle of batches per available worker slot.
-
-        `rotate_by` shifts which worker slot receives the first batch so repeated
-        dispatch waves do not keep mapping the same modulo slice to the same slot.
-        """
-        if worker_slots < 1:
-            raise ValueError("worker_slots must be >= 1")
-        if batches_per_worker < 1:
-            raise ValueError("batches_per_worker must be >= 1")
-        if not batch_queue:
-            return []
-        dispatch_count = min(worker_slots, len(batch_queue))
-        groups: list[list[list[str]]] = [[] for _ in range(dispatch_count)]
-        while batch_queue and any(len(group) < batches_per_worker for group in groups):
-            for group in groups:
-                if not batch_queue:
-                    break
-                if len(group) >= batches_per_worker:
-                    continue
-                group.append(batch_queue.pop(0))
-        if dispatch_count > 1 and rotate_by:
-            offset = rotate_by % dispatch_count
-            if offset:
-                groups = groups[offset:] + groups[:offset]
-        return [group for group in groups if group]
+    # Canonical auth preflight must precede any streaming queue dispatch. The
+    # scan can fill and service industrial batches before it reaches the
+    # post-scan summary, so placing this gate after the scan can start workers
+    # under a failed account or bypass the intended fail-closed behavior.
+    account_profile = os.getenv("YTIS_NLM_ACCOUNT_PROFILE", "").strip()
+    if not account_profile:
+        _log_fetch_terminal_failure("canonical_auth_preflight:missing_account_profile")
+        print("[source] FATAL: YTIS_NLM_ACCOUNT_PROFILE is required", file=sys.stderr)
+        sys.exit(1)
+    probe = ensure_account_session(
+        account_profile,
+        worker_id="coordinator",
+        allow_bootstrap=False,
+    )
+    if not probe.ok:
+        _log_fetch_terminal_failure(f"canonical_auth_preflight:{probe.reason}")
+        print(
+            f"[source] FATAL: canonical NotebookLM account {account_profile!r} preflight failed: "
+            f"{probe.reason}; storage={probe.storage_path} expected={probe.expected_email}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
+    log_action(
+        "nlm_auth_storage_probe_ok",
+        {
+            "component": "source",
+            "account_profile": probe.account_profile,
+            "expected_email": probe.expected_email,
+            "storage_path": probe.storage_path,
+            "worker_id": probe.worker_id,
+        },
+    )
 
     def _run_industrial_worker(worker_id: int, worker_batches: list[list[str]]) -> tuple[int, dict[str, object], str, str]:
         launch = _build_industrial_worker_launch(
@@ -2615,6 +3440,7 @@ def cmd_fetch(
         notebook_title = str(launch["notebook_title"])
         notebooklm_profile = str(launch["notebooklm_profile"])
         worker_label = str(launch["worker_label"])
+        account_profile = str(launch["account_profile"])
         worker_env = launch["env"]
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
             json.dump(worker_batches, tmp)
@@ -2631,6 +3457,7 @@ def cmd_fetch(
                 "state_path": str(state_path),
                 "notebook_title": notebook_title,
                 "notebooklm_profile": notebooklm_profile,
+                "account_profile": account_profile,
             },
         )
         cmd = [
@@ -2645,27 +3472,62 @@ def cmd_fetch(
             notebook_title,
             "--notebooklm-profile",
             notebooklm_profile,
+            "--account-profile",
+            account_profile,
             "--worker-id",
             worker_label,
             "--result-path",
             str(result_path),
         ]
+        timeout_s = _industrial_worker_timeout_s()
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, env=worker_env)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=worker_env,
+                creationflags=creationflags,
+                start_new_session=os.name != "nt",
+            )
+            try:
+                stdout_text, stderr_text = proc.communicate(timeout=timeout_s)
+            except subprocess.TimeoutExpired as exc:
+                _terminate_process_tree_pid(proc.pid)
+                try:
+                    stdout_text, stderr_text = proc.communicate(timeout=30)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    stdout_text, stderr_text = proc.communicate()
+                raise TimeoutError(
+                    f"industrial worker {worker_label} timed out after {timeout_s:g}s"
+                ) from exc
+        except TimeoutError:
+            try:
+                result_path.unlink()
+            except Exception:
+                pass
+            raise
+        except Exception:
+            try:
+                result_path.unlink()
+            except Exception:
+                pass
+            raise
         finally:
             try:
                 batch_file.unlink()
             except Exception:
                 pass
         elapsed_s = round(time.monotonic() - started_at, 3)
-        stdout_text = proc.stdout or ""
         summary = _load_worker_summary(result_path, stdout_text)
         if stdout_text:
             stdout_text = stdout_text.rstrip()
             if stdout_text:
                 print(stdout_text)
-        if proc.stderr:
-            stderr_text = proc.stderr.rstrip()
+        if stderr_text:
+            stderr_text = stderr_text.rstrip()
             if stderr_text:
                 print(stderr_text, file=sys.stderr)
         try:
@@ -2683,12 +3545,17 @@ def cmd_fetch(
                 "summary": summary,
             },
         )
-        return (worker_id, summary, proc.stdout or "", proc.stderr or "")
+        return (worker_id, summary, stdout_text, stderr_text)
 
-    def _service_industrial_workers(wait_for_completion: bool = False) -> None:
+    def _service_industrial_workers(
+        wait_for_completion: bool = False,
+        *,
+        input_closed: bool = False,
+    ) -> None:
         nonlocal industrial_batch_queue, industrial_worker_executor, industrial_worker_futures
         nonlocal industrial_worker_slots_in_use, industrial_worker_slot_health, industrial_batches_processed, industrial_dispatch_cycle
-        nonlocal success_count, fail_count
+        nonlocal industrial_worker_assignment_ids, industrial_worker_assignment_batches, industrial_worker_assignment_payloads
+        nonlocal success_count, fail_count, transcript_fallback_processed_count
         nonlocal industrial_first_worker_finished_at, industrial_last_worker_finished_at
         nonlocal industrial_completion_stall_alert_logged, industrial_oversized_dispatch_alert_logged
 
@@ -2699,7 +3566,66 @@ def cmd_fetch(
 
         for future in done:
             industrial_worker_futures.remove(future)
-            worker_id, summary, _stdout, _stderr = future.result()
+            assignment_id = industrial_worker_assignment_ids.pop(future, "")
+            batch_ids = industrial_worker_assignment_batches.pop(future, [])
+            worker_payload = industrial_worker_assignment_payloads.pop(future, [])
+            try:
+                worker_id, summary, _stdout, _stderr = future.result()
+            except Exception as exc:
+                if adaptive_scheduler is None:
+                    raise
+                failure_kind = "worker_timeout" if isinstance(exc, TimeoutError) else "worker_exception"
+                worker_id = industrial_worker_slots_in_use.pop(future, 0)
+                if worker_id:
+                    adaptive_scheduler.mark_failed(
+                        worker_id,
+                        now_s=time.monotonic() - fetch_started_at,
+                        assignment_id=assignment_id,
+                        failure_kind=failure_kind,
+                    )
+                    log_action(
+                        "adaptive_worker_quarantined",
+                        {
+                            "run_id": industrial_run_id,
+                            "lane": os.getenv("YTIS_NLM_LANE", ""),
+                            "worker_id": f"worker-{worker_id:02d}",
+                            "target_workers": adaptive_scheduler.target_workers,
+                            "active_workers": len(industrial_worker_futures),
+                            "queued_batches": len(industrial_batch_queue),
+                            "reason": failure_kind,
+                            "policy_version": "adaptive-worker-scheduler-v1",
+                            "timestamp_monotonic_s": time.monotonic(),
+                        },
+                    )
+                else:
+                    failure_kind = "worker_slot_missing"
+                _requeue_adaptive_assignment(
+                    industrial_batch_queue,
+                    worker_payload,
+                    adaptive_assignment_ledger,
+                    assignment_id,
+                )
+                log_action(
+                    "adaptive_assignment_failed",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "assignment_id": assignment_id,
+                        "worker_id": f"worker-{worker_id:02d}" if worker_id else "unknown",
+                        "target_workers": adaptive_scheduler.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": failure_kind,
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": time.monotonic(),
+                        "batch_ids": batch_ids,
+                        **_adaptive_accounting_payload(),
+                        "requeued": True,
+                        "failure_kind": failure_kind,
+                        "error": repr(exc),
+                    },
+                )
+                continue
             slot_id = industrial_worker_slots_in_use.pop(future, worker_id)
             batch_count = int(summary.get("batch_count", 0) or 0)
             video_count = int(summary.get("video_count", 0) or 0)
@@ -2709,6 +3635,105 @@ def cmd_fetch(
             industrial_batches_processed += batch_count
             success_count += succeeded
             fail_count += failed
+            requeue_assignment = False
+            if adaptive_scheduler is not None:
+                health_ok, health_reason = _classify_adaptive_worker_health(
+                    summary,
+                    max_failure_rate=adaptive_scheduler.config.max_failure_rate,
+                )
+                sample = HealthSample(
+                    worker_id=slot_id,
+                    success=health_ok,
+                    failure_kind=(
+                        health_reason
+                        if not health_ok
+                        else ""
+                    ),
+                )
+                industrial_worker_health_samples.append(sample)
+                requeue_assignment = (
+                    not sample.success
+                    and _adaptive_result_requires_requeue(summary, sample.failure_kind)
+                )
+                if adaptive_assignment_ledger is not None:
+                    if sample.success:
+                        adaptive_assignment_ledger.complete(assignment_id)
+                    else:
+                        adaptive_assignment_ledger.fail(
+                            assignment_id,
+                            requeue=requeue_assignment,
+                        )
+                if requeue_assignment:
+                    industrial_batch_queue[0:0] = worker_payload
+                if sample.success:
+                    adaptive_scheduler.mark_completed(
+                        slot_id,
+                        now_s=time.monotonic() - fetch_started_at,
+                        assignment_id=assignment_id,
+                    )
+                else:
+                    adaptive_scheduler.mark_failed(
+                        slot_id,
+                        now_s=time.monotonic() - fetch_started_at,
+                        assignment_id=assignment_id,
+                        failure_kind=sample.failure_kind,
+                    )
+                    log_action(
+                        "adaptive_worker_quarantined",
+                        {
+                            "run_id": industrial_run_id,
+                            "lane": os.getenv("YTIS_NLM_LANE", ""),
+                            "worker_id": f"worker-{slot_id:02d}",
+                            "target_workers": adaptive_scheduler.target_workers,
+                            "active_workers": len(industrial_worker_futures),
+                            "queued_batches": len(industrial_batch_queue),
+                            "reason": sample.failure_kind,
+                            "policy_version": "adaptive-worker-scheduler-v1",
+                            "timestamp_monotonic_s": time.monotonic(),
+                        },
+                    )
+                if sample.success:
+                    log_action(
+                        "adaptive_worker_stopped",
+                        {
+                            "run_id": industrial_run_id,
+                            "lane": os.getenv("YTIS_NLM_LANE", ""),
+                            "worker_id": f"worker-{slot_id:02d}",
+                            "target_workers": adaptive_scheduler.target_workers,
+                            "active_workers": len(industrial_worker_futures),
+                            "queued_batches": len(industrial_batch_queue),
+                            "reason": "assignment_completed",
+                            "policy_version": "adaptive-worker-scheduler-v1",
+                            "timestamp_monotonic_s": time.monotonic(),
+                        },
+                    )
+                log_action(
+                    "adaptive_assignment_completed" if sample.success else "adaptive_assignment_failed",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "assignment_id": assignment_id,
+                        "worker_id": f"worker-{slot_id:02d}",
+                        "target_workers": adaptive_scheduler.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": "result_recorded" if sample.success else sample.failure_kind,
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": time.monotonic(),
+                        "batch_ids": batch_ids,
+                        **_adaptive_accounting_payload(),
+                        "terminal_failed": not sample.success and not requeue_assignment,
+                        "requeued": requeue_assignment,
+                    },
+                )
+            if failed and not requeue_assignment:
+                fallback_queued = _route_worker_failures_to_fallback(worker_payload)
+                if fallback_queued:
+                    # The worker's failed count is provisional until the
+                    # explicitly routed fallback finishes. Keep final counts
+                    # reconciled to the selected DB rows.
+                    fail_count -= fallback_queued
+                    transcript_fallback_processed_count += fallback_queued
             total_commands = max(succeeded + failed, 1)
             industrial_worker_slot_health[slot_id] = {
                 "source_list_probe_count": float(summary.get("source_list_probe_count", 0) or 0.0),
@@ -2750,17 +3775,122 @@ def cmd_fetch(
                 },
             )
 
-        available_slots = max(0, workers - len(industrial_worker_futures))
-        free_slots = [
-            slot_id
-            for slot_id in range(1, workers + 1)
-            if slot_id not in industrial_worker_slots_in_use.values()
-        ]
+        target_workers = adaptive_scheduler.target_workers if adaptive_scheduler is not None else workers
+        if adaptive_scheduler is not None:
+            recovery_now_s = time.monotonic() - fetch_started_at
+            recovered_workers = adaptive_scheduler.recover_quarantined(now_s=recovery_now_s)
+            for transition in recovered_workers:
+                log_action(
+                    "adaptive_worker_recovered",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "worker_id": f"worker-{transition.worker_id:02d}",
+                        "target_workers": transition.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": transition.reason,
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": recovery_now_s,
+                    },
+                )
+            decision = adaptive_scheduler.choose(
+                SchedulerSnapshot(
+                    now_s=time.monotonic() - fetch_started_at,
+                    backlog_batches=len(industrial_batch_queue),
+                    active_worker_ids=frozenset(industrial_worker_slots_in_use.values()),
+                    health_samples=tuple(industrial_worker_health_samples),
+                    input_closed=input_closed,
+                )
+            )
+            transitions = adaptive_scheduler.apply(decision, now_s=time.monotonic() - fetch_started_at)
+            target_workers = adaptive_scheduler.target_workers
+            log_action(
+                "adaptive_scale_decision",
+                {
+                    "run_id": industrial_run_id,
+                    "lane": os.getenv("YTIS_NLM_LANE", ""),
+                    "worker_id": "coordinator",
+                    "target_workers": target_workers,
+                    "active_workers": len(industrial_worker_futures),
+                    "queued_batches": len(industrial_batch_queue),
+                    "decision_reason": decision.reason,
+                    "reason": decision.reason,
+                    "policy_version": "adaptive-worker-scheduler-v1",
+                    "timestamp_monotonic_s": time.monotonic(),
+                    "changed": decision.changed,
+                    "input_closed": input_closed,
+                },
+            )
+            for transition in transitions:
+                if transition.event == "worker_draining":
+                    log_action(
+                        "adaptive_worker_draining",
+                        {
+                            "run_id": industrial_run_id,
+                            "lane": os.getenv("YTIS_NLM_LANE", ""),
+                            "worker_id": f"worker-{transition.worker_id:02d}",
+                            "target_workers": transition.target_workers,
+                            "active_workers": len(industrial_worker_futures),
+                            "queued_batches": len(industrial_batch_queue),
+                            "reason": transition.reason,
+                            "policy_version": "adaptive-worker-scheduler-v1",
+                            "timestamp_monotonic_s": transition.now_s,
+                        },
+                    )
+        available_slots = max(0, target_workers - len(industrial_worker_futures))
+        if adaptive_scheduler is not None:
+            free_slots = [
+                slot_id
+                for slot_id in adaptive_scheduler.eligible_worker_ids()
+                if slot_id not in industrial_worker_slots_in_use.values()
+            ]
+        else:
+            free_slots = [
+                slot_id
+                for slot_id in range(1, workers + 1)
+                if slot_id not in industrial_worker_slots_in_use.values()
+            ]
         free_slots = _order_industrial_free_slots(free_slots, industrial_worker_slot_health)
+        if adaptive_scheduler is not None and industrial_batch_queue and not free_slots and not industrial_worker_futures:
+            queued_batch_ids = [item.batch_id for item in industrial_batch_queue]
+            queued_video_count = sum(len(item.video_ids) for item in industrial_batch_queue)
+            failure_reason_counts = Counter(
+                sample.failure_kind
+                for sample in industrial_worker_health_samples
+                if not sample.success and sample.failure_kind
+            )
+            exhaustion_payload = {
+                "run_id": industrial_run_id,
+                "lane": os.getenv("YTIS_NLM_LANE", ""),
+                "worker_id": "coordinator",
+                "target_workers": adaptive_scheduler.target_workers,
+                "min_workers": adaptive_scheduler.config.min_workers,
+                "max_workers": adaptive_scheduler.config.max_workers,
+                "active_workers": 0,
+                "queued_batch_count": len(queued_batch_ids),
+                "queued_batch_ids": queued_batch_ids,
+                "queued_video_count": queued_video_count,
+                "eligible_worker_ids": list(adaptive_scheduler.eligible_worker_ids()),
+                "failure_reason_counts": dict(failure_reason_counts),
+                "policy_version": "adaptive-worker-scheduler-v1",
+                "timestamp_monotonic_s": time.monotonic(),
+                "reason": "no_eligible_worker_slots",
+                "assignment_accounting": _adaptive_accounting_payload(),
+            }
+            selection_metadata["adaptive_scheduler_exhaustion"] = exhaustion_payload
+            log_action(
+                "adaptive_scheduler_exhausted",
+                exhaustion_payload,
+            )
+            _log_fetch_terminal_failure(
+                "adaptive_scheduler_exhausted:no_eligible_worker_slots"
+            )
+            raise AdaptiveSchedulerExhausted(exhaustion_payload)
         log_action(
             "fetch_worker_dispatch_state",
             {
-                "workers_requested": workers,
+                "workers_requested": target_workers,
                 "active_workers": len(industrial_worker_futures),
                 "free_slots": len(free_slots),
                 "queued_batches": len(industrial_batch_queue),
@@ -2768,6 +3898,7 @@ def cmd_fetch(
                 "first_worker_finished_at": industrial_first_worker_finished_at,
                 "last_worker_finished_at": industrial_last_worker_finished_at,
                 "wait_for_completion": wait_for_completion,
+                "input_closed": input_closed,
             },
         )
         if (
@@ -2785,12 +3916,13 @@ def cmd_fetch(
                     _log_worker_health_warning(
                         "no_worker_completion_after_15m_since_last_completion",
                     )
-        if available_slots <= 0 or not industrial_batch_queue:
+        dispatch_slots = _bounded_dispatch_slot_count(available_slots, len(free_slots))
+        if dispatch_slots <= 0 or not industrial_batch_queue:
             return
 
         worker_groups = _take_industrial_dispatch_groups(
             industrial_batch_queue,
-            available_slots,
+            dispatch_slots,
             industrial_batches_per_worker,
             rotate_by=industrial_dispatch_cycle,
         )
@@ -2798,7 +3930,9 @@ def cmd_fetch(
             return
 
         if industrial_worker_executor is None:
-            industrial_worker_executor = ThreadPoolExecutor(max_workers=workers)
+            industrial_worker_executor = ThreadPoolExecutor(
+                max_workers=adaptive_scheduler.config.max_workers if adaptive_scheduler is not None else workers
+            )
 
         total_batches = sum(len(group) for group in worker_groups)
         print(
@@ -2810,7 +3944,11 @@ def cmd_fetch(
             {
                 "workers": len(worker_groups),
                 "batch_count": total_batches,
-                "video_count": sum(len(batch) for batch in industrial_batch_queue),
+                "video_count": sum(
+                    len(item.video_ids)
+                    for group in worker_groups
+                    for item in group
+                ),
                 "industrial_batches_per_worker": industrial_batches_per_worker,
                 "state_root": os.getenv(
                     "YTIS_INDUSTRIAL_WORKER_STATE_ROOT",
@@ -2820,14 +3958,136 @@ def cmd_fetch(
             },
         )
 
-        for slot_id, worker_batches in zip(free_slots, worker_groups):
-            future = industrial_worker_executor.submit(
-                _run_industrial_worker,
-                slot_id,
-                worker_batches,
-            )
+        for slot_id, worker_queue_items in zip(free_slots, worker_groups):
+            worker_batches = [item.video_ids for item in worker_queue_items]
+            assignment_id = uuid.uuid4().hex if adaptive_scheduler is not None else ""
+            if adaptive_scheduler is not None:
+                batch_ids = [item.batch_id for item in worker_queue_items]
+                if adaptive_assignment_ledger is not None:
+                    adaptive_assignment_ledger.claim(assignment_id, tuple(batch_ids))
+                log_action(
+                    "adaptive_worker_starting",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "worker_id": f"worker-{slot_id:02d}",
+                        "target_workers": adaptive_scheduler.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": "eligible_slot",
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": time.monotonic(),
+                        "assignment_id": assignment_id,
+                        "batch_ids": batch_ids,
+                        **_adaptive_accounting_payload(),
+                    },
+                )
+                adaptive_scheduler.mark_started(
+                    slot_id,
+                    now_s=time.monotonic() - fetch_started_at,
+                    assignment_id=assignment_id,
+                )
+            try:
+                future = industrial_worker_executor.submit(
+                    _run_industrial_worker,
+                    slot_id,
+                    worker_batches,
+                )
+            except Exception as exc:
+                if adaptive_scheduler is None:
+                    raise
+                adaptive_scheduler.mark_failed(
+                    slot_id,
+                    now_s=time.monotonic() - fetch_started_at,
+                    assignment_id=assignment_id,
+                    failure_kind="launch_failure",
+                )
+                log_action(
+                    "adaptive_worker_quarantined",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "worker_id": f"worker-{slot_id:02d}",
+                        "target_workers": adaptive_scheduler.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": "launch_failure",
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": time.monotonic(),
+                    },
+                )
+                _requeue_adaptive_assignment(
+                    industrial_batch_queue,
+                    worker_queue_items,
+                    adaptive_assignment_ledger,
+                    assignment_id,
+                )
+                log_action(
+                    "adaptive_assignment_failed",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "assignment_id": assignment_id,
+                        "worker_id": f"worker-{slot_id:02d}",
+                        "target_workers": adaptive_scheduler.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": "launch_failure",
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": time.monotonic(),
+                        "batch_ids": batch_ids,
+                        **_adaptive_accounting_payload(),
+                        "requeued": True,
+                        "error": repr(exc),
+                    },
+                )
+                continue
             industrial_worker_futures.add(future)
             industrial_worker_slots_in_use[future] = slot_id
+            # Keep the logical batch payload for every worker mode.  The
+            # opt-in industrial-failure fallback reconciles exact IDs after a
+            # normal worker result; it must not depend on adaptive scheduling
+            # being enabled.
+            industrial_worker_assignment_payloads[future] = worker_queue_items
+            if adaptive_scheduler is not None:
+                industrial_worker_assignment_ids[future] = assignment_id
+                industrial_worker_assignment_batches[future] = batch_ids
+                log_action(
+                    "adaptive_worker_started",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "worker_id": f"worker-{slot_id:02d}",
+                        "target_workers": adaptive_scheduler.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": "launch_accepted",
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": time.monotonic(),
+                        "assignment_id": assignment_id,
+                        "batch_ids": industrial_worker_assignment_batches[future],
+                        **_adaptive_accounting_payload(),
+                    },
+                )
+                log_action(
+                    "adaptive_assignment_claimed",
+                    {
+                        "run_id": industrial_run_id,
+                        "lane": os.getenv("YTIS_NLM_LANE", ""),
+                        "assignment_id": assignment_id,
+                        "worker_id": f"worker-{slot_id:02d}",
+                        "target_workers": adaptive_scheduler.target_workers,
+                        "active_workers": len(industrial_worker_futures),
+                        "queued_batches": len(industrial_batch_queue),
+                        "reason": "eligible_slot",
+                        "policy_version": "adaptive-worker-scheduler-v1",
+                        "timestamp_monotonic_s": time.monotonic(),
+                        "batch_count": len(worker_batches),
+                        "video_count": sum(len(batch) for batch in worker_batches),
+                        "batch_ids": industrial_worker_assignment_batches[future],
+                        **_adaptive_accounting_payload(),
+                    },
+                )
         industrial_dispatch_cycle += 1
 
     def _process_industrial_batch(batch_items: list[tuple[str, str]]) -> None:
@@ -2839,7 +4099,7 @@ def cmd_fetch(
         source_map = {vid: source_url for vid, source_url in batch_items}
         print(
             f"[source] Processing batch {industrial_batches_processed} "
-            f"({len(batch)} videos) via NotebookLM CLI batch..."
+            f"({len(batch)} videos) via direct NotebookLM batch..."
         )
         _log_first_download_started(
             "industrial_cli_batch",
@@ -2848,6 +4108,7 @@ def cmd_fetch(
             first_video_id=batch[0],
         )
         results = process_industrial_batch_reusable(batch)
+        batch_elapsed = time.perf_counter() - batch_started_at
         for vid, (success, transcript, error) in results.items():
                 if success and transcript:
                     set_cached_transcript(
@@ -2861,8 +4122,20 @@ def cmd_fetch(
                             "source_url": source_map.get(vid, ""),
                             "batch_index": industrial_batches_processed,
                             "batch_size": len(batch),
+                            "batch_elapsed_s": round(batch_elapsed, 3),
+                            "per_video_s": round(batch_elapsed / max(len(batch), 1), 3),
                         },
                     )
+                    # Stage timing: record per-video elapsed for the batch path
+                    try:
+                        from csf.transcript import _record_stage_timing
+                        _record_stage_timing(
+                            vid, "notebooklm",
+                            batch_elapsed / max(len(batch), 1),
+                            True, False,
+                        )
+                    except Exception:
+                        pass
                     mark_complete(vid, last_stage="notebooklm")
                     success_count += 1
                     print(f"  ✓ {vid} (notebooklm)")
@@ -2870,18 +4143,30 @@ def cmd_fetch(
                     fail_count += 1
                     print(f"  ✗ {vid}: {error[:80]}")
                     source_url = source_map.get(vid, "")
-                    if source_url and transcript_fallback_workers > 0:
-                        log_action(
-                            "transcript_fallback_queued",
-                            {
-                                "video_id": vid,
-                                "source_url": source_url,
-                                "reason": error[:120],
-                                "queue_depth": len(transcript_fallback_queue) + 1,
-                            },
+                    route_to_fallback = (
+                        route_industrial_failures_to_fallback
+                        or (
+                            route_source_add_failures_to_fallback
+                            and _is_source_add_failure_reason(error)
                         )
-                        transcript_fallback_processed_count += 1
-                        transcript_fallback_queue.append((vid, source_url, True))
+                        or (
+                            route_source_addressability_failures_to_fallback
+                            and _is_source_addressability_failure_reason(error)
+                        )
+                    )
+                    if source_url and transcript_fallback_workers > 0 and route_to_fallback:
+                        if _queue_transcript_fallback(vid, source_url, True, error):
+                            log_action(
+                                "transcript_fallback_queued",
+                                {
+                                    "video_id": vid,
+                                    "source_url": source_url,
+                                    "reason": error[:120],
+                                    "queue_depth": len(transcript_fallback_queue),
+                                    "durable": durable_fallback_queue is not None,
+                                },
+                            )
+                            transcript_fallback_processed_count += 1
                     elif source_url:
                         log_action(
                             "transcript_fallback_disabled",
@@ -2903,11 +4188,14 @@ def cmd_fetch(
             return (video_id, True, "cache", "", "")
         nonlocal transcript_fallback_last_start_at
         with transcript_fallback_start_lock:
-            now = time.monotonic()
-            elapsed = now - transcript_fallback_last_start_at
-            if elapsed < transcript_fallback_min_start_interval_s:
-                time.sleep(transcript_fallback_min_start_interval_s - elapsed)
-            transcript_fallback_last_start_at = time.monotonic()
+            next_start_at = max(
+                time.monotonic(),
+                transcript_fallback_last_start_at + transcript_fallback_min_start_interval_s,
+            )
+            transcript_fallback_last_start_at = next_start_at
+        wait_s = next_start_at - time.monotonic()
+        if wait_s > 0:
+            time.sleep(wait_s)
         log_action(
             "transcript_fallback_started",
             {
@@ -2941,39 +4229,38 @@ def cmd_fetch(
         except Exception:
             admission_metadata = None
         config = LanguageConfig(prefer_lang="en", allow_translation=False)
-        result = fetch_transcript_chain(
-            video_id,
-            config,
-            skip_notebooklm=skip_notebooklm,
-            admission_metadata=admission_metadata,
-        )
+        skip_oembed = fallback_only or route_no_captions_to_fallback
+        timeout_s = _transcript_fallback_timeout_s()
+        if timeout_s is None:
+            result = fetch_transcript_chain(
+                video_id, config, skip_notebooklm=skip_notebooklm,
+                skip_oembed=skip_oembed, admission_metadata=admission_metadata,
+            )
+        else:
+            result = _run_transcript_fallback_subprocess(
+                video_id, skip_notebooklm, skip_oembed, admission_metadata, timeout_s,
+            )
         if result.transcript:
             set_cached_transcript(
                 video_id,
                 result.lang or "en",
                 result.source,
                 result.transcript,
-                metadata={
-                    "pipeline": "csf-source",
-                    "route": "transcript_fallback",
-                    "source_url": source_url,
-                    "skip_notebooklm": skip_notebooklm,
-                },
+                metadata=build_transcript_cache_metadata(
+                    result,
+                    extra={
+                        "pipeline": "csf-source",
+                        "route": "transcript_fallback",
+                        "source_url": source_url,
+                        "skip_notebooklm": skip_notebooklm,
+                    },
+                ),
             )
-            qm = None
-            if result.view_count:
-                import json as _json
-                qm = _json.dumps({
-                    "view_count": result.view_count,
-                    "like_count": result.like_count,
-                    "comment_count": result.comment_count,
-                    "duration": result.duration,
-                    "title": result.video_title,
-                    "description": (result.video_description or "")[:500] if result.video_description else None,
-                    "like_rate": round(result.like_count / result.view_count, 6) if result.view_count and result.like_count else None,
-                    "comment_rate": round(result.comment_count / result.view_count, 6) if result.view_count and result.comment_count else None,
-                })
-            mark_complete(video_id, last_stage=result.source or "transcript_fallback", quality_metrics=qm)
+            mark_complete(
+                video_id,
+                last_stage=result.source or "transcript_fallback",
+                quality_metrics=_build_result_quality_metrics(result),
+            )
             log_action(
                 "transcript_fallback_completed",
                 {
@@ -2987,8 +4274,33 @@ def cmd_fetch(
             )
             return (video_id, True, result.source or "transcript_fallback", result.transcript, "")
         failure_reason = result.failure_reason or "unknown"
-        last_stage = result.last_stage or "unknown"
+        last_stage = result.last_stage or "transcript_fallback"
         error_text = result.error or "No transcript available"
+        original_failure_reason = transcript_fallback_original_failure_reasons.get(video_id)
+        persisted_failure = _compose_fallback_failure_reason(
+            original_failure_reason,
+            failure_reason,
+            error_text,
+        )
+        status_persisted = False
+        try:
+            set_status(
+                video_id,
+                "failed",
+                last_stage=last_stage,
+                failure_reason=persisted_failure,
+            )
+            status_persisted = True
+        except Exception as exc:
+            log_action(
+                "transcript_fallback_status_persist_failed",
+                {
+                    "video_id": video_id,
+                    "source_url": source_url,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "failure_reason": persisted_failure,
+                },
+            )
         log_action(
             "transcript_fallback_completed",
             {
@@ -2996,8 +4308,11 @@ def cmd_fetch(
                 "source_url": source_url,
                 "status": "failed",
                 "failure_reason": failure_reason,
-                "last_stage": result.last_stage,
+                "original_failure_reason": original_failure_reason,
+                "persisted_failure_reason": persisted_failure,
+                "last_stage": last_stage,
                 "error": error_text,
+                "status_persisted": status_persisted,
             },
         )
         return (video_id, False, "", "", f"[{failure_reason} @ {last_stage}] {error_text}")
@@ -3006,9 +4321,67 @@ def cmd_fetch(
         nonlocal transcript_fallback_queue, transcript_fallback_worker_executor, transcript_fallback_worker_futures
         nonlocal transcript_fallback_worker_seq, success_count, fail_count
 
+        def _claim(video_id: str) -> bool:
+            if durable_fallback_queue is None:
+                return True
+            claimed = durable_fallback_queue.claim(
+                claimant_id=durable_fallback_claimant_id,
+                video_id=video_id,
+                limit=1,
+            )
+            if claimed:
+                return True
+            log_action(
+                "transcript_fallback_durable_claim_skipped",
+                {"video_id": video_id, "reason": "record_not_queued"},
+            )
+            return False
+
+        def _finalize(video_id: str, success: bool, error: str) -> None:
+            if durable_fallback_queue is None:
+                transcript_fallback_original_failure_reasons.pop(video_id, None)
+                return
+            try:
+                if success:
+                    completed = durable_fallback_queue.complete(
+                        video_id,
+                        claimant_id=durable_fallback_claimant_id,
+                    )
+                else:
+                    original_failure_reason = transcript_fallback_original_failure_reasons.get(video_id)
+                    failure = (
+                        _compose_fallback_failure_reason(
+                            original_failure_reason,
+                            "transcript_fallback",
+                            error or "transcript_fallback_failed",
+                        )
+                        if original_failure_reason
+                        else (error or "transcript_fallback_failed")[:1000]
+                    )
+                    completed = durable_fallback_queue.fail(
+                        video_id,
+                        claimant_id=durable_fallback_claimant_id,
+                        failure_reason=failure,
+                    )
+                if not completed:
+                    log_action(
+                        "transcript_fallback_durable_finalize_failed",
+                        {
+                            "video_id": video_id,
+                            "success": success,
+                            "reason": "claimant_or_state_mismatch",
+                        },
+                    )
+            finally:
+                transcript_fallback_original_failure_reasons.pop(video_id, None)
+
         if transcript_fallback_workers <= 0:
             while transcript_fallback_queue:
                 video_id, source_url, _skip_notebooklm = transcript_fallback_queue.popleft()
+                transcript_fallback_memory_ids.discard(video_id)
+                if not _claim(video_id):
+                    continue
+                _finalize(video_id, False, "transcript fallback disabled")
                 fail_count += 1
                 log_action(
                     "transcript_fallback_skipped_disabled",
@@ -3028,6 +4401,7 @@ def cmd_fetch(
         for future in done:
             transcript_fallback_worker_futures.remove(future)
             video_id, success, source, transcript, error = future.result()
+            _finalize(video_id, bool(success and transcript), error)
             if success and transcript:
                 success_count += 1
                 print(f"  ✓ {video_id} ({source})")
@@ -3047,7 +4421,13 @@ def cmd_fetch(
             len(transcript_fallback_queue),
         )
         for _ in range(submit_count):
-            video_id, source_url, skip_notebooklm = transcript_fallback_queue.popleft()
+            video_id, source_url, skip_notebooklm = transcript_fallback_queue[0]
+            if not _claim(video_id):
+                transcript_fallback_queue.popleft()
+                transcript_fallback_memory_ids.discard(video_id)
+                continue
+            transcript_fallback_queue.popleft()
+            transcript_fallback_memory_ids.discard(video_id)
             transcript_fallback_worker_seq += 1
             worker_label = f"transcript-fallback-{transcript_fallback_worker_seq:02d}"
             future = transcript_fallback_worker_executor.submit(
@@ -3143,14 +4523,13 @@ def cmd_fetch(
         for entry in pending_entries:
             video_id = str(entry["video_id"])
             status = str(entry["status"])
-            source_url = str(
-                entry.get("source")
-                or (
-                    f"https://www.youtube.com/watch?v={video_id}"
-                    if selection_manifest is not None
-                    else channel_url
+            if selection_manifest is not None:
+                source_url = str(
+                    entry.get("video_url")
+                    or f"https://www.youtube.com/watch?v={video_id}"
                 )
-            )
+            else:
+                source_url = str(entry.get("source") or channel_url)
             if status != "pending":
                 continue
             if has_cached_transcript(video_id):
@@ -3162,6 +4541,17 @@ def cmd_fetch(
                             "source": source_url,
                             "channel_index": channel_index,
                         }
+                    )
+                if not dry_run:
+                    mark_complete(video_id, last_stage="cache")
+                    log_action(
+                        "transcript_cache_reconciled",
+                        {
+                            "video_id": video_id,
+                            "source": source_url,
+                            "last_stage": "cache",
+                            "reason": "pending_row_has_usable_cached_transcript",
+                        },
                     )
                 continue
             neg_cache = get_negative_cache(video_id)
@@ -3214,12 +4604,21 @@ def cmd_fetch(
             pending_discovered_total += 1
             if bucket == "notebooklm":
                 notebooklm_pending_count += 1
+                industrial_source_urls[video_id] = source_url
                 pending_buffer.append((video_id, source_url))
             else:
-                transcript_fallback_queued_count += 1
-                transcript_fallback_queue.append((video_id, source_url, True))
+                if _queue_transcript_fallback(
+                    video_id,
+                    source_url,
+                    True,
+                    str(reason or "pending_fallback"),
+                ):
+                    transcript_fallback_queued_count += 1
 
-            if notebooklm_pending_count >= backlog_threshold or transcript_fallback_queued_count >= backlog_threshold:
+            if not fallback_only and (
+                notebooklm_pending_count >= backlog_threshold
+                or transcript_fallback_queued_count >= backlog_threshold
+            ):
                 industrial_selected = True
 
             if not dry_run and industrial_selected and len(pending_buffer) >= batch_size:
@@ -3227,21 +4626,27 @@ def cmd_fetch(
                     drained_batches = _drain_balanced_pending_batches(
                         pending_buffer,
                         batch_size=batch_size,
-                        worker_count=workers if industrial_parallel_enabled else 1,
+                        worker_count=adaptive_capacity if industrial_parallel_enabled else 1,
                         min_pending_batches=(
                             industrial_dispatch_min_pending_batches if industrial_parallel_enabled else 1
                         ),
                     )
                     if not drained_batches:
                         break
-                    industrial_batch_queue.extend(
+                    _enqueue_industrial_batches(
                         [[vid for vid, _src in batch_items] for batch_items in drained_batches]
                     )
                     if industrial_parallel_enabled:
-                        _service_industrial_workers(wait_for_completion=False)
+                        _service_industrial_workers(
+                            wait_for_completion=False,
+                            input_closed=False,
+                        )
 
             if industrial_parallel_enabled and industrial_worker_futures:
-                _service_industrial_workers(wait_for_completion=False)
+                _service_industrial_workers(
+                    wait_for_completion=False,
+                    input_closed=False,
+                )
 
             if max_items is not None and _primary_pending_discovered_total() >= max_items:
                 while (
@@ -3250,7 +4655,10 @@ def cmd_fetch(
                     and industrial_worker_futures
                     and _primary_pending_discovered_total() >= max_items
                 ):
-                    _service_industrial_workers(wait_for_completion=True)
+                    _service_industrial_workers(
+                        wait_for_completion=True,
+                        input_closed=True,
+                    )
                 if _primary_pending_discovered_total() < max_items:
                     continue
                 max_items_reached = True
@@ -3324,7 +4732,6 @@ def cmd_fetch(
     use_industrial = (
         industrial_selected
         or notebooklm_pending_count >= backlog_threshold
-        or transcript_fallback_queued_count > 0
     )
     if notebooklm_pending_count > 0:
         strategy_name = "industrial_cli_batch" if use_industrial else "surgical_chain"
@@ -3388,19 +4795,22 @@ def cmd_fetch(
             drained_batches = _drain_balanced_pending_batches(
                 pending_buffer,
                 batch_size=batch_size,
-                worker_count=workers if industrial_parallel_enabled else 1,
+                worker_count=adaptive_capacity if industrial_parallel_enabled else 1,
                 min_pending_batches=1,
             )
             if not drained_batches:
                 break
-            industrial_batch_queue.extend(
+            _enqueue_industrial_batches(
                 [[vid for vid, _src in batch_items] for batch_items in drained_batches]
             )
         if pending_buffer:
-            industrial_batch_queue.append([vid for vid, _src in pending_buffer])
+            _enqueue_industrial_batches([[vid for vid, _src in pending_buffer]])
             pending_buffer.clear()
     if industrial_parallel_enabled:
-        _service_industrial_workers(wait_for_completion=False)
+        _service_industrial_workers(
+            wait_for_completion=False,
+            input_closed=True,
+        )
     print(f"[source] Escalation Batch Process")
     if selection_manifest is not None:
         print(f"[source] Manifest items: {len(selection_manifest.items)} selected from manifest")
@@ -3461,7 +4871,6 @@ def cmd_fetch(
     use_industrial = (
         industrial_selected
         or notebooklm_pending_count >= backlog_threshold
-        or transcript_fallback_queued_count > 0
     )
     if notebooklm_pending_count > 0:
         strategy_name = "industrial_cli_batch" if use_industrial else "surgical_chain"
@@ -3546,7 +4955,7 @@ def cmd_fetch(
         return
     if notebooklm_pending_count > 0 and use_industrial:
         print("[source] Strategy: Industrial (Batch NLM)")
-        print("[source] Method: NotebookLM CLI batch for captioned/no-captions items; live items use transcript fallback")
+        print("[source] Method: direct NotebookLM batch for captioned/no-captions items; live items use transcript fallback")
     elif notebooklm_pending_count > 0:
         print("[source] Strategy: Surgical (Chain)")
         print("[source] Method: captioned/no-captions items use NotebookLM chain; live items use transcript fallback")
@@ -3561,47 +4970,29 @@ def cmd_fetch(
     print(f"[source] Workers: {workers}")
     print()
 
-    # Ensure NLM is authenticated before any live fetch run.
-    # When YTIS_NLM_WORKER_AUTH_USE_CDP=0 (the current recommended setting),
-    # bypass the deprecated CLI-based _ensure_nlm_auth() and probe
-    # storage_state.json directly. The CLI path (nlm login --check +
-    # refresh_source_profile) opens Chrome windows and uses separate cookie
-    # storage that drifts from the canonical storage_state.json. The new path
-    # (NLMSyncClient.from_storage) reads storage_state.json directly and does
-    # not invoke the CLI at all.
-    _use_cdp = os.getenv("YTIS_NLM_WORKER_AUTH_USE_CDP", "1").strip().lower() not in {"0", "false", "no", "off"}
-    if not _use_cdp:
-        # New path: probe storage_state.json directly via keepalive's logic.
-        import asyncio as _asyncio
-        from csf.nlm_auth_check import STORAGE_PATH as _STORAGE_PATH
-        from csf.nlm_keepalive import _probe_session as _probe
-        if not _STORAGE_PATH.exists() or _STORAGE_PATH.stat().st_size == 0:
-            print(f"[source] FATAL: storage_state.json missing or empty at {_STORAGE_PATH}", file=sys.stderr)
-            print(f"  Re-bootstrap with: python -m notebooklm login --storage {_STORAGE_PATH} --browser chrome", file=sys.stderr)
-            sys.exit(1)
-        _probe_ok = _asyncio.run(_probe())
-        if not _probe_ok:
-            print(f"[source] FATAL: storage_state.json session expired or invalid.", file=sys.stderr)
-            print(f"  Re-bootstrap with: python -m notebooklm login --storage {_STORAGE_PATH} --browser chrome", file=sys.stderr)
-            sys.exit(1)
-        # Session is alive. Set noninteractive for workers.
-        os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = "1"
-        log_action("nlm_auth_storage_probe_ok", {"component": "source", "storage_path": str(_STORAGE_PATH)})
-    else:
-        # Legacy path: CLI-based interactive bootstrap. Opens Chrome if the
-        # CLI's per-profile cookies are stale. Kept for backward compat when
-        # YTIS_NLM_WORKER_AUTH_USE_CDP is not 0.
-        _saved_noninteractive = os.environ.pop("YTIS_NLM_AUTH_NONINTERACTIVE", None)
-        try:
-            _ensure_nlm_auth()
-        except BaseException as exc:
-            if _saved_noninteractive is not None:
-                os.environ["YTIS_NLM_AUTH_NONINTERACTIVE"] = _saved_noninteractive
-            _log_fetch_terminal_failure(_format_fetch_terminal_failure_reason(exc))
-            raise
-
-    industrial_run_id = uuid.uuid4().hex
-    os.environ["YTIS_INDUSTRIAL_RUN_ID"] = industrial_run_id
+    if adaptive_scheduler is not None:
+        log_action(
+            "adaptive_scheduler_initialized",
+            {
+                "run_id": industrial_run_id,
+                "lane": os.getenv("YTIS_NLM_LANE", ""),
+                "worker_id": "coordinator",
+                "target_workers": adaptive_scheduler.target_workers,
+                "min_workers": adaptive_scheduler.config.min_workers,
+                "initial_workers": adaptive_scheduler.config.initial_workers,
+                "max_workers": adaptive_scheduler.config.max_workers,
+                "scale_up_backlog": adaptive_scheduler.config.scale_up_backlog,
+                "scale_down_backlog": adaptive_scheduler.config.scale_down_backlog,
+                "cooldown_s": adaptive_scheduler.config.cooldown_s,
+                "health_window": adaptive_scheduler.config.health_window,
+                "max_failure_rate": adaptive_scheduler.config.max_failure_rate,
+                "active_workers": 0,
+                "queued_batches": len(industrial_batch_queue),
+                "reason": "initial_target",
+                "policy_version": "adaptive-worker-scheduler-v1",
+                "timestamp_monotonic_s": time.monotonic(),
+            },
+        )
 
     if use_industrial and not dry_run:
         deleted, failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
@@ -3637,8 +5028,13 @@ def cmd_fetch(
         failed = 0
 
     def _industrial_parallel_enabled() -> bool:
-        disable_flag = os.getenv("YTIS_DISABLE_INDUSTRIAL_PARALLEL", "").strip().lower()
-        return workers > 1 and disable_flag not in {"1", "true", "yes", "on"}
+        # Coordinator-owned children must cross the worker boundary even when
+        # their configured worker count is one.  The in-process serial path
+        # cannot receive the coordinator's account-scoped state path, notebook
+        # title, or worker identity, and it also bypasses worker-level failure
+        # persistence.  Preserve the historical direct path for standalone
+        # callers that do not carry the coordinator ownership marker.
+        return _industrial_parallel_enabled_for_runtime(workers=workers)
 
     def _split_batches_for_workers(batch_queue: list[list[str]], worker_count: int) -> list[list[list[str]]]:
         if worker_count < 1:
@@ -3652,7 +5048,7 @@ def cmd_fetch(
         return groups
 
     if use_industrial:
-        # --- INDUSTRIAL PATH: NotebookLM CLI batch content fetch ---
+        # --- INDUSTRIAL PATH: direct NotebookLM batch content fetch ---
         # Group the backlog into batches and run them through isolated workers.
         post_deleted = 0
         post_failed = 0
@@ -3663,12 +5059,15 @@ def cmd_fetch(
                 pass
             elif industrial_parallel_enabled:
                 while industrial_batch_queue or industrial_worker_futures or transcript_fallback_queue or transcript_fallback_worker_futures:
-                    _service_industrial_workers(wait_for_completion=True)
+                    _service_industrial_workers(
+                        wait_for_completion=True,
+                        input_closed=True,
+                    )
                     _service_transcript_fallback_workers(wait_for_completion=True)
             else:
                 while industrial_batch_queue:
-                    batch = industrial_batch_queue.pop(0)
-                    _process_industrial_batch([(vid, "") for vid in batch])
+                    queued_batch = industrial_batch_queue.pop(0)
+                    _process_industrial_batch([(vid, "") for vid in queued_batch.video_ids])
                 while transcript_fallback_queue or transcript_fallback_worker_futures:
                     _service_transcript_fallback_workers(wait_for_completion=True)
         finally:
@@ -3676,6 +5075,8 @@ def cmd_fetch(
                 industrial_worker_executor.shutdown(wait=True, cancel_futures=False)
             if transcript_fallback_worker_executor is not None:
                 transcript_fallback_worker_executor.shutdown(wait=True, cancel_futures=False)
+            if durable_fallback_queue is not None:
+                durable_fallback_queue.close()
             close_reusable_ingestor()
             if use_industrial and not dry_run:
                 post_deleted, post_failed = cleanup_stale_worker_notebooks(delete=True, include_active=True)
@@ -3706,9 +5107,37 @@ def cmd_fetch(
         all_pending = [(vid, src, False) for vid, src in pending_buffer]
         all_pending.extend(transcript_fallback_queue)
         transcript_fallback_queue.clear()
+        transcript_fallback_memory_ids.clear()
         def _process_video(video_id: str, source_url: str, skip_notebooklm: bool) -> tuple[str, bool, str, str]:
             """Process a single video using the full transcript fallback chain."""
+            durable_claimed = False
+            if durable_fallback_queue is not None and skip_notebooklm:
+                claimed = durable_fallback_queue.claim(
+                    claimant_id=durable_fallback_claimant_id,
+                    video_id=video_id,
+                    limit=1,
+                )
+                if not claimed:
+                    try:
+                        prior = durable_fallback_queue.get(video_id)
+                    except KeyError:
+                        prior = None
+                    if prior and prior["state"] == "completed":
+                        return (video_id, True, "cache", "")
+                    return (
+                        video_id,
+                        False,
+                        "",
+                        "[durable_queue @ claim] fallback record was not queued",
+                    )
+                durable_claimed = True
             if has_cached_transcript(video_id):
+                transcript_fallback_original_failure_reasons.pop(video_id, None)
+                if durable_claimed:
+                    durable_fallback_queue.complete(
+                        video_id,
+                        claimant_id=durable_fallback_claimant_id,
+                    )
                 return (video_id, True, "cache", "")
 
             _log_first_download_started(
@@ -3717,7 +5146,22 @@ def cmd_fetch(
                 source_url=source_url,
             )
             config = LanguageConfig(prefer_lang="en", allow_translation=False)
-            result = fetch_transcript_chain(video_id, config, skip_notebooklm=skip_notebooklm)
+            timeout_s = _transcript_fallback_timeout_s()
+            if timeout_s is None:
+                result = fetch_transcript_chain(
+                    video_id,
+                    config,
+                    skip_notebooklm=skip_notebooklm,
+                    skip_oembed=fallback_only,
+                )
+            else:
+                result = _run_transcript_fallback_subprocess(
+                    video_id,
+                    skip_notebooklm,
+                    fallback_only,
+                    None,
+                    timeout_s,
+                )
 
             if result.transcript:
                 set_cached_transcript(
@@ -3735,25 +5179,41 @@ def cmd_fetch(
                         },
                     ),
                 )
-                # Build quality metrics JSON from engagement fields captured during fetch
-                qm = None
-                if result.view_count:
-                    import json as _json
-                    qm = _json.dumps({
-                        "view_count": result.view_count,
-                        "like_count": result.like_count,
-                        "comment_count": result.comment_count,
-                        "duration": result.duration,
-                        "title": result.video_title,
-                        "description": (result.video_description or "")[:500] if result.video_description else None,
-                        "like_rate": round(result.like_count / result.view_count, 6) if result.view_count and result.like_count else None,
-                        "comment_rate": round(result.comment_count / result.view_count, 6) if result.view_count and result.comment_count else None,
-                    })
-                mark_complete(video_id, last_stage=result.source, quality_metrics=qm)
+                mark_complete(
+                    video_id,
+                    last_stage=result.source,
+                    quality_metrics=_build_result_quality_metrics(result),
+                )
+                if durable_claimed:
+                    durable_fallback_queue.complete(
+                        video_id,
+                        claimant_id=durable_fallback_claimant_id,
+                    )
+                transcript_fallback_original_failure_reasons.pop(video_id, None)
                 return (video_id, True, result.source, "")
             else:
-                set_status(video_id, "failed")
-                return (video_id, False, "", result.error or "No transcript available")
+                failure_reason = result.failure_reason or "unknown"
+                last_stage = result.last_stage or "transcript_fallback"
+                error_text = result.error or "No transcript available"
+                persisted_failure = _compose_fallback_failure_reason(
+                    transcript_fallback_original_failure_reasons.get(video_id),
+                    failure_reason,
+                    error_text,
+                )
+                set_status(
+                    video_id,
+                    "failed",
+                    last_stage=last_stage,
+                    failure_reason=persisted_failure,
+                )
+                if durable_claimed:
+                    durable_fallback_queue.fail(
+                        video_id,
+                        claimant_id=durable_fallback_claimant_id,
+                        failure_reason=persisted_failure,
+                    )
+                transcript_fallback_original_failure_reasons.pop(video_id, None)
+                return (video_id, False, "", f"[{persisted_failure} @ {last_stage}] {error_text}")
 
         print(f"[source] Starting Surgical Ingest (Sequential Escalation)...")
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -3777,6 +5237,8 @@ def cmd_fetch(
                 except Exception as e:
                     fail_count += 1
                     print(f"[{idx}/{total_pending}] ✗ Error: {e}")
+        if durable_fallback_queue is not None:
+            durable_fallback_queue.close()
 
     # Summary
     stage_totals = _build_worker_stage_totals_payload()
@@ -3824,6 +5286,8 @@ def cmd_fetch(
     processed_count = success_count + fail_count + skip_count
     print(f"[source] Total discovered: {total_pending}")
     print(f"[source] Total processed outcomes: {processed_count}")
+    if adaptive_assignment_ledger is not None:
+        selection_metadata["adaptive_assignment_accounting"] = _adaptive_accounting_payload()
     _log_fetch_completed(
         source_filter=source_filter,
         strategy=strategy_name,
@@ -3864,6 +5328,75 @@ def cmd_fetch(
     )
 
 
+def _industrial_parallel_enabled_for_runtime(*, workers: int) -> bool:
+    """Select the isolated industrial worker boundary for one fetch run."""
+    if workers < 1:
+        raise ValueError("workers must be >= 1")
+    disable_flag = os.getenv("YTIS_DISABLE_INDUSTRIAL_PARALLEL", "").strip().lower()
+    coordinator_owned = bool(os.getenv("YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID", "").strip())
+    return (workers > 1 or coordinator_owned) and disable_flag not in {"1", "true", "yes", "on"}
+
+
+def _resolve_industrial_run_id() -> str:
+    """Use the coordinator identity when present, otherwise create a run id."""
+    for environment_name in (
+        "YTIS_INDUSTRIAL_RUN_ID",
+        "YTIS_MULTI_ACCOUNT_FETCH_COORDINATOR_RUN_ID",
+    ):
+        value = os.getenv(environment_name, "").strip()
+        if value:
+            return value
+    return uuid.uuid4().hex
+
+
+def cmd_fetch(
+    source_filter: str | None = None,
+    dry_run: bool = False,
+    workers: int = 1,
+    max_items: int | None = None,
+    video_manifest: Path | None = None,
+    selection_receipt: Path | None = None,
+    overwrite_selection_receipt: bool = False,
+    verify_selection_receipt_path: Path | None = None,
+    adaptive_workers: bool = False,
+    adaptive_min_workers: int = 1,
+    adaptive_max_workers: int | None = None,
+    adaptive_scale_up_backlog: int = 2,
+    adaptive_scale_down_backlog: int = 0,
+    adaptive_cooldown_s: float = 60.0,
+    adaptive_health_window: int = 2,
+    fallback_only: bool = False,
+    route_source_add_failures_to_fallback: bool = False,
+    route_source_addressability_failures_to_fallback: bool = False,
+) -> None:
+    """Run one fetch under the database-scoped multi-launcher lock."""
+    try:
+        with fetch_run_lock(get_batch_db_path()):
+            return _cmd_fetch_unlocked(
+                source_filter=source_filter,
+                dry_run=dry_run,
+                workers=workers,
+                max_items=max_items,
+                video_manifest=video_manifest,
+                selection_receipt=selection_receipt,
+                overwrite_selection_receipt=overwrite_selection_receipt,
+                verify_selection_receipt_path=verify_selection_receipt_path,
+                adaptive_workers=adaptive_workers,
+                adaptive_min_workers=adaptive_min_workers,
+                adaptive_max_workers=adaptive_max_workers,
+                adaptive_scale_up_backlog=adaptive_scale_up_backlog,
+                adaptive_scale_down_backlog=adaptive_scale_down_backlog,
+                adaptive_cooldown_s=adaptive_cooldown_s,
+                adaptive_health_window=adaptive_health_window,
+                fallback_only=fallback_only,
+                route_source_add_failures_to_fallback=route_source_add_failures_to_fallback,
+                route_source_addressability_failures_to_fallback=route_source_addressability_failures_to_fallback,
+            )
+    except FetchRunLockError as exc:
+        print(f"[source] FATAL: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+
+
 def cmd_quota() -> None:
     """Print current per-key quota state and recommend workers."""
     quota = get_quota_status()
@@ -3900,6 +5433,36 @@ def cmd_quota() -> None:
     print(f"Non-exhausted keys: {non_exhausted}")
     print(f"Recommended max workers: {recommended_workers}")
     print(f"[source] Can proceed for ~{available // 5} more channel additions")
+
+
+def cmd_cleanup_worker_notebooks(
+    *, delete: bool, include_active: bool, only_current_state: bool = False
+) -> int:
+    """Reconcile industrial worker notebooks after an external child kill.
+
+    This command is intentionally separate from ``fetch`` so a coordinator can
+    invoke cleanup after it has terminated a timed-out child and its ``finally``
+    block could not run.  The caller supplies the account-scoped worker
+    environment; the cleanup helper's prefix and state-root guards remain the
+    authority for what may be deleted.
+    """
+    if include_active and not delete:
+        print("[source] --include-active requires --delete", file=sys.stderr)
+        return 2
+    if only_current_state and not include_active:
+        print("[source] --only-current-state requires --include-active", file=sys.stderr)
+        return 2
+    deleted, failed = cleanup_stale_worker_notebooks(
+        delete=delete,
+        include_active=include_active,
+        only_current_state=only_current_state,
+    )
+    print(
+        f"[source] Worker notebook cleanup: deleted={deleted} failed={failed} "
+        f"delete={delete} include_active={include_active} "
+        f"only_current_state={only_current_state}"
+    )
+    return 1 if failed else 0
 
 
 def cmd_block(url: str) -> None:
@@ -3965,11 +5528,30 @@ def cmd_remove(url: str) -> None:
         print(f"[source] Not found in database: {canonical_url}")
 
 
+def _parse_cookies_from_browser(spec: str) -> tuple[str, str | None, str | None]:
+    """Parse a BROWSER[+KEYRING][:PROFILE] spec into yt-dlp's cookies tuple.
+
+    Raises ValueError on an empty browser name.
+    """
+    parts = spec.split(":")
+    browser_and_keyring = parts[0]
+    profile = parts[1] if len(parts) > 1 and parts[1] else None
+    if "+" in browser_and_keyring:
+        browser, keyring = browser_and_keyring.split("+", 1)
+    else:
+        browser, keyring = browser_and_keyring, None
+    browser = browser.strip()
+    if not browser:
+        raise ValueError("--cookies-from-browser needs a browser name, e.g. firefox:default-release")
+    return browser, profile, keyring
+
+
 def _cmd_playlist_import(
     playlist_kind: str,
     playlist_url: str,
     min_playlist_videos: int,
     dry_run: bool = False,
+    cookies_from_browser: str | None = None,
 ) -> None:
     """Extract channels from a YouTube playlist and add new ones.
 
@@ -3978,7 +5560,8 @@ def _cmd_playlist_import(
     - video_count > 2        (skip barely-active channels)
     - most recent video within 3 months (skip dormant/abandoned channels)
 
-    Requires: YOUTUBE_API_KEY
+    Requires: YOUTUBE_API_KEY. Cookies come from --cookies-from-browser
+    (live browser cookie store, always fresh) or ~/youtube_cookies.txt.
     """
     import os
     from datetime import datetime, timezone, timedelta
@@ -3989,10 +5572,15 @@ def _cmd_playlist_import(
 
     print(f"[source] Step 1: Fetching {playlist_label} video IDs (yt-dlp Python API, no API quota)...")
 
-    # Find cookies file: prefer exported file, fall back to browser extraction
+    # Cookies: an explicit --cookies-from-browser spec reads the live browser
+    # cookie store (always fresh); otherwise fall back to the exported file.
+    cookiesfrombrowser = None
     cookie_file = os.path.expanduser("~/youtube_cookies.txt")
-    if not os.path.exists(cookie_file):
-        # Fall back to browser cookies
+    if cookies_from_browser:
+        cookiesfrombrowser = _parse_cookies_from_browser(cookies_from_browser)
+        cookie_file = None
+    elif not os.path.exists(cookie_file):
+        # Fall back to no cookies (anonymous; WL/history need auth to work)
         cookie_file = None
 
     try:
@@ -4000,6 +5588,7 @@ def _cmd_playlist_import(
         ydl_opts = {
             "quiet": True,
             "cookiefile": cookie_file,
+            "cookiesfrombrowser": cookiesfrombrowser,
             "extract_flat": "in_playlist",
             "skip_download": True,
             "socket_timeout": 60,
@@ -4098,8 +5687,28 @@ def _cmd_playlist_import(
             existing_uc_ids.add(m.group(1))
         elif cu.startswith("UC"):
             existing_uc_ids.add(cu)
+    # Tombstone guard: blacklisted/blocked channels (deleted from the DB by
+    # blacklist_channels, or excluded) must never be re-imported.
+    blacklisted_uc_ids: set[str] = set()
+    try:
+        for row in conn.execute("SELECT channel_url, channel_id FROM channel_blocklist").fetchall():
+            cu, cid = row[0], row[1]
+            m = re.search(r"/channel/(UC[a-zA-Z0-9_-]+)", cu or "")
+            if m:
+                blacklisted_uc_ids.add(m.group(1))
+            elif cu and cu.startswith("UC"):
+                blacklisted_uc_ids.add(cu)
+            if cid and cid.startswith("UC"):
+                blacklisted_uc_ids.add(cid)
+    except Exception:
+        pass
+    conn.close()
+    tombstone_blocked = [cid for cid in qualified if cid in blacklisted_uc_ids]
+    if tombstone_blocked:
+        print(f"[source] Skipping {len(tombstone_blocked)} blacklisted/blocked channel(s) "
+              "(excluded or deleted via blacklist — never re-imported).")
 
-    new_qualified = [cid for cid in qualified if cid not in existing_uc_ids]
+    new_qualified = [cid for cid in qualified if cid not in existing_uc_ids and cid not in blacklisted_uc_ids]
     print(f"[source] Already tracked: {len(qualified) - len(new_qualified)}")
     print(f"[source] New to add (before filters): {len(new_qualified)}")
 
@@ -4416,27 +6025,38 @@ def _cmd_playlist_import(
     )
 
 
-def cmd_history(min_history_videos: int = 2, dry_run: bool = False) -> None:
+def cmd_history(
+    min_history_videos: int = 2, dry_run: bool = False, cookies_from_browser: str | None = None
+) -> None:
     """Import channels from watch history."""
     _cmd_playlist_import(
         playlist_kind="history",
         playlist_url="https://www.youtube.com/feed/history",
         min_playlist_videos=min_history_videos,
         dry_run=dry_run,
+        cookies_from_browser=cookies_from_browser,
     )
 
 
-def cmd_watchlater(min_watchlater_videos: int = 2, dry_run: bool = False) -> None:
+def cmd_watchlater(
+    min_watchlater_videos: int = 2, dry_run: bool = False, cookies_from_browser: str | None = None
+) -> None:
     """Import channels from Watch Later."""
     _cmd_playlist_import(
         playlist_kind="watchlater",
         playlist_url="https://www.youtube.com/playlist?list=WL",
         min_playlist_videos=min_watchlater_videos,
         dry_run=dry_run,
+        cookies_from_browser=cookies_from_browser,
     )
 
 
 def main() -> None:
+    # Workspace .env (YT_API_KEY_* aliases etc.) fills only unset vars, so an
+    # explicit shell environment always wins.
+    loaded_env = load_workspace_env()
+    if loaded_env:
+        print(f"[source] loaded {len(loaded_env)} env vars from workspace .env", file=sys.stderr)
     parser = argparse.ArgumentParser(
         description="YouTube source management CLI — Phase 2."
     )
@@ -4445,6 +6065,13 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Authorize YouTube API spending for this run only. Dies with the process."
+    )
+    parser.add_argument(
+        "--spend-budget",
+        type=int,
+        default=None,
+        metavar="UNITS",
+        help="Cap this run's total YouTube API unit spend (requires --allow-spend)."
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
@@ -4466,6 +6093,39 @@ def main() -> None:
     # categorize command
     categorize_parser = subparsers.add_parser("categorize", help="LLM-categorize all channels (idempotent, skips categorized)")
     categorize_parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")
+    categorize_parser.add_argument(
+        "--retry-other",
+        action="store_true",
+        help="Re-attempt channels stored as 'Other' (never manual decisions) — use after backfilling metadata.",
+    )
+    categorize_parser.add_argument(
+        "--refresh-video-titles",
+        action="store_true",
+        help="Ignore cached video titles and refetch RSS (cache repopulates).",
+    )
+    categorize_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Re-classify EVERY channel, overriding manual/sticky classifications "
+        "— the full-evidence mistake fix. Implies --video-titles.",
+    )
+    categorize_parser.add_argument(
+        "--category",
+        default=None,
+        help="Reclassify every channel currently in this category (full evidence, "
+        "overrides stickiness) — e.g. re-do all of News.",
+    )
+    categorize_parser.add_argument(
+        "--channels",
+        default=None,
+        help="Comma-separated URLs/IDs (or @file with a list) to reclassify now, "
+        "overriding current categories; always uses video titles too.",
+    )
+    categorize_parser.add_argument(
+        "--video-titles",
+        action="store_true",
+        help="Include recent video titles (RSS, free) in the classification prompt — the strongest signal for thin metadata.",
+    )
 
     # sync command
     sync_parser = subparsers.add_parser("sync", help="Process pending videos for a source")
@@ -4482,6 +6142,21 @@ def main() -> None:
     fetch_parser.add_argument("--source", help="Process only this channel URL")
     fetch_parser.add_argument("--dry-run", action="store_true", help="Show what would be fetched without fetching")
     fetch_parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")
+    fetch_parser.add_argument(
+        "--adaptive-workers",
+        action="store_true",
+        help="Opt in to bounded adaptive industrial worker scaling; fixed worker mode remains the default",
+    )
+    fetch_parser.add_argument(
+        "--adaptive-max-workers",
+        type=int,
+        help="Required maximum industrial workers when --adaptive-workers is enabled",
+    )
+    fetch_parser.add_argument("--adaptive-min-workers", type=int)
+    fetch_parser.add_argument("--adaptive-scale-up-backlog", type=int)
+    fetch_parser.add_argument("--adaptive-scale-down-backlog", type=int)
+    fetch_parser.add_argument("--adaptive-cooldown-s", type=float)
+    fetch_parser.add_argument("--adaptive-health-window", type=int)
     fetch_parser.add_argument("--limit", type=int, help="Stop after this many pending items have been queued for fetching")
     fetch_parser.add_argument(
         "--video-manifest",
@@ -4503,6 +6178,21 @@ def main() -> None:
         type=Path,
         help="Fail closed unless the current manifest/database selection matches this receipt",
     )
+    fetch_parser.add_argument(
+        "--fallback-only",
+        action="store_true",
+        help="Process only an exact video manifest through transcript fallback; never invoke NotebookLM",
+    )
+    fetch_parser.add_argument(
+        "--route-source-add-failures-to-fallback",
+        action="store_true",
+        help="Route only persisted Source add failed industrial rows to transcript fallback",
+    )
+    fetch_parser.add_argument(
+        "--route-source-addressability-failures-to-fallback",
+        action="store_true",
+        help="Route only SourceNotFoundError content failures to transcript fallback",
+    )
 
     # block command
     block_parser = subparsers.add_parser("block", help="Add a channel to the blocklist")
@@ -4519,6 +6209,23 @@ def main() -> None:
     # list-blocked command
     subparsers.add_parser("list-blocked", help="List all blocked channels")
 
+    # cleanup command used by the coordinator after a child timeout
+    cleanup_parser = subparsers.add_parser(
+        "cleanup-worker-notebooks",
+        help="Audit or delete account-scoped industrial worker notebooks",
+    )
+    cleanup_parser.add_argument("--delete", action="store_true")
+    cleanup_parser.add_argument(
+        "--include-active",
+        action="store_true",
+        help="delete active worker-prefix notebooks and clear worker state files",
+    )
+    cleanup_parser.add_argument(
+        "--only-current-state",
+        action="store_true",
+        help="when deleting active workers, target only IDs in the current state root",
+    )
+
     # history command
     history_parser = subparsers.add_parser(
         "history",
@@ -4534,6 +6241,11 @@ def main() -> None:
         type=int,
         default=2,
         help="Minimum videos watched from a channel to qualify (default: 2)",
+    )
+    history_parser.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        help="Read YouTube cookies from a live browser profile, e.g. firefox:default-release (fresh; no manual export)",
     )
 
     # watchlater command
@@ -4552,13 +6264,24 @@ def main() -> None:
         default=2,
         help="Minimum videos in Watch Later from a channel to qualify (default: 2)",
     )
+    watchlater_parser.add_argument(
+        "--cookies-from-browser",
+        default=None,
+        help="Read YouTube cookies from a live browser profile, e.g. firefox:default-release (fresh; no manual export)",
+    )
 
     args = parser.parse_args()
 
     # Per-process spend authorization — --allow-spend flag
     if getattr(args, "allow_spend", False):
         from csf.source_enumerator import set_spend_authorized
+
         set_spend_authorized(True)
+        if getattr(args, "spend_budget", None) is not None:
+            from csf.source_enumerator import set_spend_budget
+
+            set_spend_budget(args.spend_budget)
+            print(f"[source] Spend budget: {args.spend_budget} API units for this run.")
 
     if args.command == "add":
         cmd_add(args.url)
@@ -4569,7 +6292,15 @@ def main() -> None:
     elif args.command == "check-all":
         cmd_check_all(verbose=args.verbose)
     elif args.command == "categorize":
-        cmd_categorize(workers=args.workers)
+        cmd_categorize(
+            workers=args.workers,
+            retry_other=args.retry_other,
+            video_titles=args.video_titles,
+            channels=args.channels,
+            category=args.category,
+            all_channels=getattr(args, "all", False),
+            refresh_video_titles=getattr(args, "refresh_video_titles", False),
+        )
     elif args.command == "sync":
         cmd_sync(args.source)
     elif args.command == "quota":
@@ -4583,6 +6314,8 @@ def main() -> None:
             parser.error("--selection-receipt requires --video-manifest")
         if args.verify_selection_receipt is not None and args.video_manifest is None:
             parser.error("--verify-selection-receipt requires --video-manifest")
+        if args.fallback_only and args.video_manifest is None:
+            parser.error("--fallback-only requires --video-manifest")
         # Scope guardrail: refuse unbounded fetch when backlog is large.
         # Prevents the scope-blowout incident (2026-07-20) where an unbounded
         # `fetch` attempted all 51k pending videos instead of the intended
@@ -4624,6 +6357,30 @@ def main() -> None:
             selection_receipt=args.selection_receipt,
             overwrite_selection_receipt=args.overwrite_selection_receipt,
             verify_selection_receipt_path=args.verify_selection_receipt,
+            adaptive_workers=args.adaptive_workers or os.getenv("YTIS_INDUSTRIAL_ADAPTIVE_WORKERS", "").lower() in {"1", "true", "yes", "on"},
+            adaptive_min_workers=args.adaptive_min_workers if args.adaptive_min_workers is not None else int(os.getenv("YTIS_INDUSTRIAL_ADAPTIVE_MIN_WORKERS", "1")),
+            adaptive_max_workers=(
+                args.adaptive_max_workers
+                if args.adaptive_max_workers is not None
+                else int(os.environ["YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS"])
+                if os.getenv("YTIS_INDUSTRIAL_ADAPTIVE_MAX_WORKERS")
+                else None
+            ),
+            adaptive_scale_up_backlog=args.adaptive_scale_up_backlog if args.adaptive_scale_up_backlog is not None else int(os.getenv("YTIS_INDUSTRIAL_ADAPTIVE_SCALE_UP_BACKLOG", "2")),
+            adaptive_scale_down_backlog=args.adaptive_scale_down_backlog if args.adaptive_scale_down_backlog is not None else int(os.getenv("YTIS_INDUSTRIAL_ADAPTIVE_SCALE_DOWN_BACKLOG", "0")),
+            adaptive_cooldown_s=args.adaptive_cooldown_s if args.adaptive_cooldown_s is not None else float(os.getenv("YTIS_INDUSTRIAL_ADAPTIVE_COOLDOWN_S", "60")),
+            adaptive_health_window=args.adaptive_health_window if args.adaptive_health_window is not None else int(os.getenv("YTIS_INDUSTRIAL_ADAPTIVE_HEALTH_WINDOW", "2")),
+            fallback_only=args.fallback_only,
+            route_source_add_failures_to_fallback=(
+                args.route_source_add_failures_to_fallback
+                or os.getenv("YTIS_ROUTE_SOURCE_ADD_FAILURES_TO_FALLBACK", "").lower()
+                in {"1", "true", "yes", "on"}
+            ),
+            route_source_addressability_failures_to_fallback=(
+                args.route_source_addressability_failures_to_fallback
+                or os.getenv("YTIS_ROUTE_SOURCE_ADDRESSABILITY_FAILURES_TO_FALLBACK", "").lower()
+                in {"1", "true", "yes", "on"}
+            ),
         )
     elif args.command == "block":
         cmd_block(args.url)
@@ -4633,12 +6390,25 @@ def main() -> None:
         cmd_remove(args.url)
     elif args.command == "list-blocked":
         cmd_list_blocked()
+    elif args.command == "cleanup-worker-notebooks":
+        status = cmd_cleanup_worker_notebooks(
+            delete=args.delete,
+            include_active=args.include_active,
+            only_current_state=args.only_current_state,
+        )
+        if status:
+            sys.exit(status)
     elif args.command == "history":
-        cmd_history(min_history_videos=args.min_history_videos, dry_run=args.dry_run)
+        cmd_history(
+            min_history_videos=args.min_history_videos,
+            dry_run=args.dry_run,
+            cookies_from_browser=args.cookies_from_browser,
+        )
     elif args.command == "watchlater":
         cmd_watchlater(
             min_watchlater_videos=args.min_watchlater_videos,
             dry_run=args.dry_run,
+            cookies_from_browser=args.cookies_from_browser,
         )
     else:
         parser.print_help()

@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "decision": "authorized",
+  "db_path": "P:\\.data\\yt-is\\batch_status.sqlite",
+  "accounts": [
+    "a.hominidae",
+    "troup.hominidae",
+    "brsthomson"
+  ],
+  "account_settings_file_fingerprint": "sha256:<fingerprint-from-authoritative-settings-file>",
+  "pending_count_at_authorization": 0,
+  "pending_ids_fingerprint_at_authorization": "sha256:<fingerprint-from-authoritative-pending-ID-set>",
+  "gates": {
+    "exact_account_auth": "passed",
+    "scheduler_execution": "passed",
+    "cleanup_postcondition": "passed",
+    "residual_policy": "passed",
+    "throughput_validation": "passed"
+  },
+  "evidence_fingerprints": {
+    "P:\\.logs\\multi_account_fetch\\<raw-evidence>.json": "sha256:<sha256-of-raw-evidence>"
+  },
+  "gate_evidence": {
+    "exact_account_auth": {
+      "path": "P:\\.logs\\multi_account_fetch\\<exact-account-auth-gate>.json",
+      "evidence_kind": "exact-account-auth",
+      "sha256": "sha256:<sha256-of-gate-evidence>"
+    },
+    "scheduler_execution": {
+      "path": "P:\\.logs\\multi_account_fetch\\<scheduler-gate>.json",
+      "evidence_kind": "scheduler-execution",
+      "sha256": "sha256:<sha256-of-gate-evidence>"
+    },
+    "cleanup_postcondition": {
+      "path": "P:\\.logs\\multi_account_fetch\\<cleanup-gate>.json",
+      "evidence_kind": "cleanup-postcondition",
+      "sha256": "sha256:<sha256-of-gate-evidence>"
+    },
+    "residual_policy": {
+      "path": "P:\\.logs\\multi_account_fetch\\<residual-gate>.json",
+      "evidence_kind": "residual-policy",
+      "sha256": "sha256:<sha256-of-gate-evidence>"
+    },
+    "throughput_validation": {
+      "path": "P:\\.logs\\sharded_lane_series\\<throughput-gate>.json",
+      "evidence_kind": "throughput-validation",
+      "sha256": "sha256:<sha256-of-gate-evidence>"
+    }
+  },
+  "evidence": [
+    "P:\\.logs\\multi_account_fetch\\<current-auth-receipt>.json",
+    "P:\\.logs\\multi_account_fetch\\<scheduler-receipt>.json",
+    "P:\\.logs\\multi_account_fetch\\<residual-policy-packet>.md",
+    "P:\\.logs\\sharded_lane_series\\<throughput-receipt>.md"
+  ],
+  "authorized_at": "<UTC ISO-8601 timestamp>",
+  "expires_at": "<UTC ISO-8601 timestamp>"
+}

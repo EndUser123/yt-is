@@ -49,6 +49,10 @@ class TestSharedNlmConfig:
         assert cfg.reusable_source_age_cadence_min_window_size == 5
         assert cfg.reusable_source_age_cadence_first_window_size == 0
         assert cfg.reusable_source_age_cadence_rotate_threshold_s == 0.0
+        assert cfg.source_add_initial_window_size == 0
+        assert cfg.source_add_account_pacing_s == 0.0
+        assert cfg.source_add_account_gate_timeout_s == 300.0
+        assert cfg.source_add_account_gate_root == "P:/.data/yt-is/source-add-gates"
         assert transcript.get_nlm_config() is cfg
 
     def test_hotel_environment_defaults_shared_retry_pool_on(self, monkeypatch):
@@ -99,6 +103,30 @@ class TestSharedNlmConfig:
             assert cfg.reusable_source_age_cadence_min_window_size == 7
             assert cfg.reusable_source_age_cadence_first_window_size == 25
             assert cfg.reusable_source_age_cadence_rotate_threshold_s == 175.0
+        finally:
+            nlm_config.reset_nlm_config()
+
+    def test_source_add_initial_window_size_follows_env(self, monkeypatch):
+        """The empty-notebook source-add experiment should be opt-in by env."""
+        monkeypatch.setenv("YTIS_NLM_SOURCE_ADD_INITIAL_WINDOW_SIZE", "25")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.source_add_initial_window_size == 25
+        finally:
+            nlm_config.reset_nlm_config()
+
+    def test_source_add_account_pacing_follows_env(self, monkeypatch):
+        """Account source-add pacing is explicit and disabled by default."""
+        monkeypatch.setenv("YTIS_NLM_SOURCE_ADD_ACCOUNT_PACING_S", "1.25")
+        monkeypatch.setenv("YTIS_NLM_SOURCE_ADD_ACCOUNT_GATE_TIMEOUT_S", "17")
+        monkeypatch.setenv("YTIS_NLM_SOURCE_ADD_ACCOUNT_GATE_ROOT", "C:/gates")
+        nlm_config.reset_nlm_config()
+        try:
+            cfg = nlm_config.get_nlm_config()
+            assert cfg.source_add_account_pacing_s == 1.25
+            assert cfg.source_add_account_gate_timeout_s == 17.0
+            assert cfg.source_add_account_gate_root == "C:/gates"
         finally:
             nlm_config.reset_nlm_config()
 

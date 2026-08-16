@@ -64,6 +64,14 @@ class NLMConfig:
     reusable_source_age_cadence_min_window_size: int = 5
     reusable_source_age_cadence_first_window_size: int = 0
     reusable_source_age_cadence_rotate_threshold_s: float = 0.0
+    # Opt-in source-add experiment for verified-empty notebooks. Zero preserves
+    # the normal source-add window and keeps the mechanism disabled by default.
+    source_add_initial_window_size: int = 0
+    # Opt-in account-scoped interprocess source-add pacing. Zero preserves the
+    # current per-worker behavior and does not create a gate or state files.
+    source_add_account_pacing_s: float = 0.0
+    source_add_account_gate_timeout_s: float = 300.0
+    source_add_account_gate_root: str = r"P:/.data/yt-is/source-add-gates"
 
 
 def get_nlm_config() -> NLMConfig:
@@ -226,6 +234,25 @@ def get_nlm_config() -> NLMConfig:
                 reusable_source_age_cadence_rotate_threshold_s=max(
                     0.0,
                     float(os.environ.get("YTIS_NLM_REUSABLE_SOURCE_AGE_CADENCE_ROTATE_THRESHOLD_S", "0.0")),
+                ),
+                source_add_initial_window_size=max(
+                    0,
+                    int(os.environ.get("YTIS_NLM_SOURCE_ADD_INITIAL_WINDOW_SIZE", "0")),
+                ),
+                source_add_account_pacing_s=max(
+                    0.0,
+                    float(os.environ.get("YTIS_NLM_SOURCE_ADD_ACCOUNT_PACING_S", "0.0")),
+                ),
+                source_add_account_gate_timeout_s=max(
+                    0.0,
+                    float(os.environ.get("YTIS_NLM_SOURCE_ADD_ACCOUNT_GATE_TIMEOUT_S", "300.0")),
+                ),
+                source_add_account_gate_root=(
+                    os.environ.get(
+                        "YTIS_NLM_SOURCE_ADD_ACCOUNT_GATE_ROOT",
+                        r"P:/.data/yt-is/source-add-gates",
+                    ).strip()
+                    or r"P:/.data/yt-is/source-add-gates"
                 ),
             )
         return _nlm_config

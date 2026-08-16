@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+"""Check and durably repair YT-IS NotebookLM account sessions.
+
+This is the package-owned non-interactive auth entry point. It never invokes
+the legacy ``nlm`` CLI, opens a shared browser, or copies credentials between
+accounts. First-time bootstrap may use the matching dedicated headless CDP
+root through ``ensure_account_session``. An explicit loopback ``--cdp-url``
+is available for one-time attachment to a user-owned browser context; it is
+never used by active runs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from csf.nlm_client import ACCOUNT_PROFILES, ensure_account_session
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--profile", choices=ACCOUNT_PROFILES,
+                       help="one exact external account identity")
+    group.add_argument("--all", action="store_true",
+                       help="repair all configured account identities")
+    parser.add_argument("--timeout", type=float, default=180.0,
+                        help="per-account repair timeout in seconds; first-time bootstrap waits for exact-account sign-in")
+    parser.add_argument(
+        "--cdp-url",
+        help=(
+            "one-time loopback CDP endpoint for --profile bootstrap; the attached "
+            "browser must be signed into only that exact account"
+        ),
+    )
+    args = parser.parse_args()
+
+    if args.cdp_url and args.all:
+        parser.error("--cdp-url requires one exact --profile, not --all")
+
+    profiles = list(ACCOUNT_PROFILES) if args.all else [args.profile]
+    results = []
+    for profile in profiles:
+        try:
+            kwargs = {"worker_id": "csf-nlm-auth", "timeout_s": args.timeout}
+            kwargs["interactive_bootstrap"] = True
+            if args.cdp_url:
+                kwargs["cdp_url"] = args.cdp_url
+            probe = ensure_account_session(profile, **kwargs)
+            results.append({
+                "profile": profile,
+                "ok": bool(probe.ok),
+                "reason": probe.reason,
+                "storage_path": str(probe.storage_path),
+            })
+        except Exception as exc:
+            results.append({
+                "profile": profile,
+                "ok": False,
+                "reason": f"{type(exc).__name__}: {str(exc)[:300]}",
+            })
+
+    print(json.dumps({"accounts": results}, ensure_ascii=False, indent=2))
+    return 0 if all(result["ok"] for result in results) else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -59,11 +59,12 @@ def _run_worker(
     state_root: Path,
     notebook_prefix: str,
     run_id: str,
+    account_profile: str,
 ) -> subprocess.CompletedProcess[str]:
     state_root.mkdir(parents=True, exist_ok=True)
     state_path = state_root / f"worker-{worker_id:02d}.json"
     notebook_title = f"{notebook_prefix}-{worker_id:02d}"
-    notebooklm_profile = f"ytis-worker-{worker_id:02d}"
+    notebooklm_profile = f"{account_profile}-worker-{worker_id:02d}"
     env = os.environ.copy()
     env["YTIS_NLM_REUSABLE_STATE_PATH"] = str(state_path)
     env["YTIS_NLM_REUSABLE_NOTEBOOK_TITLE"] = notebook_title
@@ -71,6 +72,8 @@ def _run_worker(
     env["YTIS_NLM_OWNER_NOTEBOOK_TITLE"] = notebook_title
     env["YTIS_INDUSTRIAL_RUN_ID"] = run_id
     env["NOTEBOOKLM_PROFILE"] = notebooklm_profile
+    env["YTIS_NLM_ACCOUNT_PROFILE"] = account_profile
+    env["YTIS_NLM_WORKER_ID"] = f"worker-{worker_id:02d}"
     cmd = [
         sys.executable,
         "-m",
@@ -83,6 +86,8 @@ def _run_worker(
         notebook_title,
         "--notebooklm-profile",
         notebooklm_profile,
+        "--account-profile",
+        account_profile,
         "--worker-id",
         f"worker-{worker_id:02d}",
     ]
@@ -95,7 +100,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=2, help="Maximum parallel workers")
     parser.add_argument("--state-root", type=Path, default=Path("P:\\\\\\.data/yt-is/dev-workers"))
     parser.add_argument("--notebook-prefix", default="yt-is-worker")
+    parser.add_argument(
+        "--account-profile",
+        default=os.getenv("YTIS_NLM_ACCOUNT_PROFILE", "").strip(),
+        help="Exact external NotebookLM account identity",
+    )
     args = parser.parse_args(argv)
+    if not args.account_profile:
+        parser.error("--account-profile or YTIS_NLM_ACCOUNT_PROFILE is required")
 
     batches = _load_batches(args.input)
     if not batches:
@@ -110,7 +122,15 @@ def main(argv: list[str] | None = None) -> int:
         results: list[tuple[int, subprocess.CompletedProcess[str]]] = []
         with ThreadPoolExecutor(max_workers=max(1, min(args.workers, len(batch_files)))) as executor:
             futures = {
-                executor.submit(_run_worker, batch_file, idx, args.state_root, args.notebook_prefix, run_id): idx
+                executor.submit(
+                    _run_worker,
+                    batch_file,
+                    idx,
+                    args.state_root,
+                    args.notebook_prefix,
+                    run_id,
+                    args.account_profile,
+                ): idx
                 for idx, batch_file in enumerate(batch_files, 1)
             }
             for future in as_completed(futures):

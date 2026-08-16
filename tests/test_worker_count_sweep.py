@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -274,6 +275,53 @@ def test_run_fetch_trial_captures_fetch_completed_summary(tmp_path, monkeypatch)
     assert Path(summary.stdout_path).read_text(encoding="utf-8") == "done\n"
     assert Path(summary.stderr_path).read_text(encoding="utf-8") == ""
     assert Path(summary.log_file).exists()
+
+
+def test_run_fetch_trial_binds_canonical_account_for_parent_cleanup(tmp_path, monkeypatch):
+    observed_cleanup: list[tuple[str | None, bool]] = []
+    observed_child_account: list[str] = []
+
+    def fake_cleanup(*, delete=False, include_active=False):
+        observed_cleanup.append((os.environ.get("YTIS_NLM_ACCOUNT_PROFILE"), include_active))
+        return (0, 0)
+
+    def fake_run(command, *, env, **_kwargs):
+        observed_child_account.append(env["YTIS_NLM_ACCOUNT_PROFILE"])
+        log_dir = Path(env["INTELLIGENCE_STREAM_LOG_DIR"])
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "fetch.jsonl").write_text(
+            json.dumps(
+                {
+                    "action": "fetch_completed",
+                    "data": {
+                        "success_count": 0,
+                        "fail_count": 0,
+                        "skip_count": 0,
+                        "processed_count": 0,
+                        "elapsed_s": 0.1,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return mock.Mock(returncode=0, stdout="", stderr="")
+
+    monkeypatch.delenv("YTIS_NLM_ACCOUNT_PROFILE", raising=False)
+    monkeypatch.setattr(worker_count_sweep, "cleanup_stale_worker_notebooks", fake_cleanup)
+    monkeypatch.setattr(worker_count_sweep.subprocess, "run", fake_run)
+
+    worker_count_sweep._run_fetch_trial(
+        workers=1,
+        limit=1,
+        sample_label="account-scope",
+        output_dir=tmp_path,
+        account_profile="a.hominidae",
+    )
+
+    assert observed_cleanup == [("a.hominidae", False), ("a.hominidae", True)]
+    assert observed_child_account == ["a.hominidae"]
+    assert os.environ.get("YTIS_NLM_ACCOUNT_PROFILE") is None
 
 
 def test_run_fetch_trial_falls_back_to_worker_summaries_when_fetch_completed_missing(tmp_path, monkeypatch):

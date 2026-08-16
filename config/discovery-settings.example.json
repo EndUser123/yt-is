@@ -1,0 +1,11 @@
+{
+  "cookies_browser": "firefox:dvrlqwow.default-release",
+  "auto_import": true,
+  "min_watchlater_videos": 2,
+  "min_history_videos": 2,
+  "categorize_workers": 4,
+  "excluded_categories": [],
+  "run_sync": true,
+  "build_review_page": true,
+  "open_review_page": true
+}
