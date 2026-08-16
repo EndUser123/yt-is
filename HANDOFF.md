@@ -2841,3 +2841,45 @@ state and the operator will direct the fallback.
 Context: security-incident-20260815 block above; wiki concept
 `verify-history-rewrite-by-tree-hash-equality`.
 <!-- END scrub-pass2-instruction -->
+
+<!-- BEGIN security-incident-20260815-cutover (agent: zcode, 2026-08-16 ~13:00) -->
+## Incident CLOSED at the git level — cutover execution record
+
+Operator-directed cutover 2026-08-16 ~12:20-13:00 (fix session stopped,
+"commit everything first"):
+
+- `5a3c32a` WIP preservation on the checkpoint branch (session working
+  state). NOT committed, preserved on disk only: `.logs/multi_account_fetch/`
+  (fetch receipts contain token-shaped auth material — gitleaks-blocked,
+  34 findings/6 files; now gitignored) and playwright npm installs
+  (reproducible from committed package-lock).
+- `753a0aa` squash-merge of the checkpoint branch onto scrubbed main
+  (~120 commits of session work rescued). Squash keeps main's blob-free
+  history. Conflicts: 15 both-modified + 61 add/add resolved to the
+  checkpoint side (canonical dev line); CONTRIBUTING.md union; one silent
+  auto-merge artifact fixed (csf/cache.py `_normalize_metadata` line —
+  caught by tree-diff vs checkpoint tip; criss-cross casualty of
+  rewritten-vs-original graph ancestry). Verified: squash tree == checkpoint
+  tip + exactly 4 main-only files.
+- Deleted: remote+local `codex/yt-is-overnight-checkpoint`, 4 leak-carrying
+  local tags, `refs/original/*` backup refs (2 — leftover of an earlier
+  rewrite attempt), test worktree/branch. Live checkout now on main
+  @ 753a0aa. Two overnight worktrees had already been removed by the fix
+  session itself (its on-disk profile copies died with them).
+- Purged: reflog expire + gc — leak commits c720775/8bbf096/5a0303d all
+  `cat-file -e` fail locally; `.git` shrank 875M → 17M.
+- Cold-clone verification: ZERO commits touching `.browser` or
+  `csf/yt_is_data.db` reachable from ANY remote ref (6 refs: main, HEAD,
+  4 rewritten backup tags).
+- REMAINING (hygiene only): GitHub API still serves c720775 (HTTP 200) as
+  an unreachable cached object — file a GitHub Support request to GC it
+  (template: remove exposed credentials from cached commits after history
+  rewrite; include repo + SHA). Check for forks while at it.
+- Old→new map for today's commits: 2eeb910→72f7ee8, 477e77a→6f39667,
+  f1655bd→a2d7161 (pass-1 rewrite); 5a3c32a (checkpoint WIP, branch now
+  deleted — content lives in 753a0aa).
+- STILL OPEN from the incident list: `nlm-auth.lock` intent (tracked, not
+  ignored); ~860 tracked-but-ignored cleanup; delete
+  P:/tmp/yt-is-pre-scrub-backup-20260815.bundle (last copy of leaked
+  material) + P:/tmp/yt-is-scrub-mirror when satisfied.
+<!-- END security-incident-20260815-cutover -->
