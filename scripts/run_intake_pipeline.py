@@ -119,9 +119,23 @@ def phase_verify(db_path: Path, pre_pending: int) -> dict:
 
 def phase_fetch(db_path: Path, log_dir: Path, state_path: Path, chunk_size: int,
                 workers: int, batch_size: int, execute: bool, max_chunks: int = 50) -> dict:
-    """Launch the unattended fetch supervisor."""
+    """Launch the unattended fetch supervisor with a dated output root.
+
+    Each invocation gets its own output root (unattended-<timestamp>/) so
+    campaigns never collide on chunk directories — the structural fix for
+    the multi-session collision class.
+    """
     mode = "EXECUTE" if execute else "DRY-RUN"
     print(f"[pipeline] Phase 3: FETCH — launching supervisor ({mode})...")
+
+    # Dated output root: each campaign gets its own directory tree, so
+    # chunk-0001 in campaign A can never collide with campaign B.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    output_root = REPO_ROOT / ".logs" / "multi_account_fetch" / f"unattended-{stamp}"
+    # State path is also campaign-scoped so concurrent sessions don't fight
+    # over the same state file.
+    campaign_state = log_dir / "supervisor_state.json"
+
     cmd = [
         sys.executable,
         str(REPO_ROOT / "scripts" / "run_unattended_backlog.py"),
@@ -129,14 +143,15 @@ def phase_fetch(db_path: Path, log_dir: Path, state_path: Path, chunk_size: int,
         "--chunk-size", str(chunk_size),
         "--workers-per-account", str(workers),
         "--batch-size", str(batch_size),
-        "--state-path", str(state_path),
-        # Must match the paused state's recorded config or the supervisor
-        # rejects the resume as configuration drift. The budget itself is
-        # per-invocation, so re-running continues the same campaign.
+        "--state-path", str(campaign_state),
+        "--output-root", str(output_root),
         "--max-chunks", str(max_chunks),
     ]
     if execute:
         cmd.append("--execute")
+
+    print(f"[pipeline] campaign output root: {output_root.name}")
+    print(f"[pipeline] campaign state: {campaign_state.name}")
 
     started = time.monotonic()
     result = subprocess.run(
@@ -202,10 +217,30 @@ def main(argv: list[str] | None = None) -> int:
         "dry_run": args.dry_run,
     }
 
-    # Phase 0: Clean stale worker notebooks from any previous dead run
-    # (abnormal termination leaves orphaned notebooks consuming the
-    # 300-source NotebookLM limit; this is the recovery path)
-    print("[pipeline] Phase 0: CLEANUP — checking for stale worker notebooks...")
+    # Phase 0: Clean stale state from any previous campaign
+    # (abnormal termination leaves orphaned notebooks and stale output dirs;
+    # each campaign now gets its own dated root, but the legacy shared
+    # unattended/ root may still exist from older runs)
+    print("[pipeline] Phase 0: CLEANUP — checking for stale state...")
+    legacy_state = Path("P:/.data/yt-is/unattended-backlog/state.json")
+    legacy_output = REPO_ROOT / ".logs" / "multi_account_fetch" / "unattended"
+    legacy_lock = legacy_state.with_suffix(".json.lock")
+
+    # Remove stale lock (only if no live supervisor holds it)
+    if legacy_lock.exists():
+        try:
+            legacy_lock.unlink()
+            print("[pipeline] cleared stale state lock")
+        except OSError:
+            print("[pipeline] state lock busy (a supervisor may be running)")
+
+    # Remove legacy shared output root (each campaign gets its own now)
+    if legacy_output.exists():
+        import shutil
+        shutil.rmtree(legacy_output, ignore_errors=True)
+        print("[pipeline] cleared legacy shared output root")
+
+    # Clean stale worker notebooks
     try:
         cleanup_result = subprocess.run(
             [sys.executable, str(REPO_ROOT / "bin" / "csf-source"),

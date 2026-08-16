@@ -202,7 +202,8 @@ batch path, reused within the run, deleted during worker shutdown.
 | Normal shutdown | Notebook deleted + cleanup receipt logged | csf/nlm_batch.py |
 | Supervisor killed / crash | Orphaned notebooks remain (NOT auto-cleaned) | — |
 | Recovery | `csf-source cleanup-worker-notebooks --delete` | bin/csf-source |
-| Pipeline pre-flight | Phase 0 auto-runs cleanup before every fetch | run_intake_pipeline.py |
+| Pipeline pre-flight | Phase 0 cleans stale state + legacy output root | run_intake_pipeline.py |
+| Campaign isolation | Each pipeline invocation gets its own dated output root (unattended-<ts>/) | run_intake_pipeline.py |
 | Health watcher | Detects stale notebooks as an alert | pipeline_health_watch.py |
 
 If a run dies abnormally, the next pipeline invocation cleans stale
