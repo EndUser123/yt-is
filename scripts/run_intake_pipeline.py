@@ -240,21 +240,45 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(legacy_output, ignore_errors=True)
         print("[pipeline] cleared legacy shared output root")
 
-    # Clean stale worker notebooks
-    try:
-        cleanup_result = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "bin" / "csf-source"),
-             "cleanup-worker-notebooks", "--delete"],
-            capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=300,
-        )
-        cleanup_output = (cleanup_result.stdout or "").strip()
-        if "deleted=0" not in cleanup_output:
-            print(f"[pipeline] stale notebooks cleaned: {cleanup_output}")
-            receipt["stale_notebook_cleanup"] = cleanup_output
-        else:
-            print("[pipeline] no stale notebooks found")
-    except Exception as exc:
-        print(f"[pipeline] notebook cleanup check failed (non-blocking): {exc}")
+    # Clean stale worker notebooks — BUT only if no supervisor is currently
+    # running. The cleanup's _load_current_worker_notebook_ids() globs only
+    # the root of the state tree, but live workers store their state in
+    # run-scoped subdirectories it can't see — so it would classify ALL
+    # worker notebooks as stale and delete notebooks an active pipeline's
+    # workers are using. Skipping when a supervisor is alive is the safe fix.
+    def _supervisor_running() -> bool:
+        try:
+            import psutil
+            for p in psutil.process_iter(["cmdline"]):
+                try:
+                    cl = " ".join(p.info["cmdline"] or [])
+                    if "run_unattended_backlog" in cl or "run_multi_account_fetch" in cl:
+                        return True
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+        return False
+
+    if _supervisor_running():
+        print("[pipeline] supervisor is running — skipping notebook cleanup "
+              "(active workers' notebooks are protected; they clean up on shutdown)")
+        receipt["stale_notebook_cleanup"] = "skipped: supervisor running"
+    else:
+        try:
+            cleanup_result = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "bin" / "csf-source"),
+                 "cleanup-worker-notebooks", "--delete"],
+                capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=300,
+            )
+            cleanup_output = (cleanup_result.stdout or "").strip()
+            if "deleted=0" not in cleanup_output:
+                print(f"[pipeline] stale notebooks cleaned: {cleanup_output}")
+                receipt["stale_notebook_cleanup"] = cleanup_output
+            else:
+                print("[pipeline] no stale notebooks found")
+        except Exception as exc:
+            print(f"[pipeline] notebook cleanup check failed (non-blocking): {exc}")
 
     # Phase 1: Sync
     if not args.skip_sync:

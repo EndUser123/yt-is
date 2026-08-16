@@ -1362,7 +1362,12 @@ def _load_current_worker_notebook_ids() -> set[str]:
     ids: set[str] = set()
     if not state_root.exists():
         return ids
-    for state_path in state_root.glob("worker-*.json"):
+    # Recursive: live workers store state in run-scoped subdirectories
+    # (multi-account/<run_id>/<account>/worker-*.json), not at the root.
+    # A root-only glob returned an empty set, causing cleanup to classify
+    # ALL worker notebooks as stale — deleting notebooks that concurrent
+    # pipelines' workers were actively using.
+    for state_path in state_root.rglob("worker-*.json"):
         try:
             data = json.loads(state_path.read_text(encoding="utf-8"))
             nb_id = (data.get("nb_id") or "").strip()
