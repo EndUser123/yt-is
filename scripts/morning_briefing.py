@@ -61,6 +61,18 @@ def section_health() -> dict:
     # Alert file
     result["alert"] = ALERT_FILE.read_text(encoding="utf-8").strip() if ALERT_FILE.exists() else None
 
+    # Pre-flight summary (subset: disk, integrity, backups)
+    try:
+        disk, disk_detail = __import__("scripts.preflight_safety", fromlist=["check_disk_space"]).check_disk_space()
+        result["disk"] = f"{disk}: {disk_detail}"
+    except Exception:
+        pass
+    try:
+        backup, backup_detail = __import__("scripts.preflight_safety", fromlist=["check_backup_freshness"]).check_backup_freshness()
+        result["backup_age"] = f"{backup}: {backup_detail}"
+    except Exception:
+        pass
+
     # Health watcher (quick checks, skip the auth probe for speed)
     result["health_watcher_hint"] = "run pipeline_health_watch.py for full checks"
 

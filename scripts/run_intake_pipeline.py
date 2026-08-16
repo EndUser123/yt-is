@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -279,6 +280,56 @@ def main(argv: list[str] | None = None) -> int:
                 print("[pipeline] no stale notebooks found")
         except Exception as exc:
             print(f"[pipeline] notebook cleanup check failed (non-blocking): {exc}")
+
+    # Concurrent-session guard: if another supervisor is running, exit
+    # with a clear message rather than competing for the DB lock and
+    # potentially interfering with active workers.
+    def _another_pipeline_running() -> bool:
+        try:
+            import psutil
+            for p in psutil.process_iter(["cmdline"]):
+                try:
+                    cl = " ".join(p.info["cmdline"] or [])
+                    if "run_intake_pipeline" in cl and p.pid != os.getpid():
+                        return True
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+        return False
+
+    if _another_pipeline_running():
+        print("[pipeline] ERROR: another pipeline invocation is already running.")
+        print("[pipeline] The DB fetch lock would block this one; concurrent")
+        print("[pipeline] notebook cleanup was a hazard before it was fixed.")
+        print("[pipeline] Wait for the active pipeline to finish, or kill it first:")
+        print("[pipeline]   python scripts/pipeline_health_watch.py  # check status")
+        return 2
+
+    # Phase 0.5: Pre-flight safety checks (disk, integrity, providers, backups)
+    print("[pipeline] Phase 0.5: SAFETY — running pre-flight checks...")
+    try:
+        import scripts.preflight_safety as pf
+
+        pf_results = []
+        for check_id, check_fn, label in pf.CHECKS:
+            severity, detail = check_fn()
+            pf_results.append({"check": check_id, "severity": severity, "detail": detail})
+            if severity == "blocker":
+                print(f"[pipeline] BLOCKER — {label}: {detail}")
+                print("[pipeline] aborting before damage occurs")
+                receipt["preflight"] = pf_results
+                receipt["status"] = "preflight_blocked"
+                (log_dir / "pipeline_receipt.json").write_text(
+                    json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+                return 2
+            elif severity == "warn":
+                print(f"[pipeline] warning — {label}: {detail}")
+        receipt["preflight"] = pf_results
+        passed = sum(1 for r in pf_results if r["severity"] == "pass")
+        print(f"[pipeline] pre-flight: {passed}/{len(pf_results)} passed")
+    except Exception as exc:
+        print(f"[pipeline] pre-flight check failed to run (non-blocking): {exc}")
 
     # Phase 1: Sync
     if not args.skip_sync:
