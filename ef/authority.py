@@ -36,22 +36,24 @@ def _ro(path: Path) -> sqlite3.Connection:
     return conn
 
 
+# C-gate decision 3: incomplete-metadata rows are ELIGIBLE (Case A —
+# channel identity intact, reopen verified); title may be empty.
+# Quarantined: the single test fixture (Case B).
+QUARANTINED_VIDEO_IDS = ("dQw4w9WgXcQ",)
+
+
 def list_eligible_transcripts(limit: int | None = None,
                               min_chars: int = MIN_TRANSCRIPT_CHARS,
-                              exclude_terminal_prefix: str = "test") -> list[dict]:
-    """Return newest-first eligible transcripts joined with video metadata.
+                              exclude_terminal_prefix: str = "test",
+                              include_incomplete: bool = False) -> list[dict]:
+    """Return eligible transcripts joined with video metadata, video_id asc.
 
-    Eligibility: real content length, not a test fixture. The join must
-    resolve channel/title for the row to be eligible — an EvidenceUnit
-    without provenance is a contract violation, so unjoined rows are
-    reported by the caller via audit counts, not silently dropped here.
+    include_incomplete=True admits the 7,109 Case-A rows whose title is
+    missing (channel present) — they index with metadata_state=incomplete
+    and empty title, never fabricated. Quarantined IDs are always excluded.
+    Rows failing provenance resolution are excluded and audited via
+    authority_stats().provenance_gaps.
     """
-    # Cross-DB join: attach the status DB read-only to the transcripts DB.
-    # Attached tables are addressed attachname.tablename. analysis_status's
-    # video_id is its PK (indexed); channel_metadata.channel_id is NOT
-    # indexed — acceptable at smoke scale, revisit for full-corpus builds.
-    # Eligibility requires resolvable provenance (title+channel): '--' IDs
-    # and other metadata-less rows are excluded and counted in the audit.
     q = """
     select t.video_id, t.lang, t.source, t.cached_at, t.transcript,
            a.title, a.channel_id, a.published_at, a.duration,
@@ -62,9 +64,11 @@ def list_eligible_transcripts(limit: int | None = None,
     where length(t.transcript) >= ?
       and t.terminal_id not like ?
       and a.channel_id is not null
-      and a.title is not null
+      {title_clause}
     order by t.video_id asc
     """
+    title_clause = "" if include_incomplete else "and a.title is not null"
+    q = q.replace("{title_clause}", title_clause)
     args: list = [min_chars, f"{exclude_terminal_prefix}%"]
     if limit:
         q += " limit ?"
@@ -77,7 +81,7 @@ def list_eligible_transcripts(limit: int | None = None,
         rows = [dict(r) for r in conn.execute(q, args)]
     finally:
         conn.close()
-    return rows
+    return [r for r in rows if r["video_id"] not in QUARANTINED_VIDEO_IDS]
 
 
 def build_eu(row: dict) -> EvidenceUnit:

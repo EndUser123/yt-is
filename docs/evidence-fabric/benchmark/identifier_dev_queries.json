@@ -1,0 +1,332 @@
+[
+ {
+  "tier": "identifier_dev",
+  "query": "them1",
+  "positive_video": "---QOvVaOdA",
+  "positive_chunk": "---QOvVaOdA:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "LPGB",
+  "positive_video": "--00W-HwPUw",
+  "positive_chunk": "--00W-HwPUw:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "mid20s",
+  "positive_video": "--6rCTZ8jtE",
+  "positive_chunk": "--6rCTZ8jtE:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "CX300",
+  "positive_video": "--86Lodo7Xk",
+  "positive_chunk": "--86Lodo7Xk:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "and2",
+  "positive_video": "--9wpql3ovI",
+  "positive_chunk": "--9wpql3ovI:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "creditcards.com",
+  "positive_video": "--CcesqjWuo",
+  "positive_chunk": "--CcesqjWuo:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "K22S",
+  "positive_video": "--ECCBN-E_8",
+  "positive_chunk": "--ECCBN-E_8:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "briany.com",
+  "positive_video": "--HZrn8LNNQ",
+  "positive_chunk": "--HZrn8LNNQ:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "NASDAQ",
+  "positive_video": "--PBDPI9gjY",
+  "positive_chunk": "--PBDPI9gjY:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "ALGO",
+  "positive_video": "--PTmyCwp5c",
+  "positive_chunk": "--PTmyCwp5c:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "CrossFit",
+  "positive_video": "--S4Z2CWHV4",
+  "positive_chunk": "--S4Z2CWHV4:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "TSMC",
+  "positive_video": "--UNTFoiJao",
+  "positive_chunk": "--UNTFoiJao:transcript#00004"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "aprofitboardroom.com",
+  "positive_video": "--cs4ZjAqkQ",
+  "positive_chunk": "--cs4ZjAqkQ:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "COBOL",
+  "positive_video": "--kRGUoL6yM",
+  "positive_chunk": "--kRGUoL6yM:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "SKHX",
+  "positive_video": "--ylb2NiHXM",
+  "positive_chunk": "--ylb2NiHXM:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "google.com",
+  "positive_video": "--z5AgosN8A",
+  "positive_chunk": "--z5AgosN8A:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "options.com",
+  "positive_video": "-0-uIFN1UFM",
+  "positive_chunk": "-0-uIFN1UFM:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "JSON",
+  "positive_video": "-01ZCTt-CJw",
+  "positive_chunk": "-01ZCTt-CJw:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "to10",
+  "positive_video": "-04ndQKhk58",
+  "positive_chunk": "-04ndQKhk58:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "GPT5",
+  "positive_video": "-0Ae7XGvAew",
+  "positive_chunk": "-0Ae7XGvAew:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "professor.info",
+  "positive_video": "-0He46qh6eA",
+  "positive_chunk": "-0He46qh6eA:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "gravity.google",
+  "positive_video": "-0Irz8G0PEE",
+  "positive_chunk": "-0Irz8G0PEE:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "fall.ai",
+  "positive_video": "-0Ivi9RUQXM",
+  "positive_chunk": "-0Ivi9RUQXM:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "MacBook",
+  "positive_video": "-0JO6Id1iTo",
+  "positive_chunk": "-0JO6Id1iTo:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "ADHD",
+  "positive_video": "-0L00eo7KlQ",
+  "positive_chunk": "-0L00eo7KlQ:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "hungerroot.com",
+  "positive_video": "-0Nqf7_dCco",
+  "positive_chunk": "-0Nqf7_dCco:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "CPAP",
+  "positive_video": "-0WN1pxZNrI",
+  "positive_chunk": "-0WN1pxZNrI:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "finance.com",
+  "positive_video": "-0WiTn8krRM",
+  "positive_chunk": "-0WiTn8krRM:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "toAI",
+  "positive_video": "-0_8gPam4tM",
+  "positive_chunk": "-0_8gPam4tM:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "WLTP",
+  "positive_video": "-0evIHNesOY",
+  "positive_chunk": "-0evIHNesOY:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "boogie298",
+  "positive_video": "-0f-IpXfJpg",
+  "positive_chunk": "-0f-IpXfJpg:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "COVID",
+  "positive_video": "-0f3e0CW6ek",
+  "positive_chunk": "-0f3e0CW6ek:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "IP48",
+  "positive_video": "-0luxGapYgM",
+  "positive_chunk": "-0luxGapYgM:transcript#00005"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "MPPP",
+  "positive_video": "-0mi8-uudQQ",
+  "positive_chunk": "-0mi8-uudQQ:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "lc30",
+  "positive_video": "-0nasPutXw8",
+  "positive_chunk": "-0nasPutXw8:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "GDID",
+  "positive_video": "-0pFznEJf14",
+  "positive_chunk": "-0pFznEJf14:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "OpenClaw",
+  "positive_video": "-0pWycZk-k8",
+  "positive_chunk": "-0pWycZk-k8:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "TypeScript",
+  "positive_video": "-0pbaYcQJ-0",
+  "positive_chunk": "-0pbaYcQJ-0:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "DHEA",
+  "positive_video": "-0vzTEVvglY",
+  "positive_chunk": "-0vzTEVvglY:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "fidelity.com",
+  "positive_video": "-0z0_kMqItY",
+  "positive_chunk": "-0z0_kMqItY:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "soap.com",
+  "positive_video": "-0z4WvomhR8",
+  "positive_chunk": "-0z4WvomhR8:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "SNAP",
+  "positive_video": "-0zgXv4tmDs",
+  "positive_chunk": "-0zgXv4tmDs:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "CareYaya",
+  "positive_video": "-10Zkzv08NY",
+  "positive_chunk": "-10Zkzv08NY:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "MACD",
+  "positive_video": "-11SmrMED58",
+  "positive_chunk": "-11SmrMED58:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "centex.com",
+  "positive_video": "-13yIXiyFAs",
+  "positive_chunk": "-13yIXiyFAs:transcript#00005"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "UNAM",
+  "positive_video": "-19cPqrjdl4",
+  "positive_chunk": "-19cPqrjdl4:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "VLAN",
+  "positive_video": "-1BMiYZfz38",
+  "positive_chunk": "-1BMiYZfz38:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "TikTok",
+  "positive_video": "-1Dbkq1S7No",
+  "positive_chunk": "-1Dbkq1S7No:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "DeepSeek",
+  "positive_video": "-1Giuk3lVpE",
+  "positive_chunk": "-1Giuk3lVpE:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "global.cloud",
+  "positive_video": "-1K_ZWDKpU0",
+  "positive_chunk": "-1K_ZWDKpU0:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "UIUX",
+  "positive_video": "-1MPVzEOx2g",
+  "positive_chunk": "-1MPVzEOx2g:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "lon.tv",
+  "positive_video": "-1OMMzVrs4U",
+  "positive_chunk": "-1OMMzVrs4U:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "google.com",
+  "positive_video": "-1XJEUL2X6I",
+  "positive_chunk": "-1XJEUL2X6I:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "crafterslab.dev",
+  "positive_video": "-1XgzGiPzY0",
+  "positive_chunk": "-1XgzGiPzY0:transcript#00000"
+ },
+ {
+  "tier": "identifier_dev",
+  "query": "AM640",
+  "positive_video": "-1brMThewIA",
+  "positive_chunk": "-1brMThewIA:transcript#00000"
+ }
+]

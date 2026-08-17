@@ -14,6 +14,8 @@ import math
 import re
 from collections import Counter
 
+import numpy as np
+
 TOKEN = re.compile(r"[a-z0-9']+")
 
 K1 = 1.2
@@ -71,6 +73,38 @@ class BM25Encoder:
 
     def encode_query(self, text: str) -> tuple[list[int], list[float]]:
         return self.encode_document(text)
+
+
+class BGEM3Dual:
+    """Canonical Phase-C encoder (C-gate decision 1): dense + learned
+    sparse in one forward pass via FlagEmbedding. fp16 on GPU."""
+
+    def __init__(self, device: str = "cuda", use_fp16: bool = True):
+        from FlagEmbedding import BGEM3FlagModel
+        self.device = device
+        self.model = BGEM3FlagModel("BAAI/bge-m3",
+                                    use_fp16=use_fp16 and device == "cuda",
+                                    devices=[device] if device != "cuda" else None)
+
+    def encode(self, texts: list[str], batch_size: int = 16,
+               max_length: int = 512):
+        """Returns (dense ndarray [n,1024] L2-normalized, lexical_weights
+        list[dict[int, float]])."""
+        out = self.model.encode(
+            texts, batch_size=batch_size, max_length=max_length,
+            return_dense=True, return_sparse=True, return_colbert_vecs=False)
+        dense = np.asarray(out["dense_vecs"], dtype="float32")
+        dense /= (np.linalg.norm(dense, axis=1, keepdims=True) + 1e-12)
+        lex = [{int(t): float(v) for t, v in d.items()}
+               for d in out["lexical_weights"]]
+        return dense, lex
+
+    @staticmethod
+    def dense_from_output(out) -> "np.ndarray":
+        import numpy as np
+        d = np.asarray(out["dense_vecs"], dtype="float32")
+        d /= (np.linalg.norm(d, axis=1, keepdims=True) + 1e-12)
+        return d
 
 
 class DenseEmbedder:
