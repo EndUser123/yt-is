@@ -131,19 +131,25 @@ class ProductionQuery:
             exact_hit = True
         else:  # identifier: containment priority at any df (D-gate rule 2)
             fts_ids = self._fts_lane(query_text, top=100)
-            points, _ = self._semantic_legs(query_text, flt)
-            sem_ids = [p.payload["chunk_id"] for p in points]
-            fused = routing.fuse_identifier_priority(fts_ids, sem_ids, limit)
-            by_id = {p.payload["chunk_id"]: p for p in points}
-            missing = [c for c in fused if c not in by_id]
-            if missing:
-                extra = qc.retrieve(self.collection,
-                                    ids=[ps.point_id(c) for c in missing],
-                                    with_payload=True)
-                for p in extra:
-                    by_id[p.payload["chunk_id"]] = p
-            final = [(by_id[c], 1.0 / (i + 1)) for i, c in enumerate(fused)
-                     if c in by_id]
+            if not fts_ids:
+                # D-gate b-prime rule 1: zero literal matches => PRIMARY
+                # EVIDENCE EMPTY. A semantic near-twin must not masquerade
+                # as evidence for identifier intent.
+                final = []
+            else:
+                points, _ = self._semantic_legs(query_text, flt)
+                sem_ids = [p.payload["chunk_id"] for p in points]
+                fused = routing.fuse_identifier_priority(fts_ids, sem_ids, limit)
+                by_id = {p.payload["chunk_id"]: p for p in points}
+                missing = [c for c in fused if c not in by_id]
+                if missing:
+                    extra = qc.retrieve(self.collection,
+                                        ids=[ps.point_id(c) for c in missing],
+                                        with_payload=True)
+                    for p in extra:
+                        by_id[p.payload["chunk_id"]] = p
+                final = [(by_id[c], 1.0 / (i + 1)) for i, c in enumerate(fused)
+                         if c in by_id]
             exact_hit = True
 
         out = []
