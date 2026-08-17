@@ -1,9 +1,0 @@
-{"timestamp": "2026-04-20T03:05:02.033533+00:00", "trace_id": "term_851ef75d", "action": "nlm_worker_notebook_cleanup_started", "data": {"state_root": "P:\\__csf\\.data\\yt-is\\industrial-worker-states", "notebook_prefix": "yt-is::industrial::worker", "active_nb_ids": 4}}
-{"timestamp": "2026-04-20T03:05:02.034019+00:00", "trace_id": "term_851ef75d", "action": "nlm_auth_checked", "data": {"component": "nlm_batch", "status": "ok"}}
-{"timestamp": "2026-04-20T03:05:02.034299+00:00", "trace_id": "term_851ef75d", "action": "nlm_worker_notebook_cleanup_complete", "data": {"deleted": 0, "failed": 0, "status": "parse_failed", "error": "Expecting value: line 1 column 1 (char 0)"}}
-{"timestamp": "2026-08-10T21:07:25.041726+00:00", "trace_id": "term_851ef75d", "action": "nlm_client_client_created", "data": {"profile": "csf-nlm-auth", "account": "a.hominidae", "owns_loop": true}}
-{"timestamp": "2026-08-10T21:07:25.799543+00:00", "trace_id": "term_851ef75d", "action": "nlm_client_client_closed", "data": {"profile": "csf-nlm-auth", "account": "a.hominidae"}}
-{"timestamp": "2026-08-10T21:07:26.707781+00:00", "trace_id": "term_851ef75d", "action": "nlm_client_client_created", "data": {"profile": "csf-nlm-auth", "account": "troup.hominidae", "owns_loop": true}}
-{"timestamp": "2026-08-10T21:07:26.987677+00:00", "trace_id": "term_851ef75d", "action": "nlm_client_client_closed", "data": {"profile": "csf-nlm-auth", "account": "troup.hominidae"}}
-{"timestamp": "2026-08-10T21:07:28.105965+00:00", "trace_id": "term_851ef75d", "action": "nlm_client_client_created", "data": {"profile": "csf-nlm-auth", "account": "brsthomson", "owns_loop": true}}
-{"timestamp": "2026-08-10T21:07:28.492475+00:00", "trace_id": "term_851ef75d", "action": "nlm_client_client_closed", "data": {"profile": "csf-nlm-auth", "account": "brsthomson"}}

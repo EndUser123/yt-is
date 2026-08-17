@@ -79,3 +79,6 @@ config/discovery-settings.json
 
 # Multi-account fetch receipts (contain auth material - never commit)
 .logs/multi_account_fetch/
+
+# Runtime lock files (empty artifacts of the lock machinery)
+.data/yt-is/locks/
