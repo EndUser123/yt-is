@@ -94,26 +94,38 @@ _CLIENT_AT = 0.0
 
 
 def client(timeout: int = 120):
-    """Connected client; starts the server if needed. Cached — the old
-    per-call liveness check spawned PowerShell (~0.7s each, twice per
-    query; measured while chasing full-path latency)."""
+    """Connected client; starts the server if needed. Cached with cheap
+    revalidation; bounded restart/retry on connection failure (b-prime
+    rule 8: stale/dead server must recover without per-query polling)."""
     global _CLIENT, _CLIENT_AT
     import time as _time
-    now = _time.monotonic()
-    if _CLIENT is not None and now - _CLIENT_AT < 30:
-        return _CLIENT
-    if _CLIENT is not None:
+    for attempt in range(3):
+        now = _time.monotonic()
+        if _CLIENT is not None and now - _CLIENT_AT < 30:
+            return _CLIENT
+        if _CLIENT is not None:
+            try:
+                _CLIENT.get_collections()
+                _CLIENT_AT = now
+                return _CLIENT
+            except Exception:
+                _CLIENT = None
+        start()
+        from qdrant_client import QdrantClient
+        cand = QdrantClient(url=URL, timeout=timeout)
         try:
-            _CLIENT.get_collections()
-            _CLIENT_AT = now
+            cand.get_collections()          # verify before trusting
+            _CLIENT, _CLIENT_AT = cand, _time.monotonic()
             return _CLIENT
         except Exception:
-            _CLIENT = None
-    start()
-    from qdrant_client import QdrantClient
-    _CLIENT = QdrantClient(url=URL, timeout=timeout)
-    _CLIENT_AT = _time.monotonic()
-    return _CLIENT
+            try:
+                cand.close()
+            except Exception:
+                pass
+            stop()                          # stale pidfile / half-dead state
+            _time.sleep(1)
+    raise RuntimeError(f"qdrant unreachable at {URL} after 3 attempts; "
+                       f"see {SERVER_DIR}/qdrant.log")
 
 
 if __name__ == "__main__":
