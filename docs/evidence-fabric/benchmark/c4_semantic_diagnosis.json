@@ -1,0 +1,17 @@
+{
+ "ran_at": "2026-08-17",
+ "diagnosis": "C4 technical (0.3814) + comparison (0.339) vs 0.40 gate",
+ "method": "36 queries, top-3 judged by agent:zcode (listing in session log)",
+ "judged_any_at_3": 0.8333,
+ "authored_mrr10": 0.3729,
+ "verdict": "predominantly authored-single-positive gold error (relevant alternates rank high); genuine hard tail of ~6/36 terse or underspecified queries with zero relevant top-3",
+ "c5_gate_implication": "semantic/technical/comparison gates become judged any@3 >= 0.75 with authored MRR informational (>= 0.25), mirroring the telegraphic resolution",
+ "failures_listed": [
+  "git cli wrapper memorization",
+  "instagram instants DM photos",
+  "product listing cart livestream",
+  "solo vs team hidden costs",
+  "vanilla js vs framework widgets",
+  "linux vs windows desktop customization"
+ ]
+}
