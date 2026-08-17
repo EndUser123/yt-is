@@ -1,0 +1,49 @@
+{
+ "ran_at": "2026-08-17T14:27:38.105462+00:00",
+ "generation": 1,
+ "tests": {
+  "T7_structural": {
+   "points": 166714,
+   "catalog_chunks": 166714,
+   "pass": true
+  },
+  "T1_benchmark": {
+   "n": 242,
+   "mrr@10": 0.4882,
+   "recall@10": 0.6446,
+   "p95_ms": 1165.4,
+   "pass": false
+  },
+  "T2_holdout": {
+   "n": 114,
+   "mrr@10": 0.5077,
+   "recall@10": 0.6491,
+   "p95_ms": 1150.1,
+   "pass": false
+  },
+  "T3_identifier": {
+   "n": 55,
+   "mrr@10": 0.1635,
+   "recall@10": 0.3455,
+   "p95_ms": 979.5,
+   "pass": false
+  },
+  "T4_latency": {
+   "n_queries": 411,
+   "p95_s": 1.164,
+   "pass": true
+  },
+  "T5_reopenability": {
+   "sampled": 15,
+   "reopened": 15,
+   "failures": [],
+   "pass": true
+  },
+  "T6_filter": {
+   "sampled": 20,
+   "correct": 20,
+   "pass": true
+  }
+ },
+ "overall_pass": false
+}

@@ -1,0 +1,81 @@
+{
+ "generation": 1,
+ "spec_version": "1.0",
+ "authority": {
+  "transcripts_db": "P:/.data/yt-is/transcripts.sqlite",
+  "status_db": "P:/.data/yt-is/batch_status.sqlite",
+  "eligibility": {
+   "min_chars": 100,
+   "require": [
+    "video_id",
+    "reopenable_transcript"
+   ],
+   "include_incomplete_metadata": true,
+   "exclude_terminal_prefix": "test"
+  },
+  "quarantine": {
+   "rule": "terminal_id LIKE 'test%' OR reopen failure",
+   "known": [
+    "dQw4w9WgXcQ"
+   ]
+  }
+ },
+ "chunker": {
+  "target_chars": 1100,
+  "overlap_chars": 150,
+  "min_chars": 200
+ },
+ "encoder": {
+  "model": "BAAI/bge-m3",
+  "representations": [
+   "dense",
+   "learned_sparse"
+  ],
+  "dense_dim": 1024,
+  "max_length": 512,
+  "fp16": true,
+  "query_prefix": ""
+ },
+ "projection": {
+  "engine": "qdrant-server",
+  "binary": "P:/.data/yt-is/ef/tools/qdrant.exe",
+  "http_port": 6390,
+  "grpc_port": 6391,
+  "collection": "evidence_chunks__gen1",
+  "hnsw_m": 32,
+  "payload_indexes": [
+   "channel_id",
+   "video_id"
+  ]
+ },
+ "fusion": {
+  "default_prefetch": [
+   "dense",
+   "lex_learned"
+  ],
+  "exact_lane": "fts5_identifier_heuristic",
+  "exact_lane_evidence": {
+   "dev_n": 55,
+   "fts5": {
+    "r1": 0.6,
+    "r5": 0.8182,
+    "r10": 0.8727,
+    "mrr10": 0.6913
+   },
+   "qdrant_bm25": {
+    "r1": 0.4,
+    "r5": 0.6182,
+    "r10": 0.7091,
+    "mrr10": 0.4979
+   },
+   "bge_learned_sparse": {
+    "r1": 0.1273,
+    "r5": 0.2545,
+    "r10": 0.3091,
+    "mrr10": 0.1749
+   },
+   "receipt": "docs/evidence-fabric/benchmark/identifier_lanes_dev.json"
+  },
+  "rrf_k": 60
+ }
+}

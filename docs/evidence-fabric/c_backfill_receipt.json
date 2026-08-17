@@ -1,0 +1,26 @@
+{
+ "started_at": "2026-08-17T13:22:33.918948+00:00",
+ "generation": 1,
+ "spec_digest": "1a9efe7e6128e4b1",
+ "counts": {
+  "eligible_transcripts": 76791,
+  "already_done": 200,
+  "to_build": 76591,
+  "eu_built": 76591,
+  "chunks_built": 166433,
+  "points_upserted": 166433,
+  "incomplete_metadata_eus": 7102,
+  "errors": 0
+ },
+ "timings_s": {
+  "total": 1190.1
+ },
+ "errors_sample": [],
+ "final_counts": {
+  "collection_points": 166433,
+  "catalog": {
+   "eu": 76791,
+   "chunk": 166714
+  }
+ }
+}
