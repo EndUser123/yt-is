@@ -94,21 +94,23 @@ _CLIENT_AT = 0.0
 
 
 def client(timeout: int = 120):
-    """Connected client; starts the server if needed. Cached with cheap
-    revalidation; bounded restart/retry on connection failure (b-prime
-    rule 8: stale/dead server must recover without per-query polling)."""
+    """Connected client; starts the server if needed. Cached client is
+    cheap-revalidated on every call (get_collections ~1ms) — NO blind
+    trust window: a server killed moments ago must not hand out a stale
+    client (b-prime rule 8)."""
     global _CLIENT, _CLIENT_AT
     import time as _time
     for attempt in range(3):
-        now = _time.monotonic()
-        if _CLIENT is not None and now - _CLIENT_AT < 30:
-            return _CLIENT
         if _CLIENT is not None:
             try:
                 _CLIENT.get_collections()
-                _CLIENT_AT = now
+                _CLIENT_AT = _time.monotonic()
                 return _CLIENT
             except Exception:
+                try:
+                    _CLIENT.close()
+                except Exception:
+                    pass
                 _CLIENT = None
         start()
         from qdrant_client import QdrantClient
