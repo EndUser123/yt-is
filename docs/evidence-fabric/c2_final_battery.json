@@ -1,5 +1,5 @@
 {
- "ran_at": "2026-08-17T19:52:15.687873+00:00",
+ "ran_at": "2026-08-17T20:16:44.090119+00:00",
  "gates": {
   "exact_df1": {
    "n": 35,
@@ -28,8 +28,8 @@
   },
   "near_twins": {
    "n": 12,
-   "false_pin": 1,
-   "pass": false
+   "false_pin": 0,
+   "pass": true
   },
   "semantic_natural": {
    "n": 30,
@@ -42,10 +42,10 @@
   },
   "semantic_technical": {
    "n": 29,
-   "mrr10": 0.5661,
+   "mrr10": 0.5489,
    "ci95": [
-    0.4023,
-    0.7241
+    0.3908,
+    0.7069
    ],
    "pass": true
   },
@@ -65,7 +65,7 @@
    "note": "informational (semantic route)"
   },
   "latency": {
-   "p95_s": 0.151,
+   "p95_s": 0.064,
    "pass": true
   },
   "reopenability": {
@@ -106,14 +106,134 @@
   },
   "c1_regression_semantic": {
    "n": 30,
-   "mrr10": 0.4167,
+   "mrr10": 0.4323,
    "ci95": [
-    0.2771,
-    0.5594
+    0.2881,
+    0.5806
    ],
    "pass": true,
    "note": "0.05 regression allowance (C1 passed 0.4162)"
   }
  },
- "pass": false
+ "pass": true,
+ "promotion": {
+  "active_generation": 1,
+  "promoted_at": "2026-08-17T20:17:42.008540+00:00",
+  "evidence": {
+   "exact_df1": {
+    "n": 35,
+    "r1": 1.0,
+    "pass": true
+   },
+   "exact_df2_10": {
+    "n": 13,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "exact_df11_100": {
+    "n": 22,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "exact_df101_1000": {
+    "n": 25,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "punct_heavy": {
+    "n": 18,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "near_twins": {
+    "n": 12,
+    "false_pin": 0,
+    "pass": true
+   },
+   "semantic_natural": {
+    "n": 30,
+    "mrr10": 0.7167,
+    "ci95": [
+     0.5722,
+     0.85
+    ],
+    "pass": true
+   },
+   "semantic_technical": {
+    "n": 29,
+    "mrr10": 0.5489,
+    "ci95": [
+     0.3908,
+     0.7069
+    ],
+    "pass": true
+   },
+   "comparison_questions": {
+    "n": 10,
+    "mrr10": 0.4,
+    "ci95": [
+     0.1833,
+     0.6333
+    ],
+    "pass": true
+   },
+   "common_lexical_info": {
+    "n": 8,
+    "literal_prefix": 0.5,
+    "pass": true,
+    "note": "informational (semantic route)"
+   },
+   "latency": {
+    "p95_s": 0.064,
+    "pass": true
+   },
+   "reopenability": {
+    "sampled": 30,
+    "ok": 30,
+    "pass": true
+   },
+   "filter": {
+    "n": 20,
+    "correct": 20,
+    "pass": true
+   },
+   "structural": {
+    "points": 166714,
+    "catalog": 166714,
+    "pass": true
+   },
+   "namespace": {
+    "pass": true,
+    "tail": "[ns] RESULT: VALID"
+   },
+   "freshness": {
+    "processed": 0,
+    "added": 0,
+    "updated": 0,
+    "deleted": 0,
+    "indexed_watermark": "2026-08-16T18:59:15.280975",
+    "lag": 0,
+    "pass": true
+   },
+   "qdrant_restart_reconnect": {
+    "pass": true
+   },
+   "c1_regression_df1": {
+    "n": 15,
+    "r1": 1.0,
+    "pass": true
+   },
+   "c1_regression_semantic": {
+    "n": 30,
+    "mrr10": 0.4323,
+    "ci95": [
+     0.2881,
+     0.5806
+    ],
+    "pass": true,
+    "note": "0.05 regression allowance (C1 passed 0.4162)"
+   }
+  }
+ },
+ "RETRACTION": "2026-08-17: this run's automatic promotion violated b-prime rule 5 (C2 is regression-only after observation; promotion requires fresh C3 acceptance). Promotion retracted same minute; archived to P:/.data/yt-is/ef/promotion.retracted.bprime5.json. The gate results stand as REGRESSION evidence."
 }
