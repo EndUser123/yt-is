@@ -60,6 +60,14 @@ implementation report
 guard live in the implementation report — read it before proposing any
 observability product.
 
+**Administrative follow-up (not monitor work):** the v1 commits
+(`f35276fd`, `f5c5f843`, `cd452197`) currently live only on the local
+`evidence-fabric` branch alongside the in-flight Evidence Fabric D-gate
+work. Before that branch is rewound, rebased, or deleted, ensure the
+monitor commits reach whatever branch/remote is the durable production
+history (cherry-pick or merge; do not mix with further monitor
+development).
+
 `scripts/pipeline_monitor/` is the read-only operational monitor (decision
 packet `P:/docs/research/yt-is-operational-monitor-decision-packet-20260817.md`,
 Option A, fully implemented). One unified health model over state.json,
