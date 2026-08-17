@@ -13,6 +13,10 @@ path. It is separate from the daily auth keepalive task.
 - Authorization receipt builder:
   `P:/packages/yt-is/scripts/build_full_backlog_authorization.py`
 - Read-only health: `P:/packages/yt-is/scripts/check_unattended_backlog.py`
+- Operational monitor (unified health model, chunk/failure/drill views):
+  `python -m scripts.pipeline_monitor health|chunks|failures|drill|run-kind`
+  (all with `--json`; read-only; see HANDOFF.md "Operational monitor" and
+  `P:/docs/research/yt-is-operational-monitor-v1-implementation-report-20260817.md`)
 - Task installer: `P:/packages/yt-is/scripts/install_unattended_backlog_task.ps1`
 - Auth maintenance: `python -m csf.nlm_keepalive`
 - Staging cleanup: `python -m csf.cleanup_staging --dry-run`
