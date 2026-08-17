@@ -8,6 +8,7 @@ touch another Qdrant instance, never kill by image name (D013/D014).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -17,6 +18,7 @@ SERVER_DIR = EF_DATA / "server"
 QDRANT_BIN = EF_DATA / "tools" / "qdrant.exe"
 CONFIG = SERVER_DIR / "config.yaml"
 PIDFILE = SERVER_DIR / "qdrant.pid"
+START_LOCK_STALE_S = 120.0
 HTTP_PORT = 6390
 GRPC_PORT = 6391
 URL = f"http://127.0.0.1:{HTTP_PORT}"
@@ -50,30 +52,59 @@ def status() -> dict:
 
 
 def start() -> dict:
-    """Start the yt-is-owned qdrant server if not already running."""
+    """Start the yt-is-owned qdrant server if not already running.
+
+    Serialized by an exclusive start-lock file: two concurrent cold
+    starters otherwise both Popen a qdrant and the loser overwrites the
+    PIDFILE (orphaned process, dead-pid status). A stale lock (holder
+    died) is reclaimed after START_LOCK_STALE_S."""
     st = status()
     if st["running"]:
         return st
     SERVER_DIR.mkdir(parents=True, exist_ok=True)
     if not QDRANT_BIN.exists():
         raise FileNotFoundError(f"qdrant binary missing: {QDRANT_BIN}")
-    if not CONFIG.exists():
-        CONFIG.write_text(_CONFIG_BODY, encoding="utf-8")
-    log = open(SERVER_DIR / "qdrant.log", "a")
-    proc = subprocess.Popen([str(QDRANT_BIN), "--config-path", str(CONFIG)],
-                            cwd=str(QDRANT_BIN.parent),
-                            stdout=log, stderr=subprocess.STDOUT)
-    PIDFILE.write_text(str(proc.pid))
-    # wait for readiness
-    from qdrant_client import QdrantClient
-    for _ in range(120):
-        try:
-            QdrantClient(url=URL, timeout=10).get_collections()
-            return {"running": True, "pid": proc.pid, "url": URL}
-        except Exception:
+    lock = SERVER_DIR / "start.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    if lock.exists() and time.time() - lock.stat().st_mtime > START_LOCK_STALE_S:
+        lock.unlink(missing_ok=True)   # holder died holding the lock
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+    except FileExistsError:
+        # another starter holds it — wait for it to finish or fail
+        for _ in range(120):
             time.sleep(0.5)
-    raise RuntimeError(f"qdrant did not become ready on {URL} "
-                       f"(pid {proc.pid}); see {SERVER_DIR}/qdrant.log")
+            st = status()
+            if st["running"]:
+                return st
+            if not lock.exists():
+                return start()
+        st = status()
+        if st["running"]:
+            return st
+        raise RuntimeError("qdrant start lock held but server not ready")
+    try:
+        if not CONFIG.exists():
+            CONFIG.write_text(_CONFIG_BODY, encoding="utf-8")
+        log = open(SERVER_DIR / "qdrant.log", "a")
+        proc = subprocess.Popen([str(QDRANT_BIN), "--config-path", str(CONFIG)],
+                                cwd=str(QDRANT_BIN.parent),
+                                stdout=log, stderr=subprocess.STDOUT)
+        PIDFILE.write_text(str(proc.pid))
+        # wait for readiness
+        from qdrant_client import QdrantClient
+        for _ in range(120):
+            try:
+                QdrantClient(url=URL, timeout=10).get_collections()
+                return {"running": True, "pid": proc.pid, "url": URL}
+            except Exception:
+                time.sleep(0.5)
+        raise RuntimeError(f"qdrant did not become ready on {URL} "
+                           f"(pid {proc.pid}); see {SERVER_DIR}/qdrant.log")
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 def stop() -> dict:

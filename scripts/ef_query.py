@@ -89,11 +89,21 @@ def main() -> int:
             return 2
         server.start()
 
-    enc = embedding.BGEM3Dual(device=args.device)
+    try:
+        enc = embedding.BGEM3Dual(device=args.device)
+    except Exception as e:  # e.g. CUDA unavailable — degrade to exit 2 so
+        # callers' [LOCAL-CORPUS-UNAVAILABLE] fallback fires, not a traceback
+        print(f"ef_query: encoder load failed on device '{args.device}': {e}",
+              file=sys.stderr)
+        return 2
     q = ProductionQuery(enc, generation=gen)
-    results = q.relevant(query, limit=args.limit,
-                         channel_id=args.channel_id,
-                         exact=True if args.exact else None)
+    try:
+        results = q.relevant(query, limit=args.limit,
+                             channel_id=args.channel_id,
+                             exact=True if args.exact else None)
+    except Exception as e:
+        print(f"ef_query: query failed: {e}", file=sys.stderr)
+        return 2
 
     if args.as_json:
         print(json.dumps({
