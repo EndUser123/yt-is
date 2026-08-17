@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO))
 from ef import authority, chunking, routing  # noqa: E402
 
 BENCH = REPO / "docs" / "evidence-fabric" / "benchmark"
-START = 157
+START = 200
 SPAN = 43
 IDENT_SCAN = re.compile(
     r"\b(?:[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)+"
@@ -121,7 +121,7 @@ def build_auto():
                                   "mutant_df": df_of(mutant)})
     fts.close()
     payload = json.dumps(out, indent=1)
-    (BENCH / "acceptance_c1_auto.json").write_text(payload, encoding="utf-8")
+    (BENCH / "acceptance_c2_auto.json").write_text(payload, encoding="utf-8")
     print({k: len(v) for k, v in out.items()})
 
 
@@ -157,11 +157,11 @@ def main() -> int:
         mode_excerpts()
     else:
         h = ""
-        for f in ("acceptance_c1_auto.json", "acceptance_c1_hand.json"):
+        for f in ("acceptance_c2_auto.json", "acceptance_c2_hand.json"):
             p = BENCH / f
             if p.exists():
                 h += hashlib.sha256(p.read_bytes()).hexdigest()[:16] + " "
-        (BENCH / "acceptance_c1_seal.txt").write_text(
+        (BENCH / "acceptance_c2_seal.txt").write_text(
             f"sealed before C1 final replay\nfiles: auto hand\nsha256[:16]: {h}\n",
             encoding="utf-8")
         print("sealed:", h)
