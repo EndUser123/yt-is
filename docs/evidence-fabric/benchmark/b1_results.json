@@ -1,0 +1,230 @@
+{
+ "ran_at": "2026-08-17T04:27:09.090709+00:00",
+ "n_queries": 114,
+ "n_chunks": 6161,
+ "frozen_digest": "8b551603196fe751",
+ "configs": {
+  "A_minilm_fts5": {
+   "strata": {
+    "ytis_natural": {
+     "n": 30,
+     "mrr10": 0.8017,
+     "rec10": 0.9333,
+     "ndcg10": 0.8333
+    },
+    "wiki_evidence": {
+     "n": 20,
+     "mrr10": 0.5917,
+     "rec10": 0.75,
+     "ndcg10": 0.6327
+    },
+    "www_prior": {
+     "n": 15,
+     "mrr10": 0.6352,
+     "rec10": 0.8667,
+     "ndcg10": 0.69
+    },
+    "wiki_contradiction": {
+     "n": 10,
+     "mrr10": 0.8,
+     "rec10": 0.9,
+     "ndcg10": 0.8262
+    },
+    "review_arch": {
+     "n": 14,
+     "mrr10": 0.8571,
+     "rec10": 0.9286,
+     "ndcg10": 0.8758
+    },
+    "title_entity": {
+     "n": 15,
+     "mrr10": 0.6333,
+     "rec10": 0.7333,
+     "ndcg10": 0.6595
+    },
+    "exact_identifiers": {
+     "n": 10,
+     "mrr10": 0.3625,
+     "rec10": 0.6,
+     "ndcg10": 0.4208
+    }
+   },
+   "weighted": {
+    "W_mrr10": 0.7013,
+    "W_rec10": 0.8462,
+    "W_ndcg10": 0.7372
+   }
+  },
+  "B_bgem3_fts5": {
+   "strata": {
+    "ytis_natural": {
+     "n": 30,
+     "mrr10": 0.8875,
+     "rec10": 0.9667,
+     "ndcg10": 0.9057
+    },
+    "wiki_evidence": {
+     "n": 20,
+     "mrr10": 0.6571,
+     "rec10": 0.75,
+     "ndcg10": 0.6798
+    },
+    "www_prior": {
+     "n": 15,
+     "mrr10": 0.8074,
+     "rec10": 0.9333,
+     "ndcg10": 0.8375
+    },
+    "wiki_contradiction": {
+     "n": 10,
+     "mrr10": 0.9,
+     "rec10": 0.9,
+     "ndcg10": 0.9
+    },
+    "review_arch": {
+     "n": 14,
+     "mrr10": 0.8571,
+     "rec10": 0.9286,
+     "ndcg10": 0.8758
+    },
+    "title_entity": {
+     "n": 15,
+     "mrr10": 0.7407,
+     "rec10": 0.8,
+     "ndcg10": 0.7534
+    },
+    "exact_identifiers": {
+     "n": 10,
+     "mrr10": 0.5,
+     "rec10": 0.5,
+     "ndcg10": 0.5
+    }
+   },
+   "weighted": {
+    "W_mrr10": 0.7936,
+    "W_rec10": 0.8679,
+    "W_ndcg10": 0.8112
+   }
+  },
+  "C_bgem3_learned_sparse": {
+   "strata": {
+    "ytis_natural": {
+     "n": 30,
+     "mrr10": 0.9167,
+     "rec10": 1.0,
+     "ndcg10": 0.9374
+    },
+    "wiki_evidence": {
+     "n": 20,
+     "mrr10": 0.735,
+     "rec10": 0.8,
+     "ndcg10": 0.7509
+    },
+    "www_prior": {
+     "n": 15,
+     "mrr10": 0.8356,
+     "rec10": 0.9333,
+     "ndcg10": 0.8591
+    },
+    "wiki_contradiction": {
+     "n": 10,
+     "mrr10": 0.95,
+     "rec10": 1.0,
+     "ndcg10": 0.9631
+    },
+    "review_arch": {
+     "n": 14,
+     "mrr10": 0.8571,
+     "rec10": 0.9286,
+     "ndcg10": 0.8758
+    },
+    "title_entity": {
+     "n": 15,
+     "mrr10": 0.5967,
+     "rec10": 0.8667,
+     "ndcg10": 0.6579
+    },
+    "exact_identifiers": {
+     "n": 10,
+     "mrr10": 0.45,
+     "rec10": 0.5,
+     "ndcg10": 0.4631
+    }
+   },
+   "weighted": {
+    "W_mrr10": 0.8102,
+    "W_rec10": 0.9045,
+    "W_ndcg10": 0.8331
+   }
+  },
+  "D_bgem3_both": {
+   "strata": {
+    "ytis_natural": {
+     "n": 30,
+     "mrr10": 0.9211,
+     "rec10": 1.0,
+     "ndcg10": 0.9392
+    },
+    "wiki_evidence": {
+     "n": 20,
+     "mrr10": 0.71,
+     "rec10": 0.75,
+     "ndcg10": 0.7193
+    },
+    "www_prior": {
+     "n": 15,
+     "mrr10": 0.843,
+     "rec10": 1.0,
+     "ndcg10": 0.8792
+    },
+    "wiki_contradiction": {
+     "n": 10,
+     "mrr10": 0.8433,
+     "rec10": 1.0,
+     "ndcg10": 0.8789
+    },
+    "review_arch": {
+     "n": 14,
+     "mrr10": 0.9286,
+     "rec10": 0.9286,
+     "ndcg10": 0.9286
+    },
+    "title_entity": {
+     "n": 15,
+     "mrr10": 0.6511,
+     "rec10": 0.8667,
+     "ndcg10": 0.7025
+    },
+    "exact_identifiers": {
+     "n": 10,
+     "mrr10": 0.5,
+     "rec10": 0.5,
+     "ndcg10": 0.5
+    }
+   },
+   "weighted": {
+    "W_mrr10": 0.8121,
+    "W_rec10": 0.9045,
+    "W_ndcg10": 0.8335
+   }
+  }
+ },
+ "rule_R_B1_1": {
+  "delta_W_mrr10": 0.0923,
+  "bootstrap_point": 0.0921,
+  "ci95": [
+   0.0482,
+   0.1379
+  ],
+  "critical_strata_ok": false,
+  "PROMOTE_BGE_M3": false
+ },
+ "defect_log": [
+  "run 1 (2026-08-16): nDCG@10 exceeded 1.0 for configs B/C/D because every chunk of the positive video counted as relevant while IDCG assumed one. Fix: first-occurrence relevance only. MRR@10 and Recall@10 were unaffected by the defect. Full re-run per R-B1.4; this receipt is run 2."
+ ],
+ "rule_R_B1_2": {
+  "delta_W_ndcg10_D_vs_B": 0.0223,
+  "identifiers_ok": true,
+  "ADOPT_LEARNED_SPARSE": true
+ }
+}
