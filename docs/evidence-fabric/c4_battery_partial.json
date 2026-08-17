@@ -1,0 +1,130 @@
+{
+ "ran_at": "2026-08-17T23:12:57.161817+00:00",
+ "gates": {
+  "exact_df1": {
+   "n": 35,
+   "r1": 0.8857,
+   "pass": false
+  },
+  "exact_df2_10": {
+   "n": 15,
+   "literal_prefix": 0.8667,
+   "pass": false
+  },
+  "exact_df11_100": {
+   "n": 20,
+   "literal_prefix": 0.9,
+   "pass": false
+  },
+  "exact_df101_1000": {
+   "n": 25,
+   "literal_prefix": 0.84,
+   "pass": false
+  },
+  "punct_heavy": {
+   "n": 18,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "zero_df_identifiers": {
+   "n": 12,
+   "empty_rate": 1.0,
+   "pass": true
+  },
+  "near_twins": {
+   "n": 12,
+   "false_pin": 0,
+   "pass": true
+  },
+  "ambiguous_words": {
+   "n": 6,
+   "routed_semantic": true,
+   "pass": true
+  },
+  "telegraphic_judged": {
+   "listing_emitted": 72,
+   "authored_mrr10_info": 0.6108,
+   "pass": null,
+   "note": "awaiting blind judgments"
+  },
+  "semantic_technical": {
+   "n": 26,
+   "mrr10": 0.3814,
+   "ci95": [
+    0.2276,
+    0.5449
+   ],
+   "pass": false
+  },
+  "comparison_questions": {
+   "n": 10,
+   "mrr10": 0.3393,
+   "ci95": [
+    0.1,
+    0.625
+   ],
+   "pass": false
+  },
+  "latency": {
+   "p95_s": 0.135,
+   "pass": true
+  },
+  "reopenability": {
+   "sampled": 30,
+   "ok": 30,
+   "pass": true
+  },
+  "filter": {
+   "n": 20,
+   "correct": 20,
+   "pass": true
+  },
+  "structural": {
+   "points": 166714,
+   "catalog": 166714,
+   "candidate_generation": 1,
+   "pass": true
+  },
+  "namespace": {
+   "pass": true,
+   "build_id": "generation/gen1-1a9efe7e6128e4b1"
+  },
+  "freshness": {
+   "processed": 0,
+   "added": 0,
+   "updated": 0,
+   "deleted": 0,
+   "indexed_watermark": "2026-08-16T18:59:15.280975",
+   "lag": 0,
+   "pass": true
+  },
+  "qdrant_restart_reconnect": {
+   "pass": true
+  },
+  "reg_c1_df1": {
+   "n": 15,
+   "r1": 0.8,
+   "pass": false
+  },
+  "reg_c2_literal": {
+   "n": 35,
+   "literal_prefix": 0.8857,
+   "pass": false
+  },
+  "reg_c2_twins": {
+   "n": 12,
+   "false_pin": 0,
+   "pass": true
+  },
+  "reg_c2_semantic": {
+   "n": 30,
+   "mrr10": 0.7167,
+   "ci95": [
+    0.5722,
+    0.85
+   ],
+   "pass": true
+  }
+ },
+ "status": "gate_failure"
+}
