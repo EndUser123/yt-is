@@ -1,0 +1,109 @@
+{
+ "ran_at": "2026-08-17T19:30:06.212308+00:00",
+ "gates": {
+  "exact_df1": {
+   "n": 35,
+   "r1": 1.0,
+   "r10": 1.0,
+   "gate": "r1==1.0",
+   "pass": true
+  },
+  "exact_df2_100": {
+   "n": 35,
+   "r1": 0.2857,
+   "r10": 0.6857,
+   "gate": "r10==1.0",
+   "pass": false
+  },
+  "exact_df101_1000": {
+   "n": 25,
+   "containment": 0.628,
+   "gate": ">=0.95",
+   "pass": false
+  },
+  "common_lexical": {
+   "n": 8,
+   "containment": 0.825,
+   "gate": ">=0.95",
+   "pass": false
+  },
+  "punct_heavy": {
+   "n": 18,
+   "containment": 0.1333,
+   "gate": ">=0.95",
+   "pass": false
+  },
+  "near_twins": {
+   "n": 12,
+   "twin_top1": 1.0,
+   "false_pin": 0,
+   "gate": "false_pin==0",
+   "pass": true
+  },
+  "semantic_natural": {
+   "n": 30,
+   "mrr10": 0.4162,
+   "ci95": [
+    0.2765,
+    0.5587
+   ],
+   "gate": "mrr>=0.40",
+   "pass": true
+  },
+  "semantic_technical": {
+   "n": 30,
+   "mrr10": 0.5806,
+   "ci95": [
+    0.4194,
+    0.7389
+   ],
+   "gate": "mrr>=0.40",
+   "pass": true
+  },
+  "comparison_questions": {
+   "n": 10,
+   "mrr10": 0.4301,
+   "ci95": [
+    0.2393,
+    0.6458
+   ],
+   "gate": "mrr>=0.40",
+   "pass": true
+  },
+  "latency_full_path": {
+   "p95_s": 0.084,
+   "gate": "<=0.250",
+   "pass": true
+  },
+  "reopenability": {
+   "sampled": 30,
+   "ok": 30,
+   "failures": [],
+   "gate": "100%",
+   "pass": true
+  },
+  "filter": {
+   "n": 20,
+   "correct": 20,
+   "gate": "100%",
+   "pass": true
+  },
+  "structural": {
+   "points": 166714,
+   "catalog": 166714,
+   "gate": "parity",
+   "pass": true
+  },
+  "freshness": {
+   "processed": 0,
+   "added": 0,
+   "updated": 0,
+   "deleted": 0,
+   "indexed_watermark": "2026-08-16T18:59:15.280975",
+   "lag": 0,
+   "gate": "<=50",
+   "pass": true
+  }
+ },
+ "pass": false
+}
