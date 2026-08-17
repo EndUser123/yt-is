@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO))
 from ef import authority, chunking, routing  # noqa: E402
 
 BENCH = REPO / "docs" / "evidence-fabric" / "benchmark"
-START = 286
+START = 329
 SPAN = 43
 IDENT_SCAN = re.compile(
     r"\b(?:[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)+"
@@ -32,7 +32,7 @@ IDENT_SCAN = re.compile(
     r"|[A-Za-z]+[0-9][A-Za-z0-9]*)\b")
 
 
-def region_rows():
+def region_rows_window(start=None, span=None):
     conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute(f"attach database 'file:{authority.STATUS_DB}?mode=ro' as status")
@@ -53,7 +53,9 @@ def region_rows():
         by_cat.setdefault(r["category"], []).append(dict(r))
     out = []
     for cat, lst in by_cat.items():
-        out.extend(lst[START:START + SPAN])
+        s = start if start is not None else START
+        sp = span if span is not None else SPAN
+        out.extend(lst[s:s + sp])
     return out
 
 
@@ -62,7 +64,7 @@ def df_of(tok):
 
 
 def build_auto():
-    rows = region_rows()
+    rows = region_rows_window()
     fts = sqlite3.connect(f"file:{routing.FTS_DB}?mode=ro", uri=True)
     out = {"exact_df1": [], "exact_df2_100": [], "exact_df101_1000": [],
            "punct_heavy": [], "near_twins": [],
@@ -131,13 +133,45 @@ def build_auto():
         if len(zero) >= 12:
             break
     out["zero_df_identifiers"] = zero
+    import re as _re
+    weak_re = _re.compile(r"^[A-Za-z]+[a-z][A-Z][A-Za-z0-9]*$")
+    from ef import routing as _rt
+    out["exact_df1_strong"] = [x for x in out["exact_df1"]
+                               if _rt.classify(x["query"]).intent == "identifier"]
+    out["weak_df1"] = [x for x in out["exact_df1"]
+                       if weak_re.match(x["query"])][:14]
+    if len(out["weak_df1"]) < 12:
+        # widen into a deeper untouched window for weak tokens only
+        wide = region_rows_window(START + SPAN, 200)
+        for row in wide:
+            if len(out["weak_df1"]) >= 14:
+                break
+            chs = chunking.chunk_transcript(
+                f"{row['video_id']}:transcript", row["transcript"])
+            for ch in chs[1:] or chs:
+                for m in IDENT_SCAN.finditer(ch.text):
+                    tok = m.group(0)
+                    if not weak_re.match(tok) or not (4 <= len(tok) <= 40):
+                        continue
+                    d = df_of(tok)
+                    if d == 1:
+                        out["weak_df1"].append(
+                            {"query": tok, "positive_video": row["video_id"],
+                             "positive_chunk": ch.chunk_id, "df": d,
+                             "category": row["category"]})
+                        break
+                if len(out["weak_df1"]) >= 14:
+                    break
+    for k in ("exact_df2_100",):
+        out[k + "_strong"] = [x for x in out[k]
+                              if _rt.classify(x["query"]).intent == "identifier"]
     payload = json.dumps(out, indent=1)
-    (BENCH / "acceptance_c4_auto.json").write_text(payload, encoding="utf-8")
+    (BENCH / "acceptance_c5_auto.json").write_text(payload, encoding="utf-8")
     print({k: len(v) for k, v in out.items()})
 
 
 def mode_excerpts():
-    rows = region_rows()
+    rows = region_rows_window()
     printed = 0
     for row in rows:
         if printed >= 70:
@@ -168,11 +202,11 @@ def main() -> int:
         mode_excerpts()
     else:
         h = ""
-        for f in ("acceptance_c4_auto.json", "acceptance_c4_hand.json"):
+        for f in ("acceptance_c5_auto.json", "acceptance_c5_hand.json"):
             p = BENCH / f
             if p.exists():
                 h += hashlib.sha256(p.read_bytes()).hexdigest()[:16] + " "
-        (BENCH / "acceptance_c4_seal.txt").write_text(
+        (BENCH / "acceptance_c5_seal.txt").write_text(
             f"sealed before C1 final replay\nfiles: auto hand\nsha256[:16]: {h}\n",
             encoding="utf-8")
         print("sealed:", h)
