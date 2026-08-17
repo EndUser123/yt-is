@@ -51,7 +51,8 @@ def load_corpus():
 
 
 def fts_rank(conn, query, top):
-    match = " OR ".join(f'"{t}"' for t in query.split() if t)
+    terms = [t.replace('"', "") for t in query.split()]
+    match = " OR ".join(f'"{t}"' for t in terms if t)
     if not match:
         return []
     rows = conn.execute(

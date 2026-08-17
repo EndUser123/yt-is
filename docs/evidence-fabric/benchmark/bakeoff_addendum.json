@@ -1,0 +1,11 @@
+{
+ "efSearch": 64,
+ "n_chunks": 154719,
+ "A_ann_recall@20": 0.8879,
+ "A_latency_ms": {
+  "p50": 166.6,
+  "p95": 441.8,
+  "p99": 626.4
+ },
+ "A_holdout_mrr@10": 0.467
+}

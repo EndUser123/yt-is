@@ -1,0 +1,73 @@
+{
+ "ran_at": "2026-08-17T06:35:04.256059+00:00",
+ "engine_A": "faiss-cpu HNSW(M=32)+FTS5+RRF",
+ "engine_B": "qdrant server 1.19.0 native (HNSW m=32, sparse bm25 vectors, RRF)",
+ "stages": {
+  "A_build": {
+   "faiss_build_s": "cached",
+   "fts5_build_s": "cached",
+   "disk_mb": 2093.7
+  },
+  "A_latency_ms": {
+   "p50": 168.3,
+   "p95": 456.1,
+   "p99": 622.1
+  },
+  "A_ann_recall@20": 0.7263,
+  "A_holdout_mrr@10": 0.4175,
+  "B_startup_s": 0.46,
+  "B_build": {
+   "build_s": 125.6,
+   "disk_mb": 4900.3,
+   "rss_mb": 3623.0
+  },
+  "B_latency_ms": {
+   "p50": 5.4,
+   "p95": 27.2,
+   "p99": 30.5
+  },
+  "B_holdout_mrr@10": 0.4062,
+  "B_ann_recall@20": 0.969,
+  "filtered_latency_ms": {
+   "A_postfilter_p95": 441.9,
+   "B_native_filter_p95": 25.8,
+   "filter_channel": "UC-nPM1_kSZf91ZGkcgy_95Q",
+   "selectivity_pct": 0.193
+  },
+  "B_concurrent_readers": {
+   "threads": 4,
+   "queries": 240,
+   "wall_s": 0.85,
+   "qps": 281.1,
+   "p95_ms": 30.1
+  },
+  "A_concurrent_readers": {
+   "threads": 4,
+   "queries": 240,
+   "wall_s": 16.08,
+   "p95_ms": 566.6
+  },
+  "B_incremental_add": {
+   "add_2000_s": 2.18,
+   "query_p95_during_indexing_ms": 163.6,
+   "queries_during": 21
+  },
+  "B_delete": {
+   "delete_1000_s": 0.05,
+   "count_after": 155719,
+   "expected": 155719
+  },
+  "B_kill9": {
+   "interrupted": "ResponseHandlingException",
+   "restart_to_first_query_s": 1.38,
+   "count_after_recovery": 159719
+  },
+  "A_growth_2x": {
+   "build_s": 8.1,
+   "dense_p95_ms": 0.2
+  }
+ },
+ "n_chunks": 154719,
+ "b_qdrant_pid": 83700,
+ "b_qdrant_pid_restart": 76888
+}

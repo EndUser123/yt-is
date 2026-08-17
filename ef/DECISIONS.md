@@ -57,3 +57,25 @@ Format: `D### YYYY-MM-DD decision — rationale — evidence/falsifier`
 - D012 2026-08-16 Qwen3-Embedding-4B loads on GPU in bf16 alongside the
   fetch pipeline (batch 8, max_seq 512 cap required — padding inflation
   caused OOM at default settings; same cap needed for bge-m3 at batch 64).
+- D013 2026-08-17 Qdrant runs natively on Windows (v1.19.0 binary at
+  `P:/.data/yt-is/ef/tools/qdrant.exe`). Bakeoff REVERSED the Phase B
+  FAISS+FTS5 recommendation: Qdrant server beats it 16x on hybrid p95
+  (27ms vs 442ms), 17x on filtered retrieval, 19x on concurrent readers,
+  with live incremental add/delete and exact kill-9 recovery — quality
+  parity within noise. FAISS's local-mode 204ms was an FTS5-OR-query
+  latency floor, not an engine advantage. — Receipts:
+  benchmark/bakeoff_results.json + bakeoff_addendum.json (efSearch=64
+  fairness fix). **Ports: dedicated 6390/6391 via config file — the host
+  runs the operator's OpenWhispr qdrant on 6333/6334.**
+- D014 2026-08-17 NEVER `taskkill /IM qdrant.exe` on this host — image
+  names of unrelated qdrant workloads differ (`qdrant-win32-x64.exe`) but
+  port collisions are the real hazard. Process cleanup is PID-tracked,
+  atexit-guarded. Incident: early bakeoff runs created `bakeoff_b` on the
+  operator's OpenWhispr server (port 6333 collision); collection deleted
+  via API, their process never killed, verified serving `notes` only.
+- D015 2026-08-17 B.1 confirmatory: bge-m3 +0.092 W-MRR (CI +0.048..+0.138)
+  on untouched holdout; promotion rule R-B1.1 BLOCKED by a one-query
+  identifier Recall@10 flip (0.60→0.50 at n=10) against a 0.02-tolerance
+  guard — guard granularity finer than stratum resolution is a
+  preregistration design flaw; reported, not rewritten. Learned-sparse
+  R-B1.2 PASSED (+0.0223 W-nDCG, config D).
