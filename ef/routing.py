@@ -115,7 +115,10 @@ def classify(query: str, exact: bool | None = None) -> Routing:
     t = _strip_quotes(query).strip()
     if _STRONG_IDENT.match(t):
         return Routing("identifier", "strong identifier shape (any df)")
-    return Routing("semantic", "natural/ambiguous token (any df)")
+    if _WEAK_IDENT.match(t):
+        # F-gate: do NOT force classification; dual-evaluate at retrieval
+        return Routing("ambiguous", "weak single token — dual retrieval")
+    return Routing("semantic", "natural language")
 
 
 # ---------- fusion policies ----------
@@ -190,6 +193,61 @@ def fuse_identifier_priority(literal_leg: list[str], semantic_leg: list[str],
             seen.add(cid)
     return out[:top]
 
+
+# ---------- F-gate ambiguous-token policies ----------
+# For weak single tokens (TikTok / hizoJc): dual retrieval, ambiguity-aware
+# merge. NEVER equal-weight RRF (semantic legs must not outvote unique
+# literals); semantic near-twins never masquerade as literal evidence.
+
+W_AMB_LITERAL = 3.0
+
+
+def fuse_ambiguous_boost(literal_leg: list[str], semantic_leg: list[str],
+                         top: int) -> list[tuple[str, bool]]:
+    """Policy C: dual retrieval + literal boost + exact_match signal.
+    Weighted merge (literal leg weight W_AMB_LITERAL); literal hits carry
+    the exact_match flag. Unique literals still outrank semantic-only
+    hits; deep literals can be beaten by strongly-ranked semantic hits."""
+    score: dict[str, float] = {}
+    lit = set(literal_leg)
+    for rk, cid in enumerate(literal_leg):
+        score[cid] = score.get(cid, 0.0) + W_AMB_LITERAL / (RRF_K + rk + 1)
+    for rk, cid in enumerate(semantic_leg):
+        score[cid] = score.get(cid, 0.0) + 1.0 / (RRF_K + rk + 1)
+    ranked = sorted(score.items(), key=lambda kv: -kv[1])[:top]
+    return [(cid, cid in lit) for cid, _ in ranked]
+
+
+def fuse_ambiguous_subgroup(literal_leg: list[str],
+                            semantic_leg: list[str],
+                            top: int) -> list[tuple[str, bool]]:
+    """Policy D: literal candidate subgroup, ranked WITHIN by semantic
+    relevance (semantic rank primary, lexical order tiebreak), merged
+    with semantic-only results by weighted RRF where subgroup rank
+    contributes the high-weight leg. Bounded permeability: a semantic-only
+    hit ranked far above every literal can outrank the literal tail."""
+    sem_rank = {cid: i for i, cid in enumerate(semantic_leg)}
+    subgroup = sorted(literal_leg,
+                      key=lambda c: (sem_rank.get(c, 1 << 30),
+                                     literal_leg.index(c)))
+    score: dict[str, float] = {}
+    lit = set(literal_leg)
+    for rk, cid in enumerate(subgroup):
+        score[cid] = score.get(cid, 0.0) + W_AMB_LITERAL / (RRF_K + rk + 1)
+    for rk, cid in enumerate(semantic_leg):
+        if cid in lit:
+            continue
+        score[cid] = score.get(cid, 0.0) + 1.0 / (RRF_K + rk + 1)
+    ranked = sorted(score.items(), key=lambda kv: -kv[1])[:top]
+    return [(cid, cid in lit) for cid, _ in ranked]
+
+
+AMBIGUOUS_POLICIES = {
+    "A_weak_semantic": None,                       # semantic only
+    "B_weak_identifier": fuse_identifier_priority, # literal pinning
+    "C_ambiguous_boost": fuse_ambiguous_boost,
+    "D_ambiguous_subgroup": fuse_ambiguous_subgroup,
+}
 
 POLICIES = {
     "A_equal_rrf": fuse_equal_rrf,

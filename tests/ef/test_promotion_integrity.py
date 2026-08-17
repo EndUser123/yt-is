@@ -28,7 +28,8 @@ def test_write_receipt_never_touches_active_generation(tmp_path):
     before = buildspec.active_generation()
     gates = {"everything": {"pass": True}}
     out = receipt.write_receipt("c1_final_replay", gates, True,
-                                promotion_authorized=False)
+                                promotion_authorized=False,
+                                out_dir=tmp_path)
     assert out.exists()
     assert buildspec.active_generation() == before   # unchanged
 

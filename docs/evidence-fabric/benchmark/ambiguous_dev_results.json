@@ -1,0 +1,38 @@
+{
+ "ran_at": "2026-08-17T23:38:24Z",
+ "opaque_n": 24,
+ "human_terms": [
+  "TikTok",
+  "Tik Tok",
+  "YouTube",
+  "You Tube",
+  "Google",
+  "Python",
+  "GitHub",
+  "Git Hub",
+  "OpenAI"
+ ],
+ "policies_opaque": {
+  "A_weak_semantic": {
+   "opaque_recall@10": 0.2917,
+   "opaque_mrr@10": 0.2189,
+   "unique_literal_top3": 0.0
+  },
+  "B_weak_identifier": {
+   "opaque_recall@10": 0.7917,
+   "opaque_mrr@10": 0.69,
+   "unique_literal_top3": 1.0
+  },
+  "C_ambiguous_boost": {
+   "opaque_recall@10": 0.8333,
+   "opaque_mrr@10": 0.657,
+   "unique_literal_top3": 1.0
+  },
+  "D_ambiguous_subgroup": {
+   "opaque_recall@10": 0.7917,
+   "opaque_mrr@10": 0.69,
+   "unique_literal_top3": 1.0
+  }
+ },
+ "selection_rule": "pre-registered in docstring"
+}

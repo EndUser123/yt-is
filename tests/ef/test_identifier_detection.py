@@ -45,10 +45,15 @@ def test_rare_identifier_routes_identifier():
     assert routing.classify("GR0000tn2").intent == "identifier"
 
 
-def test_ambiguous_human_tokens_route_semantic_no_df():
-    # E-gate rule 3: df never determines intent; ambiguous defaults
-    # semantic (incl. TikTok — compound spelling rarity is not intent)
-    for tok in ("YouTube", "Google", "Python", "TikTok", "hizoJc"):
+def test_weak_tokens_route_ambiguous_lane_no_df():
+    # F-gate: weak single tokens get the dual-retrieval ambiguous lane;
+    # df never determines intent; no pre-retrieval classification forced
+    for tok in ("YouTube", "TikTok", "hizoJc", "WebDeaf", "OpenAI"):
+        assert routing.classify(tok).intent == "ambiguous", tok
+
+
+def test_plain_words_without_internal_boundary_stay_semantic():
+    for tok in ("Google", "Python"):
         assert routing.classify(tok).intent == "semantic", tok
 
 

@@ -47,11 +47,12 @@ def test_explicit_exact_zero_literals_empty():
     assert q.relevant("zzzqquux wibblewobble", exact=True) == []
 
 
-def test_ambiguous_ordinary_single_word_stays_semantic():
+def test_ambiguous_ordinary_single_word_handling():
     assert routing.classify("Google").intent == "semantic"
     assert routing.classify("Python").intent == "semantic"
-    assert routing.classify("YouTube").intent == "semantic"
-    assert routing.classify("TikTok").intent == "semantic"
+    # internal-boundary tokens take the F-gate ambiguous dual lane
+    assert routing.classify("YouTube").intent == "ambiguous"
+    assert routing.classify("TikTok").intent == "ambiguous"
 
 
 def test_normal_short_semantic_stays_semantic():
