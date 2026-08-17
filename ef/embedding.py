@@ -76,7 +76,8 @@ class BM25Encoder:
 class DenseEmbedder:
     """Thin wrapper over sentence-transformers with GPU when available."""
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: str | None = None):
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: str | None = None,
+                 batch_size: int = 64, dtype: str | None = None):
         from sentence_transformers import SentenceTransformer
         if device is None:
             try:
@@ -86,14 +87,19 @@ class DenseEmbedder:
                 device = "cpu"
         self.device = device
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name, device=device)
+        self.batch_size = batch_size
+        kwargs = {}
+        if dtype:
+            import torch
+            kwargs["model_kwargs"] = {"torch_dtype": getattr(torch, dtype)}
+        self.model = SentenceTransformer(model_name, device=device, **kwargs)
 
     @property
     def dim(self) -> int:
         return int(self.model.get_sentence_embedding_dimension())
 
-    def encode(self, texts: list[str], batch_size: int = 64) -> list[list[float]]:
-        vecs = self.model.encode(texts, batch_size=batch_size,
+    def encode(self, texts: list[str], batch_size: int | None = None) -> list[list[float]]:
+        vecs = self.model.encode(texts, batch_size=batch_size or self.batch_size,
                                  show_progress_bar=False,
                                  normalize_embeddings=True)
         return [v.tolist() for v in vecs]

@@ -1,0 +1,26 @@
+{
+ "ran_at": "2026-08-17T01:41:01.216132+00:00",
+ "model": "all-MiniLM-L6-v2",
+ "timings_s": {
+  "read_and_chunk": 38.824409599998035,
+  "dense_embed": 177.07087930000853,
+  "sparse_encode": 50.88827669998864,
+  "upsert": 453.71622309996746
+ },
+ "checks": [
+  {
+   "name": "rule5_p95_le_500ms",
+   "ok": false,
+   "detail": "p95=9.719s at 154,719 pts"
+  }
+ ],
+ "n_transcripts": 69689,
+ "n_chunks": 154719,
+ "device": "cuda",
+ "n_points": 154719,
+ "query_latency_s": {
+  "p50": 9.307,
+  "p95": 9.719,
+  "n_probes": 8
+ }
+}

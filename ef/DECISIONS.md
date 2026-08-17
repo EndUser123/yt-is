@@ -41,3 +41,19 @@ Format: `D### YYYY-MM-DD decision — rationale — evidence/falsifier`
   path (single process). — Multi-process build workers must funnel projection
   writes through one writer process; encoded in BuildSpec contract
   (Phase A deliverable).
+- D009 2026-08-16 Phase B model rules applied literally: **no promotion** —
+  baseline MiniLM remains committed per R1/R2 (deltas +0.02, below +0.05
+  bars). Smoke-tier divergence (bge-m3 +0.062 nDCG on hand queries) reported
+  to operator as override option, NOT applied unilaterally. — Preregistration
+  discipline (rules committed pre-results in PREREGISTRATION_B.md).
+- D010 2026-08-16 Rule 5 FAILED: Qdrant local mode p95=9.7s at 154,719 pts
+  (brute-force scan, no ANN). Measured embedded alternative at same scale:
+  faiss-cpu HNSW 0.1ms + FTS5 204ms → end-to-end hybrid p95 204ms.
+  Recommendation to operator: C projection engine = faiss+FTS5 behind
+  existing contracts. — Receipts: benchmark/scale_check.json,
+  benchmark/ann_fts5_probe.json.
+- D011 2026-08-16 benchmark/corpus.json (36 MB, regenerable deterministically)
+  excluded via .gitignore; digest recorded in results.json.
+- D012 2026-08-16 Qwen3-Embedding-4B loads on GPU in bf16 alongside the
+  fetch pipeline (batch 8, max_seq 512 cap required — padding inflation
+  caused OOM at default settings; same cap needed for bge-m3 at batch 64).

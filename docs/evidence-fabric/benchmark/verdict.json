@@ -1,0 +1,25 @@
+{
+ "evaluated": [
+  "bge-m3",
+  "minilm",
+  "qwen3-4b"
+ ],
+ "rules": [
+  {
+   "rule": "R1 0.6B over baseline",
+   "pass": false,
+   "detail": "\u0394nDCG=+0.0202 \u0394Rec@20=+0.0166 (need \u2265+0.05 both)"
+  },
+  {
+   "rule": "R2 4B over 0.6B",
+   "pass": false,
+   "detail": "\u0394nDCG=-0.0161 (\u2265+0.03) \u0394Rec@20=+0.0082 (\u2265+0.02) p95=0.428s (\u22642.0) proj=2.5h (\u22644)"
+  },
+  {
+   "rule": "R3 reranker stage needed",
+   "pass": false,
+   "detail": "best bge-m3 recall@20=0.9587"
+  }
+ ],
+ "winner_if_stopped_now": "bge-m3"
+}

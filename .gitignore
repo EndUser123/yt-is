@@ -82,3 +82,4 @@ config/discovery-settings.json
 
 # Runtime lock files (empty artifacts of the lock machinery)
 .data/yt-is/locks/
+docs/evidence-fabric/benchmark/corpus.json

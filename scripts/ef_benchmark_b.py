@@ -34,9 +34,12 @@ CORPUS_N = 3000
 QUERIES_PER_CATEGORY = 10
 
 MODELS = {
-    "minilm": {"st": "all-MiniLM-L6-v2", "query_prefix": ""},
-    "bge-m3": {"st": "BAAI/bge-m3", "query_prefix": ""},
-    "qwen3-4b": {"st": "Qwen/Qwen3-Embedding-4B", "query_prefix": "query: "},
+    "minilm": {"st": "all-MiniLM-L6-v2", "query_prefix": "", "batch": 64,
+               "dtype": None, "max_seq": 512},
+    "bge-m3": {"st": "BAAI/bge-m3", "query_prefix": "", "batch": 16,
+               "dtype": None, "max_seq": 512},
+    "qwen3-4b": {"st": "Qwen/Qwen3-Embedding-4B", "query_prefix": "query: ",
+                 "batch": 8, "dtype": "bfloat16", "max_seq": 512},
 }
 
 TRANSCRIPTS_DB = authority.TRANSCRIPTS_DB
@@ -160,7 +163,18 @@ def run_model(model_key: str, corpus_path: Path, queries_path: Path,
            "n_chunks": len(chunks), "ran_at": datetime.now(timezone.utc).isoformat(),
            "timings_s": {}, "metrics": {}}
 
-    dense = embedding.DenseEmbedder(cfg["st"])
+    try:
+        dense = embedding.DenseEmbedder(cfg["st"], batch_size=cfg["batch"],
+                                        dtype=cfg.get("dtype"))
+    except Exception as e:
+        print(f"[run] {model_key}: GPU load failed ({type(e).__name__}); "
+              f"falling back to CPU per preregistration rule 6")
+        dense = embedding.DenseEmbedder(cfg["st"], device="cpu",
+                                        batch_size=max(4, cfg["batch"] // 2))
+    # cap padding: chunker targets ~250-token chunks; without this one long
+    # chunk inflates every batch's attention masks (OOM on 12GB GPU)
+    if cfg.get("max_seq"):
+        dense.model.max_seq_length = cfg["max_seq"]
     res["device"] = dense.device
     t0 = time.monotonic()
     dvecs = dense.encode(texts)
@@ -241,23 +255,25 @@ def _per_query(q: dict, ranks: list[str], vid2cat: dict) -> dict:
             rels.append(0.3)
         else:
             rels.append(0.0)
-    rr = next((1.0 / (i + 1) for i, r in enumerate(rels) if r >= 1.0), 0.0)
-    return {"rels": rels, "rr10": rr if any(rels[:10]) else rr,
+    first_pos_rank = next((i + 1 for i, r in enumerate(rels) if r >= 1.0), None)
+    return {"rels": rels,
+            "rr10": (1.0 / first_pos_rank) if first_pos_rank and first_pos_rank <= 10 else 0.0,
             "rec5": 1.0 if any(rels[:5]) else 0.0,
             "rec20": 1.0 if any(rels) else 0.0}
 
 
 def _aggregate(per_q: list[dict], latencies: list[float], tier: str) -> dict:
+    import math
     n = len(per_q)
-    dcg = lambda rels: sum(r / __import__("math").log2(i + 2)
-                           for i, r in enumerate(rels[:10]))
-    idcg = dcg(sorted([r for r in q["rels"] for r in [1.0] if q["rels"]], reverse=True))
-    # proper nDCG: per-query ideal from its own rels
+
+    def dcg(rels):
+        return sum(r / math.log2(i + 2) for i, r in enumerate(rels[:10]))
+
     ndcgs = []
     for q in per_q:
-        ideal = sorted(q["rels"], reverse=True)
-        d, i = dcg(q["rels"]), dcg(ideal)
-        ndcgs.append(d / i if i > 0 else 1.0)
+        ideal = dcg(sorted(q["rels"], reverse=True))
+        actual = dcg(q["rels"])
+        ndcgs.append(actual / ideal if ideal > 0 else 1.0)
     p95 = sorted(latencies)[max(0, int(len(latencies) * 0.95) - 1)]
     return {
         "n": n,

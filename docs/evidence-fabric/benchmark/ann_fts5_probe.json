@@ -1,0 +1,30 @@
+{
+ "ran_at": "2026-08-17T02:02:19.733874+00:00",
+ "model": "all-MiniLM-L6-v2",
+ "timings_s": {
+  "read_chunk": 26.68932009994751,
+  "dense_embed": 178.49185960000614,
+  "faiss_build": 2.5474230999825522,
+  "fts5_build": 20.88800039998023
+ },
+ "latency": {
+  "faiss_ann": {
+   "p50": 0.1,
+   "p95": 0.1
+  },
+  "fts5_bm25": {
+   "p50": 62.8,
+   "p95": 204.3
+  },
+  "hybrid_rrf_python": {
+   "p50": 0.0,
+   "p95": 0.1
+  },
+  "end_to_end_hybrid": {
+   "p50": 62.9,
+   "p95": 204.5
+  }
+ },
+ "n_transcripts": 69689,
+ "n_chunks": 154719
+}
