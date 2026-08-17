@@ -117,13 +117,23 @@ class ProductionQuery:
             points, _ = self._semantic_legs(query_text, flt)
             final = [(p, p.score) for p in points[:limit]]
             exact_hit = False
-        else:
-            # exact legs: fts lane + semantic legs as fill candidates
-            fts_ids = self._fts_lane(query_text)
+        elif route.intent == "exact_strict":
+            # literal only, no semantic fill (D-gate rule 3)
+            fts_ids = self._fts_lane(query_text, top=max(limit * 5, 50))
+            by_id: dict = {}
+            if fts_ids:
+                extra = qc.retrieve(self.collection,
+                                    ids=[ps.point_id(c) for c in fts_ids[:limit]],
+                                    with_payload=True)
+                by_id = {p.payload["chunk_id"]: p for p in extra}
+            final = [(by_id[c], 1.0 / (i + 1)) for i, c in
+                     enumerate(fts_ids[:limit]) if c in by_id]
+            exact_hit = True
+        else:  # identifier: containment priority at any df (D-gate rule 2)
+            fts_ids = self._fts_lane(query_text, top=100)
             points, _ = self._semantic_legs(query_text, flt)
             sem_ids = [p.payload["chunk_id"] for p in points]
-            legs = [sem_ids[:100], fts_ids]
-            fused = routing.POLICIES[self.policy](legs, limit, exact_leg_idx=-1)
+            fused = routing.fuse_identifier_priority(fts_ids, sem_ids, limit)
             by_id = {p.payload["chunk_id"]: p for p in points}
             missing = [c for c in fused if c not in by_id]
             if missing:
