@@ -48,6 +48,52 @@ window. Decision packet:
 `docs/operations/test-registry.md` "Hot-path throughput loop outcome
 (2026-08-12)".
 
+## Operational monitor (2026-08-17) — current
+
+**Shipped as commit `f35276fd`** ("yt-is monitor v1: read-only operational
+monitor over existing evidence", branch `evidence-fabric`, 14 files).
+Provenance: decision packet
+`P:/docs/research/yt-is-operational-monitor-decision-packet-20260817.md` +
+implementation report
+`P:/docs/research/yt-is-operational-monitor-v1-implementation-report-20260817.md`
+(workspace repo). The frozen v1 decisions and the Grafana-reintroduction
+guard live in the implementation report — read it before proposing any
+observability product.
+
+`scripts/pipeline_monitor/` is the read-only operational monitor (decision
+packet `P:/docs/research/yt-is-operational-monitor-decision-packet-20260817.md`,
+Option A, fully implemented). One unified health model over state.json,
+supervisor runtime receipts, coordinator summaries, manifests/receipts,
+event JSONL, and both SQLite DBs — no TSDB, no new services, no UI.
+
+- CLI: `python -m scripts.pipeline_monitor health|chunks|failures|drill|run-kind`
+  (each with `--json`; `--state-path`/`--db-path` overrides). Read-only
+  everywhere (`mode=ro`); swept evidence reports UNKNOWN/EVIDENCE_* classes,
+  never healthy.
+- Health states include `PAUSED_BUT_RESUME_INEFFECTIVE` — verified live
+  2026-08-17: the daily `YtisUnattendedBacklog` task fires green but targets
+  the Aug-11 plan-only canary state, so production (265k pending, paused)
+  cannot auto-resume. Scheduler greenness ≠ effectiveness.
+- Degradation detectors: strictly-prior per-account rolling baselines,
+  same-chunk peer comparison (cold start), and intra-chunk stage p95/p50
+  tail ratio; `RATE_MARGIN=0.04` calibrated on the 62-chunk run.
+- `scripts/check_unattended_backlog.py` now accepts the supervisor's full
+  vocabulary (paused+partial, planning, recovering, completed_with_failures)
+  — the reproduced `paused_summary_mismatch` false positive is fixed with
+  regression tests.
+- `scripts/pipeline_health_watch.py` is rewritten as a thin consumer of the
+  monitor model (old dead supervisor/notebook checks removed), preserving
+  the `pipeline-alert.txt` + exit-code contract; `--loop` for the roadmap-4A
+  watcher slot. Registration as a 5-min interactive-token task is an
+  operator decision (pattern: `scripts/install_unattended_backlog_task.ps1`);
+  it was NOT registered in this change.
+- Producer addition (the single authorized one): `csf/code_identity.py`
+  embeds git SHA/dirty/branch once per coordinator summary
+  (`multi_account_fetch_summary.json: code_identity`), unknown-safe.
+- Tests: `tests/test_pipeline_monitor.py` (66 incl. live §21 replay,
+  skip-if-swept), `tests/test_pipeline_health_watch.py` (5),
+  extended `tests/test_check_unattended_backlog.py` (26 total).
+
 ## Current authoritative snapshot (2026-08-12)
 
 The following state supersedes older dated sections in this file. Historical
