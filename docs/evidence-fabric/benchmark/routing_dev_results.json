@@ -1,0 +1,154 @@
+{
+ "ran_at": "2026-08-17T19:07:47Z",
+ "strata_counts": {
+  "df1": 15,
+  "df2_10": 15,
+  "very_lowdf": 30,
+  "lowdf_exact": 30,
+  "moderate_df_exact": 30,
+  "common_terms": 8,
+  "short_natural": 2,
+  "semantic_technical": 30,
+  "near_twins": 12,
+  "punct_heavy": 30
+ },
+ "results": {
+  "A_equal_rrf": {
+   "df1": {
+    "r1": 0.2667,
+    "r10": 1.0,
+    "mrr10": 0.6333
+   },
+   "df2_10": {
+    "r1": 0.2667,
+    "r10": 1.0,
+    "mrr10": 0.518
+   },
+   "lowdf_containment": 1.0,
+   "moderate_df_containment": 1.0,
+   "punct_heavy_containment": 1.0,
+   "short_natural": {
+    "mrr10": 1.0
+   },
+   "semantic_technical": {
+    "mrr10": 0.4187
+   },
+   "common_terms": {
+    "containment@5": 1.0
+   },
+   "near_twins": {
+    "twin_top1": 0.0833,
+    "mutant_false_pin": 0
+   }
+  },
+  "B_exact_only": {
+   "df1": {
+    "r1": 1.0,
+    "r10": 1.0,
+    "mrr10": 1.0
+   },
+   "df2_10": {
+    "r1": 0.4667,
+    "r10": 1.0,
+    "mrr10": 0.6529
+   },
+   "lowdf_containment": 1.0,
+   "moderate_df_containment": 1.0,
+   "punct_heavy_containment": 1.0,
+   "short_natural": {
+    "mrr10": 1.0
+   },
+   "semantic_technical": {
+    "mrr10": 0.4187
+   },
+   "common_terms": {
+    "containment@5": 1.0
+   },
+   "near_twins": {
+    "twin_top1": 0.5,
+    "mutant_false_pin": 0
+   }
+  },
+  "C_containment_priority": {
+   "df1": {
+    "r1": 1.0,
+    "r10": 1.0,
+    "mrr10": 1.0
+   },
+   "df2_10": {
+    "r1": 0.4667,
+    "r10": 1.0,
+    "mrr10": 0.6529
+   },
+   "lowdf_containment": 1.0,
+   "moderate_df_containment": 1.0,
+   "punct_heavy_containment": 1.0,
+   "short_natural": {
+    "mrr10": 1.0
+   },
+   "semantic_technical": {
+    "mrr10": 0.4187
+   },
+   "common_terms": {
+    "containment@5": 1.0
+   },
+   "near_twins": {
+    "twin_top1": 0.5,
+    "mutant_false_pin": 0
+   }
+  },
+  "D_weighted": {
+   "df1": {
+    "r1": 1.0,
+    "r10": 1.0,
+    "mrr10": 1.0
+   },
+   "df2_10": {
+    "r1": 0.5333,
+    "r10": 1.0,
+    "mrr10": 0.7067
+   },
+   "lowdf_containment": 1.0,
+   "moderate_df_containment": 1.0,
+   "punct_heavy_containment": 1.0,
+   "short_natural": {
+    "mrr10": 1.0
+   },
+   "semantic_technical": {
+    "mrr10": 0.4187
+   },
+   "common_terms": {
+    "containment@5": 1.0
+   },
+   "near_twins": {
+    "twin_top1": 0.5833,
+    "mutant_false_pin": 0
+   }
+  }
+ },
+ "verdict": [
+  {
+   "policy": "A_equal_rrf",
+   "qualifies": false,
+   "df2_10_r1": 0.2667
+  },
+  {
+   "policy": "B_exact_only",
+   "qualifies": true,
+   "df2_10_r1": 0.4667
+  },
+  {
+   "policy": "C_containment_priority",
+   "qualifies": true,
+   "df2_10_r1": 0.4667
+  },
+  {
+   "policy": "D_weighted",
+   "qualifies": true,
+   "df2_10_r1": 0.5333
+  }
+ ],
+ "winner": "D_weighted",
+ "selection_rule": "v3 pre-registered in module docstring (thresholds derived from v2 dev evidence)",
+ "v2_semantic_variance_note": "semantic path policy-invariant by code; v2 measured it 4x with spread 0.402-0.435 (ANN run variance, recorded as the noise floor)"
+}

@@ -114,8 +114,10 @@ def classify(query: str, exact: bool | None = None,
 
 # ---------- fusion policies ----------
 
-def fuse_equal_rrf(legs: list[list[str]], top: int) -> list[str]:
-    """Policy A: equal-weight RRF over chunk-id legs (defective baseline)."""
+def fuse_equal_rrf(legs: list[list[str]], top: int,
+                   exact_leg_idx: int = -1) -> list[str]:
+    """Policy A: equal-weight RRF over chunk-id legs (defective baseline;
+    exact_leg_idx accepted-and-ignored for uniform policy invocation)."""
     score: dict[str, float] = {}
     for leg in legs:
         for rk, cid in enumerate(leg):

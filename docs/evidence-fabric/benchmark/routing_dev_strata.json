@@ -1,0 +1,1068 @@
+{
+ "df1": [
+  {
+   "query": "LPGB",
+   "positive_chunk": "--00W-HwPUw:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "CX300",
+   "positive_chunk": "--86Lodo7Xk:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "creditcards.com",
+   "positive_chunk": "--CcesqjWuo:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "briany.com",
+   "positive_chunk": "--HZrn8LNNQ:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "professor.info",
+   "positive_chunk": "-0He46qh6eA:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "boogie298",
+   "positive_chunk": "-0f-IpXfJpg:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "lc30",
+   "positive_chunk": "-0nasPutXw8:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "centex.com",
+   "positive_chunk": "-13yIXiyFAs:transcript#00005",
+   "df": 1
+  },
+  {
+   "query": "T2209C",
+   "positive_chunk": "--00W-HwPUw:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "N1EK",
+   "positive_chunk": "--6rCTZ8jtE:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "briany.com",
+   "positive_chunk": "--HZrn8LNNQ:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "LayerX",
+   "positive_chunk": "--UNTFoiJao:transcript#00005",
+   "df": 1
+  },
+  {
+   "query": "CMRG",
+   "positive_chunk": "-04ndQKhk58:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "professor.ai",
+   "positive_chunk": "-0He46qh6eA:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "boogie298",
+   "positive_chunk": "-0f-IpXfJpg:transcript#00000",
+   "df": 1
+  }
+ ],
+ "df2_10": [
+  {
+   "query": "them1",
+   "positive_chunk": "---QOvVaOdA:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "K22S",
+   "positive_chunk": "--ECCBN-E_8:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "hungerroot.com",
+   "positive_chunk": "-0Nqf7_dCco:transcript#00000",
+   "df": 4
+  },
+  {
+   "query": "IP48",
+   "positive_chunk": "-0luxGapYgM:transcript#00005",
+   "df": 5
+  },
+  {
+   "query": "GDID",
+   "positive_chunk": "-0pFznEJf14:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "soap.com",
+   "positive_chunk": "-0z4WvomhR8:transcript#00000",
+   "df": 8
+  },
+  {
+   "query": "CareYaya",
+   "positive_chunk": "-10Zkzv08NY:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "UNAM",
+   "positive_chunk": "-19cPqrjdl4:transcript#00000",
+   "df": 3
+  },
+  {
+   "query": "them1",
+   "positive_chunk": "---QOvVaOdA:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "A350",
+   "positive_chunk": "--86Lodo7Xk:transcript#00000",
+   "df": 7
+  },
+  {
+   "query": "OfferUp",
+   "positive_chunk": "--CcesqjWuo:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "K22S",
+   "positive_chunk": "--ECCBN-E_8:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "SKHENX",
+   "positive_chunk": "--ylb2NiHXM:transcript#00000",
+   "df": 9
+  },
+  {
+   "query": "Theo.gg",
+   "positive_chunk": "-0JO6Id1iTo:transcript#00000",
+   "df": 5
+  },
+  {
+   "query": "hungerroot.com",
+   "positive_chunk": "-0Nqf7_dCco:transcript#00000",
+   "df": 4
+  }
+ ],
+ "very_lowdf": [
+  {
+   "query": "them1",
+   "positive_chunk": "---QOvVaOdA:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "LPGB",
+   "positive_chunk": "--00W-HwPUw:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "CX300",
+   "positive_chunk": "--86Lodo7Xk:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "creditcards.com",
+   "positive_chunk": "--CcesqjWuo:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "K22S",
+   "positive_chunk": "--ECCBN-E_8:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "briany.com",
+   "positive_chunk": "--HZrn8LNNQ:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "professor.info",
+   "positive_chunk": "-0He46qh6eA:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "hungerroot.com",
+   "positive_chunk": "-0Nqf7_dCco:transcript#00000",
+   "df": 4
+  },
+  {
+   "query": "boogie298",
+   "positive_chunk": "-0f-IpXfJpg:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "IP48",
+   "positive_chunk": "-0luxGapYgM:transcript#00005",
+   "df": 5
+  },
+  {
+   "query": "lc30",
+   "positive_chunk": "-0nasPutXw8:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "GDID",
+   "positive_chunk": "-0pFznEJf14:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "soap.com",
+   "positive_chunk": "-0z4WvomhR8:transcript#00000",
+   "df": 8
+  },
+  {
+   "query": "CareYaya",
+   "positive_chunk": "-10Zkzv08NY:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "centex.com",
+   "positive_chunk": "-13yIXiyFAs:transcript#00005",
+   "df": 1
+  },
+  {
+   "query": "UNAM",
+   "positive_chunk": "-19cPqrjdl4:transcript#00000",
+   "df": 3
+  },
+  {
+   "query": "them1",
+   "positive_chunk": "---QOvVaOdA:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "T2209C",
+   "positive_chunk": "--00W-HwPUw:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "N1EK",
+   "positive_chunk": "--6rCTZ8jtE:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "A350",
+   "positive_chunk": "--86Lodo7Xk:transcript#00000",
+   "df": 7
+  },
+  {
+   "query": "OfferUp",
+   "positive_chunk": "--CcesqjWuo:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "K22S",
+   "positive_chunk": "--ECCBN-E_8:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "briany.com",
+   "positive_chunk": "--HZrn8LNNQ:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "LayerX",
+   "positive_chunk": "--UNTFoiJao:transcript#00005",
+   "df": 1
+  },
+  {
+   "query": "SKHENX",
+   "positive_chunk": "--ylb2NiHXM:transcript#00000",
+   "df": 9
+  },
+  {
+   "query": "CMRG",
+   "positive_chunk": "-04ndQKhk58:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "professor.ai",
+   "positive_chunk": "-0He46qh6eA:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "Theo.gg",
+   "positive_chunk": "-0JO6Id1iTo:transcript#00000",
+   "df": 5
+  },
+  {
+   "query": "hungerroot.com",
+   "positive_chunk": "-0Nqf7_dCco:transcript#00000",
+   "df": 4
+  },
+  {
+   "query": "boogie298",
+   "positive_chunk": "-0f-IpXfJpg:transcript#00000",
+   "df": 1
+  }
+ ],
+ "lowdf_exact": [
+  {
+   "query": "them1",
+   "positive_chunk": "---QOvVaOdA:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "LPGB",
+   "positive_chunk": "--00W-HwPUw:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "CX300",
+   "positive_chunk": "--86Lodo7Xk:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "and2",
+   "positive_chunk": "--9wpql3ovI:transcript#00000",
+   "df": 32
+  },
+  {
+   "query": "creditcards.com",
+   "positive_chunk": "--CcesqjWuo:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "K22S",
+   "positive_chunk": "--ECCBN-E_8:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "briany.com",
+   "positive_chunk": "--HZrn8LNNQ:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "aprofitboardroom.com",
+   "positive_chunk": "--cs4ZjAqkQ:transcript#00000",
+   "df": 29
+  },
+  {
+   "query": "COBOL",
+   "positive_chunk": "--kRGUoL6yM:transcript#00000",
+   "df": 11
+  },
+  {
+   "query": "SKHX",
+   "positive_chunk": "--ylb2NiHXM:transcript#00000",
+   "df": 15
+  },
+  {
+   "query": "options.com",
+   "positive_chunk": "-0-uIFN1UFM:transcript#00000",
+   "df": 21
+  },
+  {
+   "query": "to10",
+   "positive_chunk": "-04ndQKhk58:transcript#00000",
+   "df": 57
+  },
+  {
+   "query": "professor.info",
+   "positive_chunk": "-0He46qh6eA:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "gravity.google",
+   "positive_chunk": "-0Irz8G0PEE:transcript#00000",
+   "df": 72
+  },
+  {
+   "query": "fall.ai",
+   "positive_chunk": "-0Ivi9RUQXM:transcript#00000",
+   "df": 22
+  },
+  {
+   "query": "hungerroot.com",
+   "positive_chunk": "-0Nqf7_dCco:transcript#00000",
+   "df": 4
+  },
+  {
+   "query": "finance.com",
+   "positive_chunk": "-0WiTn8krRM:transcript#00000",
+   "df": 32
+  },
+  {
+   "query": "toAI",
+   "positive_chunk": "-0_8gPam4tM:transcript#00000",
+   "df": 55
+  },
+  {
+   "query": "WLTP",
+   "positive_chunk": "-0evIHNesOY:transcript#00000",
+   "df": 41
+  },
+  {
+   "query": "boogie298",
+   "positive_chunk": "-0f-IpXfJpg:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "IP48",
+   "positive_chunk": "-0luxGapYgM:transcript#00005",
+   "df": 5
+  },
+  {
+   "query": "MPPP",
+   "positive_chunk": "-0mi8-uudQQ:transcript#00000",
+   "df": 17
+  },
+  {
+   "query": "lc30",
+   "positive_chunk": "-0nasPutXw8:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "GDID",
+   "positive_chunk": "-0pFznEJf14:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "fidelity.com",
+   "positive_chunk": "-0z0_kMqItY:transcript#00000",
+   "df": 11
+  },
+  {
+   "query": "soap.com",
+   "positive_chunk": "-0z4WvomhR8:transcript#00000",
+   "df": 8
+  },
+  {
+   "query": "CareYaya",
+   "positive_chunk": "-10Zkzv08NY:transcript#00000",
+   "df": 2
+  },
+  {
+   "query": "centex.com",
+   "positive_chunk": "-13yIXiyFAs:transcript#00005",
+   "df": 1
+  },
+  {
+   "query": "UNAM",
+   "positive_chunk": "-19cPqrjdl4:transcript#00000",
+   "df": 3
+  },
+  {
+   "query": "VLAN",
+   "positive_chunk": "-1BMiYZfz38:transcript#00000",
+   "df": 28
+  }
+ ],
+ "moderate_df_exact": [
+  {
+   "query": "PlayStation",
+   "positive_chunk": "--6rCTZ8jtE:transcript#00000",
+   "df": 276
+  },
+  {
+   "query": "USDA",
+   "positive_chunk": "--CcesqjWuo:transcript#00000",
+   "df": 144
+  },
+  {
+   "query": "HDMI",
+   "positive_chunk": "--ECCBN-E_8:transcript#00000",
+   "df": 363
+  },
+  {
+   "query": "ALGO",
+   "positive_chunk": "--PTmyCwp5c:transcript#00000",
+   "df": 754
+  },
+  {
+   "query": "CrossFit",
+   "positive_chunk": "--S4Z2CWHV4:transcript#00000",
+   "df": 224
+  },
+  {
+   "query": "TSMC",
+   "positive_chunk": "--UNTFoiJao:transcript#00004",
+   "df": 403
+  },
+  {
+   "query": "MACD",
+   "positive_chunk": "--ckbcS-JTQ:transcript#00000",
+   "df": 795
+  },
+  {
+   "query": "DRAM",
+   "positive_chunk": "--ylb2NiHXM:transcript#00000",
+   "df": 190
+  },
+  {
+   "query": "google.com",
+   "positive_chunk": "--z5AgosN8A:transcript#00000",
+   "df": 485
+  },
+  {
+   "query": "K2.5",
+   "positive_chunk": "-01ZCTt-CJw:transcript#00000",
+   "df": 188
+  },
+  {
+   "query": "FOMO",
+   "positive_chunk": "-04ndQKhk58:transcript#00000",
+   "df": 672
+  },
+  {
+   "query": "GPT5",
+   "positive_chunk": "-0Ae7XGvAew:transcript#00000",
+   "df": 849
+  },
+  {
+   "query": "SOPs",
+   "positive_chunk": "-0He46qh6eA:transcript#00000",
+   "df": 538
+  },
+  {
+   "query": "PNPM",
+   "positive_chunk": "-0JO6Id1iTo:transcript#00000",
+   "df": 137
+  },
+  {
+   "query": "MAGA",
+   "positive_chunk": "-0V2reIYIqc:transcript#00000",
+   "df": 272
+  },
+  {
+   "query": "CPAP",
+   "positive_chunk": "-0WN1pxZNrI:transcript#00000",
+   "df": 194
+  },
+  {
+   "query": "CEOs",
+   "positive_chunk": "-0_8gPam4tM:transcript#00000",
+   "df": 844
+  },
+  {
+   "query": "AIdriven",
+   "positive_chunk": "-0mi8-uudQQ:transcript#00000",
+   "df": 510
+  },
+  {
+   "query": "FastTrack",
+   "positive_chunk": "-0nasPutXw8:transcript#00000",
+   "df": 129
+  },
+  {
+   "query": "VPNs",
+   "positive_chunk": "-0pFznEJf14:transcript#00000",
+   "df": 189
+  },
+  {
+   "query": "DHEA",
+   "positive_chunk": "-0vzTEVvglY:transcript#00000",
+   "df": 143
+  },
+  {
+   "query": "GLP-1",
+   "positive_chunk": "-10Zkzv08NY:transcript#00002",
+   "df": 694
+  },
+  {
+   "query": "GLP1",
+   "positive_chunk": "-10Zkzv08NY:transcript#00017",
+   "df": 762
+  },
+  {
+   "query": "th000",
+   "positive_chunk": "-13yIXiyFAs:transcript#00005",
+   "df": 212
+  },
+  {
+   "query": "VMware",
+   "positive_chunk": "-1BMiYZfz38:transcript#00000",
+   "df": 114
+  },
+  {
+   "query": "TikTok",
+   "positive_chunk": "-1Dbkq1S7No:transcript#00000",
+   "df": 445
+  },
+  {
+   "query": "GLM5",
+   "positive_chunk": "-1Giuk3lVpE:transcript#00001",
+   "df": 200
+  },
+  {
+   "query": "FAQs",
+   "positive_chunk": "-1I7QkKUYqk:transcript#00000",
+   "df": 210
+  },
+  {
+   "query": "settings.json",
+   "positive_chunk": "-1K_ZWDKpU0:transcript#00000",
+   "df": 211
+  },
+  {
+   "query": "Nex.js",
+   "positive_chunk": "-1MPVzEOx2g:transcript#00000",
+   "df": 536
+  }
+ ],
+ "common_terms": [
+  {
+   "query": "YouTube",
+   "df": 17287
+  },
+  {
+   "query": "Google",
+   "df": 18513
+  },
+  {
+   "query": "Python",
+   "df": 4851
+  },
+  {
+   "query": "ChatGPT",
+   "df": 1826
+  },
+  {
+   "query": "iPhone",
+   "df": 2561
+  },
+  {
+   "query": "NVIDIA",
+   "df": 5591
+  },
+  {
+   "query": "JavaScript",
+   "df": 2570
+  },
+  {
+   "query": "Windows",
+   "df": 6642
+  }
+ ],
+ "short_natural": [
+  {
+   "tier": "holdout",
+   "stratum": "ytis_natural",
+   "query": "Android requiring developer verification even for sideloaded apps",
+   "positive_video": "-R76VJtTDJ8"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "ytis_natural",
+   "query": "what peptides actually do for repairing the body",
+   "positive_video": "-AB_qREYFjE"
+  }
+ ],
+ "semantic_technical": [
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that quantization makes large models runnable on consumer laptops",
+   "positive_video": "-XNZn6kgeYc"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that developer jobs are shifting away from hands on coding",
+   "positive_video": "-CcgKoE4Zv0"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that automated accounting platforms failed at basic bookkeeping",
+   "positive_video": "-ChZxVBAFNA"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that WPA3 dragonfly handshake is vulnerable to downgrade attacks",
+   "positive_video": "-Qc23Pn9bTU"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "academic research on whether passive investing breaks market price discovery",
+   "positive_video": "-jysGHtWkxE"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that lowering triglycerides did not reduce cardiovascular events",
+   "positive_video": "-B8ybQ-L264"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that observer expectations bias clinical trial ratings",
+   "positive_video": "-B8ix1xZnlI"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that record options activity can signal a market top",
+   "positive_video": "-K_or7zNHDw"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that global capital flows into the United States are reversing",
+   "positive_video": "-g18lTMvwIo"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that a company kept buying bitcoin despite its stock underperforming",
+   "positive_video": "-h0WALimfkY"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "what the supreme court ruled about police entering homes without a warrant",
+   "positive_video": "-9KPpbTohWLg"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that early blooms followed by hard freezes destroyed fruit harvests",
+   "positive_video": "-9i-XbOD86lM"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that consistency beats motivation for long term fat loss",
+   "positive_video": "-ANngQqYfms"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "first person account of what progressive memory loss feels like",
+   "positive_video": "-D0vMwQfm40"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that professionals from non tech backgrounds are moving into AI work",
+   "positive_video": "-C03-zdzkkY"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that data centers are taking electricity away from residents",
+   "positive_video": "-Ma6jRDi4Ik"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that high yield preferred shares carry credit risk unlike treasuries",
+   "positive_video": "-iTKeUQSBbI"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "claims that real dopamine comes from cold exposure exercise and hard work",
+   "positive_video": "-KLhuTBV-_8"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence linking an overnight futures drop to cancelled geopolitical negotiations",
+   "positive_video": "-L24MXKtzCo"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "wiki_evidence",
+   "query": "evidence that Musk pay approval depended on a board stacked with friends",
+   "positive_video": "-aw4lr1XR_I"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "how to add a passcode lock to a streaming service profile",
+   "positive_video": "-Wh5jVEeN3Q"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "expose a local LLM as a server with an OpenAI compatible API endpoint",
+   "positive_video": "-XNZn6kgeYc"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "deploy a self hosted automation instance on a cloud VM",
+   "positive_video": "-Xc3ywS54MY"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "fixing full height layouts on mobile with dynamic viewport units",
+   "positive_video": "-ZHJ9i-8WDE"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "implementation pattern where the server sends HTML fragments the browser swaps in",
+   "positive_video": "-Z_0KNu8uQg"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "keeping a client relationship calendar with birthdays and anniversaries",
+   "positive_video": "-ZLivwEjLcA"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "turn an Android app into a floating movable bubble window",
+   "positive_video": "-StugKKWldE"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "connect a knowledge graph MCP server to a chat assistant",
+   "positive_video": "-C2X4fp734s"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "structuring corporate owned life insurance to shelter passive income",
+   "positive_video": "-i7jYJmD3dY"
+  },
+  {
+   "tier": "holdout",
+   "stratum": "review_arch",
+   "query": "planning corporate liquidity for retirement without a retained earnings tax hit",
+   "positive_video": "-kiiw3yStP8"
+  }
+ ],
+ "near_twins": [
+  {
+   "twin": "them1",
+   "mutant": "them3",
+   "positive_chunk": "---QOvVaOdA:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "LPGB",
+   "mutant": "LPG3",
+   "positive_chunk": "--00W-HwPUw:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "CX300",
+   "mutant": "CX303",
+   "positive_chunk": "--86Lodo7Xk:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "and2",
+   "mutant": "and3",
+   "positive_chunk": "--9wpql3ovI:transcript#00000",
+   "mutant_df": 10
+  },
+  {
+   "twin": "creditcards.com",
+   "mutant": "creditcards.co3",
+   "positive_chunk": "--CcesqjWuo:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "K22S",
+   "mutant": "K223",
+   "positive_chunk": "--ECCBN-E_8:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "briany.com",
+   "mutant": "briany.co3",
+   "positive_chunk": "--HZrn8LNNQ:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "aprofitboardroom.com",
+   "mutant": "aprofitboardroom.co3",
+   "positive_chunk": "--cs4ZjAqkQ:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "COBOL",
+   "mutant": "COBO3",
+   "positive_chunk": "--kRGUoL6yM:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "SKHX",
+   "mutant": "SKH3",
+   "positive_chunk": "--ylb2NiHXM:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "options.com",
+   "mutant": "options.co3",
+   "positive_chunk": "-0-uIFN1UFM:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "to10",
+   "mutant": "to13",
+   "positive_chunk": "-04ndQKhk58:transcript#00000",
+   "mutant_df": 2
+  }
+ ],
+ "punct_heavy": [
+  {
+   "query": "top-of-the-line",
+   "positive_chunk": "--S4Z2CWHV4:transcript#00000",
+   "df": 130
+  },
+  {
+   "query": "risk-to-reward",
+   "positive_chunk": "--ZWgVABq9s:transcript#00000",
+   "df": 592
+  },
+  {
+   "query": "pay-per-view",
+   "positive_chunk": "--ylb2NiHXM:transcript#00000",
+   "df": 52
+  },
+  {
+   "query": "year-over-year",
+   "positive_chunk": "-04ndQKhk58:transcript#00000",
+   "df": 884
+  },
+  {
+   "query": "notebooklm.google.com",
+   "positive_chunk": "-0He46qh6eA:transcript#00000",
+   "df": 14
+  },
+  {
+   "query": "anti-gravity.google",
+   "positive_chunk": "-0Irz8G0PEE:transcript#00000",
+   "df": 72
+  },
+  {
+   "query": "samgregory.co.uk",
+   "positive_chunk": "-0JO6Id1iTo:transcript#00000",
+   "df": 1
+  },
+  {
+   "query": "one-sizefits-all",
+   "positive_chunk": "-0V2reIYIqc:transcript#00000",
+   "df": 220
+  },
+  {
+   "query": "50-year-old",
+   "positive_chunk": "-0f-IpXfJpg:transcript#00000",
+   "df": 123
+  },
+  {
+   "query": "wall-to-wall",
+   "positive_chunk": "-0luxGapYgM:transcript#00002",
+   "df": 21
+  },
+  {
+   "query": "edge-to-edge",
+   "positive_chunk": "-0luxGapYgM:transcript#00003",
+   "df": 16
+  },
+  {
+   "query": "4.1-inch",
+   "positive_chunk": "-0luxGapYgM:transcript#00006",
+   "df": 1
+  },
+  {
+   "query": "19-year-old",
+   "positive_chunk": "-0pFznEJf14:transcript#00000",
+   "df": 90
+  },
+  {
+   "query": "month-to-month",
+   "positive_chunk": "-0z0_kMqItY:transcript#00000",
+   "df": 120
+  },
+  {
+   "query": "30-year-old",
+   "positive_chunk": "-10Zkzv08NY:transcript#00014",
+   "df": 133
+  },
+  {
+   "query": "best-in-class",
+   "positive_chunk": "-1BxzLzcKsM:transcript#00000",
+   "df": 190
+  },
+  {
+   "query": "80-year-old",
+   "positive_chunk": "-1Dbkq1S7No:transcript#00000",
+   "df": 81
+  },
+  {
+   "query": "peer-to-peer",
+   "positive_chunk": "-1K_ZWDKpU0:transcript#00000",
+   "df": 212
+  },
+  {
+   "query": "1.1.1",
+   "positive_chunk": "-1XJEUL2X6I:transcript#00000",
+   "df": 50
+  },
+  {
+   "query": "up-to-date",
+   "positive_chunk": "-1XgzGiPzY0:transcript#00000",
+   "df": 2013
+  },
+  {
+   "query": "son-in-law",
+   "positive_chunk": "-1ghHUd6DQo:transcript#00000",
+   "df": 31
+  },
+  {
+   "query": "10-year-old",
+   "positive_chunk": "-29azIB-9yk:transcript#00000",
+   "df": 148
+  },
+  {
+   "query": "day-to-day",
+   "positive_chunk": "-2IJ2e28-QE:transcript#00000",
+   "df": 2393
+  },
+  {
+   "query": "all-in-one",
+   "positive_chunk": "-2U56XrULEs:transcript#00000",
+   "df": 2253
+  },
+  {
+   "query": "20-year-old",
+   "positive_chunk": "-2UXATvAaYA:transcript#00000",
+   "df": 226
+  },
+  {
+   "query": "neck-and-neck",
+   "positive_chunk": "-2d0G-ixmG8:transcript#00000",
+   "df": 81
+  },
+  {
+   "query": "eight-year-old",
+   "positive_chunk": "-2hOrrogLOs:transcript#00000",
+   "df": 30
+  },
+  {
+   "query": "9-to-f5",
+   "positive_chunk": "-2zPUThcfXk:transcript#00000",
+   "df": 16
+  },
+  {
+   "query": "12-year-old",
+   "positive_chunk": "-2zclMwTTmU:transcript#00000",
+   "df": 118
+  },
+  {
+   "query": "end-to-end",
+   "positive_chunk": "-2ztNwvF-VQ:transcript#00000",
+   "df": 1707
+  }
+ ]
+}

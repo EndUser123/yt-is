@@ -21,9 +21,10 @@ from .contracts import EvidenceResult
 
 DEFAULT_LIMIT = 8
 FTS_DB = routing.FTS_DB
-# set by the routing-policy comparison (section 9); containment-priority is
-# the leading hypothesis until measurement confirms
-DEFAULT_POLICY = "C_containment_priority"
+# Selected by the v3 routing comparison (routing_dev_results.json):
+# D_weighted won on df2-10 tie ranking (R@1 0.533 vs C 0.467); all of
+# B/C/D restore the deterministic df=1 property (R@1 = 1.0).
+DEFAULT_POLICY = "D_weighted"
 
 
 class ProductionQuery:
