@@ -2883,3 +2883,20 @@ Operator-directed cutover 2026-08-16 ~12:20-13:00 (fix session stopped,
   P:/tmp/yt-is-pre-scrub-backup-20260815.bundle (last copy of leaked
   material) + P:/tmp/yt-is-scrub-mirror when satisfied.
 <!-- END security-incident-20260815-cutover -->
+
+<!-- BEGIN incident-cleanup-20260816 (agent: zcode) -->
+## Incident cleanup complete (2026-08-16 evening)
+
+- Pre-scrub bundle + coldcheck clone deleted — NO local copy of the leaked
+  material remains on this machine.
+- Fork check: **0 forks** (repo is PUBLIC — support request still
+  worthwhile to purge cached commit views of c720775).
+- `114ecf3e`: untracked 1,554 tracked-but-ignored files (687 sharded-lane
+  runtime exhaust, 39 batch_size_series, 3 .claude-state/tdd — one held an
+  `hmac_secret`, now untracked — ~820 misc logs) + empty
+  `.data/yt-is/locks/nlm-auth.lock` (new ignore rule for locks dir).
+  `git ls-files -i -c --exclude-standard` → **0**. Checkout dirty entries
+  now 12 (runtime receipts/playwright, deliberately on-disk-only).
+- ONLY remaining incident item: operator files the GitHub Support request
+  (cached c720775). Everything else closed.
+<!-- END incident-cleanup-20260816 -->
