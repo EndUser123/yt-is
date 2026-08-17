@@ -70,7 +70,11 @@ def main(argv: list[str] | None = None) -> int:
     # 2. EU contract + catalog
     eus = [authority.build_eu(x) for x in rows]
     conn = catalog.connect()
-    written = catalog.store_eus(conn, eus, generation=1)
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    smoke_build = f"smoke/a0-{run_id}"
+    catalog.claim_smoke_build(conn, smoke_build)
+    # smoke writes to its own namespace: generation 0, never a production gen
+    written = catalog.store_eus(conn, eus, generation=0, build_id=smoke_build)
     r.counts["eus"] = len(eus)
     r.check("catalog_wrote_all", written == len(eus), f"{written}/{len(eus)}")
 

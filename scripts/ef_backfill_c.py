@@ -31,6 +31,10 @@ GEN = 1
 VIDEO_BATCH = 200          # transcripts per embed batch-group
 
 
+def production_build_id(spec) -> str:
+    return f"generation/gen{spec['generation']}-{buildspec.spec_digest(spec)}"
+
+
 def main() -> int:
     spec = buildspec.GEN1
     assert spec["generation"] == GEN
@@ -48,6 +52,9 @@ def main() -> int:
           f"(includes incomplete-metadata Case A)")
 
     conn = catalog.connect()
+    build_id = production_build_id(spec)
+    catalog.claim_production_generation(conn, GEN, build_id,
+                                        buildspec.spec_digest(spec))
     done = {r[0] for r in conn.execute(
         "select distinct video_id from eu where build_generation=? "
         "and media_kind='transcript'", (GEN,)).fetchall()}
@@ -116,7 +123,7 @@ def main() -> int:
         n_pts += ps.upsert_chunks(qc, chunks,
                                   [d.tolist() for d in dense], lex,
                                   eu_meta, GEN)
-        catalog.store_eus(conn, eus, generation=GEN)
+        catalog.store_eus(conn, eus, generation=GEN, build_id=build_id)
         catalog.store_chunks(conn, chunks)
         fts.executemany("insert into chunks(text, chunk_id) values (?, ?)",
                         [(c.text, c.chunk_id) for c in chunks])
