@@ -1,23 +1,40 @@
 #!/usr/bin/env python3
-"""Pipeline health watcher — write an alert file when something needs attention.
+"""Pipeline health watcher — alert-file writer over the unified monitor model.
 
-Designed to run on a 5-minute schedule (Task Scheduler or cron). Checks:
-  1. Supervisor process alive (if state says 'running')
-  2. Auth health (keepalive probe, exit != 0 = alert)
-  3. Transcript growth stalled (no new entries in 30 min during an active run)
-  4. Success rate degrading (last 5 chunks < 70%)
+Rewritten 2026-08-17 (decision packet Deliverable 2/3): this script no
+longer reimplements its own health semantics. It consumes
+``scripts.pipeline_monitor.compute_health`` — ONE health model — and maps
+the verdict to the existing alert-file/exit-code contract:
 
-Writes P:/.data/yt-is/pipeline-alert.txt when any check fires; clears it
-when all pass. The operator (or any agent session) reads this file.
+  writes P:/.data/yt-is/pipeline-alert.txt and exits 1 when the model is
+  alertable; clears the file and exits 0 when it is not.
+
+Verified defects this rewrite removes:
+  * the old supervisor check read ``chunks[-1]["runtime_receipt"]["pid"]``,
+    a key the supervisor never writes (dead check — the 8h-silent-failure
+    risk was unmitigable through it). Liveness now comes from the model's
+    supervisor_runtime.json heartbeat/lease/pid re-derivation.
+  * the old notebook check parsed a dry-run ``deleted=`` count that the
+    producer emits unconditionally as zero. Notebooks are now judged from
+    real cleanup receipts (``failed>0``) and an explicit opt-in inventory
+    probe; unavailable inventory reports UNKNOWN, never zero.
+  * the old fixed 70%-over-5-chunks threshold is replaced by the model's
+    per-account rolling-baseline/peer/tail deviation detectors.
+
+Auth remains a typed-probe question: exit 2/3 from the keepalive probe is
+an auth alert; exit 4 (backup push) is a warning only, never AUTH_BLOCKED.
+
+Designed to run on a 5-minute Task Scheduler cadence (one-shot default)
+or as a bounded loop with ``--loop`` while ingestion is active. The
+watcher is never required for ingestion: it only reads and writes its own
+alert file.
 """
 
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import json
 from pathlib import Path
-import sqlite3
 import subprocess
 import sys
 
@@ -25,161 +42,154 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from csf.paths import get_batch_db_path, get_transcript_db_path, load_workspace_env
+from csf.paths import load_workspace_env  # noqa: E402
+
+from scripts.pipeline_monitor import MonitorContext, compute_health  # noqa: E402
 
 ALERT_FILE = Path("P:/.data/yt-is/pipeline-alert.txt")
 STATE_FILE = Path("P:/.data/yt-is/unattended-backlog/state.json")
-STALL_THRESHOLD_MIN = 30
-DEGRADE_THRESHOLD = 0.70
-DEGRADE_WINDOW = 5
+
+# Model states that justify an alert file entry (everything the unified
+# health model marks alertable except informational unknowns handled below).
+ALERT_STATES = {
+    "UNKNOWN_STALE",
+    "BLOCKED_ORPHAN",
+    "STALLED",
+    "AUTH_BLOCKED",
+    "RUNNING_DEGRADED",
+    "ACCOUNT_DEGRADED",
+    "PAUSED_BUT_RESUME_INEFFECTIVE",
+    "STOPPED_FAILURE",
+    "EVIDENCE_INCOMPLETE",
+}
 
 
-def check_supervisor_alive() -> str | None:
-    """If state says running, verify the process exists."""
-    if not STATE_FILE.is_file():
-        return None  # no active run
-    try:
-        state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return "supervisor state file unreadable"
-    if state.get("status") != "running":
-        return None  # not running, nothing to check
-    runtime = state.get("chunks", [])
-    if not runtime:
-        return None
-    latest = runtime[-1]
-    rt_receipt = latest.get("runtime_receipt", {})
-    pid = rt_receipt.get("pid")
-    if not pid:
-        return None
-    try:
-        import psutil
-        proc = psutil.Process(int(pid))
-        if not proc.is_running():
-            return f"supervisor pid {pid} is dead but state says 'running'"
-    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
-        return f"supervisor pid {pid} not found but state says 'running'"
-    return None
+def check_auth_keepalive() -> tuple[str | None, str | None]:
+    """Typed auth probe via the scheduled-maintenance keepalive command.
 
-
-def check_auth() -> str | None:
-    """Run keepalive probe; non-zero exit = auth issue."""
+    Returns (alert, warning): exit 2/3 (unrestorable storage / dead
+    session) alert; exit 4 (backup push failed) warning only; exit 0
+    clean. Never infers auth from failure strings.
+    """
     result = subprocess.run(
         [sys.executable, "-m", "csf.nlm_keepalive"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=120,
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
     )
-    if result.returncode != 0:
+    if result.returncode in (2, 3):
         lines = [l for l in result.stdout.splitlines() if "failed" in l.lower()]
-        detail = lines[0][:100] if lines else f"exit {result.returncode}"
-        return f"auth keepalive failed: {detail}"
-    return None
+        detail = lines[0][:120] if lines else f"keepalive exit {result.returncode}"
+        return f"auth keepalive failed: {detail}", None
+    if result.returncode == 4:
+        return None, "auth healthy but keepalive backup push failed (exit 4)"
+    if result.returncode != 0:
+        return None, f"keepalive probe exited {result.returncode} (unclassified)"
+    return None, None
 
 
-def check_transcript_growth(transcript_db: Path) -> str | None:
-    """If supervisor is running, transcripts should be growing."""
-    if not STATE_FILE.is_file():
-        return None
-    try:
-        state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        if state.get("status") != "running":
-            return None
-    except (json.JSONDecodeError, OSError):
-        return None
+def run_once(
+    *,
+    state_path: Path | None,
+    db_path: Path | None,
+    alert_file: Path,
+    include_control_plane: bool = True,
+    include_host: bool = True,
+    skip_auth_probe: bool = False,
+) -> int:
+    load_workspace_env()
+    ctx = MonitorContext.create(
+        state_path=state_path, db_path=db_path, load_env=not db_path
+    )
+    report = compute_health(
+        ctx, include_host=include_host, include_control_plane=include_control_plane
+    )
+    lines: list[str] = []
+    state = report.get("state")
+    if state in ALERT_STATES:
+        lines.append(f"[health] state={state}: {report.get('explanation')}")
+    for alert in report.get("alerts") or []:
+        lines.append(f"[{alert.get('code')}] {alert.get('detail')}")
+    if not skip_auth_probe:
+        auth_alert, auth_warning = check_auth_keepalive()
+        if auth_alert:
+            lines.append(f"[auth] {auth_alert}")
+        elif auth_warning:
+            lines.append(f"[auth-warning] {auth_warning}")
 
-    conn = sqlite3.connect(f"file:{transcript_db}?mode=ro", uri=True)
-    try:
-        latest = conn.execute(
-            "SELECT MAX(cached_at) FROM transcript_cache"
-        ).fetchone()[0]
-        if not latest:
-            return None
-        # cached_at is ISO datetime
-        latest_dt = datetime.fromisoformat(latest)
-        now = datetime.now(timezone.utc)
-        if latest_dt.tzinfo is None:
-            latest_dt = latest_dt.replace(tzinfo=timezone.utc)
-        age_min = (now - latest_dt).total_seconds() / 60
-        if age_min > STALL_THRESHOLD_MIN:
-            return f"no new transcripts in {age_min:.0f} min during active run"
-    except Exception:
-        pass
-    finally:
-        conn.close()
-    return None
-
-
-def check_success_rate() -> str | None:
-    """Check recent chunks for degradation."""
-    if not STATE_FILE.is_file():
-        return None
-    try:
-        state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    chunks = state.get("chunks", [])
-    if len(chunks) < DEGRADE_WINDOW:
-        return None
-    recent = chunks[-DEGRADE_WINDOW:]
-    rates = []
-    for c in recent:
-        sel = c.get("selected_count", 0)
-        comp = c.get("selected_complete_count", 0)
-        if sel > 0:
-            rates.append(comp / sel)
-    if rates and sum(rates) / len(rates) < DEGRADE_THRESHOLD:
-        return f"success rate {sum(rates)/len(rates)*100:.0f}% across last {len(rates)} chunks"
-    return None
+    if lines:
+        content = (
+            f"PIPELINE ALERT — {datetime.now(timezone.utc).isoformat()}\n"
+            + "\n".join(lines)
+            + "\n"
+        )
+        alert_file.parent.mkdir(parents=True, exist_ok=True)
+        alert_file.write_text(content, encoding="utf-8")
+        print(content)
+        return 1
+    if alert_file.exists():
+        alert_file.unlink()
+        print(f"all checks passed — cleared {alert_file}")
+    else:
+        print("all checks passed")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--state-path", type=Path, default=None)
+    parser.add_argument("--db-path", type=Path, default=None)
+    parser.add_argument("--alert-file", type=Path, default=ALERT_FILE)
+    parser.add_argument("--no-control-plane", action="store_true")
+    parser.add_argument("--no-host", action="store_true")
+    parser.add_argument(
+        "--skip-auth-probe",
+        action="store_true",
+        help="skip the live keepalive subprocess probe (use receipts only)",
+    )
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help="keep watching every --interval seconds until interrupted",
+    )
+    parser.add_argument("--interval", type=float, default=300.0)
     args = parser.parse_args(argv)
 
-    load_workspace_env()
-    transcript_db = get_transcript_db_path()
-
-    def check_stale_notebooks() -> str | None:
-        """Check for orphaned worker notebooks via the cleanup command (dry)."""
-        result = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "bin" / "csf-source"),
-             "cleanup-worker-notebooks"],
-            capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=300,
+    if not args.loop:
+        return run_once(
+            state_path=args.state_path,
+            db_path=args.db_path,
+            alert_file=args.alert_file,
+            include_control_plane=not args.no_control_plane,
+            include_host=not args.no_host,
+            skip_auth_probe=args.skip_auth_probe,
         )
-        output = result.stdout or ""
-        # The command reports deleted=N; with no --delete it's a dry-run count
-        for line in output.splitlines():
-            if "deleted=" in line and "deleted=0" not in line:
-                return f"stale worker notebooks detected: {line.strip()}"
-        return None
 
-    alerts = []
-    for check_name, check_fn in [
-        ("supervisor", check_supervisor_alive),
-        ("auth", check_auth),
-        ("growth", lambda: check_transcript_growth(transcript_db)),
-        ("degradation", check_success_rate),
-        ("notebooks", check_stale_notebooks),
-    ]:
-        result = check_fn()
-        if result:
-            alerts.append(f"[{check_name}] {result}")
+    import time
 
-    if alerts:
-        content = (
-            f"PIPELINE ALERT — {datetime.now(timezone.utc).isoformat()}\n"
-            + "\n".join(alerts) + "\n"
-        )
-        ALERT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        ALERT_FILE.write_text(content, encoding="utf-8")
-        print(content)
-        return 1
-    else:
-        if ALERT_FILE.exists():
-            ALERT_FILE.unlink()
-            print(f"all checks passed — cleared {ALERT_FILE}")
-        else:
-            print("all checks passed")
+    try:
+        while True:
+            exit_code = run_once(
+                state_path=args.state_path,
+                db_path=args.db_path,
+                alert_file=args.alert_file,
+                include_control_plane=not args.no_control_plane,
+                include_host=not args.no_host,
+                skip_auth_probe=args.skip_auth_probe,
+            )
+            time.sleep(max(30.0, args.interval))
+            if exit_code == 0:
+                # Keep looping while the system is idle-but-healthy only if
+                # there is nothing pending; stop once fully terminal.
+                state = MonitorContext.create(
+                    state_path=args.state_path, db_path=args.db_path
+                ).supervisor_status
+                if state in {"completed", "completed_with_failures"}:
+                    break
+    except KeyboardInterrupt:
         return 0
+    return 0
 
 
 if __name__ == "__main__":

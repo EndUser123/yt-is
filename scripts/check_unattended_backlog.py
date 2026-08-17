@@ -407,7 +407,14 @@ def _validate_latest_summary(
     issues: list[str],
 ) -> None:
     if summary is None:
-        if supervisor_status in {"planned", "paused", "completed"}:
+        if supervisor_status in {
+            "planned",
+            "planning",
+            "paused",
+            "recovering",
+            "completed",
+            "completed_with_failures",
+        }:
             issues.append("latest_summary_missing")
         return
     summary_status = summary.get("status")
@@ -416,8 +423,15 @@ def _validate_latest_summary(
         return
     expected = {
         "planned": {"planned", "no_work"},
-        "paused": {"completed"},
+        "planning": {"planned", "no_work"},
+        # The supervisor legitimately parks a budget-exhausted run in
+        # ``paused`` with the last chunk ``partial`` (terminalized
+        # failures continue to the next chunk; run_unattended_backlog.py
+        # paused/partial contract).
+        "paused": {"completed", "partial"},
+        "recovering": {"completed", "partial"},
         "completed": {"completed", "no_work"},
+        "completed_with_failures": {"completed", "no_work"},
     }.get(supervisor_status)
     if expected is not None and summary_status not in expected:
         issues.append(f"{supervisor_status}_summary_mismatch")
@@ -513,7 +527,17 @@ def inspect_backlog(*, db_path: Path, state_path: Path) -> dict[str, object]:
         issues.append(f"database_unreadable:{type(exc).__name__}")
 
     supervisor_status = state.get("status")
-    if supervisor_status not in {"planned", "running", "paused", "completed", "failed", "stopped"}:
+    if supervisor_status not in {
+        "planned",
+        "planning",
+        "running",
+        "recovering",
+        "paused",
+        "completed",
+        "completed_with_failures",
+        "failed",
+        "stopped",
+    }:
         issues.append("state_status_invalid")
 
     chunks = state.get("chunks", [])
@@ -595,9 +619,16 @@ def inspect_backlog(*, db_path: Path, state_path: Path) -> dict[str, object]:
         )
     if supervisor_status in {"stopped", "failed"}:
         issues.append(f"supervisor_{supervisor_status}")
-    if supervisor_status == "completed" and pending_count not in (None, 0):
+    if (
+        supervisor_status in {"completed", "completed_with_failures"}
+        and pending_count not in (None, 0)
+    ):
         issues.append("completed_with_pending_rows")
-    if pending_count == 0 and supervisor_status not in {"completed", "planned"}:
+    if pending_count == 0 and supervisor_status not in {
+        "completed",
+        "completed_with_failures",
+        "planned",
+    }:
         issues.append("no_pending_rows_without_terminal_completion")
 
     config = state.get("config") if isinstance(state.get("config"), dict) else {}
@@ -616,9 +647,9 @@ def inspect_backlog(*, db_path: Path, state_path: Path) -> dict[str, object]:
     }
     if issues:
         health_status = "needs_attention"
-    elif supervisor_status == "planned":
+    elif supervisor_status in {"planned", "planning"}:
         health_status = "planned"
-    elif supervisor_status == "completed":
+    elif supervisor_status in {"completed", "completed_with_failures"}:
         health_status = "healthy"
     else:
         health_status = "healthy" if pending_count is not None else "needs_attention"

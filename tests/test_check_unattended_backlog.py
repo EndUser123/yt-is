@@ -522,3 +522,173 @@ def test_pid_is_alive_false_for_exited_pid_and_invalid_inputs() -> None:
     )
     assert child.wait(timeout=30) == 0
     assert mod._pid_is_alive(child.pid) is False
+
+
+# ---------------------------------------------------------------------------
+# Supervisor-vocabulary contract fixes (2026-08-17 monitor work)
+#
+# Reproduced incident: the checker rejected the supervisor's legitimate
+# budget-pause state (state=paused + last chunk partial, after terminalized
+# failures) with `paused_summary_mismatch`, and treated
+# planning/recovering/completed_with_failures as invalid statuses. The
+# producer contract is run_unattended_backlog.py: the paused/partial
+# continuation rule and the completed_with_failures terminal status.
+# ---------------------------------------------------------------------------
+
+
+def _state_with_summary(path: Path, db_path: Path, status: str, summary_path: Path) -> None:
+    _state(path, db_path, status, summary_path=summary_path)
+
+
+def test_paused_with_partial_summary_is_healthy(tmp_path):
+    """The reproduced paused_summary_mismatch case must now pass.
+
+    Mirrors the live 2026-08-17 state: supervisor paused after exhausting
+    the invocation budget with the last chunk partial (3 complete + 1
+    failed of 4 selected, all terminal in the DB)."""
+    db_path = tmp_path / "batch.sqlite"
+    state_path = tmp_path / "state.json"
+    manifest_path = tmp_path / "manifest.json"
+    receipt_path = tmp_path / "receipt.json"
+    video_ids = [f"{index:011d}" for index in range(4)]
+    # Background backlog outside the chunk scope: the supervisor pauses on
+    # invocation budget with pending work remaining (live-shape state).
+    _db(db_path, ["pending"] * 4 + ["pending"] * 20)
+    write_video_selection_manifest(
+        manifest_path,
+        {
+            "manifest_version": 1,
+            "generated_at": "2026-08-17T00:00:00+00:00",
+            "selection_name": "multi-account-run-partial-a-hominidae",
+            "selection_criteria": {
+                "status": "pending",
+                "account_profile": "a.hominidae",
+                "run_id": "run-partial",
+            },
+            "videos": [
+                {"video_id": vid, "source_note": "analysis_status:pending"}
+                for vid in video_ids
+            ],
+        },
+    )
+    manifest = load_video_selection_manifest(manifest_path)
+    snapshot = {
+        vid: {"video_id": vid, "status": "pending"} for vid in video_ids
+    }
+    selection = select_manifest_entries(manifest, snapshot)
+    receipt = build_selection_receipt(
+        manifest,
+        selection,
+        manifest_path=manifest_path.resolve(),
+        database_path=db_path.resolve(),
+        max_items=4,
+        dry_run=False,
+    )
+    receipt.update(
+        {
+            "coordinator_snapshot_version": 1,
+            "database_snapshot_rows": [snapshot[vid] for vid in video_ids],
+            "run_id": "run-partial",
+            "account_profile": "a.hominidae",
+        }
+    )
+    write_selection_receipt(receipt_path, receipt)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE analysis_status SET status='complete' WHERE video_id IN (?, ?, ?)",
+            video_ids[:3],
+        )
+        conn.execute(
+            "UPDATE analysis_status SET status='failed' WHERE video_id=?",
+            (video_ids[3],),
+        )
+        conn.commit()
+    summary_path = tmp_path / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "status": "partial",
+                "run_id": "run-partial",
+                "selected_count": 4,
+                "selected_complete_count": 3,
+                "selected_status_counts": {"complete": 3, "failed": 1},
+                "account_results": [
+                    {
+                        "account_profile": "a.hominidae",
+                        "status": "partial",
+                        "manifest_path": str(manifest_path.resolve()),
+                        "receipt_path": str(receipt_path.resolve()),
+                        "selected_status_counts": {"complete": 3, "failed": 1},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    _state_with_summary(state_path, db_path, "paused", summary_path)
+
+    payload = mod.inspect_backlog(db_path=db_path, state_path=state_path)
+
+    assert payload["health_status"] == "healthy"
+    assert "paused_summary_mismatch" not in payload["issues"]
+    assert payload["issues"] == []
+
+
+@pytest.mark.parametrize(
+    "status", ["planning", "recovering", "completed_with_failures", "planned", "paused"]
+)
+def test_extended_supervisor_statuses_are_valid(tmp_path, status):
+    """planning/recovering/completed_with_failures must not be
+    state_status_invalid (verified producer vocabulary)."""
+    db_path = tmp_path / "batch.sqlite"
+    _db(db_path, ["pending"] * 3)
+    state_path = tmp_path / "state.json"
+    _state(state_path, db_path, status)
+
+    payload = mod.inspect_backlog(db_path=db_path, state_path=state_path)
+
+    assert "state_status_invalid" not in payload["issues"]
+
+
+def test_completed_with_failures_with_no_work_summary(tmp_path):
+    """completed_with_failures terminates after a no_work summary with
+    terminalized failures: counts must reconcile and stay healthy."""
+    db_path = tmp_path / "batch.sqlite"
+    _db(db_path, [])
+    summary_path = tmp_path / "summary.json"
+    _summary(
+        summary_path,
+        "no_work",
+        selected_count=0,
+        complete_count=0,
+        status_counts={},
+    )
+    state_path = tmp_path / "state.json"
+    _state_with_summary(state_path, db_path, "completed_with_failures", summary_path)
+
+    payload = mod.inspect_backlog(db_path=db_path, state_path=state_path)
+
+    assert "completed_with_failures_summary_mismatch" not in payload["issues"]
+    assert payload["health_status"] in {"healthy", "planned"}
+
+
+def test_paused_still_rejects_failed_summary(tmp_path):
+    """Vocabulary fix must not weaken validation: paused + failed summary
+    is still a mismatch requiring attention."""
+    db_path = tmp_path / "batch.sqlite"
+    _db(db_path, ["pending"] * 5)
+    summary_path = tmp_path / "summary.json"
+    _summary(
+        summary_path,
+        "failed",
+        selected_count=4,
+        complete_count=1,
+        status_counts={"complete": 1, "failed": 3},
+    )
+    state_path = tmp_path / "state.json"
+    _state_with_summary(state_path, db_path, "paused", summary_path)
+
+    payload = mod.inspect_backlog(db_path=db_path, state_path=state_path)
+
+    assert "paused_summary_mismatch" in payload["issues"]
+    assert payload["health_status"] == "needs_attention"

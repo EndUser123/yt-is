@@ -36,6 +36,7 @@ if str(REPO_ROOT) not in sys.path:
 from csf.nlm_auth_check import expected_email_for_account_profile
 from csf.batch_status import get_entries_for_video_ids_details
 from csf.cleanup_staging import cleanup_staging
+from csf.code_identity import resolve_code_identity
 from csf.nlm_client import ensure_account_session
 from csf.paths import (
     get_batch_db_path,
@@ -575,6 +576,9 @@ def _summary_payload(
     payload: dict[str, object] = {
         "run_id": run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        # Run-level code provenance: resolved once per summary, never raises;
+        # unresolved git reports source="unknown" with None fields.
+        "code_identity": resolve_code_identity(),
         "db_path": str(db_path),
         "transcript_cache_db_path": str(
             Path(transcript_cache_db_path or get_transcript_db_path()).resolve()
