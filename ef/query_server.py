@@ -43,7 +43,7 @@ class ProductionQuery:
 
     # ---- leg builders -------------------------------------------------
 
-    def _semantic_legs(self, query_text: str, flt) -> tuple[list, list]:
+    def _semantic_legs(self, query_text: str, flt, qc=None) -> tuple[list, list]:
         """Server-side hybrid (dense + learned sparse, RRF) -> point list,
         and the raw dense/sparse fused ids (positions imply both legs)."""
         qv, qlw = self._encode(query_text)
@@ -56,7 +56,7 @@ class ProductionQuery:
                 values=[float(qlw[t]) for t in idxs]),
                 using=ps.LEX_NAME, limit=100),
         ]
-        res = server.client().query_points(
+        res = (qc or server.client()).query_points(
             collection_name=self.collection, prefetch=prefetch,
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=100, query_filter=flt, with_payload=True)
@@ -114,7 +114,7 @@ class ProductionQuery:
         qc = server.client()
 
         if route.intent == "semantic":
-            points, _ = self._semantic_legs(query_text, flt)
+            points, _ = self._semantic_legs(query_text, flt, qc)
             final = [(p, p.score) for p in points[:limit]]
             exact_hit = False
         elif route.intent == "exact_strict":
@@ -137,7 +137,7 @@ class ProductionQuery:
                 # as evidence for identifier intent.
                 final = []
             else:
-                points, _ = self._semantic_legs(query_text, flt)
+                points, _ = self._semantic_legs(query_text, flt, qc)
                 sem_ids = [p.payload["chunk_id"] for p in points]
                 fused = routing.fuse_identifier_priority(fts_ids, sem_ids, limit)
                 by_id = {p.payload["chunk_id"]: p for p in points}

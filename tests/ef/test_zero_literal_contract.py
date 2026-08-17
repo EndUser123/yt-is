@@ -48,10 +48,10 @@ def test_explicit_exact_zero_literals_empty():
 
 
 def test_ambiguous_ordinary_single_word_stays_semantic():
-    # df tiebreak: conventional words route semantic (never hard-empty)
-    assert routing.classify("Google", df=30000).intent == "semantic"
-    assert routing.classify("Python", df=9000).intent == "semantic"
-    assert routing.classify("YouTube", df=17287).intent == "semantic"
+    assert routing.classify("Google").intent == "semantic"
+    assert routing.classify("Python").intent == "semantic"
+    assert routing.classify("YouTube").intent == "semantic"
+    assert routing.classify("TikTok").intent == "semantic"
 
 
 def test_normal_short_semantic_stays_semantic():
@@ -60,7 +60,7 @@ def test_normal_short_semantic_stays_semantic():
 
 
 def test_high_confidence_automatic_identifiers():
-    for tok in ("RPC9", "hizoJc", "--resume-worker", "ClassName.method_name",
+    for tok in ("RPC9", "GR0000tn2", "--resume-worker", "ClassName.method_name",
                 "ERROR_RESOURCE_EXHAUSTED", "Qwen3-Reranker-4B", "kimik.com"):
         r = routing.classify(tok)
         assert r.intent in ("identifier", "exact_strict"), (tok, r)

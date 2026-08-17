@@ -95,12 +95,19 @@ def sanitize_fts_query(query: str) -> str:
     return " ".join(f'"{t}"' for t in terms)
 
 
-def classify(query: str, exact: bool | None = None,
-             df: int | None = None) -> Routing:
-    """Intent classification. Strong structural shapes -> identifier at
-    ANY df. Ambiguous single alphabetic words (only case structure) use a
-    df tiebreak: rare => identifier, conventional => semantic (operator
-    examples: hizoJc identifier; YouTube/Google/Python semantic)."""
+def classify(query: str, exact: bool | None = None) -> Routing:
+    """Intent classification (E-gate rule 3: df NEVER determines intent).
+
+    exact_strict : explicit exact=true or quoted literal.
+    identifier   : STRONG structural shape only (digits, punctuation
+                   joins, snake_case, CLI flags, ALLCAPS). Any df.
+    semantic     : everything else, including ambiguous human tokens
+                   (TikTok, YouTube, Google, Python AND random camel
+                   strings like hizoJc — documented deviation: syntax
+                   cannot separate hizoJc from TikTok, ambiguous defaults
+                   semantic; the quoted-literal / exact=true channels
+                   exist precisely for demanding literal semantics).
+    """
     if exact is True:
         return Routing("exact_strict", "explicit exact mode")
     if is_quoted_literal(query):
@@ -108,12 +115,7 @@ def classify(query: str, exact: bool | None = None,
     t = _strip_quotes(query).strip()
     if _STRONG_IDENT.match(t):
         return Routing("identifier", "strong identifier shape (any df)")
-    if _WEAK_IDENT.match(t):
-        d = document_frequency(query) if df is None else df
-        if d <= DF_WORD_ID_MAX:
-            return Routing("identifier", f"weak shape, df={d} rare")
-        return Routing("semantic", f"conventional word, df={d}")
-    return Routing("semantic", "natural language")
+    return Routing("semantic", "natural/ambiguous token (any df)")
 
 
 # ---------- fusion policies ----------

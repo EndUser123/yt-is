@@ -45,15 +45,17 @@ def test_rare_identifier_routes_identifier():
     assert routing.classify("GR0000tn2").intent == "identifier"
 
 
-def test_conventional_words_route_semantic_df_tiebreak():
-    # ambiguous single-word class: df tiebreak per operator examples
-    assert routing.classify("YouTube", df=17287).intent == "semantic"
-    assert routing.classify("Google", df=30000).intent == "semantic"
-    assert routing.classify("Python", df=9000).intent == "semantic"
+def test_ambiguous_human_tokens_route_semantic_no_df():
+    # E-gate rule 3: df never determines intent; ambiguous defaults
+    # semantic (incl. TikTok — compound spelling rarity is not intent)
+    for tok in ("YouTube", "Google", "Python", "TikTok", "hizoJc"):
+        assert routing.classify(tok).intent == "semantic", tok
 
 
-def test_rare_single_word_routes_identifier():
-    assert routing.classify("hizoJc", df=1).intent == "identifier"
+def test_quoted_literal_channel_for_ambiguous_identifiers():
+    # hechoJc-class tokens: literal demanders use the explicit channel
+    assert routing.classify('"hizoJc"').intent == "exact_strict"
+    assert routing.classify("hizoJc", exact=True).intent == "exact_strict"
 
 
 def test_explicit_exact_mode_forces_exact_strict():
@@ -76,7 +78,7 @@ def test_strong_shapes_are_df_independent():
     # strong structure (digits/punct/snake/CLI) => identifier at ANY df
     for shaped in ("RPC9", "GR0000tn2", "--resume-worker",
                    "ClassName.method_name", "gsd-map-codebase", "2.1.156"):
-        assert routing.classify(shaped, df=50000).intent == "identifier"
+        assert routing.classify(shaped).intent == "identifier"
 
 
 def test_identifier_priority_fusion_contract():
