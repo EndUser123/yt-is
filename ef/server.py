@@ -89,11 +89,31 @@ def stop() -> dict:
     return {"stopped": True, "pid": pid}
 
 
+_CLIENT = None
+_CLIENT_AT = 0.0
+
+
 def client(timeout: int = 120):
-    """Connected client; starts the server if needed."""
+    """Connected client; starts the server if needed. Cached — the old
+    per-call liveness check spawned PowerShell (~0.7s each, twice per
+    query; measured while chasing full-path latency)."""
+    global _CLIENT, _CLIENT_AT
+    import time as _time
+    now = _time.monotonic()
+    if _CLIENT is not None and now - _CLIENT_AT < 30:
+        return _CLIENT
+    if _CLIENT is not None:
+        try:
+            _CLIENT.get_collections()
+            _CLIENT_AT = now
+            return _CLIENT
+        except Exception:
+            _CLIENT = None
     start()
     from qdrant_client import QdrantClient
-    return QdrantClient(url=URL, timeout=timeout)
+    _CLIENT = QdrantClient(url=URL, timeout=timeout)
+    _CLIENT_AT = _time.monotonic()
+    return _CLIENT
 
 
 if __name__ == "__main__":

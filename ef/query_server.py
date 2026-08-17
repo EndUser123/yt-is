@@ -36,6 +36,10 @@ class ProductionQuery:
         self.collection = ps.collection_name(generation)
         self.policy = policy or DEFAULT_POLICY
         self._fts = None
+        self._ro_conn = None   # persistent authority reader: per-call
+        self._cat_conn = None  # persistent catalog reader
+        # connects cost ~1.4s against the 1.4GB WAL db (measured,
+        # same_corpus_baselines.json hydration_reopen_ms)
 
     # ---- leg builders -------------------------------------------------
 
@@ -72,6 +76,31 @@ class ProductionQuery:
             "select chunk_id from chunks where chunks match ? "
             "order by bm25(chunks) limit ?", (match, top)).fetchall()
         return [r[0] for r in rows]
+
+    def _reopen(self, eu_id: str, start: int, end: int) -> str:
+        """Snippet via PK lookups only: catalog eu_id -> authority_ref
+        (== transcripts.sqlite cache_key PK) -> substr. A video_id lookup
+        would full-scan the 1.4GB authority (no index on video_id)."""
+        import sqlite3
+        from . import catalog as _catalog
+        if self._cat_conn is None:
+            self._cat_conn = _catalog.connect()
+        if self._ro_conn is None:
+            from .authority import TRANSCRIPTS_DB
+            self._ro_conn = sqlite3.connect(
+                f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True)
+        cache_key = self._cat_conn.execute(
+            "select authority_ref from eu where eu_id=?", (eu_id,)).fetchone()
+        if cache_key is None:
+            raise LookupError(f"eu {eu_id} not in catalog")
+        lo = max(0, start - self.snippet_context)
+        row = self._ro_conn.execute(
+            "select substr(transcript, ?, ?) from transcript_cache "
+            "where cache_key = ?",
+            (lo + 1, (end + self.snippet_context) - lo, cache_key[0])).fetchone()
+        if row is None or row[0] is None:
+            raise LookupError(f"authority row missing for {cache_key[0]}")
+        return row[0]
 
     # ---- entry point ---------------------------------------------------
 
@@ -114,8 +143,8 @@ class ProductionQuery:
                 continue   # exact-lane hits respect filters too
             paths = ("fused", "dense", "sparse") + \
                 (("exact_fts5",) if exact_hit else ())
-            snippet = reopen_span(pl["video_id"], pl["start_char"],
-                                  pl["end_char"], context=self.snippet_context)
+            snippet = self._reopen(pl["eu_id"], pl["start_char"],
+                                   pl["end_char"])
             out.append(EvidenceResult(
                 chunk_id=pl["chunk_id"], eu_id=pl["eu_id"],
                 video_id=pl["video_id"], title=pl["title"] or "",

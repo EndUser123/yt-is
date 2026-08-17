@@ -1,0 +1,40 @@
+{
+ "ran_at": "2026-08-17T19:19:21Z",
+ "n_queries": 114,
+ "corpus_points": 166714,
+ "baselines": {
+  "dense_only": {
+   "mrr@10": 0.4744,
+   "recall@10": 0.614
+  },
+  "sparse_only": {
+   "mrr@10": 0.4175,
+   "recall@10": 0.5789
+  },
+  "hybrid_rrf": {
+   "mrr@10": 0.4945,
+   "recall@10": 0.6491
+  },
+  "fts5_only": {
+   "mrr@10": 0.0658,
+   "recall@10": 0.0789
+  },
+  "final_candidate": {
+   "policy": "D_weighted",
+   "mrr@10": 0.4989,
+   "recall@10": 0.6491
+  }
+ },
+ "stage_latency_ms": {
+  "encode_ms": 16.5,
+  "qdrant_dense_ms": 14.1,
+  "qdrant_sparse_ms": 13.3,
+  "fusion_rrf_ms": 4.9,
+  "fts5_ms": 17.6,
+  "hydration_reopen_ms": 1425.4
+ },
+ "end_to_end": {
+  "hybrid_server_only_ms_p95": 18.7,
+  "full_path_ms_p95": 1669.7
+ }
+}
