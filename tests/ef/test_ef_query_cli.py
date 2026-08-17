@@ -1,8 +1,12 @@
 """Contract tests for the ef_query CLI wrapper (scripts/ef_query.py).
 
-Only covers argument-level validation paths that need no encoder, Qdrant
-server, or corpus — the retrieval path itself is covered by the ef suite
-(query_server/routing tests) and was runtime-verified live on 2026-08-17.
+Covers argument-level validation paths that need no encoder, Qdrant
+server, or corpus. Coverage split for the retrieval path: routing and
+fusion DECISION logic is unit-covered elsewhere in tests/ef/
+(routing/test_zero_literal_contract); the semantic encode->Qdrant->RRF
+control flow has a mock-based test in test_query_server_semantic_path.py;
+the real encode/Qdrant/reopen stack is live-run-verified only (receipts
+in docs/handoffs/yt-is-ef-query-surface-20260817).
 """
 
 from __future__ import annotations
