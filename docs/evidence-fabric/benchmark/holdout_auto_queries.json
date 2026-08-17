@@ -1,0 +1,227 @@
+[
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "DeepSeek",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": "-XNZn6kgeYc:transcript#00000",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "OpenAI",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": "-XNZn6kgeYc:transcript#00001",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "GitHub",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": "-XNZn6kgeYc:transcript#00002",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "PagedAttention",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": "-XNZn6kgeYc:transcript#00003",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "ComfyUI",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": "-XNZn6kgeYc:transcript#00004",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "OnSlat",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": "-XNZn6kgeYc:transcript#00005",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "LightLLM",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": "-XNZn6kgeYc:transcript#00006",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "YouTube",
+  "positive_video": "-Xc3ywS54MY",
+  "positive_chunk": "-Xc3ywS54MY:transcript#00000",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "BF-16",
+  "positive_video": "-YYhDsoCQXI",
+  "positive_chunk": "-YYhDsoCQXI:transcript#00000",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "exact_identifiers",
+  "kind": "identifier",
+  "query": "WordPress",
+  "positive_video": "-YYvvpBiGxM",
+  "positive_chunk": "-YYvvpBiGxM:transcript#00000",
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "How to lock your Netflix profile",
+  "positive_video": "-Wh5jVEeN3Q",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "7 Open Source Tools You Need Right Now! - YouTube",
+  "positive_video": "-XNZn6kgeYc",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "Automate Content Ideation with AI Agents! (No-Code n8n Tutorial)",
+  "positive_video": "-Xc3ywS54MY",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "What is in My Server Rack?",
+  "positive_video": "-Xpc7T4YTxU",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "PureMac: a free CleanMyMac alternative with zero tracking and built-in auto-cleaning",
+  "positive_video": "-Y93NUVsPoY",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "I Thought Local AI Video Was Good",
+  "positive_video": "-YYhDsoCQXI",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "VIBE CODERS MUST BE STOPPED",
+  "positive_video": "-YYvvpBiGxM",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "TrueNAS News | AnyRAID Is Coming!",
+  "positive_video": "-Ycj2VVk3mg",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "AcKcHuLLy 100vh != 100vh",
+  "positive_video": "-ZHJ9i-8WDE",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "How to Generate AI Images in ElevenLabs Tutorial",
+  "positive_video": "-ZVH7sGSB8I",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "Go + HTMX + SQLite: The Ultimate Stack for the AI Era",
+  "positive_video": "-Z_0KNu8uQg",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "Is it possible? My Thoughts!",
+  "positive_video": "-ZaFppts_KU",
+  "positive_chunk": null,
+  "category": "Software Engineering"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "Why $110M CEO makes content",
+  "positive_video": "-XiImQAAaAg",
+  "positive_chunk": null,
+  "category": "Business"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "Unlock a Goldmine of Leads for FREE with Auto Lead Finder!",
+  "positive_video": "-YsAQqEf50Q",
+  "positive_chunk": null,
+  "category": "Business"
+ },
+ {
+  "tier": "holdout",
+  "stratum": "title_entity",
+  "kind": "title",
+  "query": "Claude cowork can clean up your desktop! #claudecowork #claude #aistartup #claudecode",
+  "positive_video": "-YyRoOtGJHA",
+  "positive_chunk": null,
+  "category": "Business"
+ }
+]
