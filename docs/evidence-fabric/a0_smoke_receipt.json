@@ -1,0 +1,309 @@
+{
+  "ran_at": "2026-08-17T00:54:22.528083+00:00",
+  "config": {
+    "n": 200,
+    "dense_model": "all-MiniLM-L6-v2",
+    "target_chars": 1100,
+    "overlap_chars": 150,
+    "bm25": "client-side lucene k1=1.2 b=0.75",
+    "device": "cuda"
+  },
+  "counts": {
+    "authority_rows": 200,
+    "eus": 200,
+    "chunks": 281,
+    "projected_points": 281
+  },
+  "timings_s": {
+    "dense_embed": 0.5750687000108883,
+    "sparse_encode": 0.1333159999921918,
+    "upsert": 0.8527398000005633,
+    "total": 8.811195400019642
+  },
+  "checks": [
+    {
+      "name": "authority_join_complete",
+      "ok": true,
+      "detail": "0 rows missing channel/title"
+    },
+    {
+      "name": "catalog_wrote_all",
+      "ok": true,
+      "detail": "200/200"
+    },
+    {
+      "name": "catalog_counts_match",
+      "ok": true,
+      "detail": "catalog eu=200 chunk=281"
+    },
+    {
+      "name": "dense_dim_consistent",
+      "ok": true,
+      "detail": "dim=384"
+    },
+    {
+      "name": "sparse_nonempty",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "projection_count_match",
+      "ok": true,
+      "detail": "281 vs 281"
+    },
+    {
+      "name": "all_queries_returned",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "roundtrip_span_exact",
+      "ok": true,
+      "detail": "chunk --PBDPI9gjY:transcript#00000 span [0,7693)"
+    },
+    {
+      "name": "url_format",
+      "ok": true,
+      "detail": "https://youtu.be/--PBDPI9gjY"
+    }
+  ],
+  "queries": [
+    {
+      "query": "semiconductor supply chain concentration risk",
+      "latency_s": 0.118,
+      "n_results": 5,
+      "top": [
+        {
+          "title": "Where The Options Market Is Pointing Next",
+          "channel": "Geeks of Finance",
+          "paths": [
+            "fused",
+            "dense",
+            "sparse"
+          ],
+          "score": 1.0,
+          "span": [
+            0,
+            7693
+          ]
+        },
+        {
+          "title": "The Open for Wednesday, July 29, 2026",
+          "channel": "BNN Bloomberg",
+          "paths": [
+            "fused",
+            "dense",
+            "sparse"
+          ],
+          "score": 0.4103,
+          "span": [
+            0,
+            92593
+          ]
+        },
+        {
+          "title": "'We've actually been using AI to forecast dividend growth since 2018':",
+          "channel": "BNN Bloomberg",
+          "paths": [
+            "fused",
+            "sparse"
+          ],
+          "score": 0.3333,
+          "span": [
+            0,
+            6647
+          ]
+        }
+      ]
+    },
+    {
+      "query": "how to backtest a trading strategy without overfitting",
+      "latency_s": 0.084,
+      "n_results": 5,
+      "top": [
+        {
+          "title": "Half Way there! 0DTE Vertical Spread Trade Results / SPX Expected Move",
+          "channel": "Axe Options",
+          "paths": [
+            "fused",
+            "dense",
+            "sparse"
+          ],
+          "score": 0.625,
+          "span": [
+            0,
+            2226
+          ]
+        },
+        {
+          "title": "Backtesting: Does It REALLY Matter for Trading Bots? #shorts",
+          "channel": "Algo Trading With Kevin Davey",
+          "paths": [
+            "fused",
+            "dense"
+          ],
+          "score": 0.5,
+          "span": [
+            0,
+            616
+          ]
+        },
+        {
+          "title": "Give me 8 minutes and I\u2019ll make you a dangerously confident trader",
+          "channel": "Fit Mom Trader",
+          "paths": [
+            "fused",
+            "dense",
+            "sparse"
+          ],
+          "score": 0.4167,
+          "span": [
+            0,
+            6989
+          ]
+        }
+      ]
+    },
+    {
+      "query": "why neural networks generalize despite overparameterization",
+      "latency_s": 0.081,
+      "n_results": 5,
+      "top": [
+        {
+          "title": "The logic for data centers the size of Manhattan",
+          "channel": "Maxinomics",
+          "paths": [
+            "fused",
+            "dense"
+          ],
+          "score": 0.5,
+          "span": [
+            0,
+            1159
+          ]
+        },
+        {
+          "title": "Your Salary Is About to Get Pummeled | MOONSHOTS",
+          "channel": "Peter H. Diamandis",
+          "paths": [
+            "fused",
+            "sparse"
+          ],
+          "score": 0.5,
+          "span": [
+            0,
+            618
+          ]
+        },
+        {
+          "title": "What Women Secretly Expect From Their Men #alisonarmstrong #psychology",
+          "channel": "The Quiet Take",
+          "paths": [
+            "fused",
+            "dense"
+          ],
+          "score": 0.3333,
+          "span": [
+            0,
+            433
+          ]
+        }
+      ]
+    },
+    {
+      "query": "the history of the Roman Republic's decline",
+      "latency_s": 0.092,
+      "n_results": 5,
+      "top": [
+        {
+          "title": "Why Peptides Should SCARE You - The Risks No One is Talking About",
+          "channel": "Neal K. Shah",
+          "paths": [
+            "fused",
+            "dense",
+            "sparse"
+          ],
+          "score": 0.6667,
+          "span": [
+            6655,
+            7689
+          ]
+        },
+        {
+          "title": "How Democracy Ends | COVID19 Gives A Road Map for Political Control",
+          "channel": "Vinay Prasad MD MPH",
+          "paths": [
+            "fused",
+            "dense"
+          ],
+          "score": 0.5,
+          "span": [
+            0,
+            9566
+          ]
+        },
+        {
+          "title": "Turn Book Covers Into 3D Photos with Google's NEW Pomelli Photoshoot",
+          "channel": "Author Update",
+          "paths": [
+            "fused",
+            "sparse"
+          ],
+          "score": 0.5,
+          "span": [
+            0,
+            9727
+          ]
+        }
+      ]
+    },
+    {
+      "query": "cooking technique for perfect steak searing",
+      "latency_s": 0.094,
+      "n_results": 5,
+      "top": [
+        {
+          "title": "These Insanely Good Garlic Butter Steak Bites Will Ruin Every Steakhou",
+          "channel": "",
+          "paths": [
+            "fused",
+            "dense",
+            "sparse"
+          ],
+          "score": 1.0,
+          "span": [
+            0,
+            10327
+          ]
+        },
+        {
+          "title": "Vegan Cheesy Roasted Cauliflower Bites \ud83e\udd2f vegan recipes",
+          "channel": "Epic Mint Leaves",
+          "paths": [
+            "fused",
+            "dense"
+          ],
+          "score": 0.3333,
+          "span": [
+            0,
+            1057
+          ]
+        },
+        {
+          "title": "3 Reasons WHY You should EAT TOFU",
+          "channel": "Mark Stache",
+          "paths": [
+            "fused",
+            "sparse"
+          ],
+          "score": 0.3333,
+          "span": [
+            0,
+            9832
+          ]
+        }
+      ]
+    }
+  ],
+  "ok": true
+}
