@@ -1,0 +1,387 @@
+[
+ {
+  "tier": "identifier_acceptance",
+  "query": "PowerPoint",
+  "positive_video": "09Wj5SM6xnE",
+  "positive_chunk": "09Wj5SM6xnE:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "09_-qJ95wX8",
+  "positive_chunk": "09_-qJ95wX8:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "OpenAI",
+  "positive_video": "0A5kv0ZfwnQ",
+  "positive_chunk": "0A5kv0ZfwnQ:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ChatGPT",
+  "positive_video": "0AOeanTal0g",
+  "positive_chunk": "0AOeanTal0g:transcript#00001",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "iPhone",
+  "positive_video": "0AtA6A_B8mo",
+  "positive_chunk": "0AtA6A_B8mo:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "AVEX",
+  "positive_video": "0B2ZfwTRhwk",
+  "positive_chunk": "0B2ZfwTRhwk:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "GR0000tn2",
+  "positive_video": "0BBVPLGsjxA",
+  "positive_chunk": "0BBVPLGsjxA:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "tabverified.substack.com",
+  "positive_video": "0BJkntCJoLY",
+  "positive_chunk": "0BJkntCJoLY:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "Figure02",
+  "positive_video": "0CVws9GjbwM",
+  "positive_chunk": "0CVws9GjbwM:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "GIMP",
+  "positive_video": "0DfL3JPDqH0",
+  "positive_chunk": "0DfL3JPDqH0:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "tabverifi.ai",
+  "positive_video": "0EaIUE_NLKg",
+  "positive_chunk": "0EaIUE_NLKg:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "papers.ai",
+  "positive_video": "0HotPgUCzyo",
+  "positive_chunk": "0HotPgUCzyo:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "0Ilq0ZruzbA",
+  "positive_chunk": "0Ilq0ZruzbA:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "NVIDIA",
+  "positive_video": "0J3xTeQTa_0",
+  "positive_chunk": "0J3xTeQTa_0:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "VRAM",
+  "positive_video": "0JDEb8LIrIs",
+  "positive_chunk": "0JDEb8LIrIs:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "0JNwTp0uKuE",
+  "positive_chunk": "0JNwTp0uKuE:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ChatGPT",
+  "positive_video": "0KNOVyVR42M",
+  "positive_chunk": "0KNOVyVR42M:transcript#00001",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "0Kv7_5nuEE8",
+  "positive_chunk": "0Kv7_5nuEE8:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ChatGpt",
+  "positive_video": "0LeKB4L4rgQ",
+  "positive_chunk": "0LeKB4L4rgQ:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "m2.7",
+  "positive_video": "0M71EZi29bs",
+  "positive_chunk": "0M71EZi29bs:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "PowerPoint",
+  "positive_video": "0OzJB7UYAe0",
+  "positive_chunk": "0OzJB7UYAe0:transcript#00000",
+  "category": "AI News"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "GIMP",
+  "positive_video": "-DavMzTwsiA",
+  "positive_chunk": "-DavMzTwsiA:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "WordPress",
+  "positive_video": "-DfHItj1bdM",
+  "positive_chunk": "-DfHItj1bdM:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "PLAYING",
+  "positive_video": "-DptKt3b0l0",
+  "positive_chunk": "-DptKt3b0l0:transcript#00002",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "package.json",
+  "positive_video": "-Dq1Gj9S8ew",
+  "positive_chunk": "-Dq1Gj9S8ew:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "-DuB0qIWj1Y",
+  "positive_chunk": "-DuB0qIWj1Y:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "MUSIC",
+  "positive_video": "-E97kKJTBxc",
+  "positive_chunk": "-E97kKJTBxc:transcript#00006",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "m.com",
+  "positive_video": "-EBzorVthFQ",
+  "positive_chunk": "-EBzorVthFQ:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "kimik3",
+  "positive_video": "-EPB2ObAKAk",
+  "positive_chunk": "-EPB2ObAKAk:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "VO3.1",
+  "positive_video": "-ER91HHWy-Q",
+  "positive_chunk": "-ER91HHWy-Q:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ELI5",
+  "positive_video": "-Ek68Uu9x5k",
+  "positive_chunk": "-Ek68Uu9x5k:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ABOL",
+  "positive_video": "-Erj2ur_RJs",
+  "positive_chunk": "-Erj2ur_RJs:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "node.js",
+  "positive_video": "-F0dZ2GxSuA",
+  "positive_chunk": "-F0dZ2GxSuA:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ChatGPT",
+  "positive_video": "-FCv-lvSJig",
+  "positive_chunk": "-FCv-lvSJig:transcript#00002",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ChatGBT",
+  "positive_video": "-FpXj-p-XPo",
+  "positive_chunk": "-FpXj-p-XPo:transcript#00000",
+  "category": "AI/ML"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "web3",
+  "positive_video": "-cdEmaW2poM",
+  "positive_chunk": "-cdEmaW2poM:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "-dYurJXw90Q",
+  "positive_chunk": "-dYurJXw90Q:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "FDIC",
+  "positive_video": "-dmfY8VDOa4",
+  "positive_chunk": "-dmfY8VDOa4:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "gemini.com",
+  "positive_video": "-eNlRcTmpHs",
+  "positive_chunk": "-eNlRcTmpHs:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "ClickUp",
+  "positive_video": "-eZ4AVJ2R2E",
+  "positive_chunk": "-eZ4AVJ2R2E:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "end3",
+  "positive_video": "-eauWgeCcFA",
+  "positive_chunk": "-eauWgeCcFA:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "redditlist.com",
+  "positive_video": "-fJfSYBFY44",
+  "positive_chunk": "-fJfSYBFY44:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "seo.ai",
+  "positive_video": "-fZ9O0FaAs4",
+  "positive_chunk": "-fZ9O0FaAs4:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "MailChimp",
+  "positive_video": "-fwMDs690Sc",
+  "positive_chunk": "-fwMDs690Sc:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "PhDs",
+  "positive_video": "-gBmoYYliWE",
+  "positive_chunk": "-gBmoYYliWE:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "discord.gg",
+  "positive_video": "-ggUBa0DpJ4",
+  "positive_chunk": "-ggUBa0DpJ4:transcript#00002",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "McDonald",
+  "positive_video": "-h3s8MMU8YM",
+  "positive_chunk": "-h3s8MMU8YM:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "-hL1slhfP9M",
+  "positive_chunk": "-hL1slhfP9M:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "diary.com",
+  "positive_video": "-hmCgiDOr3g",
+  "positive_chunk": "-hmCgiDOr3g:transcript#00000",
+  "category": "Business"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "OneDrive",
+  "positive_video": "0Nyz7OLD3Wo",
+  "positive_chunk": "0Nyz7OLD3Wo:transcript#00004",
+  "category": "Education"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "CompTIA",
+  "positive_video": "0QAz2g65DXI",
+  "positive_chunk": "0QAz2g65DXI:transcript#00000",
+  "category": "Education"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "dinoanddagness.com",
+  "positive_video": "0Sk19lci3JA",
+  "positive_chunk": "0Sk19lci3JA:transcript#00000",
+  "category": "Education"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "YouTube",
+  "positive_video": "0Z7HEr_R348",
+  "positive_chunk": "0Z7HEr_R348:transcript#00001",
+  "category": "Education"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "CapCut",
+  "positive_video": "0aV04LlTJ90",
+  "positive_chunk": "0aV04LlTJ90:transcript#00000",
+  "category": "Education"
+ },
+ {
+  "tier": "identifier_acceptance",
+  "query": "qatalog.com",
+  "positive_video": "0b5RPZlE9ds",
+  "positive_chunk": "0b5RPZlE9ds:transcript#00005",
+  "category": "Education"
+ }
+]
