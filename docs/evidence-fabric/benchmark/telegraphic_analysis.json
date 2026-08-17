@@ -1,0 +1,30 @@
+{
+ "configs_top3": {
+  "prod_rrf": {
+   "n": 30,
+   "judged_P@3": 0.4667,
+   "judged_any@3": 0.8,
+   "judged_nDCG@3": 0.6922
+  },
+  "dense_only": {
+   "n": 30,
+   "judged_P@3": 0.5,
+   "judged_any@3": 0.8333,
+   "judged_nDCG@3": 0.7282
+  },
+  "sparse_only": {
+   "n": 30,
+   "judged_P@3": 0.3444,
+   "judged_any@3": 0.6667,
+   "judged_nDCG@3": 0.551
+  },
+  "sparse_heavy": {
+   "n": 30,
+   "judged_P@3": 0.4333,
+   "judged_any@3": 0.7667,
+   "judged_nDCG@3": 0.7002
+  }
+ },
+ "judgment_count": 95,
+ "method": "union-of-top3 judgments; authored MRR from c3_final_battery: short_natural 0.313, comparison 0.242"
+}
