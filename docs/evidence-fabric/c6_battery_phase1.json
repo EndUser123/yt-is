@@ -1,0 +1,136 @@
+{
+ "ran_at": "2026-08-18T00:50:49.456341+00:00",
+ "gates": {
+  "exact_df1_strong": {
+   "n": 26,
+   "r1": 1.0,
+   "pass": true
+  },
+  "exact_df2_10_strong": {
+   "n": 12,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "exact_df11_100_strong": {
+   "n": 20,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "exact_df101_1000": {
+   "n": 25,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "punct_heavy": {
+   "n": 18,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "weak_df1": {
+   "n": 14,
+   "top3_literal": 1.0,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "zero_df_identifiers": {
+   "n": 12,
+   "empty_rate": 1.0,
+   "pass": true
+  },
+  "near_twins": {
+   "n": 12,
+   "false_pin": 0,
+   "pass": true
+  },
+  "weak_common_routed": {
+   "terms": [
+    "TikTok",
+    "YouTube",
+    "OpenAI"
+   ],
+   "routed_ambiguous": true,
+   "pass": true
+  },
+  "ambiguous_plain_routed": {
+   "routed_semantic": true,
+   "pass": true
+  },
+  "telegraphic_judged": {
+   "listing": 57,
+   "authored_mrr_info": 0.2493,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "semantic_technical_judged": {
+   "listing": 63,
+   "authored_mrr_info": 0.2836,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "comparison_questions_judged": {
+   "listing": 72,
+   "authored_mrr_info": 0.2639,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "weak_common_judged": {
+   "listing": 9,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "latency": {
+   "p95_s": 0.173,
+   "pass": true
+  },
+  "reopenability": {
+   "sampled": 29,
+   "ok": 29,
+   "pass": true
+  },
+  "filter": {
+   "n": 19,
+   "correct": 19,
+   "pass": true
+  },
+  "structural": {
+   "points": 166714,
+   "catalog": 166714,
+   "pass": true
+  },
+  "namespace": {
+   "pass": true
+  },
+  "freshness": {
+   "processed": 0,
+   "added": 0,
+   "updated": 0,
+   "deleted": 0,
+   "indexed_watermark": "2026-08-16T18:59:15.280975",
+   "lag": 0,
+   "pass": true
+  },
+  "qdrant_restart_reconnect": {
+   "pass": true
+  },
+  "reg_c1_df1_strong": {
+   "n": 15,
+   "r1": 1.0,
+   "pass": true
+  },
+  "reg_c2_literal_strong": {
+   "n": 31,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "reg_c2_twins": {
+   "n": 12,
+   "false_pin": 0,
+   "pass": true
+  },
+  "reg_c2_semantic": {
+   "mrr10": 0.7167,
+   "pass": true
+  }
+ },
+ "status": "judging_pending"
+}
