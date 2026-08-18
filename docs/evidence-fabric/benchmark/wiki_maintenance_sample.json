@@ -1,0 +1,62 @@
+{
+ "ran_at": "2026-08-18T19:48:42Z",
+ "sample": [
+  {
+   "claim": "ripgrep prunes dot-directories by default causing root-scope false negatives",
+   "last_verified": "2026-08-01",
+   "evidence": {
+    "n": 4,
+    "top_channel": "Ray Amjad",
+    "latency_s": 1.91
+   },
+   "contradiction": {
+    "n_diverse": 4,
+    "latency_s": 0.15
+   },
+   "staleness": {
+    "signal": "newer_material_candidate_needs_review",
+    "lag": 47,
+    "newer_count": 3,
+    "latency_s": 5.24
+   }
+  },
+  {
+   "claim": "protobuf 3.19.6 violated five packages' pins and blocked qdrant-client import",
+   "last_verified": "2026-08-16",
+   "evidence": {
+    "n": 4,
+    "top_channel": "freeCodeCamp.org",
+    "latency_s": 0.39
+   },
+   "contradiction": {
+    "n_diverse": 4,
+    "latency_s": 0.21
+   },
+   "staleness": {
+    "signal": "newer_material_candidate_needs_review",
+    "lag": 62,
+    "newer_count": 4,
+    "latency_s": 7.04
+   }
+  },
+  {
+   "claim": "Qdrant local mode brute-force scans are linear in corpus size",
+   "last_verified": "2026-08-16",
+   "evidence": {
+    "n": 4,
+    "top_channel": "Vladimir Sukhov",
+    "latency_s": 0.16
+   },
+   "contradiction": {
+    "n_diverse": 4,
+    "latency_s": 0.23
+   },
+   "staleness": {
+    "signal": "newer_material_candidate_needs_review",
+    "lag": 79,
+    "newer_count": 2,
+    "latency_s": 5.34
+   }
+  }
+ ]
+}
