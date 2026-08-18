@@ -26,6 +26,22 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+def _captured_at(eu_id: str):
+    """Reopen the authoritative captured_at for an EU via catalog PK."""
+    import sqlite3
+    from ef.catalog import CATALOG_DB
+    try:
+        conn = sqlite3.connect(f"file:{CATALOG_DB}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                "select captured_at from eu where eu_id=?", (eu_id,)).fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
 CONTRAST_FRAMES = [
     "{claim} problems limitations criticism",
     "evidence against {claim}",
@@ -113,23 +129,40 @@ def mode_staleness(pq, claim: str, last_verified: str,
         # caller can re-check via authority. Here we report candidates
         # with reopen provenance and let /wiki compare timestamps it
         # fetches (authority_ref exposed).
+        # M-gate #8: reopen captured_at from authority (canonical source)
+        # via catalog authority_ref — verified reliable; no contract change
+        cap = _captured_at(r.eu_id)
         newer.append({
             "role": "staleness_review_candidate",
             "video_id": r.video_id, "eu_id": r.eu_id,
             "source_url": r.url, "char_span": [r.start_char, r.end_char],
             "evidence_text": r.snippet[:300], "rank": res.index(r) + 1,
+            "captured_at": cap,
+            "newer_than_last_verified": (
+                (_parse_ts(cap) and lv) and _parse_ts(cap) > lv) or None,
         })
-    has_newer = None
+    # M-gate #7: freshness precondition — absence is NOT evidence while
+    # the index is materially behind the authority
+    from ef import freshness as _fr
+    try:
+        lag_now = _fr.compute_lag(
+            _fr.load_state().get("indexed_watermark", ""))["index_lag_count"]
+    except Exception:
+        lag_now = -1                       # unknown -> conservative
+    FRESH_LAG_MAX = 1000                   # operational contract threshold
+    fresh_enough = 0 <= lag_now <= FRESH_LAG_MAX
+
     if lv is None:
         signal = "unknown_last_verified"
+    elif not fresh_enough:
+        signal = "freshness_incomplete"    # no_new_evidence FORBIDDEN
     else:
-        # without per-hit timestamps in the result contract, the honest
-        # signal is review_eligible when any candidate exists; /wiki
-        # reopens spans and compares captured_at itself
         signal = ("newer_material_candidate_needs_review" if newer
                   else "no_new_evidence")
     return {"mode": "wiki_staleness", "claim": claim,
             "last_verified": last_verified, "signal": signal,
+            "ef_lag_at_query": lag_now,
+            "ef_fresh_enough": fresh_enough,
             "note": "signal = review eligibility, NOT staleness judgment; "
                     "/wiki reopens candidates (provenance retained) and "
                     "compares captured_at against last_verified",
