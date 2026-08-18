@@ -1,5 +1,7 @@
 """Slice-1 performance measurements (decision-quality, not a benchmark).
 
+Run from the repo root as ``python -m scripts.ops_console.measure`` (module
+execution makes the package importable without path bootstrapping).
 Launches the real console subprocess and measures the acceptance paths via
 Playwright/Chromium against live read-only monitor data.
 """
@@ -7,6 +9,7 @@ Playwright/Chromium against live read-only monitor data.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -15,10 +18,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO))
-
 from playwright.sync_api import sync_playwright
+
+REPO = Path(__file__).resolve().parents[2]
 
 LIVE_CHUNK, LIVE_ACCOUNT, LIVE_VIDEO = 63, "a.hominidae", "ACmFKptXc0s"
 
@@ -44,7 +46,7 @@ def wait_ready(base, proc):
     raise RuntimeError("not ready")
 
 
-env = {k: v for k, v in __import__("os").environ.items() if not k.startswith("PYTEST")}
+env = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST")}
 port = free_port()
 base = f"http://127.0.0.1:{port}"
 t0 = time.time()
@@ -68,11 +70,20 @@ try:
             return round(time.time() - t, 2)
 
         m = {"cold_start_to_http_ready_s": round(cold_start, 2)}
-        m["health_initial_render_s"] = timed("/operations", "PAUSED_BUT_RESUME_INEFFECTIVE")
 
-        # refresh retains previous, then completes
+        # Measure whatever state the monitor currently reports — never a
+        # hard-coded incident string.
+        from scripts.pipeline_monitor import MonitorContext, compute_health
+
+        current_state = compute_health(MonitorContext.create()).get("state", "")
+        assert current_state, "monitor returned no state"
+        m["monitor_state_measured"] = current_state
+        m["health_initial_render_s"] = timed("/operations", current_state)
+
+        # refresh retains the current presentation, then completes
         page.get_by_role("button").filter(has_text="Refresh health").click()
         page.wait_for_selector("text=previous result shown below", timeout=8000)
+        assert page.locator(f"text={current_state}").count() > 0
         t = time.time()
         page.wait_for_selector("text=previous result shown below", state="detached", timeout=90000)
         m["health_refresh_s"] = round(time.time() - t, 2)

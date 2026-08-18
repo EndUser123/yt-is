@@ -173,14 +173,31 @@ DRILL_VIDEO_UNKNOWN = {
 # ---- health presentation -----------------------------------------------------
 
 def test_health_paused_but_resume_ineffective_causal_chain():
+    """Deterministic coverage of the historical incident presentation.
+
+    Must remain independent of today's live production state. Verifies the
+    full causal story from monitor output alone: paused with resume
+    ineffective, backlog present, resume expected (paused supervisor + task
+    fired), the resume target ineffective, production state not advanced,
+    and supporting evidence available.
+    """
     view = vm.health_view(HEALTH_PAUSED_INEFFECTIVE)
     assert view["state"] == "PAUSED_BUT_RESUME_INEFFECTIVE"
     chain = {item["label"]: item["value"] for item in view["chain"]}
+    # resume was expected: supervisor paused and the scheduled task fired
+    assert view["supervisor_status"] == "paused"
     assert chain["resume task fired after pause"] is True
-    assert chain["production state advanced after last fire"] is False
+    # the resume target is ineffective
     assert chain["resume mechanism reason"] == "does_not_target_canonical_state;plan_only_no_execute"
+    assert chain["resume mechanism effective"] is False
+    # production state did not advance
+    assert chain["production state advanced after last fire"] is False
+    # large backlog remains
     assert view["backlog"] == {"pending": 265532, "complete": 76172, "failed": 4940}
+    # supporting evidence: alert + freshness verdicts + last-chunk record
     assert view["alerts"][0]["code"] == "resume_mechanism_ineffective"
+    assert view["freshness"] == {"state": "stale", "backlog_db": "fresh", "heartbeat": "missing"}
+    assert view["last_chunk"]["chunk"] == 63
     assert view["alertable"] is True
 
 
