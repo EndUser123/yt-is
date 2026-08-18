@@ -92,3 +92,23 @@ agent: zcode · host: both
   port exhaustion (WinError 10048) after ~6K Qdrant HTTP calls — pace
   the drainer (sleep between batches) or add connection reuse; not a
   correctness issue (resumable, watermark-tracked).
+
+## Update 2026-08-18 (K-gate operationalization): COMPLETE
+
+- **Incremental service**: `scripts/ef_incremental_service.py` — paced
+  daemon (8s pause; fixes port exhaustion), error-tolerant, watermark-
+  safe across Qdrant outages. Soak in progress at press time: points
+  166,714 → 199,409+, lag 29K → ~18K and falling, ingestion unimpeded,
+  gen1 serving throughout.
+- **Cold-start decomposed**: import 0.12s | model load 10-12s | first
+  encode 0.96s | subsequent 39ms. Readiness lifecycle
+  (`ef/readiness.py`, states starting/warming/ready/degraded, durable
+  `readiness.json`): warm-start verified ready-in-10.3s, post-warmup
+  probe 37ms. No model change — hypothesis confirmed.
+- **Status surface complete** (`operational-status.json`): all K-gate
+  monitor fields incl. last_index_error, incremental_worker_state,
+  readiness, rollback_generation=0, sealed shards 04/05.
+- **Operational tests**: 4 green (idempotence, status completeness,
+  readiness contract, outage isolation with watermark survival).
+- **/wiki consumer handoff**: `WIKI_INTEGRATION_HANDOFF.md` (ef-query
+  CLI seam, three maintenance modes, A/B rule). No /wiki changes.
