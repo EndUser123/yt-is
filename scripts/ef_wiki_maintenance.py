@@ -31,6 +31,30 @@ def _captured_at(eu_id: str):
     return _captured_at_batch([eu_id]).get(eu_id)
 
 
+def _published_at_batch(eu_ids: list):
+    """Authoritative source publication time per EU (from video metadata;
+    present on ~92% of EUs). This — not captured_at — is the only basis
+    for 'genuinely newer evidence'."""
+    import sqlite3
+    from ef.catalog import CATALOG_DB
+    if not eu_ids:
+        return {}
+    out = {}
+    try:
+        conn = sqlite3.connect(f"file:{CATALOG_DB}?mode=ro", uri=True)
+        try:
+            for i in range(0, len(eu_ids), 500):
+                chunk = eu_ids[i:i + 500]
+                q = ("select eu_id, published_at from eu where eu_id in ("
+                     + ",".join("?" * len(chunk)) + ")")
+                out.update(dict(conn.execute(q, chunk).fetchall()))
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return {k: v for k, v in out.items() if v}
+
+
 def _captured_at_batch(eu_ids: list):
     """N-gate #1: ONE connection, ONE IN-query for all candidates —
     replaces per-candidate reopens (measured 5-7s -> batch). Same
@@ -135,6 +159,7 @@ def mode_staleness(pq, claim: str, last_verified: str,
     lv = _parse_ts(last_verified)
     res = pq.relevant(claim, limit=top_k)
     ts_map = _captured_at_batch([r.eu_id for r in res])
+    pub_map = _published_at_batch([r.eu_id for r in res])
     newer = []
     for r in res:
         ts = _parse_ts(getattr(r, "_captured_at", "") or "")
@@ -149,9 +174,16 @@ def mode_staleness(pq, claim: str, last_verified: str,
             "source_url": r.url, "char_span": [r.start_char, r.end_char],
             "evidence_text": r.snippet[:300], "rank": res.index(r) + 1,
             "captured_at": ts_map.get(r.eu_id),
-            "newer_than_last_verified": (
+            "published_at": pub_map.get(r.eu_id),
+            # O-gate: captured_at is INGESTION time — only published_at
+            # can justify "genuinely newer evidence"
+            "captured_after_last_verified": (
                 (ts_map.get(r.eu_id) and lv) and
                 _parse_ts(ts_map[r.eu_id]) > lv) or None,
+            "published_after_last_verified": (
+                (pub_map.get(r.eu_id) and lv) and
+                _parse_ts(pub_map[r.eu_id]) > _parse_ts(
+                    lv.isoformat() if hasattr(lv, "isoformat") else str(lv))) or None,
         })
     # M-gate #7: freshness precondition — absence is NOT evidence while
     # the index is materially behind the authority
@@ -164,13 +196,20 @@ def mode_staleness(pq, claim: str, last_verified: str,
     FRESH_LAG_MAX = 1000                   # operational contract threshold
     fresh_enough = 0 <= lag_now <= FRESH_LAG_MAX
 
+    any_genuinely_newer = any(c.get("published_after_last_verified")
+                              for c in newer)
+    any_newly_available = any(c.get("captured_after_last_verified")
+                              for c in newer)
     if lv is None:
         signal = "unknown_last_verified"
     elif not fresh_enough:
         signal = "freshness_incomplete"    # no_new_evidence FORBIDDEN
+    elif any_genuinely_newer:
+        signal = "newer_evidence_needs_review"           # published_at
+    elif any_newly_available:
+        signal = "newly_available_evidence_needs_review" # ingestion only
     else:
-        signal = ("newer_material_candidate_needs_review" if newer
-                  else "no_new_evidence")
+        signal = "no_new_evidence"
     return {"mode": "wiki_staleness", "claim": claim,
             "last_verified": last_verified, "signal": signal,
             "ef_lag_at_query": lag_now,

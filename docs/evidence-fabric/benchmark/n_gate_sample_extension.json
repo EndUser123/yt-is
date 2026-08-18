@@ -1,0 +1,72 @@
+[
+ {
+  "file": "nested-repo-files-invisible-to-parent-repo-scope-resolution.md",
+  "claim": "A parent repository's git tree structurally cannot see files inside a nested repository (gitlink pointer at best), so any verifier that resolves session-modified files against the ",
+  "last_verified": "2026-08-18"
+ },
+ {
+  "file": "narrative-sufficiency-awareness-enforcement-gap-2026.md",
+  "claim": "The narrative-sufficiency pattern is known across 6+ fields under different names. As of Q1-Q3 2026, the empirical shift is decisive: prose-rule compliance has been measured at ~68",
+  "last_verified": "2026-08-08"
+ },
+ {
+  "file": "forgetting-not-rejecting-distinguish-non-use-from-disapproval.md",
+  "claim": "When an operator doesn't use a feature, distinguish between \"doesn't want it\" (rejection \u2014 remove it) and \"forgets to use it\" (non-use \u2014 remind them). The failure mode: interpretin",
+  "last_verified": "2026-08-02"
+ },
+ {
+  "file": "squash-merging-onto-rewritten-history-silently-drops-lines-verify-by-tree-diff.md",
+  "claim": "After filter-repo rewrites one side of a fork, both sides share CONTENT ancestry but not GRAPH ancestry: the merge base falls back to the last pre-rewrite commit, and the three-way",
+  "last_verified": "2026-08-16"
+ },
+ {
+  "file": "file-locking-atomic-replace-cache-pattern.md",
+  "claim": "file locking atomic replace cache pattern",
+  "last_verified": "2026-08-02"
+ },
+ {
+  "file": "good-tests-vs-coverage-tests-the-mutation-discriminator.md",
+  "claim": "A coverage test exercises a code path and passes; a good test would FAIL if the behavior broke. The distinction: good tests assert on meaningful state changes or real outputs, not ",
+  "last_verified": "2026-08-09"
+ },
+ {
+  "file": "grok-build-tui-resume-wedge-model-catalog-churn-2026-08-14.md",
+  "claim": "Empirical finding (session 019ffc04, 2026-08-13\u219214): when a Grok Build TUI terminal resumes while a model-config change is in flight or a remote-catalog churn is active, in-load `m",
+  "last_verified": "2026-08-16"
+ },
+ {
+  "file": "deepseek-region-optin-failure-pattern.md",
+  "claim": "Selecting `go-deepseek-v4-flash` returns 403 RegionError with text \"The latest version of this model is only available hosted in China and requires explicit opt in.\" The operator's",
+  "last_verified": "2026-08-09"
+ },
+ {
+  "file": "closure-pressure-assumes-framing-is-right.md",
+  "claim": "Under session pressure, the agent defaults to framings that close the conversation rather than framings that commit to the best answer. Two surface forms recur across 4+ sessions: ",
+  "last_verified": "2026-08-09"
+ },
+ {
+  "file": "grok-hook-command-env-var-preflight.md",
+  "claim": "Grok's hook runner pre-validates ${VAR} references in hook command strings before spawning the process. If a referenced env var isn't set at spawn time, the hook is not executed an",
+  "last_verified": null
+ },
+ {
+  "file": "parallel-agent-session-management.md",
+  "claim": "Parallel agent session management refers to the practice of running multiple AI coding agent sessions concurrently to maximize team throughput, as described across multiple sources",
+  "last_verified": null
+ },
+ {
+  "file": "structural-success-detection-over-lexical-praise.md",
+  "claim": "Detecting operator lexical praise (\"love this\", \"great job\") to capture success patterns is a category error and a sycophancy-amplification vector. The correct signal is structural",
+  "last_verified": null
+ },
+ {
+  "file": "task-scheduler-restart-on-failure-only-covers-start-failures.md",
+  "claim": "Windows Task Scheduler's RestartOnFailure (\"If the task fails, restart every N\") only re-runs a task whose ACTION FAILED TO START. An action process that starts successfully and la",
+  "last_verified": null
+ },
+ {
+  "file": "claude-code-execution-control-patterns.md",
+  "claim": "Claude Code provides programmatic approaches to control, constrain, and verify AI agent behavior during software engineering tasks, including deterministic enforcement mechanisms f",
+  "last_verified": null
+ }
+]
