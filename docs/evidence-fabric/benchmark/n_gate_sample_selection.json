@@ -1,0 +1,107 @@
+[
+ {
+  "file": "design-patterns-domain-overview.md",
+  "claim": ">",
+  "last_verified": "2026-08-02"
+ },
+ {
+  "file": "agent-memory-systems.md",
+  "claim": ">",
+  "last_verified": "2026-08-04"
+ },
+ {
+  "file": "shared-mcp-infrastructure-grok-build.md",
+  "claim": ">",
+  "last_verified": "2026-08-16"
+ },
+ {
+  "file": "examples-over-rules-escape-hatch.md",
+  "claim": ">",
+  "last_verified": "2026-08-02"
+ },
+ {
+  "file": "detection-gates-cannot-fire-against-parked-files-operator-lifecycle-is-the-missing-input.md",
+  "claim": ">",
+  "last_verified": "2026-08-16"
+ },
+ {
+  "file": "zai-coding-plan-auto-routes-glm-5-2-requests-to-glm-5-3.md",
+  "claim": ">",
+  "last_verified": "2026-08-16"
+ },
+ {
+  "file": "cli-over-mcp-for-subagent-reachable-shared-query-surfaces.md",
+  "claim": ">",
+  "last_verified": "2026-08-18"
+ },
+ {
+  "file": "windows-terminal-concurrent-agent-session-workflow.md",
+  "claim": ">",
+  "last_verified": "2026-08-13"
+ },
+ {
+  "file": "behavioral-adoption-test-before-ship.md",
+  "claim": ">",
+  "last_verified": "2026-08-10"
+ },
+ {
+  "file": "ripgrep-hidden-dir-pruning-root-scope-false-negatives.md",
+  "claim": ">",
+  "last_verified": "2026-08-16"
+ },
+ {
+  "file": "verifier-scope-acceptance-name-the-file-not-the-directory.md",
+  "claim": ">",
+  "last_verified": "2026-08-18"
+ },
+ {
+  "file": "orchestrator-controlled-cross-model-validation-ship-py.md",
+  "claim": ">",
+  "last_verified": "2026-08-09"
+ },
+ {
+  "file": "analyst-exhibits-pattern-being-analyzed.md",
+  "claim": ">",
+  "last_verified": "2026-08-02"
+ },
+ {
+  "file": "pi-agentic-harness-hang-extension-tool-result-middleware-no-timeout.md",
+  "claim": ">",
+  "last_verified": "2026-08-16"
+ },
+ {
+  "file": "agent-config-directory-taxonomy.md",
+  "claim": ">",
+  "last_verified": "2026-07-26"
+ },
+ {
+  "file": "ai-automated-test-generation-patterns.md",
+  "claim": ">",
+  "last_verified": null
+ },
+ {
+  "file": "ai-agent-steering-and-self-improvement-patterns.md",
+  "claim": ">",
+  "last_verified": null
+ },
+ {
+  "file": "claude-code-guardrails.md",
+  "claim": ">",
+  "last_verified": null
+ },
+ {
+  "file": "free-ai-coding-alternatives.md",
+  "claim": ">",
+  "last_verified": null
+ },
+ {
+  "file": "generative-ai-tool-patterns.md",
+  "claim": ">",
+  "last_verified": null
+ },
+ {
+  "file": "skill-graph.md",
+  "claim": ">",
+  "last_verified": null
+ }
+]
