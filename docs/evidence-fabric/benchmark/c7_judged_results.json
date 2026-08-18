@@ -1,0 +1,35 @@
+{
+ "judged_by": "agent:zcode blind labels on c7 listing",
+ "results": {
+  "descriptive_semantic": {
+   "n": 21,
+   "judged_any@3": 0.9048,
+   "gate": 0.75,
+   "pass": true
+  },
+  "telegraphic": {
+   "n": 8,
+   "judged_any@3": 0.875,
+   "gate": 0.7,
+   "pass": true
+  },
+  "technical": {
+   "n": 6,
+   "judged_any@3": 1.0,
+   "gate": 0.75,
+   "pass": true
+  },
+  "comparison": {
+   "n": 8,
+   "judged_any@3": 0.75,
+   "gate": 0.75,
+   "pass": true
+  },
+  "weak_common": {
+   "n": 3,
+   "judged_any@3": 1.0,
+   "gate": 0.66,
+   "pass": true
+  }
+ }
+}

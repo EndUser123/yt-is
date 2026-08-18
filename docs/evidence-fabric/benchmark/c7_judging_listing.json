@@ -1,0 +1,978 @@
+{
+ "descriptive_semantic": [
+  {
+   "stratum": "descriptive_semantic",
+   "query": "new model capabilities that let ai agents run for hours with many tool calls",
+   "rank": 1,
+   "video": "-8_9G9fwN-Q",
+   "title": "Build Your First AI Agent In 15 Minutes (No Coding)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "new model capabilities that let ai agents run for hours with many tool calls",
+   "rank": 2,
+   "video": "5sFJVAoafFI",
+   "title": "GPT-5.1 and Kimi K2: What ‘Thinking AI’ really means"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "new model capabilities that let ai agents run for hours with many tool calls",
+   "rank": 3,
+   "video": "4PEoG9tfpX8",
+   "title": "8 GitHub Repos That Give You AI Superpowers! (June 10, 2026)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "evidence for which ai coding tools developers actually prefer this year",
+   "rank": 1,
+   "video": "761LQbvmNok",
+   "title": "Best AI tools for Coding in 2025"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "evidence for which ai coding tools developers actually prefer this year",
+   "rank": 2,
+   "video": "eCA7bxgej3U",
+   "title": "The Real Reason Programmers Refuse to Use AI"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "evidence for which ai coding tools developers actually prefer this year",
+   "rank": 3,
+   "video": "Q0YgzCHkNXo",
+   "title": "10 Open-Source AI Coding Agents Developers Should Try"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "recommended environment setup for building a mobile app with ai assistance",
+   "rank": 1,
+   "video": "0__YZbDdfNo",
+   "title": "The Perfect Setup For Vibe Coding A Mobile App"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "recommended environment setup for building a mobile app with ai assistance",
+   "rank": 2,
+   "video": "4iDizg48DCM",
+   "title": "How to Start Building Apps with AI For Beginners in 2026 (step by step guide)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "recommended environment setup for building a mobile app with ai assistance",
+   "rank": 3,
+   "video": "AGp-XY6EKRA",
+   "title": "Build ANY App with Google AI Studio + Gemini 3.0 + N8N AI Agents"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "ai agent embedded in the webpage reading the dom instead of external browser automation",
+   "rank": 1,
+   "video": "0_zA2FahghM",
+   "title": "Page Agent : The AI That Lives Inside Your Webpage (No Python, No Headless Browser)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "ai agent embedded in the webpage reading the dom instead of external browser automation",
+   "rank": 2,
+   "video": "R0BRJTDZiCU",
+   "title": "Rtrvr AI: LinkedIn Job Hunting Just Got 10x Easier With AI!"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "ai agent embedded in the webpage reading the dom instead of external browser automation",
+   "rank": 3,
+   "video": "u-jsmxs6A84",
+   "title": "Agent Browser vs Browser Use vs Playwright CLI - Which Should You Use?"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "getting a chrome browser window to exactly sixteen by nine for screen recording",
+   "rank": 1,
+   "video": "0aKWgyvWx0I",
+   "title": "Record perfect aspect ratios in Chrome with Raycast and AppleScript"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "getting a chrome browser window to exactly sixteen by nine for screen recording",
+   "rank": 2,
+   "video": "86Ugz2WYRaI",
+   "title": "Claude Lives in Your Browser Now | Use Claude in Chrome to Automate Tasks"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "getting a chrome browser window to exactly sixteen by nine for screen recording",
+   "rank": 3,
+   "video": "5DZv0G8jmMA",
+   "title": "Responsive Grid and Flexbox Page Layout Tutorial (Part 2 of 2: CSS)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "health data collection by big tech and age verification laws with linux community responses",
+   "rank": 1,
+   "video": "0aisC9KRcDo",
+   "title": "Microslop Wants Your Health Data. Big Tech wants your AGE. Linux Fights Back."
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "health data collection by big tech and age verification laws with linux community responses",
+   "rank": 2,
+   "video": "bWIk1rPvZ7s",
+   "title": "System76 Responds to Age Verification Laws.."
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "health data collection by big tech and age verification laws with linux community responses",
+   "rank": 3,
+   "video": "5iKvQk7drd4",
+   "title": "What Age Verification Laws Actually Mean for Linux, Free Software, and You"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "adding vocals to an existing instrumental track in an ai music generation service",
+   "rank": 1,
+   "video": "RxH58Pbfc8c",
+   "title": "Fastest Way to Remove Vocals for YouTube & TikTok Songs"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "adding vocals to an existing instrumental track in an ai music generation service",
+   "rank": 2,
+   "video": "0bUE9XDWDJM",
+   "title": "How To Add Vocals To Instrumental Song On Suno AI"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "adding vocals to an existing instrumental track in an ai music generation service",
+   "rank": 3,
+   "video": "19aKdipy8sk",
+   "title": "Suno’s Latest Features Explained: Mashups, Sounds & Vocals"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "running delayed background tasks in django through a webhook queue service",
+   "rank": 1,
+   "video": "0baj8hAaDSM",
+   "title": "Background tasks with Django QStash"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "running delayed background tasks in django through a webhook queue service",
+   "rank": 2,
+   "video": "7ll4lJoSY6I",
+   "title": "Use Celery to run Django functions as tasks in the background. #async #background #python #speedup"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "running delayed background tasks in django through a webhook queue service",
+   "rank": 3,
+   "video": "GSSqoxjB24Q",
+   "title": "We Had 24 Hours at Y Combinator to Build Something Real"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "how to charge the oneplus watch 4 with its magnetic base",
+   "rank": 1,
+   "video": "0beaI-tsKJg",
+   "title": "How To Charge OnePlus Watch 4"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "how to charge the oneplus watch 4 with its magnetic base",
+   "rank": 2,
+   "video": "2_82albYptk",
+   "title": "How To Force Restart OnePlus Watch 4"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "how to charge the oneplus watch 4 with its magnetic base",
+   "rank": 3,
+   "video": "15lpc2mt3sc",
+   "title": "I Purchased The Best Budget RUNNING WATCH?"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "using smart selection and tidy up to organize layer spacing without auto layout",
+   "rank": 1,
+   "video": "0cHDK-qfuns",
+   "title": "Smart Selection is so useful for organizing your layers without Auto Layout"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "using smart selection and tidy up to organize layer spacing without auto layout",
+   "rank": 2,
+   "video": "-ZwW7euPtQY",
+   "title": "Design a user interface for iOS, Android and Web in Sketch - Full course"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "using smart selection and tidy up to organize layer spacing without auto layout",
+   "rank": 3,
+   "video": "-ZwW7euPtQY",
+   "title": "Design a user interface for iOS, Android and Web in Sketch - Full course"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "installing the unreleased kodi alpha on a streaming tv box via downloader app",
+   "rank": 1,
+   "video": "0cPeAjnH_H8",
+   "title": "Install kodi 22 in 60 seconds"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "installing the unreleased kodi alpha on a streaming tv box via downloader app",
+   "rank": 2,
+   "video": "418mOm_Amz8",
+   "title": "😱 They Can’t Stop This App… Install Kodi 21.3 on Firestick 🔥"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "installing the unreleased kodi alpha on a streaming tv box via downloader app",
+   "rank": 3,
+   "video": "2uCVHfmDdYA",
+   "title": "Hidden Adult Firestick Apps You’re Not Supposed to Know About 🤫"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "the data structure giving average constant time key value lookup like python dictionaries",
+   "rank": 1,
+   "video": "0cQ8xGX-Ojk",
+   "title": "More DS&A today: hash tables!"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "the data structure giving average constant time key value lookup like python dictionaries",
+   "rank": 2,
+   "video": "jqp7WO3pCFA",
+   "title": "OpenAI API Structured Outputs For Finance"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "the data structure giving average constant time key value lookup like python dictionaries",
+   "rank": 3,
+   "video": "RItoKMONirE",
+   "title": "TypedDict is Awesome in Python"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "implementing an image slider carousel component in react",
+   "rank": 1,
+   "video": "0cces8kdbGo",
+   "title": "Image Slider in React JS through React-Slick and Slick-Carousel"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "implementing an image slider carousel component in react",
+   "rank": 2,
+   "video": "1NHIfQ_6O8w",
+   "title": "My Claude Code Can INSTANTLY Generate Any Video (Here's How)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "implementing an image slider carousel component in react",
+   "rank": 3,
+   "video": "MSzGAMyxs7s",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "changing the primary gmail address on an existing google account",
+   "rank": 1,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "changing the primary gmail address on an existing google account",
+   "rank": 2,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "changing the primary gmail address on an existing google account",
+   "rank": 3,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "ways to get free api access to premium ai models",
+   "rank": 1,
+   "video": "9xh-6arNSJQ",
+   "title": "OneHop AI: Access 100+ AI Models with ONE API Key (GPT-5, Claude, Gemini - 80% Cheaper)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "ways to get free api access to premium ai models",
+   "rank": 2,
+   "video": "ntrisRU5fFw",
+   "title": "I Found Free API Access to Frontier AI Models"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "ways to get free api access to premium ai models",
+   "rank": 3,
+   "video": "5rvQtJL2_C8",
+   "title": "This Chinese cto.new FREE & UNLIMITED Web & Terminal Coding Agent Builds & Deploys Unlimited Apps"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "claims that microsoft actively undermines linux and the evidence",
+   "rank": 1,
+   "video": "0v5iG39jVyM",
+   "title": "Linus Torvalds Predicted Microsoft’s Downfall Before Anyone Noticed"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "claims that microsoft actively undermines linux and the evidence",
+   "rank": 2,
+   "video": "0cs86JjjQ0U",
+   "title": "Microsoft's attempt at destroying Linux"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "claims that microsoft actively undermines linux and the evidence",
+   "rank": 3,
+   "video": "2AghaTV9gxQ",
+   "title": "Everyone Is Leaving Windows. Here's Why"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "setting up a vpn on iphone or android step by step",
+   "rank": 1,
+   "video": "0d5sDQqL_Vw",
+   "title": "How To Use VPN (iPhone Or Android)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "setting up a vpn on iphone or android step by step",
+   "rank": 2,
+   "video": "9lyu8uzHZ0Y",
+   "title": "How to Use Surfshark VPN: Step-by-Step Tutorial 2026"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "setting up a vpn on iphone or android step by step",
+   "rank": 3,
+   "video": "hsdMeM2A4AA",
+   "title": "Your Android Phone Is Forwarding Calls to Strangers Right Now — Fix This Immediately"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "increasing touch sensitivity on a samsung phone after applying a screen protector",
+   "rank": 1,
+   "video": "0dAhSvoJMNk",
+   "title": "How To Increase Touch Sensitivity On Samsung Galaxy A27"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "increasing touch sensitivity on a samsung phone after applying a screen protector",
+   "rank": 2,
+   "video": "5WmodDjXwb4",
+   "title": "10 little known Galaxy S9 and Note 9 features you MUST enable right now!"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "increasing touch sensitivity on a samsung phone after applying a screen protector",
+   "rank": 3,
+   "video": "0p_LmbcqEV4",
+   "title": "Samsung TriFold Durability Test: We found the limit."
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a youtube content founder transitioning into a startup founder role",
+   "rank": 1,
+   "video": "30GZrX2xIQU",
+   "title": "Startup founder mindset"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a youtube content founder transitioning into a startup founder role",
+   "rank": 2,
+   "video": "VRqKwWkmBmQ",
+   "title": "5 Lessons To Avoid Burnout 📝 Building A Sustainable Publishing System"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a youtube content founder transitioning into a startup founder role",
+   "rank": 3,
+   "video": "bm7P4Fe2VUU",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "automating a web framework major version migration using an ai coding editor",
+   "rank": 1,
+   "video": "tRHi4jG_PAY",
+   "title": "Why AI Is Making “Senior Developer” Mean Something Else"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "automating a web framework major version migration using an ai coding editor",
+   "rank": 2,
+   "video": "vVQzsMP7rLU",
+   "title": "The End of Tedious Code Upgrades? 🤯"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "automating a web framework major version migration using an ai coding editor",
+   "rank": 3,
+   "video": "Q0YgzCHkNXo",
+   "title": "10 Open-Source AI Coding Agents Developers Should Try"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "lesser known obsidian customization tips like heading colors and outline view",
+   "rank": 1,
+   "video": "0e0qaK2f-Bc",
+   "title": "Awesome OBSIDIAN TWEAKS and TIPS You Did Not Know You Need - Episode 3"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "lesser known obsidian customization tips like heading colors and outline view",
+   "rank": 2,
+   "video": "0e0qaK2f-Bc",
+   "title": "Awesome OBSIDIAN TWEAKS and TIPS You Did Not Know You Need - Episode 3"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "lesser known obsidian customization tips like heading colors and outline view",
+   "rank": 3,
+   "video": "1pTiou4SyI4",
+   "title": "Awesome OBSIDIAN TWEAKS and TIPS You Did Not Know You Need - Episode 2"
+  }
+ ],
+ "telegraphic": [
+  {
+   "stratum": "telegraphic",
+   "query": "best ai coding tools 2026",
+   "rank": 1,
+   "video": "ukPnYqPVosg",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "best ai coding tools 2026",
+   "rank": 2,
+   "video": "IFMzk5BuISA",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "best ai coding tools 2026",
+   "rank": 3,
+   "video": "mWzplwXeR_c",
+   "title": "Tools You Need for Coding with AI in 2026"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "django background tasks queue",
+   "rank": 1,
+   "video": "0baj8hAaDSM",
+   "title": "Background tasks with Django QStash"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "django background tasks queue",
+   "rank": 2,
+   "video": "fb19HiCb8xk",
+   "title": "You Need To Be Using These LATEST Claude Code Features & Tools"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "django background tasks queue",
+   "rank": 3,
+   "video": "fb19HiCb8xk",
+   "title": "You Need To Be Using These LATEST Claude Code Features & Tools"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "hash tables explained simply",
+   "rank": 1,
+   "video": "0cQ8xGX-Ojk",
+   "title": "More DS&A today: hash tables!"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "hash tables explained simply",
+   "rank": 2,
+   "video": "UY3fpJmh75c",
+   "title": "Hash Functions: The Mind-Blowing Tech You Depend On Every Single Day Without Realizing It"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "hash tables explained simply",
+   "rank": 3,
+   "video": "2EQ9WswHJ6A",
+   "title": "3 More Data Structures You Need to Know"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "react image slider component",
+   "rank": 1,
+   "video": "0cces8kdbGo",
+   "title": "Image Slider in React JS through React-Slick and Slick-Carousel"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "react image slider component",
+   "rank": 2,
+   "video": "bhatl07Bnf0",
+   "title": "Your First React Component"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "react image slider component",
+   "rank": 3,
+   "video": "6ag_zHo2yLc",
+   "title": "Make Advanced Image Sliders in AntiGravity + Edit in WordPress"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "vpn setup phone",
+   "rank": 1,
+   "video": "0d5sDQqL_Vw",
+   "title": "How To Use VPN (iPhone Or Android)"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "vpn setup phone",
+   "rank": 2,
+   "video": "9lyu8uzHZ0Y",
+   "title": "How to Use Surfshark VPN: Step-by-Step Tutorial 2026"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "vpn setup phone",
+   "rank": 3,
+   "video": "76b5DebpvXc",
+   "title": "Why do you need a VPN when not doing anything weird online?"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "install kodi alpha streaming box",
+   "rank": 1,
+   "video": "418mOm_Amz8",
+   "title": "😱 They Can’t Stop This App… Install Kodi 21.3 on Firestick 🔥"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "install kodi alpha streaming box",
+   "rank": 2,
+   "video": "0cPeAjnH_H8",
+   "title": "Install kodi 22 in 60 seconds"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "install kodi alpha streaming box",
+   "rank": 3,
+   "video": "4pr1KHpYxY8",
+   "title": "Owl Alpha: FREE Stealth AI on OpenRouter (1M Context, $0) #Shorts"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "ai agent inside webpage dom",
+   "rank": 1,
+   "video": "v_E42FkgH2I",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "ai agent inside webpage dom",
+   "rank": 2,
+   "video": "R0BRJTDZiCU",
+   "title": "Rtrvr AI: LinkedIn Job Hunting Just Got 10x Easier With AI!"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "ai agent inside webpage dom",
+   "rank": 3,
+   "video": "uprZUcv0FSc",
+   "title": "Google Just Solved The Greatest Limitation of AI Agents"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "change primary gmail address",
+   "rank": 1,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "change primary gmail address",
+   "rank": 2,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "change primary gmail address",
+   "rank": 3,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  }
+ ],
+ "technical": [
+  {
+   "stratum": "technical",
+   "query": "packaging background tasks as webhooks scheduled by a queue service",
+   "rank": 1,
+   "video": "0baj8hAaDSM",
+   "title": "Background tasks with Django QStash"
+  },
+  {
+   "stratum": "technical",
+   "query": "packaging background tasks as webhooks scheduled by a queue service",
+   "rank": 2,
+   "video": "Namp-sV0UEw",
+   "title": "I Set Up Claude Cowork to Work While I Sleep (Full Guide)"
+  },
+  {
+   "stratum": "technical",
+   "query": "packaging background tasks as webhooks scheduled by a queue service",
+   "rank": 3,
+   "video": "0S48TFrm4UE",
+   "title": "Every Senior Developer Needs To Know This!"
+  },
+  {
+   "stratum": "technical",
+   "query": "scripting a browser window to an exact aspect ratio with a launcher and applescript",
+   "rank": 1,
+   "video": "0aKWgyvWx0I",
+   "title": "Record perfect aspect ratios in Chrome with Raycast and AppleScript"
+  },
+  {
+   "stratum": "technical",
+   "query": "scripting a browser window to an exact aspect ratio with a launcher and applescript",
+   "rank": 2,
+   "video": "54dT2yd7VJ0",
+   "title": "I have Built the Ultimate Lead Scraping and Mass Outreach Tracker"
+  },
+  {
+   "stratum": "technical",
+   "query": "scripting a browser window to an exact aspect ratio with a launcher and applescript",
+   "rank": 3,
+   "video": "4CrWw4v_h6Y",
+   "title": "Step-by-Step: Building a Stylish Video Slider with HTML, CSS, & JavaScript"
+  },
+  {
+   "stratum": "technical",
+   "query": "equalizing layer spacing with smart selection tidy up instead of auto layout",
+   "rank": 1,
+   "video": "0cHDK-qfuns",
+   "title": "Smart Selection is so useful for organizing your layers without Auto Layout"
+  },
+  {
+   "stratum": "technical",
+   "query": "equalizing layer spacing with smart selection tidy up instead of auto layout",
+   "rank": 2,
+   "video": "-ZwW7euPtQY",
+   "title": "Design a user interface for iOS, Android and Web in Sketch - Full course"
+  },
+  {
+   "stratum": "technical",
+   "query": "equalizing layer spacing with smart selection tidy up instead of auto layout",
+   "rank": 3,
+   "video": "-ZwW7euPtQY",
+   "title": "Design a user interface for iOS, Android and Web in Sketch - Full course"
+  },
+  {
+   "stratum": "technical",
+   "query": "letting an ai editor handle a major framework version upgrade end to end",
+   "rank": 1,
+   "video": "Edoe_7-4nuE",
+   "title": "Real-Time AI Video Editing Just Got Way Better"
+  },
+  {
+   "stratum": "technical",
+   "query": "letting an ai editor handle a major framework version upgrade end to end",
+   "rank": 2,
+   "video": "vVQzsMP7rLU",
+   "title": "The End of Tedious Code Upgrades? 🤯"
+  },
+  {
+   "stratum": "technical",
+   "query": "letting an ai editor handle a major framework version upgrade end to end",
+   "rank": 3,
+   "video": "JwnMungapPU",
+   "title": "GPT 5 Is Here The AI Upgrade We’ve Been Waiting For!"
+  },
+  {
+   "stratum": "technical",
+   "query": "why hash tables give average constant time key value access",
+   "rank": 1,
+   "video": "0cQ8xGX-Ojk",
+   "title": "More DS&A today: hash tables!"
+  },
+  {
+   "stratum": "technical",
+   "query": "why hash tables give average constant time key value access",
+   "rank": 2,
+   "video": "UY3fpJmh75c",
+   "title": "Hash Functions: The Mind-Blowing Tech You Depend On Every Single Day Without Realizing It"
+  },
+  {
+   "stratum": "technical",
+   "query": "why hash tables give average constant time key value access",
+   "rank": 3,
+   "video": "4zHIzsaIPkc",
+   "title": "Here Is Why HashSet Is So Fast in .NET"
+  },
+  {
+   "stratum": "technical",
+   "query": "architecture of an ai reading the dom from inside the page instead of driving a headless browser",
+   "rank": 1,
+   "video": "0_zA2FahghM",
+   "title": "Page Agent : The AI That Lives Inside Your Webpage (No Python, No Headless Browser)"
+  },
+  {
+   "stratum": "technical",
+   "query": "architecture of an ai reading the dom from inside the page instead of driving a headless browser",
+   "rank": 2,
+   "video": "u-jsmxs6A84",
+   "title": "Agent Browser vs Browser Use vs Playwright CLI - Which Should You Use?"
+  },
+  {
+   "stratum": "technical",
+   "query": "architecture of an ai reading the dom from inside the page instead of driving a headless browser",
+   "rank": 3,
+   "video": "1nao_x1lAkg",
+   "title": "Neo NEW AI Browser is INSANE!"
+  }
+ ],
+ "comparison": [
+  {
+   "stratum": "comparison",
+   "query": "ai living in the webpage versus headless browser automation",
+   "rank": 1,
+   "video": "0_zA2FahghM",
+   "title": "Page Agent : The AI That Lives Inside Your Webpage (No Python, No Headless Browser)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "ai living in the webpage versus headless browser automation",
+   "rank": 2,
+   "video": "9ZiLTz1Whp0",
+   "title": "AI is coming for our Browsers and these three are the best of all of them"
+  },
+  {
+   "stratum": "comparison",
+   "query": "ai living in the webpage versus headless browser automation",
+   "rank": 3,
+   "video": "dqaooqBPVRI",
+   "title": "10 Open-Source AI Agents Replacing Paid Tools in 2026"
+  },
+  {
+   "stratum": "comparison",
+   "query": "smart selection versus auto layout for organizing layer spacing",
+   "rank": 1,
+   "video": "0cHDK-qfuns",
+   "title": "Smart Selection is so useful for organizing your layers without Auto Layout"
+  },
+  {
+   "stratum": "comparison",
+   "query": "smart selection versus auto layout for organizing layer spacing",
+   "rank": 2,
+   "video": "-ZwW7euPtQY",
+   "title": "Design a user interface for iOS, Android and Web in Sketch - Full course"
+  },
+  {
+   "stratum": "comparison",
+   "query": "smart selection versus auto layout for organizing layer spacing",
+   "rank": 3,
+   "video": "5IanQIwhA4E",
+   "title": "Web / Desktop App UI Design in Figma - Full Course"
+  },
+  {
+   "stratum": "comparison",
+   "query": "webhook queued background tasks versus running workers in process",
+   "rank": 1,
+   "video": "GSSqoxjB24Q",
+   "title": "We Had 24 Hours at Y Combinator to Build Something Real"
+  },
+  {
+   "stratum": "comparison",
+   "query": "webhook queued background tasks versus running workers in process",
+   "rank": 2,
+   "video": "0baj8hAaDSM",
+   "title": "Background tasks with Django QStash"
+  },
+  {
+   "stratum": "comparison",
+   "query": "webhook queued background tasks versus running workers in process",
+   "rank": 3,
+   "video": "0S48TFrm4UE",
+   "title": "Every Senior Developer Needs To Know This!"
+  },
+  {
+   "stratum": "comparison",
+   "query": "free api aggregators versus paying official model providers",
+   "rank": 1,
+   "video": "W3pqJYJuf3U",
+   "title": "Is Splitting Your AI Budget a Mistake? (Claude / Codex $100 vs $20)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "free api aggregators versus paying official model providers",
+   "rank": 2,
+   "video": "tERRxUMSEgg",
+   "title": "5 FREE Upgrades That Make Hermes Agent Actually Useful"
+  },
+  {
+   "stratum": "comparison",
+   "query": "free api aggregators versus paying official model providers",
+   "rank": 3,
+   "video": "dXxFrt5lwQ4",
+   "title": "Qwen 3.6 Plus for Free: 1M Context Just Broke OpenRouter's All-Time Record | OpenClaude | Qwen 3"
+  },
+  {
+   "stratum": "comparison",
+   "query": "manually migrating a framework version versus automating it with ai",
+   "rank": 1,
+   "video": "tRHi4jG_PAY",
+   "title": "Why AI Is Making “Senior Developer” Mean Something Else"
+  },
+  {
+   "stratum": "comparison",
+   "query": "manually migrating a framework version versus automating it with ai",
+   "rank": 2,
+   "video": "QZWRfzjxEXk",
+   "title": "This AI Framework Will Save You 100+ Hours in 2026"
+  },
+  {
+   "stratum": "comparison",
+   "query": "manually migrating a framework version versus automating it with ai",
+   "rank": 3,
+   "video": "AN52OZj0Thw",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "hash tables versus trees for key value lookup",
+   "rank": 1,
+   "video": "0cQ8xGX-Ojk",
+   "title": "More DS&A today: hash tables!"
+  },
+  {
+   "stratum": "comparison",
+   "query": "hash tables versus trees for key value lookup",
+   "rank": 2,
+   "video": "2EQ9WswHJ6A",
+   "title": "3 More Data Structures You Need to Know"
+  },
+  {
+   "stratum": "comparison",
+   "query": "hash tables versus trees for key value lookup",
+   "rank": 3,
+   "video": "4zHIzsaIPkc",
+   "title": "Here Is Why HashSet Is So Fast in .NET"
+  },
+  {
+   "stratum": "comparison",
+   "query": "changing primary email versus creating a new google account",
+   "rank": 1,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "changing primary email versus creating a new google account",
+   "rank": 2,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "changing primary email versus creating a new google account",
+   "rank": 3,
+   "video": "0cedW7oF6kE",
+   "title": "I Finally Got Rid of My Embarrassing Gmail Address (Here's How)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "scripted exact viewport sizing versus manually resizing the browser window",
+   "rank": 1,
+   "video": "0aKWgyvWx0I",
+   "title": "Record perfect aspect ratios in Chrome with Raycast and AppleScript"
+  },
+  {
+   "stratum": "comparison",
+   "query": "scripted exact viewport sizing versus manually resizing the browser window",
+   "rank": 2,
+   "video": "2qBKIkDb1DM",
+   "title": "LibreWolf Done Right – The Ultimate Privacy Guide!"
+  },
+  {
+   "stratum": "comparison",
+   "query": "scripted exact viewport sizing versus manually resizing the browser window",
+   "rank": 3,
+   "video": "ZSFdUJnAZ6g",
+   "title": "The Free VPN That Scammed Millions"
+  }
+ ],
+ "weak_common": [
+  {
+   "stratum": "weak_common",
+   "query": "TikTok",
+   "rank": 1,
+   "video": "-oRufpPYEEU",
+   "title": "NotebookLM Can Make TikTok-Style Videos Now (This Changes Studying)!"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "TikTok",
+   "rank": 2,
+   "video": "JcCmPWBHVqo",
+   "title": "7 Minimalist Phones No One Talks About...But Should!"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "TikTok",
+   "rank": 3,
+   "video": "2LHS-bZx3TI",
+   "title": "Microsoft Gave FBI Your Encryption Keys"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "YouTube",
+   "rank": 1,
+   "video": "33-nbBo6CMA",
+   "title": "YouTube Is (Finally) Profitable..."
+  },
+  {
+   "stratum": "weak_common",
+   "query": "YouTube",
+   "rank": 2,
+   "video": "6aGVcK-aJvs",
+   "title": "YouTube Premium now include Peacock and Live Sports !"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "YouTube",
+   "rank": 3,
+   "video": "7jI_PTpo0Ug",
+   "title": "Grok AI Is NO Longer Free… Use THESE Instead (FREE & UNLIMITED AI Video Tools)"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "OpenAI",
+   "rank": 1,
+   "video": "-lRnSrhTXDc",
+   "title": "OpenAI Just Made History (Holy Sh*t?!)"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "OpenAI",
+   "rank": 2,
+   "video": "Q8FcRbLCwEk",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "OpenAI",
+   "rank": 3,
+   "video": "pXna_iPd1_E",
+   "title": "OpenAI Jobs Platform (2026): AI Hiring Is About to Change Forever"
+  }
+ ]
+}
