@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO))
 from ef import authority, chunking, routing  # noqa: E402
 
 BENCH = REPO / "docs" / "evidence-fabric" / "benchmark"
-START = 415
+START = 445
 SPAN = 30
 IDENT_SCAN = re.compile(
     r"\b(?:[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)+"
@@ -165,8 +165,33 @@ def build_auto():
     for k in ("exact_df2_100",):
         out[k + "_strong"] = [x for x in out[k]
                               if _rt.classify(x["query"]).intent == "identifier"]
+    import re as _re2
+    acro = _re2.compile(r"^[A-Z]{2,5}$")
+    amb_caps = [x for x in out["exact_df1"] if acro.match(x["query"])][:10]
+    if len(amb_caps) < 8:
+        wide = region_rows_window(START + SPAN, 200)
+        for row in wide:
+            if len(amb_caps) >= 10:
+                break
+            chs = chunking.chunk_transcript(
+                f"{row['video_id']}:transcript", row["transcript"])
+            for ch in chs[1:] or chs:
+                for m in IDENT_SCAN.finditer(ch.text):
+                    tok = m.group(0)
+                    if not acro.match(tok) or not (3 <= len(tok) <= 5):
+                        continue
+                    d = df_of(tok)
+                    if d == 1:
+                        amb_caps.append({"query": tok,
+                                         "positive_video": row["video_id"],
+                                         "positive_chunk": ch.chunk_id,
+                                         "df": d, "category": row["category"]})
+                        break
+                if len(amb_caps) >= 10:
+                    break
+    out["ambiguous_allcaps_df1"] = amb_caps
     payload = json.dumps(out, indent=1)
-    (BENCH / "shard01_auto.json").write_text(payload, encoding="utf-8")
+    (BENCH / "shard02_auto.json").write_text(payload, encoding="utf-8")
     print({k: len(v) for k, v in out.items()})
 
 
@@ -202,11 +227,11 @@ def main() -> int:
         mode_excerpts()
     else:
         h = ""
-        for f in ("shard01_auto.json", "shard01_hand.json"):
+        for f in ("shard02_auto.json", "shard02_hand.json"):
             p = BENCH / f
             if p.exists():
                 h += hashlib.sha256(p.read_bytes()).hexdigest()[:16] + " "
-        (BENCH / "shard01_seal.txt").write_text(
+        (BENCH / "shard02_seal.txt").write_text(
             f"sealed before C1 final replay\nfiles: auto hand\nsha256[:16]: {h}\n",
             encoding="utf-8")
         print("sealed:", h)

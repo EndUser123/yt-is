@@ -1,0 +1,1440 @@
+{
+ "exact_df1": [
+  {
+   "query": "studs.g",
+   "positive_video": "0fm6G50YOmQ",
+   "positive_chunk": "0fm6G50YOmQ:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "anthropic/nowledge-plugins",
+   "positive_video": "0kDryeRcW1Q",
+   "positive_chunk": "0kDryeRcW1Q:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "DeviceMobile",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00035",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "framer.app",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00103",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "OpenLink",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00106",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "PlexP",
+   "positive_video": "0m614sRbu64",
+   "positive_chunk": "0m614sRbu64:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "Obus48",
+   "positive_video": "162nqWsynY8",
+   "positive_chunk": "162nqWsynY8:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "DockHub",
+   "positive_video": "18Q-0_y1qLw",
+   "positive_chunk": "18Q-0_y1qLw:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "cs225",
+   "positive_video": "0bV4524KsGQ",
+   "positive_chunk": "0bV4524KsGQ:transcript#00000",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "adaptuniverse.com",
+   "positive_video": "0bs8ACeqyVs",
+   "positive_chunk": "0bs8ACeqyVs:transcript#00001",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "Kiwico.com",
+   "positive_video": "0g8AhCAP4w8",
+   "positive_chunk": "0g8AhCAP4w8:transcript#00002",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "BowMe",
+   "positive_video": "0gEjb_Go1iQ",
+   "positive_chunk": "0gEjb_Go1iQ:transcript#00000",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "be300",
+   "positive_video": "0No6gJmoHU0",
+   "positive_chunk": "0No6gJmoHU0:transcript#00000",
+   "df": 1,
+   "category": "Markets"
+  },
+  {
+   "query": "AMD4",
+   "positive_video": "-eqhFe9jNA4",
+   "positive_chunk": "-eqhFe9jNA4:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "GitPush",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00058",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "T-A-V-I-L-Y",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00079",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "SuperPython",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00084",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "Gene7499",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00086",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "onchaini.com",
+   "positive_video": "-fSjdYzrFvA",
+   "positive_chunk": "-fSjdYzrFvA:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "a300",
+   "positive_video": "-g-J8pZQvrc",
+   "positive_chunk": "-g-J8pZQvrc:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "shiftadarma.com",
+   "positive_video": "-gdT8htBwX8",
+   "positive_chunk": "-gdT8htBwX8:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "errorsystem.com",
+   "positive_video": "-diOLQSk9A8",
+   "positive_chunk": "-diOLQSk9A8:transcript#00000",
+   "df": 1,
+   "category": "Health"
+  },
+  {
+   "query": "trifum.com",
+   "positive_video": "-eZ263yN4fE",
+   "positive_chunk": "-eZ263yN4fE:transcript#00000",
+   "df": 1,
+   "category": "Health"
+  },
+  {
+   "query": "PT89",
+   "positive_video": "1fL47TIPIuM",
+   "positive_chunk": "1fL47TIPIuM:transcript#00000",
+   "df": 1,
+   "category": "Finance"
+  },
+  {
+   "query": "T1161",
+   "positive_video": "1gtibRqvZLw",
+   "positive_chunk": "1gtibRqvZLw:transcript#00000",
+   "df": 1,
+   "category": "Finance"
+  },
+  {
+   "query": "veta_fi",
+   "positive_video": "1jq2MXubLbw",
+   "positive_chunk": "1jq2MXubLbw:transcript#00000",
+   "df": 1,
+   "category": "Finance"
+  },
+  {
+   "query": "unPakistan",
+   "positive_video": "bu-dtABARBE",
+   "positive_chunk": "bu-dtABARBE:transcript#00000",
+   "df": 1,
+   "category": "Politics"
+  },
+  {
+   "query": "McFall",
+   "positive_video": "dcQQcz-dmys",
+   "positive_chunk": "dcQQcz-dmys:transcript#00000",
+   "df": 1,
+   "category": "Politics"
+  },
+  {
+   "query": "DeRidder",
+   "positive_video": "ezxwR00ze1k",
+   "positive_chunk": "ezxwR00ze1k:transcript#00000",
+   "df": 1,
+   "category": "Politics"
+  },
+  {
+   "query": "piaavvpn.com/dr",
+   "positive_video": "ZUHUZHh0ioo",
+   "positive_chunk": "ZUHUZHh0ioo:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "BioState",
+   "positive_video": "ZesUHvwJg50",
+   "positive_chunk": "ZesUHvwJg50:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "13.2.8",
+   "positive_video": "Zzg_1H4XM9Y",
+   "positive_chunk": "Zzg_1H4XM9Y:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "pam.co",
+   "positive_video": "_WXtkSvIDJs",
+   "positive_chunk": "_WXtkSvIDJs:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "aidylist.info",
+   "positive_video": "3BOjoEapVtU",
+   "positive_chunk": "3BOjoEapVtU:transcript#00000",
+   "df": 1,
+   "category": "AI News"
+  },
+  {
+   "query": "nerdnipe.link",
+   "positive_video": "3DNkDIVKtK8",
+   "positive_chunk": "3DNkDIVKtK8:transcript#00000",
+   "df": 1,
+   "category": "AI News"
+  }
+ ],
+ "exact_df2_100": [
+  {
+   "query": "ReactJS",
+   "positive_video": "0g5nziwFQJg",
+   "positive_chunk": "0g5nziwFQJg:transcript#00000",
+   "df": 67,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "list-style:none",
+   "positive_video": "0gCGzQvoB9o",
+   "positive_chunk": "0gCGzQvoB9o:transcript#00000",
+   "df": 6,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "btc_price",
+   "positive_video": "0h6BM6n8C0w",
+   "positive_chunk": "0h6BM6n8C0w:transcript#00001",
+   "df": 9,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "One11",
+   "positive_video": "0hNzOtmhAhc",
+   "positive_chunk": "0hNzOtmhAhc:transcript#00000",
+   "df": 3,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "buildermethods.com",
+   "positive_video": "0hdFJA-ho3c",
+   "positive_chunk": "0hdFJA-ho3c:transcript#00000",
+   "df": 19,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "factory.ai",
+   "positive_video": "0jMDr9t86M4",
+   "positive_chunk": "0jMDr9t86M4:transcript#00000",
+   "df": 88,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "MailChimp",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00089",
+   "df": 91,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "SwiftUI",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00122",
+   "df": 57,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "framer.com",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00134",
+   "df": 15,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "RevOps",
+   "positive_video": "0l2gstktEGY",
+   "positive_chunk": "0l2gstktEGY:transcript#00000",
+   "df": 19,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "something.local",
+   "positive_video": "0lzFHySymsU",
+   "positive_chunk": "0lzFHySymsU:transcript#00000",
+   "df": 27,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "PostgreSQL",
+   "positive_video": "0m5fqPA5jsQ",
+   "positive_chunk": "0m5fqPA5jsQ:transcript#00000",
+   "df": 50,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "DirecTV",
+   "positive_video": "15A1LHhYcuE",
+   "positive_chunk": "15A1LHhYcuE:transcript#00001",
+   "df": 30,
+   "category": "Business"
+  },
+  {
+   "query": "DirectTV",
+   "positive_video": "15A1LHhYcuE",
+   "positive_chunk": "15A1LHhYcuE:transcript#00007",
+   "df": 5,
+   "category": "Business"
+  },
+  {
+   "query": "gemini.google.com",
+   "positive_video": "15LmJZEUWHU",
+   "positive_chunk": "15LmJZEUWHU:transcript#00000",
+   "df": 75,
+   "category": "Business"
+  },
+  {
+   "query": "labs.google",
+   "positive_video": "16D43V5-QTE",
+   "positive_chunk": "16D43V5-QTE:transcript#00000",
+   "df": 40,
+   "category": "Business"
+  },
+  {
+   "query": "ChachBT",
+   "positive_video": "18CfqrQ6iFA",
+   "positive_chunk": "18CfqrQ6iFA:transcript#00000",
+   "df": 24,
+   "category": "Business"
+  },
+  {
+   "query": "mid200s",
+   "positive_video": "1AMZ4sPZwNY",
+   "positive_chunk": "1AMZ4sPZwNY:transcript#00000",
+   "df": 12,
+   "category": "Business"
+  },
+  {
+   "query": "by10",
+   "positive_video": "0b9N-rK3wXs",
+   "positive_chunk": "0b9N-rK3wXs:transcript#00000",
+   "df": 10,
+   "category": "Technology"
+  },
+  {
+   "query": "adaptediversity.com",
+   "positive_video": "0bs8ACeqyVs",
+   "positive_chunk": "0bs8ACeqyVs:transcript#00002",
+   "df": 3,
+   "category": "Technology"
+  },
+  {
+   "query": "TechLink",
+   "positive_video": "0cGGv5er6vU",
+   "positive_chunk": "0cGGv5er6vU:transcript#00000",
+   "df": 42,
+   "category": "Technology"
+  },
+  {
+   "query": "X399",
+   "positive_video": "0duSwyiSyGQ",
+   "positive_chunk": "0duSwyiSyGQ:transcript#00000",
+   "df": 2,
+   "category": "Technology"
+  },
+  {
+   "query": "WalkingCat",
+   "positive_video": "0dvl2oHBplI",
+   "positive_chunk": "0dvl2oHBplI:transcript#00001",
+   "df": 3,
+   "category": "Technology"
+  },
+  {
+   "query": "BaxornVR",
+   "positive_video": "0dvl2oHBplI",
+   "positive_chunk": "0dvl2oHBplI:transcript#00012",
+   "df": 3,
+   "category": "Technology"
+  },
+  {
+   "query": "uk.com",
+   "positive_video": "0f5NQqx7MDY",
+   "positive_chunk": "0f5NQqx7MDY:transcript#00000",
+   "df": 11,
+   "category": "Technology"
+  },
+  {
+   "query": "KiwiCo",
+   "positive_video": "0g8AhCAP4w8",
+   "positive_chunk": "0g8AhCAP4w8:transcript#00001",
+   "df": 2,
+   "category": "Technology"
+  },
+  {
+   "query": "EcoFlow",
+   "positive_video": "0g8AhCAP4w8",
+   "positive_chunk": "0g8AhCAP4w8:transcript#00007",
+   "df": 31,
+   "category": "Technology"
+  },
+  {
+   "query": "target.com",
+   "positive_video": "0gt_may1cYE",
+   "positive_chunk": "0gt_may1cYE:transcript#00000",
+   "df": 5,
+   "category": "Technology"
+  },
+  {
+   "query": "id64",
+   "positive_video": "0hABxUbrx0g",
+   "positive_chunk": "0hABxUbrx0g:transcript#00000",
+   "df": 2,
+   "category": "Technology"
+  },
+  {
+   "query": "ProfG",
+   "positive_video": "0IHomBuIaWE",
+   "positive_chunk": "0IHomBuIaWE:transcript#00000",
+   "df": 22,
+   "category": "Markets"
+  },
+  {
+   "query": "IV60",
+   "positive_video": "0JESkbzcPsA",
+   "positive_chunk": "0JESkbzcPsA:transcript#00000",
+   "df": 2,
+   "category": "Markets"
+  },
+  {
+   "query": "investing.com",
+   "positive_video": "0JmUj2r4tvI",
+   "positive_chunk": "0JmUj2r4tvI:transcript#00000",
+   "df": 96,
+   "category": "Markets"
+  },
+  {
+   "query": "airmir.com",
+   "positive_video": "0L2UQANxuJs",
+   "positive_chunk": "0L2UQANxuJs:transcript#00000",
+   "df": 7,
+   "category": "Markets"
+  },
+  {
+   "query": "BlackRock",
+   "positive_video": "0MWd_M8EyoE",
+   "positive_chunk": "0MWd_M8EyoE:transcript#00000",
+   "df": 78,
+   "category": "Markets"
+  },
+  {
+   "query": "TradeStation",
+   "positive_video": "0OFWdwLqSXg",
+   "positive_chunk": "0OFWdwLqSXg:transcript#00001",
+   "df": 19,
+   "category": "Markets"
+  }
+ ],
+ "exact_df101_1000": [
+  {
+   "query": "OnePlus",
+   "positive_video": "0gZuWs9XUpw",
+   "positive_chunk": "0gZuWs9XUpw:transcript#00000",
+   "df": 142,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "page.tsx",
+   "positive_video": "0hTIwWZ2gx8",
+   "positive_chunk": "0hTIwWZ2gx8:transcript#00000",
+   "df": 106,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "gmail.com",
+   "positive_video": "0i86B4mU-vw",
+   "positive_chunk": "0i86B4mU-vw:transcript#00000",
+   "df": 299,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "gpt2",
+   "positive_video": "0jcJigwk_Xc",
+   "positive_chunk": "0jcJigwk_Xc:transcript#00000",
+   "df": 131,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "HubSpot",
+   "positive_video": "0jpcFxY_38k",
+   "positive_chunk": "0jpcFxY_38k:transcript#00000",
+   "df": 452,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "Node.js",
+   "positive_video": "0k40M5oERdY",
+   "positive_chunk": "0k40M5oERdY:transcript#00000",
+   "df": 411,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "left-to-right",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00075",
+   "df": 416,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "macOS",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00101",
+   "df": 152,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "WordPress",
+   "positive_video": "18IIqpsqIro",
+   "positive_chunk": "18IIqpsqIro:transcript#00001",
+   "df": 756,
+   "category": "Business"
+  },
+  {
+   "query": "McDonald",
+   "positive_video": "19QYlpGvcLo",
+   "positive_chunk": "19QYlpGvcLo:transcript#00000",
+   "df": 738,
+   "category": "Business"
+  },
+  {
+   "query": "TikTok",
+   "positive_video": "1A-p0OeLY5o",
+   "positive_chunk": "1A-p0OeLY5o:transcript#00000",
+   "df": 445,
+   "category": "Business"
+  },
+  {
+   "query": "mid20s",
+   "positive_video": "0a1_Sv28qa8",
+   "positive_chunk": "0a1_Sv28qa8:transcript#00000",
+   "df": 102,
+   "category": "Technology"
+  },
+  {
+   "query": "th00and",
+   "positive_video": "0cHnSBCvxTw",
+   "positive_chunk": "0cHnSBCvxTw:transcript#00000",
+   "df": 113,
+   "category": "Technology"
+  },
+  {
+   "query": "uh.1",
+   "positive_video": "0cIcth224hk",
+   "positive_chunk": "0cIcth224hk:transcript#00000",
+   "df": 441,
+   "category": "Technology"
+  },
+  {
+   "query": "ChachiBT",
+   "positive_video": "0cfreN0WykY",
+   "positive_chunk": "0cfreN0WykY:transcript#00000",
+   "df": 104,
+   "category": "Technology"
+  },
+  {
+   "query": "one-sizefits-all",
+   "positive_video": "0dSn22pkr4w",
+   "positive_chunk": "0dSn22pkr4w:transcript#00000",
+   "df": 220,
+   "category": "Technology"
+  },
+  {
+   "query": "FaceTime",
+   "positive_video": "0epUjOmzLBg",
+   "positive_chunk": "0epUjOmzLBg:transcript#00000",
+   "df": 119,
+   "category": "Technology"
+  },
+  {
+   "query": "year-over-year",
+   "positive_video": "0HPWsWJS55A",
+   "positive_chunk": "0HPWsWJS55A:transcript#00000",
+   "df": 884,
+   "category": "Markets"
+  },
+  {
+   "query": "YouTubers",
+   "positive_video": "0P93KTBZjpY",
+   "positive_chunk": "0P93KTBZjpY:transcript#00000",
+   "df": 734,
+   "category": "Markets"
+  },
+  {
+   "query": "month-over-month",
+   "positive_video": "0PDPUg4Mg-w",
+   "positive_chunk": "0PDPUg4Mg-w:transcript#00000",
+   "df": 179,
+   "category": "Markets"
+  },
+  {
+   "query": "VO3.1",
+   "positive_video": "-edHM9brPXc",
+   "positive_chunk": "-edHM9brPXc:transcript#00000",
+   "df": 155,
+   "category": "AI/ML"
+  },
+  {
+   "query": "PyTorch",
+   "positive_video": "-emavP42ktw",
+   "positive_chunk": "-emavP42ktw:transcript#00000",
+   "df": 308,
+   "category": "AI/ML"
+  },
+  {
+   "query": "claude.ai",
+   "positive_video": "-exsPQhte5c",
+   "positive_chunk": "-exsPQhte5c:transcript#00000",
+   "df": 400,
+   "category": "AI/ML"
+  },
+  {
+   "query": "GPT-5.4",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00001",
+   "df": 645,
+   "category": "AI/ML"
+  },
+  {
+   "query": "WebSocket",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00002",
+   "df": 187,
+   "category": "AI/ML"
+  }
+ ],
+ "punct_heavy": [
+  {
+   "query": "day-to-day",
+   "positive_video": "0doWTGeqZJc",
+   "positive_chunk": "0doWTGeqZJc:transcript#00000",
+   "df": 2393,
+   "category": "Technology"
+  },
+  {
+   "query": "one-on-one",
+   "positive_video": "0Mej2tw_DMM",
+   "positive_chunk": "0Mej2tw_DMM:transcript#00000",
+   "df": 1260,
+   "category": "Markets"
+  },
+  {
+   "query": "end-to-end",
+   "positive_video": "-eKg2N4DjX0",
+   "positive_chunk": "-eKg2N4DjX0:transcript#00000",
+   "df": 1707,
+   "category": "AI/ML"
+  },
+  {
+   "query": "out-of-date",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00014",
+   "df": 282,
+   "category": "AI/ML"
+  },
+  {
+   "query": "do-do-do-do",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00067",
+   "df": 9,
+   "category": "AI/ML"
+  },
+  {
+   "query": "step-by-step",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00087",
+   "df": 5315,
+   "category": "AI/ML"
+  },
+  {
+   "query": "state-of-the-arts",
+   "positive_video": "-fBSbeqDaCo",
+   "positive_chunk": "-fBSbeqDaCo:transcript#00000",
+   "df": 4,
+   "category": "AI/ML"
+  },
+  {
+   "query": "human-in-the-loop",
+   "positive_video": "-gBlVTV5z2I",
+   "positive_chunk": "-gBlVTV5z2I:transcript#00001",
+   "df": 746,
+   "category": "AI/ML"
+  },
+  {
+   "query": "first-in-class",
+   "positive_video": "-ca8WSfZ2ZI",
+   "positive_chunk": "-ca8WSfZ2ZI:transcript#00000",
+   "df": 8,
+   "category": "Health"
+  },
+  {
+   "query": "six-year-old",
+   "positive_video": "-d31APgPisM",
+   "positive_chunk": "-d31APgPisM:transcript#00000",
+   "df": 101,
+   "category": "Health"
+  },
+  {
+   "query": "risk-to-reward",
+   "positive_video": "1iz0GWE-qAQ",
+   "positive_chunk": "1iz0GWE-qAQ:transcript#00000",
+   "df": 592,
+   "category": "Finance"
+  },
+  {
+   "query": "bread-and-butter",
+   "positive_video": "1lTMrDnLT9Q",
+   "positive_chunk": "1lTMrDnLT9Q:transcript#00001",
+   "df": 299,
+   "category": "Finance"
+  },
+  {
+   "query": "direct-to-cell",
+   "positive_video": "1lTMrDnLT9Q",
+   "positive_chunk": "1lTMrDnLT9Q:transcript#00005",
+   "df": 47,
+   "category": "Finance"
+  },
+  {
+   "query": "20-year-old",
+   "positive_video": "cOhXKgyLDxc",
+   "positive_chunk": "cOhXKgyLDxc:transcript#00000",
+   "df": 226,
+   "category": "Politics"
+  },
+  {
+   "query": "21-year-old",
+   "positive_video": "cXqbD_17FPs",
+   "positive_chunk": "cXqbD_17FPs:transcript#00000",
+   "df": 39,
+   "category": "Politics"
+  },
+  {
+   "query": "15-year-old",
+   "positive_video": "eKQmoYxpCSw",
+   "positive_chunk": "eKQmoYxpCSw:transcript#00000",
+   "df": 69,
+   "category": "Politics"
+  },
+  {
+   "query": "console.cloud.com",
+   "positive_video": "YKJNU4luNfk",
+   "positive_chunk": "YKJNU4luNfk:transcript#00000",
+   "df": 2,
+   "category": "Robotics"
+  },
+  {
+   "query": "14.2.2.5",
+   "positive_video": "ZuMjYpjSZpQ",
+   "positive_chunk": "ZuMjYpjSZpQ:transcript#00000",
+   "df": 10,
+   "category": "Robotics"
+  }
+ ],
+ "near_twins": [
+  {
+   "twin": "studs.g",
+   "mutant": "studs.3",
+   "positive_chunk": "0fm6G50YOmQ:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "anthropic/nowledge-plugins",
+   "mutant": "anthropic/nowledge-plugin3",
+   "positive_chunk": "0kDryeRcW1Q:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "DeviceMobile",
+   "mutant": "DeviceMobil3",
+   "positive_chunk": "0korQqBgJ_o:transcript#00035",
+   "mutant_df": 0
+  },
+  {
+   "twin": "framer.app",
+   "mutant": "framer.ap3",
+   "positive_chunk": "0korQqBgJ_o:transcript#00103",
+   "mutant_df": 0
+  },
+  {
+   "twin": "OpenLink",
+   "mutant": "OpenLin3",
+   "positive_chunk": "0korQqBgJ_o:transcript#00106",
+   "mutant_df": 0
+  },
+  {
+   "twin": "PlexP",
+   "mutant": "Plex3",
+   "positive_chunk": "0m614sRbu64:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "Obus48",
+   "mutant": "Obus43",
+   "positive_chunk": "162nqWsynY8:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "DockHub",
+   "mutant": "DockHu3",
+   "positive_chunk": "18Q-0_y1qLw:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "cs225",
+   "mutant": "cs223",
+   "positive_chunk": "0bV4524KsGQ:transcript#00000",
+   "mutant_df": 0
+  },
+  {
+   "twin": "adaptuniverse.com",
+   "mutant": "adaptuniverse.co3",
+   "positive_chunk": "0bs8ACeqyVs:transcript#00001",
+   "mutant_df": 0
+  },
+  {
+   "twin": "Kiwico.com",
+   "mutant": "Kiwico.co3",
+   "positive_chunk": "0g8AhCAP4w8:transcript#00002",
+   "mutant_df": 0
+  },
+  {
+   "twin": "BowMe",
+   "mutant": "BowM3",
+   "positive_chunk": "0gEjb_Go1iQ:transcript#00000",
+   "mutant_df": 0
+  }
+ ],
+ "common_lexical": [
+  {
+   "query": "YouTube"
+  },
+  {
+   "query": "Google"
+  },
+  {
+   "query": "Python"
+  },
+  {
+   "query": "ChatGPT"
+  },
+  {
+   "query": "iPhone"
+  },
+  {
+   "query": "NVIDIA"
+  },
+  {
+   "query": "JavaScript"
+  },
+  {
+   "query": "Windows"
+  }
+ ],
+ "zero_df_identifiers": [
+  {
+   "query": "studs.Q9",
+   "df": 0,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "anthropic/nowledge-pluginQ9",
+   "df": 0,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "DeviceMobilQ9",
+   "df": 0,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "framer.apQ9",
+   "df": 0,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "OpenLinQ9",
+   "df": 0,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "PlexQ9",
+   "df": 0,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "Obus4Q9",
+   "df": 0,
+   "category": "Business"
+  },
+  {
+   "query": "DockHuQ9",
+   "df": 0,
+   "category": "Business"
+  },
+  {
+   "query": "cs22Q9",
+   "df": 0,
+   "category": "Technology"
+  },
+  {
+   "query": "adaptuniverse.coQ9",
+   "df": 0,
+   "category": "Technology"
+  },
+  {
+   "query": "Kiwico.coQ9",
+   "df": 0,
+   "category": "Technology"
+  },
+  {
+   "query": "BowMQ9",
+   "df": 0,
+   "category": "Technology"
+  }
+ ],
+ "exact_df1_strong": [
+  {
+   "query": "studs.g",
+   "positive_video": "0fm6G50YOmQ",
+   "positive_chunk": "0fm6G50YOmQ:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "anthropic/nowledge-plugins",
+   "positive_video": "0kDryeRcW1Q",
+   "positive_chunk": "0kDryeRcW1Q:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "framer.app",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00103",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "Obus48",
+   "positive_video": "162nqWsynY8",
+   "positive_chunk": "162nqWsynY8:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "cs225",
+   "positive_video": "0bV4524KsGQ",
+   "positive_chunk": "0bV4524KsGQ:transcript#00000",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "adaptuniverse.com",
+   "positive_video": "0bs8ACeqyVs",
+   "positive_chunk": "0bs8ACeqyVs:transcript#00001",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "Kiwico.com",
+   "positive_video": "0g8AhCAP4w8",
+   "positive_chunk": "0g8AhCAP4w8:transcript#00002",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "be300",
+   "positive_video": "0No6gJmoHU0",
+   "positive_chunk": "0No6gJmoHU0:transcript#00000",
+   "df": 1,
+   "category": "Markets"
+  },
+  {
+   "query": "AMD4",
+   "positive_video": "-eqhFe9jNA4",
+   "positive_chunk": "-eqhFe9jNA4:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "T-A-V-I-L-Y",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00079",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "Gene7499",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00086",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "onchaini.com",
+   "positive_video": "-fSjdYzrFvA",
+   "positive_chunk": "-fSjdYzrFvA:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "a300",
+   "positive_video": "-g-J8pZQvrc",
+   "positive_chunk": "-g-J8pZQvrc:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "shiftadarma.com",
+   "positive_video": "-gdT8htBwX8",
+   "positive_chunk": "-gdT8htBwX8:transcript#00000",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "errorsystem.com",
+   "positive_video": "-diOLQSk9A8",
+   "positive_chunk": "-diOLQSk9A8:transcript#00000",
+   "df": 1,
+   "category": "Health"
+  },
+  {
+   "query": "trifum.com",
+   "positive_video": "-eZ263yN4fE",
+   "positive_chunk": "-eZ263yN4fE:transcript#00000",
+   "df": 1,
+   "category": "Health"
+  },
+  {
+   "query": "PT89",
+   "positive_video": "1fL47TIPIuM",
+   "positive_chunk": "1fL47TIPIuM:transcript#00000",
+   "df": 1,
+   "category": "Finance"
+  },
+  {
+   "query": "T1161",
+   "positive_video": "1gtibRqvZLw",
+   "positive_chunk": "1gtibRqvZLw:transcript#00000",
+   "df": 1,
+   "category": "Finance"
+  },
+  {
+   "query": "veta_fi",
+   "positive_video": "1jq2MXubLbw",
+   "positive_chunk": "1jq2MXubLbw:transcript#00000",
+   "df": 1,
+   "category": "Finance"
+  },
+  {
+   "query": "piaavvpn.com/dr",
+   "positive_video": "ZUHUZHh0ioo",
+   "positive_chunk": "ZUHUZHh0ioo:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "13.2.8",
+   "positive_video": "Zzg_1H4XM9Y",
+   "positive_chunk": "Zzg_1H4XM9Y:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "pam.co",
+   "positive_video": "_WXtkSvIDJs",
+   "positive_chunk": "_WXtkSvIDJs:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "aidylist.info",
+   "positive_video": "3BOjoEapVtU",
+   "positive_chunk": "3BOjoEapVtU:transcript#00000",
+   "df": 1,
+   "category": "AI News"
+  },
+  {
+   "query": "nerdnipe.link",
+   "positive_video": "3DNkDIVKtK8",
+   "positive_chunk": "3DNkDIVKtK8:transcript#00000",
+   "df": 1,
+   "category": "AI News"
+  }
+ ],
+ "weak_df1": [
+  {
+   "query": "DeviceMobile",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00035",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "OpenLink",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00106",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "PlexP",
+   "positive_video": "0m614sRbu64",
+   "positive_chunk": "0m614sRbu64:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "DockHub",
+   "positive_video": "18Q-0_y1qLw",
+   "positive_chunk": "18Q-0_y1qLw:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "BowMe",
+   "positive_video": "0gEjb_Go1iQ",
+   "positive_chunk": "0gEjb_Go1iQ:transcript#00000",
+   "df": 1,
+   "category": "Technology"
+  },
+  {
+   "query": "GitPush",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00058",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "SuperPython",
+   "positive_video": "-fAMuxSYfW4",
+   "positive_chunk": "-fAMuxSYfW4:transcript#00084",
+   "df": 1,
+   "category": "AI/ML"
+  },
+  {
+   "query": "unPakistan",
+   "positive_video": "bu-dtABARBE",
+   "positive_chunk": "bu-dtABARBE:transcript#00000",
+   "df": 1,
+   "category": "Politics"
+  },
+  {
+   "query": "McFall",
+   "positive_video": "dcQQcz-dmys",
+   "positive_chunk": "dcQQcz-dmys:transcript#00000",
+   "df": 1,
+   "category": "Politics"
+  },
+  {
+   "query": "DeRidder",
+   "positive_video": "ezxwR00ze1k",
+   "positive_chunk": "ezxwR00ze1k:transcript#00000",
+   "df": 1,
+   "category": "Politics"
+  },
+  {
+   "query": "BioState",
+   "positive_video": "ZesUHvwJg50",
+   "positive_chunk": "ZesUHvwJg50:transcript#00000",
+   "df": 1,
+   "category": "Robotics"
+  },
+  {
+   "query": "GetRange",
+   "positive_video": "0oSN65eM-tc",
+   "positive_chunk": "0oSN65eM-tc:transcript#00005",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "ViewToggleTerminal",
+   "positive_video": "174kDnSUJj4",
+   "positive_chunk": "174kDnSUJj4:transcript#00003",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "MoveLineUp",
+   "positive_video": "174kDnSUJj4",
+   "positive_chunk": "174kDnSUJj4:transcript#00004",
+   "df": 1,
+   "category": "Software Engineering"
+  }
+ ],
+ "exact_df2_100_strong": [
+  {
+   "query": "list-style:none",
+   "positive_video": "0gCGzQvoB9o",
+   "positive_chunk": "0gCGzQvoB9o:transcript#00000",
+   "df": 6,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "btc_price",
+   "positive_video": "0h6BM6n8C0w",
+   "positive_chunk": "0h6BM6n8C0w:transcript#00001",
+   "df": 9,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "One11",
+   "positive_video": "0hNzOtmhAhc",
+   "positive_chunk": "0hNzOtmhAhc:transcript#00000",
+   "df": 3,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "buildermethods.com",
+   "positive_video": "0hdFJA-ho3c",
+   "positive_chunk": "0hdFJA-ho3c:transcript#00000",
+   "df": 19,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "factory.ai",
+   "positive_video": "0jMDr9t86M4",
+   "positive_chunk": "0jMDr9t86M4:transcript#00000",
+   "df": 88,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "framer.com",
+   "positive_video": "0korQqBgJ_o",
+   "positive_chunk": "0korQqBgJ_o:transcript#00134",
+   "df": 15,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "something.local",
+   "positive_video": "0lzFHySymsU",
+   "positive_chunk": "0lzFHySymsU:transcript#00000",
+   "df": 27,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "gemini.google.com",
+   "positive_video": "15LmJZEUWHU",
+   "positive_chunk": "15LmJZEUWHU:transcript#00000",
+   "df": 75,
+   "category": "Business"
+  },
+  {
+   "query": "labs.google",
+   "positive_video": "16D43V5-QTE",
+   "positive_chunk": "16D43V5-QTE:transcript#00000",
+   "df": 40,
+   "category": "Business"
+  },
+  {
+   "query": "mid200s",
+   "positive_video": "1AMZ4sPZwNY",
+   "positive_chunk": "1AMZ4sPZwNY:transcript#00000",
+   "df": 12,
+   "category": "Business"
+  },
+  {
+   "query": "by10",
+   "positive_video": "0b9N-rK3wXs",
+   "positive_chunk": "0b9N-rK3wXs:transcript#00000",
+   "df": 10,
+   "category": "Technology"
+  },
+  {
+   "query": "adaptediversity.com",
+   "positive_video": "0bs8ACeqyVs",
+   "positive_chunk": "0bs8ACeqyVs:transcript#00002",
+   "df": 3,
+   "category": "Technology"
+  },
+  {
+   "query": "X399",
+   "positive_video": "0duSwyiSyGQ",
+   "positive_chunk": "0duSwyiSyGQ:transcript#00000",
+   "df": 2,
+   "category": "Technology"
+  },
+  {
+   "query": "uk.com",
+   "positive_video": "0f5NQqx7MDY",
+   "positive_chunk": "0f5NQqx7MDY:transcript#00000",
+   "df": 11,
+   "category": "Technology"
+  },
+  {
+   "query": "target.com",
+   "positive_video": "0gt_may1cYE",
+   "positive_chunk": "0gt_may1cYE:transcript#00000",
+   "df": 5,
+   "category": "Technology"
+  },
+  {
+   "query": "id64",
+   "positive_video": "0hABxUbrx0g",
+   "positive_chunk": "0hABxUbrx0g:transcript#00000",
+   "df": 2,
+   "category": "Technology"
+  },
+  {
+   "query": "IV60",
+   "positive_video": "0JESkbzcPsA",
+   "positive_chunk": "0JESkbzcPsA:transcript#00000",
+   "df": 2,
+   "category": "Markets"
+  },
+  {
+   "query": "investing.com",
+   "positive_video": "0JmUj2r4tvI",
+   "positive_chunk": "0JmUj2r4tvI:transcript#00000",
+   "df": 96,
+   "category": "Markets"
+  },
+  {
+   "query": "airmir.com",
+   "positive_video": "0L2UQANxuJs",
+   "positive_chunk": "0L2UQANxuJs:transcript#00000",
+   "df": 7,
+   "category": "Markets"
+  }
+ ],
+ "ambiguous_allcaps_df1": [
+  {
+   "query": "XIOS",
+   "positive_video": "0qX5Ddg7KXg",
+   "positive_chunk": "0qX5Ddg7KXg:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "GSMP",
+   "positive_video": "0s64lPsr6oM",
+   "positive_chunk": "0s64lPsr6oM:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "XAPK",
+   "positive_video": "0tiXZ6qw0DY",
+   "positive_chunk": "0tiXZ6qw0DY:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "MSTSC",
+   "positive_video": "10QSpg2sZgk",
+   "positive_chunk": "10QSpg2sZgk:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "CQIT",
+   "positive_video": "1GJmyznl4z4",
+   "positive_chunk": "1GJmyznl4z4:transcript#00000",
+   "df": 1,
+   "category": "Software Engineering"
+  },
+  {
+   "query": "AVPV",
+   "positive_video": "1E_WyJhPZ4I",
+   "positive_chunk": "1E_WyJhPZ4I:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "HTTML",
+   "positive_video": "1GnbDrvfGtM",
+   "positive_chunk": "1GnbDrvfGtM:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "WPL",
+   "positive_video": "1fTGX4sLVqA",
+   "positive_chunk": "1fTGX4sLVqA:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "EKY",
+   "positive_video": "207qq4jwrUY",
+   "positive_chunk": "207qq4jwrUY:transcript#00000",
+   "df": 1,
+   "category": "Business"
+  },
+  {
+   "query": "GCH",
+   "positive_video": "0l5zeAP0W2I",
+   "positive_chunk": "0l5zeAP0W2I:transcript#00000",
+   "df": 1,
+   "category": "Technology"
+  }
+ ]
+}

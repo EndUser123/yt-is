@@ -1,0 +1,3 @@
+{"checked_at": "2026-08-17", "procedure": "blind pre-retrieval validity per BENCHMARK_PROTOCOL_V1 + v1.1",
+ "n": 47, "rejected": 0, "rejections": [],
+ "note": "all queries carry independently recoverable referents; conventional ALLCAPS terms included per v1.1 (GraphQL MongoDB MySQL HTML)"}
