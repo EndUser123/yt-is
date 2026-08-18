@@ -1,0 +1,17 @@
+{
+ "payload": {
+  "suite": "c1_final_replay",
+  "emitted_at": "2026-08-17T23:00:15.859085+00:00",
+  "promotion_authorized": false,
+  "required_gates": [
+   "everything"
+  ],
+  "gates": {
+   "everything": {
+    "pass": true
+   }
+  },
+  "verdict": "PASS"
+ },
+ "receipt_sha256": "1346a171cdf2d601ad828548fbbdc9b712c0684b13735a27cbfe1487f0f336d0"
+}

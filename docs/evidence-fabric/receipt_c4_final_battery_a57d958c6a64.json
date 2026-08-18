@@ -1,0 +1,18 @@
+{
+ "payload": {
+  "suite": "c4_final_battery",
+  "emitted_at": "2026-08-17T22:55:30.664284+00:00",
+  "promotion_authorized": true,
+  "required_gates": [
+   "g1",
+   "g2"
+  ],
+  "gates": {
+   "g1": {
+    "pass": true
+   }
+  },
+  "verdict": "PASS"
+ },
+ "receipt_sha256": "a57d958c6a64504c692d329e4572c73cff6841c8f662b62faef4dd8142037ce6"
+}
