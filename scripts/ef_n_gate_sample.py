@@ -12,8 +12,12 @@ for p in sorted(VAULT.glob("*.md")):
     text = p.read_text(encoding="utf-8")[:3000]
     m = re.search(r"last_verified:\s*([0-9-]+)", text)
     lv = m.group(1) if m else None
-    sm = re.search(r'summary:\s*"?([^"\n]+)"?', text)
-    claim = (sm.group(1).strip() if sm else p.stem.replace("-", " "))
+    sm = re.search(r"summary:\s*>?\s*\n((?:\s{2,}.*\n)+)", text)
+    if sm:
+        claim = " ".join(l.strip() for l in sm.group(1).splitlines()[:4])
+    else:
+        sm2 = re.search(r'summary:\s*"?([^"\n]+)"?', text)
+        claim = (sm2.group(1).strip() if sm2 else p.stem.replace("-", " "))
     pages.append({"file": p.name, "claim": claim[:180], "last_verified": lv})
 
 recent = [p for p in pages if p["last_verified"] and p["last_verified"] >= "2026-08"]

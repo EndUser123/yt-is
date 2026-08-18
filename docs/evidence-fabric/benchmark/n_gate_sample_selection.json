@@ -1,107 +1,107 @@
 [
  {
   "file": "design-patterns-domain-overview.md",
-  "claim": ">",
+  "claim": "Index of 9 wiki concepts tagged 'design-pattern'. These span enforcement mechanisms, trigger coupling, verification gaps, instruction-state closure, plan-then-execute, skill screen",
   "last_verified": "2026-08-02"
  },
  {
   "file": "agent-memory-systems.md",
-  "claim": ">",
+  "claim": "Comprehensive survey of persistent memory approaches for LLM coding agents. Maps 11 architecture patterns, 15 production platforms, and the coding-agent-specific implementations us",
   "last_verified": "2026-08-04"
  },
  {
   "file": "shared-mcp-infrastructure-grok-build.md",
-  "claim": ">",
+  "claim": "The mechanism for running one \"infrastructure\" set of MCP servers with all Grok terminals using it is Grok's native url = config form (HTTP/SSE transport): each session connects to",
   "last_verified": "2026-08-16"
  },
  {
   "file": "examples-over-rules-escape-hatch.md",
-  "claim": ">",
+  "claim": "Rules encode explicit knowledge; examples encode tacit knowledge. When you find yourself rewriting the same rule repeatedly and outputs still feel \"off,\" stop trying to encode the ",
   "last_verified": "2026-08-02"
  },
  {
   "file": "detection-gates-cannot-fire-against-parked-files-operator-lifecycle-is-the-missing-input.md",
-  "claim": ">",
+  "claim": "A \"wait until the other session is done\" gate built from mechanical proxies (quiet \u22652h, clean tree, all pushed) is structurally unable to open against real long-running agent sessi",
   "last_verified": "2026-08-16"
  },
  {
   "file": "zai-coding-plan-auto-routes-glm-5-2-requests-to-glm-5-3.md",
-  "claim": ">",
+  "claim": "Z.ai documents that Coding Plan requests for GLM-5.2 or GLM-5.1 are automatically routed to GLM-5.3 (released ~2026-08-14). A response `model` field of glm-5.3 on a glm-5.2 request",
   "last_verified": "2026-08-16"
  },
  {
   "file": "cli-over-mcp-for-subagent-reachable-shared-query-surfaces.md",
-  "claim": ">",
+  "claim": "When a shared query surface must be callable by spawned subagents, CLI-first beats MCP-first because subagents cannot reach MCP servers. The yt-is Evidence Fabric consumer surface ",
   "last_verified": "2026-08-18"
  },
  {
   "file": "windows-terminal-concurrent-agent-session-workflow.md",
-  "claim": ">",
+  "claim": "Windows Terminal is being used as the primary surface for multiple concurrent Grok, Claude, Codex, and shell sessions. The chosen workflow combines Alt+T searchable tab lookup, a 3",
   "last_verified": "2026-08-13"
  },
  {
   "file": "behavioral-adoption-test-before-ship.md",
-  "claim": ">",
+  "claim": "When a design's value depends on LLM behavior that's documented but not tested (e.g., partner prompts reading a new sidecar file), gate ship on a behavioral test, not a post-ship a",
   "last_verified": "2026-08-10"
  },
  {
   "file": "ripgrep-hidden-dir-pruning-root-scope-false-negatives.md",
-  "claim": ">",
+  "claim": "ripgrep (and the workspace grep tool built on it) skips hidden files and directories by DEFAULT during traversal. On this workspace, all knowledge stores live in dot-directories (.",
   "last_verified": "2026-08-16"
  },
  {
   "file": "verifier-scope-acceptance-name-the-file-not-the-directory.md",
-  "claim": ">",
+  "claim": "When a Stop hook requires verification coverage for a modified file, running a verifier against a parent directory (pytest tests/ef/) does NOT satisfy the obligation even when the ",
   "last_verified": "2026-08-18"
  },
  {
   "file": "orchestrator-controlled-cross-model-validation-ship-py.md",
-  "claim": ">",
+  "claim": "The concrete implementation of the three-role (orchestrator/worker/validator) architecture prescribed by [[making-llm-agents-honestly-execute-skills-solution-stack]]. Documents six",
   "last_verified": "2026-08-09"
  },
  {
   "file": "analyst-exhibits-pattern-being-analyzed.md",
-  "claim": ">",
+  "claim": "When an agent analyzes a failure pattern (e.g., \"the model fabricates under uncertainty\"), the agent is itself subject to the same pattern during the analysis. The analyst is not e",
   "last_verified": "2026-08-02"
  },
  {
   "file": "pi-agentic-harness-hang-extension-tool-result-middleware-no-timeout.md",
-  "claim": ">",
+  "claim": "The pi coding agent (v0.84.2) awaits extension `tool_call`/`tool_result` middleware handlers inline in the tool-execution path with NO timeout and NO fail-closed behavior, so a sin",
   "last_verified": "2026-08-16"
  },
  {
   "file": "agent-config-directory-taxonomy.md",
-  "claim": ">",
+  "claim": "The SKILL.md format is an open standard (agentskills.io). As of Jul 2026, the .agents/skills/ directory is the cross-agent discovery root \u2014 natively polled by Codex CLI, OpenCode, ",
   "last_verified": "2026-07-26"
  },
  {
   "file": "ai-automated-test-generation-patterns.md",
-  "claim": ">",
+  "claim": "Research on automated test generation from source code using AI. Five tool categories: IDE assistants (Claude Code 9.3/10, Cursor 8.9/10, Copilot 8.8/10), agentic frameworks (NVIDI",
   "last_verified": null
  },
  {
   "file": "ai-agent-steering-and-self-improvement-patterns.md",
-  "claim": ">",
+  "claim": "AI agents for software engineering tasks employ steering documents and continuous learning approaches to maintain effective operation across complex codebases. These patterns enabl",
   "last_verified": null
  },
  {
   "file": "claude-code-guardrails.md",
-  "claim": ">",
+  "claim": "AI guardrails are configurable constraints that control the behavior and outputs of Claude Code and similar AI coding agents, implemented through integration with platforms like NV",
   "last_verified": null
  },
  {
   "file": "free-ai-coding-alternatives.md",
-  "claim": ">",
+  "claim": "Strategies for replacing expensive AI coding models like Opus 4.7 with free or lower-cost alternatives, typically involving Chinese-developed models or workflow optimization to red",
   "last_verified": null
  },
  {
   "file": "generative-ai-tool-patterns.md",
-  "claim": ">",
+  "claim": "A pattern emerging across AI tooling where open-source frameworks enable dynamic content generation through modular component architectures, allowing developers to create documenta",
   "last_verified": null
  },
  {
   "file": "skill-graph.md",
-  "claim": ">",
+  "claim": "Auto-generated dependency graph of all workspace skills. Three edge types: delegates_to (skill calls skill), consumes_provider (skill uses MCP/CLI tool), references_wiki (skill cit",
   "last_verified": null
  }
 ]
