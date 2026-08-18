@@ -137,6 +137,31 @@ class ProductionQuery:
                 final = [(by_id[c], 1.0 / (i + 1)) for i, (c, _l) in
                          enumerate(fused) if c in by_id]
                 exact_hit = any(l for _c, l in fused[:1])
+        if route.intent == "comparison":
+            # G-gate: class-specific sparse-heavier fusion (dev-measured
+            # best: any@3 0.90 / nDCG@3 0.853 vs production 0.833/0.747).
+            qv, lw = self._encode(query_text)
+            idxs = sorted(lw.keys())
+            d_leg = qc.query_points(
+                self.collection, query=[float(x) for x in qv],
+                using=ps.DENSE_NAME, limit=100, with_payload=True).points
+            s_leg = qc.query_points(
+                self.collection, query=models.SparseVector(
+                    indices=[int(t) for t in idxs],
+                    values=[float(lw[t]) for t in idxs]),
+                using=ps.LEX_NAME, limit=100, with_payload=True,
+                query_filter=flt).points
+            score = {}
+            for rk, p_ in enumerate(d_leg):
+                cid = p_.payload["chunk_id"]
+                score[cid] = score.get(cid, 0.0) + 1.0 / (60 + rk + 1)
+            for rk, p_ in enumerate(s_leg):
+                cid = p_.payload["chunk_id"]
+                score[cid] = score.get(cid, 0.0) + 2.0 / (60 + rk + 1)
+            by_id = {p_.payload["chunk_id"]: p_ for p_ in list(d_leg) + list(s_leg)}
+            fused = sorted(score.items(), key=lambda kv: -kv[1])[:limit]
+            final = [(by_id[c], s) for c, s in fused if c in by_id]
+            exact_hit = False
         elif route.intent == "semantic":
             points, _ = self._semantic_legs(query_text, flt, qc)
             final = [(p, p.score) for p in points[:limit]]
