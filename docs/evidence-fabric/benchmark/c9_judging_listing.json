@@ -1,0 +1,684 @@
+{
+ "descriptive_semantic": [
+  {
+   "stratum": "descriptive_semantic",
+   "query": "using debug assertions to verify a complicated function runs correctly",
+   "rank": 1,
+   "video": "0mYzyS31DZU",
+   "title": "How to Use Debug Assertions in a Complex Function"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "using debug assertions to verify a complicated function runs correctly",
+   "rank": 2,
+   "video": "-gk-Kf9nZNE",
+   "title": "The GSD Skills Everyone Misses (I Tested Them)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "using debug assertions to verify a complicated function runs correctly",
+   "rank": 3,
+   "video": "ejRcMxeU0oc",
+   "title": "Cursor 2.2 Debug Mode Fixed My Bugs Automatically (Multi-Agent Features)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "evidence that a newly released reasoning model is best for programming",
+   "rank": 1,
+   "video": "0mpkIAwUe78",
+   "title": "The Best AI Model For Programming Just Dropped..."
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "evidence that a newly released reasoning model is best for programming",
+   "rank": 2,
+   "video": "tSzw6R0jDX8",
+   "title": "Ultimate Battle! Gpt5.1 vs Gemini 3 PRO vs Grok 4 | Who is the  best?"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "evidence that a newly released reasoning model is best for programming",
+   "rank": 3,
+   "video": "1lD7LKQ-BDE",
+   "title": "GPT-5.6 Sol Explained: OpenAI's Most Advanced AI Model Family (2026)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "cleaning an electric scooter properly after muddy rides",
+   "rank": 1,
+   "video": "0mryb5fplyg",
+   "title": "How To Clean Your Xiaomi Electric Scooter 6"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "cleaning an electric scooter properly after muddy rides",
+   "rank": 2,
+   "video": "L0O-FIyQMa8",
+   "title": "Elon Just Said What?! / New Robotaxi Approval Timelines / Robotaxi Hiring ⚡️"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "cleaning an electric scooter properly after muddy rides",
+   "rank": 3,
+   "video": "3cA37CIdStA",
+   "title": "Xiaomi Electric Scooter 6 Review"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "prototyping parallax scroll and hover animations in a design tool",
+   "rank": 1,
+   "video": "0n4Ygs49YbY",
+   "title": "Prototype a Parallax Animation in Figma"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "prototyping parallax scroll and hover animations in a design tool",
+   "rank": 2,
+   "video": "0n4Ygs49YbY",
+   "title": "Prototype a Parallax Animation in Figma"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "prototyping parallax scroll and hover animations in a design tool",
+   "rank": 3,
+   "video": "0n4Ygs49YbY",
+   "title": "Prototype a Parallax Animation in Figma"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a complete developer workflow for building and deploying model context protocol servers",
+   "rank": 1,
+   "video": "7i838w1HHNo",
+   "title": "This MCP Toolkit Just Changed Everything (10x Easier)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a complete developer workflow for building and deploying model context protocol servers",
+   "rank": 2,
+   "video": "q9Zii0fFusU",
+   "title": "Top Open-Source MCP Servers: Boost AI Agents with These Game-Changing Tools"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a complete developer workflow for building and deploying model context protocol servers",
+   "rank": 3,
+   "video": "wMK9XxY0QM0",
+   "title": "Top AI Clients & MCP Servers: 10 Projects Revolutionizing AI Workflows"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "updated complete course for a cross-platform mobile framework",
+   "rank": 1,
+   "video": "gOM-MruSydg",
+   "title": "How to Develop Full-Stack Mobile Apps 100% FREE using Insforge AI Coding in Flutter 2026"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "updated complete course for a cross-platform mobile framework",
+   "rank": 2,
+   "video": "yye7rSsiV6k",
+   "title": "The Complete App Development Roadmap"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "updated complete course for a cross-platform mobile framework",
+   "rank": 3,
+   "video": "4ezhzJDJ6Jw",
+   "title": "How to Build an APP Backend for 100% FREE | Flutter, React Native & Expo"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a skill that cuts ai output tokens by forcing terse caveman speech",
+   "rank": 1,
+   "video": "0nO64outHWI",
+   "title": "Caveman: A Claude Code skill that forces your AI to talk like a literal caveman"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a skill that cuts ai output tokens by forcing terse caveman speech",
+   "rank": 2,
+   "video": "RuH3uiJy84A",
+   "title": "This Claude Skill Cuts Your Token Costs In HALF"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "a skill that cuts ai output tokens by forcing terse caveman speech",
+   "rank": 3,
+   "video": "4FO1Liu-ttk",
+   "title": "Caveman Claude Code Is the New Meta (Here's the Science)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "why tech and it professionals should read a famous ops management novel",
+   "rank": 1,
+   "video": "0nU-0Z3ryXE",
+   "title": "Why Every Tech & IT Pro MUST Read The Phoenix Project"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "why tech and it professionals should read a famous ops management novel",
+   "rank": 2,
+   "video": "UMEB6bWccVQ",
+   "title": "Walking GTC 2026: Demos, Robots, and Racks"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "why tech and it professionals should read a famous ops management novel",
+   "rank": 3,
+   "video": "aKKcB_uC3BA",
+   "title": "Elon Musk Stuns Mark Zuckerberg"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "developer conference announcements about cloud ai platform and runtime tooling",
+   "rank": 1,
+   "video": "TbKob_OlE8M",
+   "title": "Claude Just Changed Advertising Forever! (Tutorial)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "developer conference announcements about cloud ai platform and runtime tooling",
+   "rank": 2,
+   "video": "HywmktKaKd4",
+   "title": "Trending Open-Source Github Projects : Claude Code, VibeVoice, bitsandbytes & Coolify CLI #245"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "developer conference announcements about cloud ai platform and runtime tooling",
+   "rank": 3,
+   "video": "dJP-DxPfHVM",
+   "title": "How to Install OpenClaw on Your Computer in ONE CLICK"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "extension that enforces spec-driven planning compared to other structured frameworks",
+   "rank": 1,
+   "video": "0oNMR8CGGJ8",
+   "title": "Superpowers Plugin Review: Claude Code's Best Plan Mode Extension"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "extension that enforces spec-driven planning compared to other structured frameworks",
+   "rank": 2,
+   "video": "kV3gnv_Npxk",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "extension that enforces spec-driven planning compared to other structured frameworks",
+   "rank": 3,
+   "video": "b6cbxSaa4U4",
+   "title": "Spec-Driven Development in 2026: What Actually Changed"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "the fastest way to iterate a list using stack-allocated spans",
+   "rank": 1,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "the fastest way to iterate a list using stack-allocated spans",
+   "rank": 2,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "the fastest way to iterate a list using stack-allocated spans",
+   "rank": 3,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "creating a restful api from scratch with node",
+   "rank": 1,
+   "video": "0oXYLzuucwE",
+   "title": "What is a RESTful API? | Creating a REST API with Node.js"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "creating a restful api from scratch with node",
+   "rank": 2,
+   "video": "56qQNcHJxyQ",
+   "title": "AI as an API - Part 1 - Train an ML Model and turn it into an Rest API using Keras, FastAPI & NoSQL"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "creating a restful api from scratch with node",
+   "rank": 3,
+   "video": "3RvtBXr7fY4",
+   "title": "Build a Secure ToDo API with Django REST Framework | Project Setup"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "running multiple ai coding agents in parallel isolated workspaces",
+   "rank": 1,
+   "video": "b7wHvppJrlU",
+   "title": "Orca: They built an IDE for AI agents"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "running multiple ai coding agents in parallel isolated workspaces",
+   "rank": 2,
+   "video": "PKFSrhcdUcA",
+   "title": "4 agents no stepping on each other - Archon V3"
+  },
+  {
+   "stratum": "descriptive_semantic",
+   "query": "running multiple ai coding agents in parallel isolated workspaces",
+   "rank": 3,
+   "video": "ByDXLTHDp5A",
+   "title": "(no title)"
+  }
+ ],
+ "telegraphic": [
+  {
+   "stratum": "telegraphic",
+   "query": "best ai model for coding right now",
+   "rank": 1,
+   "video": "0SZ6mVWTxQA",
+   "title": "Best Open-Source Coding Model? GLM 4.7 vs DeepSeek 3.2 vs MiniMax M2.1 vs Kimi K2"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "best ai model for coding right now",
+   "rank": 2,
+   "video": "XKYPlTu1c3M",
+   "title": "NEW MOST POWERFUL FREE AI IMAGE MODEL IS HERE!"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "best ai model for coding right now",
+   "rank": 3,
+   "video": "THOIIWLp_Fw",
+   "title": "The New AI Coding? Sending AI Agents On Quests 💡 Qoder Full MCP App Build Test"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "build mcp server python",
+   "rank": 1,
+   "video": "7dgvS4QLIx4",
+   "title": "Build an MCP server with 9 lines of code."
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "build mcp server python",
+   "rank": 2,
+   "video": "MKD-sCZWpZQ",
+   "title": "Beginner's Guide to Building a MCP Server with C# and .NET"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "build mcp server python",
+   "rank": 3,
+   "video": "0n6nptv39ro",
+   "title": "How I build MCP servers as an AI Engineer — Full workflow"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "rest api node.js tutorial",
+   "rank": 1,
+   "video": "0oXYLzuucwE",
+   "title": "What is a RESTful API? | Creating a REST API with Node.js"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "rest api node.js tutorial",
+   "rank": 2,
+   "video": "ACUXjXtG8J4",
+   "title": "How to Connect Node.JS with MongoDB using Mongoose | Connect to a MongoDB Database Using Node.js"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "rest api node.js tutorial",
+   "rank": 3,
+   "video": "38GNKtclDdE",
+   "title": "Build REST APIs in .NET 9 – Full Course for Beginners"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "c# span list performance",
+   "rank": 1,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "c# span list performance",
+   "rank": 2,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "c# span list performance",
+   "rank": 3,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "figma parallax animation prototype",
+   "rank": 1,
+   "video": "0n4Ygs49YbY",
+   "title": "Prototype a Parallax Animation in Figma"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "figma parallax animation prototype",
+   "rank": 2,
+   "video": "0n4Ygs49YbY",
+   "title": "Prototype a Parallax Animation in Figma"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "figma parallax animation prototype",
+   "rank": 3,
+   "video": "0C67-8BB3Bc",
+   "title": "Prototype a Maps App in Figma - Full Course"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "debug assertions complex function",
+   "rank": 1,
+   "video": "0mYzyS31DZU",
+   "title": "How to Use Debug Assertions in a Complex Function"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "debug assertions complex function",
+   "rank": 2,
+   "video": "7AZA1oOLZ4A",
+   "title": "Diagnose and Fix Software Error With Kilo Code Debug Mode"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "debug assertions complex function",
+   "rank": 3,
+   "video": "Jt_Y6-rQ32o",
+   "title": "Free 200M Tokens. Let's Build Something With Factory AI. Live From SF"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "parallel ai coding workspaces",
+   "rank": 1,
+   "video": "NKWqXYykQ1o",
+   "title": "My Claude Code Now Fixes My GitHub Issues Without Touching My Machine (Free Tool!)"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "parallel ai coding workspaces",
+   "rank": 2,
+   "video": "IQGN_uMhJTo",
+   "title": "These FREE AI Coding Tools Make You 10x Faster"
+  },
+  {
+   "stratum": "telegraphic",
+   "query": "parallel ai coding workspaces",
+   "rank": 3,
+   "video": "plfDVjex0fk",
+   "title": "Orca: the ADE for working with a fleet of parallel agents"
+  }
+ ],
+ "technical": [
+  {
+   "stratum": "technical",
+   "query": "why spans avoid heap allocation when wrapping arrays",
+   "rank": 1,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "technical",
+   "query": "why spans avoid heap allocation when wrapping arrays",
+   "rank": 2,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "technical",
+   "query": "why spans avoid heap allocation when wrapping arrays",
+   "rank": 3,
+   "video": "51xRAjRw_fE",
+   "title": "Heap sort! #algorithms"
+  },
+  {
+   "stratum": "technical",
+   "query": "measuring the performance penalty of runtime assertions",
+   "rank": 1,
+   "video": "0mYzyS31DZU",
+   "title": "How to Use Debug Assertions in a Complex Function"
+  },
+  {
+   "stratum": "technical",
+   "query": "measuring the performance penalty of runtime assertions",
+   "rank": 2,
+   "video": "olSGmEOd4PY",
+   "title": "OpenClaw AI Pet on Real Hardware"
+  },
+  {
+   "stratum": "technical",
+   "query": "measuring the performance penalty of runtime assertions",
+   "rank": 3,
+   "video": "u5NNTqqBVnE",
+   "title": "AWS AI Practitioner Question 38"
+  },
+  {
+   "stratum": "technical",
+   "query": "deploying python mcp servers to a package index",
+   "rank": 1,
+   "video": "7dgvS4QLIx4",
+   "title": "Build an MCP server with 9 lines of code."
+  },
+  {
+   "stratum": "technical",
+   "query": "deploying python mcp servers to a package index",
+   "rank": 2,
+   "video": "0n6nptv39ro",
+   "title": "How I build MCP servers as an AI Engineer — Full workflow"
+  },
+  {
+   "stratum": "technical",
+   "query": "deploying python mcp servers to a package index",
+   "rank": 3,
+   "video": "ZPaF_6mSp8I",
+   "title": "Create and install an F1 inspired MCP Server in VS Code"
+  },
+  {
+   "stratum": "technical",
+   "query": "what a restful api is made of and design constraints",
+   "rank": 1,
+   "video": "0oXYLzuucwE",
+   "title": "What is a RESTful API? | Creating a REST API with Node.js"
+  },
+  {
+   "stratum": "technical",
+   "query": "what a restful api is made of and design constraints",
+   "rank": 2,
+   "video": "0WlPleZ2xqQ",
+   "title": "REST API vs MCP: How AI Agents Actually Talk to Software"
+  },
+  {
+   "stratum": "technical",
+   "query": "what a restful api is made of and design constraints",
+   "rank": 3,
+   "video": "gd5fn8xOE2Y",
+   "title": "(no title)"
+  }
+ ],
+ "comparison": [
+  {
+   "stratum": "comparison",
+   "query": "spec-driven frameworks versus a plan mode extension for structure",
+   "rank": 1,
+   "video": "kV1cotk3uvk",
+   "title": "Claude's Best Tool for Product Managers"
+  },
+  {
+   "stratum": "comparison",
+   "query": "spec-driven frameworks versus a plan mode extension for structure",
+   "rank": 2,
+   "video": "b6cbxSaa4U4",
+   "title": "Spec-Driven Development in 2026: What Actually Changed"
+  },
+  {
+   "stratum": "comparison",
+   "query": "spec-driven frameworks versus a plan mode extension for structure",
+   "rank": 3,
+   "video": "0oNMR8CGGJ8",
+   "title": "Superpowers Plugin Review: Claude Code's Best Plan Mode Extension"
+  },
+  {
+   "stratum": "comparison",
+   "query": "iterating with spans versus plain arrays and lists",
+   "rank": 1,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "comparison",
+   "query": "iterating with spans versus plain arrays and lists",
+   "rank": 2,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "comparison",
+   "query": "iterating with spans versus plain arrays and lists",
+   "rank": 3,
+   "video": "0oSN65eM-tc",
+   "title": "The Fastest Way to Modify a List in C# | Coding Demo"
+  },
+  {
+   "stratum": "comparison",
+   "query": "sequential coding versus parallel isolated ai agents",
+   "rank": 1,
+   "video": "422SXqjluuw",
+   "title": "Sequential vs parallel agents"
+  },
+  {
+   "stratum": "comparison",
+   "query": "sequential coding versus parallel isolated ai agents",
+   "rank": 2,
+   "video": "b7wHvppJrlU",
+   "title": "Orca: They built an IDE for AI agents"
+  },
+  {
+   "stratum": "comparison",
+   "query": "sequential coding versus parallel isolated ai agents",
+   "rank": 3,
+   "video": "rHtRWyxVQps",
+   "title": "Build a multi-agent system | Hands On AI (Part 1)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "the newest reasoning model versus the previous best for programming",
+   "rank": 1,
+   "video": "1lD7LKQ-BDE",
+   "title": "GPT-5.6 Sol Explained: OpenAI's Most Advanced AI Model Family (2026)"
+  },
+  {
+   "stratum": "comparison",
+   "query": "the newest reasoning model versus the previous best for programming",
+   "rank": 2,
+   "video": "0mpkIAwUe78",
+   "title": "The Best AI Model For Programming Just Dropped..."
+  },
+  {
+   "stratum": "comparison",
+   "query": "the newest reasoning model versus the previous best for programming",
+   "rank": 3,
+   "video": "tSzw6R0jDX8",
+   "title": "Ultimate Battle! Gpt5.1 vs Gemini 3 PRO vs Grok 4 | Who is the  best?"
+  },
+  {
+   "stratum": "comparison",
+   "query": "verbose ai output versus minimal token responses",
+   "rank": 1,
+   "video": "BnEhq2lPRz4",
+   "title": "AI builder essentials: Tokens, Context Windows, RAG 101"
+  },
+  {
+   "stratum": "comparison",
+   "query": "verbose ai output versus minimal token responses",
+   "rank": 2,
+   "video": "DaHsyXVv60w",
+   "title": "GitHub - huggingface/speech-to-speech: Build local voice agents with open-source models"
+  },
+  {
+   "stratum": "comparison",
+   "query": "verbose ai output versus minimal token responses",
+   "rank": 3,
+   "video": "rVAzoNf-w-M",
+   "title": "How I Use OpenClaw for 95% Cheaper (Feels Illegal)"
+  }
+ ],
+ "weak_common": [
+  {
+   "stratum": "weak_common",
+   "query": "TikTok",
+   "rank": 1,
+   "video": "-oRufpPYEEU",
+   "title": "NotebookLM Can Make TikTok-Style Videos Now (This Changes Studying)!"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "TikTok",
+   "rank": 2,
+   "video": "JcCmPWBHVqo",
+   "title": "7 Minimalist Phones No One Talks About...But Should!"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "TikTok",
+   "rank": 3,
+   "video": "2LHS-bZx3TI",
+   "title": "Microsoft Gave FBI Your Encryption Keys"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "YouTube",
+   "rank": 1,
+   "video": "33-nbBo6CMA",
+   "title": "YouTube Is (Finally) Profitable..."
+  },
+  {
+   "stratum": "weak_common",
+   "query": "YouTube",
+   "rank": 2,
+   "video": "6aGVcK-aJvs",
+   "title": "YouTube Premium now include Peacock and Live Sports !"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "YouTube",
+   "rank": 3,
+   "video": "7jI_PTpo0Ug",
+   "title": "Grok AI Is NO Longer Free… Use THESE Instead (FREE & UNLIMITED AI Video Tools)"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "OpenAI",
+   "rank": 1,
+   "video": "-lRnSrhTXDc",
+   "title": "OpenAI Just Made History (Holy Sh*t?!)"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "OpenAI",
+   "rank": 2,
+   "video": "Q8FcRbLCwEk",
+   "title": "(no title)"
+  },
+  {
+   "stratum": "weak_common",
+   "query": "OpenAI",
+   "rank": 3,
+   "video": "pXna_iPd1_E",
+   "title": "OpenAI Jobs Platform (2026): AI Hiring Is About to Change Forever"
+  }
+ ]
+}

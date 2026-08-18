@@ -24,7 +24,7 @@ RECEIPTS_DIR = Path(__file__).resolve().parent.parent / "docs" / "evidence-fabri
 RETRACTED_DIR = EF_DATA
 
 # Suites allowed to authorize promotion (single source; batteries cite it)
-PROMOTION_AUTHORIZED_SUITES = {"c4_final_battery"}
+PROMOTION_AUTHORIZED_SUITES = {"c4_final_battery", "c9_final_battery"}
 
 
 def _hash(payload: dict) -> str:

@@ -1,0 +1,143 @@
+{
+ "ran_at": "2026-08-18T04:27:33.762934+00:00",
+ "gates": {
+  "exact_df1_strong": {
+   "n": 33,
+   "r1": 1.0,
+   "pass": true
+  },
+  "exact_df2_10_strong": {
+   "n": 15,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "exact_df11_100_strong": {
+   "n": 14,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "exact_df101_1000": {
+   "n": 25,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "punct_heavy": {
+   "n": 18,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "weak_df1": {
+   "n": 14,
+   "top3_literal": 1.0,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "zero_df_identifiers": {
+   "n": 12,
+   "empty_rate": 1.0,
+   "pass": true
+  },
+  "near_twins": {
+   "n": 12,
+   "false_pin": 0,
+   "pass": true
+  },
+  "ambiguous_allcaps_df1": {
+   "n": 10,
+   "r1": 1.0,
+   "pass": true
+  },
+  "ambiguous_allcaps_conventional": {
+   "disc@10": 1.0,
+   "pass": true
+  },
+  "conventional_behavioral": {
+   "n": 9,
+   "literal_discoverable": 1.0,
+   "pass": true
+  },
+  "descriptive_semantic_judged": {
+   "listing": 39,
+   "authored_mrr_info": 0.7051,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "telegraphic_judged": {
+   "listing": 21,
+   "authored_mrr_info": 0.619,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "technical_judged": {
+   "listing": 12,
+   "authored_mrr_info": 0.875,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "comparison_judged": {
+   "listing": 15,
+   "authored_mrr_info": 0.3667,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "weak_common_judged": {
+   "listing": 9,
+   "pass": null,
+   "note": "awaiting judgments"
+  },
+  "latency": {
+   "p95_s": 0.195,
+   "pass": true
+  },
+  "reopenability": {
+   "sampled": 17,
+   "ok": 17,
+   "pass": true
+  },
+  "filter": {
+   "n": 7,
+   "correct": 7,
+   "pass": true
+  },
+  "structural": {
+   "points": 166714,
+   "catalog": 166714,
+   "pass": true
+  },
+  "namespace": {
+   "pass": true
+  },
+  "freshness": {
+   "processed": 0,
+   "added": 0,
+   "updated": 0,
+   "deleted": 0,
+   "indexed_watermark": "2026-08-16T18:59:15.280975",
+   "lag": 0,
+   "pass": true
+  },
+  "qdrant_restart_reconnect": {
+   "pass": true
+  },
+  "reg_c1_df1_strong": {
+   "n": 15,
+   "r1": 1.0,
+   "pass": true
+  },
+  "reg_c2_literal_strong": {
+   "n": 21,
+   "literal_prefix": 1.0,
+   "pass": true
+  },
+  "reg_c2_twins": {
+   "n": 12,
+   "false_pin": 0,
+   "pass": true
+  },
+  "reg_c2_semantic": {
+   "mrr10": 0.7167,
+   "pass": true
+  }
+ },
+ "status": "judging_pending"
+}

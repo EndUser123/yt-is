@@ -1,0 +1,178 @@
+{
+ "payload": {
+  "suite": "c9_final_battery",
+  "emitted_at": "2026-08-18T04:41:10.223750+00:00",
+  "promotion_authorized": true,
+  "required_gates": [
+   "ambiguous_allcaps_conventional",
+   "ambiguous_allcaps_df1",
+   "comparison_judged_final",
+   "conventional_behavioral",
+   "descriptive_semantic_judged_final",
+   "exact_df101_1000",
+   "exact_df11_100_strong",
+   "exact_df1_strong",
+   "exact_df2_10_strong",
+   "filter",
+   "freshness",
+   "latency",
+   "namespace",
+   "near_twins",
+   "punct_heavy",
+   "qdrant_restart_reconnect",
+   "reg_c1_df1_strong",
+   "reg_c2_literal_strong",
+   "reg_c2_semantic",
+   "reg_c2_twins",
+   "reopenability",
+   "structural",
+   "technical_judged_final",
+   "telegraphic_judged_final",
+   "weak_common_judged_final",
+   "weak_df1",
+   "zero_df_identifiers"
+  ],
+  "gates": {
+   "exact_df1_strong": {
+    "n": 33,
+    "r1": 1.0,
+    "pass": true
+   },
+   "exact_df2_10_strong": {
+    "n": 15,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "exact_df11_100_strong": {
+    "n": 14,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "exact_df101_1000": {
+    "n": 25,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "punct_heavy": {
+    "n": 18,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "weak_df1": {
+    "n": 14,
+    "top3_literal": 1.0,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "zero_df_identifiers": {
+    "n": 12,
+    "empty_rate": 1.0,
+    "pass": true
+   },
+   "near_twins": {
+    "n": 12,
+    "false_pin": 0,
+    "pass": true
+   },
+   "ambiguous_allcaps_df1": {
+    "n": 10,
+    "r1": 1.0,
+    "pass": true
+   },
+   "ambiguous_allcaps_conventional": {
+    "disc@10": 1.0,
+    "pass": true
+   },
+   "conventional_behavioral": {
+    "n": 9,
+    "literal_discoverable": 1.0,
+    "pass": true
+   },
+   "latency": {
+    "p95_s": 0.195,
+    "pass": true
+   },
+   "reopenability": {
+    "sampled": 17,
+    "ok": 17,
+    "pass": true
+   },
+   "filter": {
+    "n": 7,
+    "correct": 7,
+    "pass": true
+   },
+   "structural": {
+    "points": 166714,
+    "catalog": 166714,
+    "pass": true
+   },
+   "namespace": {
+    "pass": true
+   },
+   "freshness": {
+    "processed": 0,
+    "added": 0,
+    "updated": 0,
+    "deleted": 0,
+    "indexed_watermark": "2026-08-16T18:59:15.280975",
+    "lag": 0,
+    "pass": true
+   },
+   "qdrant_restart_reconnect": {
+    "pass": true
+   },
+   "reg_c1_df1_strong": {
+    "n": 15,
+    "r1": 1.0,
+    "pass": true
+   },
+   "reg_c2_literal_strong": {
+    "n": 21,
+    "literal_prefix": 1.0,
+    "pass": true
+   },
+   "reg_c2_twins": {
+    "n": 12,
+    "false_pin": 0,
+    "pass": true
+   },
+   "reg_c2_semantic": {
+    "mrr10": 0.7167,
+    "pass": true
+   },
+   "weak_common_judged_final": {
+    "n": 3,
+    "judged_any@3": 1.0,
+    "gate": 0.66,
+    "pass": true
+   },
+   "descriptive_semantic_judged_final": {
+    "n": 13,
+    "judged_any@3": 0.8462,
+    "gate": 0.75,
+    "pass": true
+   },
+   "telegraphic_judged_final": {
+    "n": 7,
+    "judged_any@3": 1.0,
+    "gate": 0.7,
+    "pass": true
+   },
+   "technical_judged_final": {
+    "n": 4,
+    "judged_any@3": 1.0,
+    "gate": 0.75,
+    "pass": true
+   },
+   "comparison_judged_final": {
+    "n": 5,
+    "judged_any@3": 0.8,
+    "gate": 0.75,
+    "pass": true
+   }
+  },
+  "verdict": "PASS"
+ },
+ "receipt_sha256": "ab64871d8c95ac544db0c17659ce0e046d1127ed54abdc8389327fb57d8ae4ff"
+}
