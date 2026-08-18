@@ -37,7 +37,7 @@ _STRONG_IDENT = re.compile(
       | [A-Za-z0-9]+(?:[-._/:][A-Za-z0-9]+)+         # joined: gsd-map-codebase, 2.1.156, Class.method
       | [a-z]+(?:_[a-z0-9]+)+                        # snake_case
       | [A-Za-z]+-[0-9][A-Za-z0-9-]*                 # BF-16, GPT-4o
-      | [A-Z]{2,}[A-Za-z0-9]*                        # ALLCAPS: RPC9, ERROR_RESOURCE_EXHAUSTED
+      | [A-Z]{2,}[A-Za-z0-9]*[0-9_]                  # ALLCAPS w/ digit|underscore: RPC9, ERROR_RESOURCE_EXHAUSTED
       | [A-Za-z]+[0-9][A-Za-z0-9-]*                  # GR0000tn2, Qwen3-Reranker-4B
       | 0x[0-9a-fA-F]+                               # hex literals
     )$""", re.VERBOSE)
@@ -127,8 +127,9 @@ def classify(query: str, exact: bool | None = None) -> Routing:
     t = _strip_quotes(query).strip()
     if _STRONG_IDENT.match(t):
         return Routing("identifier", "strong identifier shape (any df)")
-    if _WEAK_IDENT.match(t):
-        return Routing("ambiguous", "weak single token — dual retrieval")
+    if _WEAK_IDENT.match(t) or _ACRONYM.match(t):
+        # i-prime: bare ALLCAPS is intrinsically ambiguous from syntax
+        return Routing("ambiguous", "weak/conventional token — dual retrieval")
     if comparison_shaped(query):
         return Routing("comparison", "comparison-shaped — sparse-heavy fusion")
     return Routing("semantic", "natural language")
@@ -234,15 +235,26 @@ def fuse_ambiguous_boost(literal_leg: list[str], semantic_leg: list[str],
 def fuse_ambiguous_subgroup(literal_leg: list[str],
                             semantic_leg: list[str],
                             top: int) -> list[tuple[str, bool]]:
-    """Policy D: literal candidate subgroup, ranked WITHIN by semantic
-    relevance (semantic rank primary, lexical order tiebreak), merged
-    with semantic-only results by weighted RRF where subgroup rank
-    contributes the high-weight leg. Bounded permeability: a semantic-only
-    hit ranked far above every literal can outrank the literal tail."""
+    """Policy D + i-prime singleton pin: literal candidate subgroup,
+    ranked WITHIN by semantic relevance, merged with semantic-only
+    results by weighted RRF. I-prime rule 2: when the literal set has
+    exactly ONE match, it MUST rank 1 (unique-exact invariant);
+    multi-hit cases keep bounded permeability."""
     sem_rank = {cid: i for i, cid in enumerate(semantic_leg)}
     subgroup = sorted(literal_leg,
                       key=lambda c: (sem_rank.get(c, 1 << 30),
                                      literal_leg.index(c)))
+    if len(subgroup) == 1:
+        pinned = subgroup[0]
+        seen = {pinned}
+        out = [(pinned, True)]
+        for cid in semantic_leg:
+            if len(out) >= top:
+                break
+            if cid not in seen:
+                out.append((cid, False))
+                seen.add(cid)
+        return out[:top]
     score: dict[str, float] = {}
     lit = set(literal_leg)
     for rk, cid in enumerate(subgroup):

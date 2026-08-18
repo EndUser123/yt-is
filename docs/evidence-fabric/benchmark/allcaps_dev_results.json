@@ -1,0 +1,32 @@
+{
+ "opaque_n": 20,
+ "conventional": [
+  "VPN",
+  "API",
+  "GPU",
+  "JSON",
+  "HTTP"
+ ],
+ "results": {
+  "A_identifier": {
+   "opaque_r1": 0.8,
+   "opaque_rec@10": 0.9,
+   "conv_literal_disc@10": 1.0
+  },
+  "B_dual": {
+   "opaque_r1": 0.8,
+   "opaque_rec@10": 0.9,
+   "conv_literal_disc@10": 1.0
+  },
+  "C_pin": {
+   "opaque_r1": 0.8,
+   "opaque_rec@10": 0.9,
+   "conv_literal_disc@10": 1.0
+  },
+  "D_heavy": {
+   "opaque_r1": 0.8,
+   "opaque_rec@10": 0.9,
+   "conv_literal_disc@10": 1.0
+  }
+ }
+}
