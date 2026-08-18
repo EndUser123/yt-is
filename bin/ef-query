@@ -1,0 +1,85 @@
+#!/usr/bin/env python
+"""ef-query: Evidence Fabric consumer CLI (the /wiki seam).
+
+Conventions mirror P:/.agents/scripts/wiki_search.py:
+positional query, --top-k (default 8), --format text|json (default
+json), exit 0 on empty results, exit 2 on usage error. Honors the
+readiness contract (starting/warming -> bounded wait; degraded ->
+graceful empty result with status note). --exact forces literal
+semantics. --channel-id filters. Routing is internal to EF.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+READY_WAIT_S = 15.0
+
+
+def _ready() -> tuple[bool, str]:
+    from ef import readiness
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < READY_WAIT_S:
+        st = readiness.get_state()
+        if st.get("state") == "ready":
+            return True, "ready"
+        if st.get("state") == "degraded":
+            return False, "degraded"
+        time.sleep(1.0)
+    return False, readiness.get_state().get("state", "unknown")
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="ef-query")
+    ap.add_argument("query")
+    ap.add_argument("--top-k", type=int, default=8)
+    ap.add_argument("--channel-id", default=None)
+    ap.add_argument("--exact", action="store_true")
+    ap.add_argument("--format", choices=("json", "text"), default="json")
+    a = ap.parse_args(argv)
+    if not a.query:
+        print("query required", file=sys.stderr)
+        return 2
+
+    ok, state = _ready()
+    if not ok:
+        doc = {"status": "unavailable", "readiness": state, "results": []}
+        print(json.dumps(doc) if a.format == "json"
+              else f"ef-query unavailable ({state})")
+        return 0    # graceful: never break the consumer flow
+
+    from ef import embedding, buildspec
+    from ef.query_server import ProductionQuery
+    q = ProductionQuery(embedding.BGEM3Dual(),
+                        generation=buildspec.active_generation())
+    res = q.relevant(a.query, limit=a.top_k, channel_id=a.channel_id,
+                     exact=True if a.exact else None)
+    gen = buildspec.active_generation()
+    if a.format == "text":
+        if not res:
+            print("no evidence results")
+        for r in res:
+            print(f"- {r.title or r.video_id}")
+            print(f"  {r.snippet[:160]}")
+            print(f"  {r.url}")
+        return 0
+    out = []
+    for r in res:
+        d = r.to_json()
+        d["generation"] = gen
+        d["mode"] = "exact" if a.exact else "auto"
+        out.append(d)
+    print(json.dumps({"status": "ok", "readiness": "ready",
+                      "generation": gen, "results": out}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
