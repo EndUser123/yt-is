@@ -77,3 +77,18 @@ v1.2 before any C9 retrieval; unconsumed; for the next promotion cycle
 (e.g., encoder upgrade or consumer-driven change).
 
 agent: zcode · host: both
+
+## Update 2026-08-18: operational phase begun
+
+- First live incremental catch-up ran: ~8,400 transcripts indexed
+  (76,791 -> ~85K points on disk), watermark advanced to
+  2026-08-18T02:50Z. Remaining backlog ~21.7K (fetch pipeline is
+  outpacing the drainer — expected until a scheduled incremental cadence
+  replaces manual drains).
+- Two operational fixes landed: tz-aware watermark parsing; deletion
+  reconciliation batched via a single authority scan (per-EU connection
+  opens caused disk I/O errors past ~78K EUs).
+- KNOWN ISSUE (operate): long incremental drains hit Windows ephemeral
+  port exhaustion (WinError 10048) after ~6K Qdrant HTTP calls — pace
+  the drainer (sleep between batches) or add connection reuse; not a
+  correctness issue (resumable, watermark-tracked).
