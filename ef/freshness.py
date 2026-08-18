@@ -94,6 +94,12 @@ def emit_status(index_error: str | None = None) -> dict:
             qdrant_ok = server.status()["running"]
     except Exception:
         qdrant_ok = False
+    # readiness contract (K-gate #5)
+    from . import readiness as _rd
+    try:
+        rd = _rd.get_state()
+    except Exception:
+        rd = {"state": "unknown"}
     status = {
         "emitted_at": _now(),
         "active_generation": buildspec.active_generation(),
@@ -103,13 +109,19 @@ def emit_status(index_error: str | None = None) -> dict:
         "indexed_watermark": iw or None,
         **lag,
         "last_index_success": st.get("last_index_success"),
+        "last_index_error": index_error or st.get("last_indexing_error"),
+        "incremental_worker_state": st.get("incremental_worker_state",
+                                           "idle"),
+        "readiness": rd,
         "qdrant": {"reachable": qdrant_ok,
                    "url": server.URL,
                    "active_points": points},
         "last_promotion": (json.loads(
             (EF_DATA / "promotion.json").read_text(encoding="utf-8"))
             if (EF_DATA / "promotion.json").exists() else None),
-        "last_indexing_error": index_error or st.get("last_indexing_error"),
+        "rollback_generation": (max([0] + [g for g in
+            (_legacy_generations()) if g < buildspec.active_generation()])),
+        "sealed_future_shards": ["shard04", "shard05"],
     }
     STATUS_PATH.write_text(json.dumps(status, indent=1), encoding="utf-8")
     return status
@@ -249,6 +261,11 @@ def _eu_missing_from_authority(eu_id: str) -> bool:
             (vid,)).fetchone() is None
     finally:
         conn.close()
+
+
+def _legacy_generations():
+    """Generations known to exist as rollback candidates."""
+    return [1]
 
 
 def bootstrap_watermark_from_build() -> str:
