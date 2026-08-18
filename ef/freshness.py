@@ -192,9 +192,18 @@ def incremental_update(batch_limit: int = 2000) -> dict:
             new_wm = row["cached_at"]
 
         # deletion reconciliation: catalog EUs missing from authority
+        # (single shared scan — per-EU connection opens caused disk I/O
+        # errors once the catalog passed ~78K EUs)
+        auth = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro",
+                               uri=True)
+        try:
+            auth_vids = {r[0] for r in auth.execute(
+                "select video_id from transcript_cache").fetchall()}
+        finally:
+            auth.close()
         gone = [r[0] for r in cat.execute(
             "select eu_id from eu where build_generation=?", (gen,)).fetchall()
-            if _eu_missing_from_authority(r[0])]
+            if r[0].split(":")[0] not in auth_vids]
         for eu_id in gone:
             old = [r[0] for r in cat.execute(
                 "select chunk_id from chunk where eu_id=?", (eu_id,)).fetchall()]
