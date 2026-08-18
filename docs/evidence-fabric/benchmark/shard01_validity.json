@@ -1,0 +1,4 @@
+{"checked_at": "2026-08-17", "procedure": "blind pre-retrieval validity per BENCHMARK_PROTOCOL_V1 (query_text + stated need only)",
+ "n": 50, "rejected": 0,
+ "rejections": [],
+ "note": "all queries carry independently recoverable referents; no part-number/question-number style hidden-context cases; terseness retained where self-sufficient (e.g. 'vpn setup phone')"}
