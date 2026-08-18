@@ -10,3 +10,7 @@ fasteners>=0.19
 # Canonical NotebookLM client plus durable non-interactive auth repair.
 notebooklm-py[headless]>=0.8.0
 playwright>=1.40.0
+# scripts.ops_console (read-only operations console). >=3.16 required:
+# tested against NiceGUI 3.16 / AG Grid 34 (cellClicked event contract,
+# run.io_bound, client.is_deleted liveness guard).
+nicegui>=3.16.0
