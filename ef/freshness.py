@@ -67,6 +67,8 @@ def compute_lag(indexed_wm: str) -> dict:
     if oldest:
         try:
             dt = datetime.fromisoformat(oldest.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
             age_s = (datetime.now(timezone.utc) - dt).total_seconds()
         except ValueError:
             pass
