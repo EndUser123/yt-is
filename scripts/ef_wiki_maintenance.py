@@ -28,18 +28,31 @@ sys.path.insert(0, str(REPO))
 
 def _captured_at(eu_id: str):
     """Reopen the authoritative captured_at for an EU via catalog PK."""
+    return _captured_at_batch([eu_id]).get(eu_id)
+
+
+def _captured_at_batch(eu_ids: list):
+    """N-gate #1: ONE connection, ONE IN-query for all candidates —
+    replaces per-candidate reopens (measured 5-7s -> batch). Same
+    authoritative captured_at semantics, identical output."""
     import sqlite3
     from ef.catalog import CATALOG_DB
+    if not eu_ids:
+        return {}
+    out = {}
     try:
         conn = sqlite3.connect(f"file:{CATALOG_DB}?mode=ro", uri=True)
         try:
-            row = conn.execute(
-                "select captured_at from eu where eu_id=?", (eu_id,)).fetchone()
-            return row[0] if row else None
+            for i in range(0, len(eu_ids), 500):
+                chunk = eu_ids[i:i + 500]
+                q = ("select eu_id, captured_at from eu where eu_id in ("
+                     + ",".join("?" * len(chunk)) + ")")
+                out.update(dict(conn.execute(q, chunk).fetchall()))
         finally:
             conn.close()
     except Exception:
-        return None
+        pass
+    return out
 
 
 CONTRAST_FRAMES = [
@@ -121,6 +134,7 @@ def mode_staleness(pq, claim: str, last_verified: str,
     last_verified. Newer evidence => eligible for review, NOT auto-stale."""
     lv = _parse_ts(last_verified)
     res = pq.relevant(claim, limit=top_k)
+    ts_map = _captured_at_batch([r.eu_id for r in res])
     newer = []
     for r in res:
         ts = _parse_ts(getattr(r, "_captured_at", "") or "")
@@ -129,17 +143,15 @@ def mode_staleness(pq, claim: str, last_verified: str,
         # caller can re-check via authority. Here we report candidates
         # with reopen provenance and let /wiki compare timestamps it
         # fetches (authority_ref exposed).
-        # M-gate #8: reopen captured_at from authority (canonical source)
-        # via catalog authority_ref — verified reliable; no contract change
-        cap = _captured_at(r.eu_id)
         newer.append({
             "role": "staleness_review_candidate",
             "video_id": r.video_id, "eu_id": r.eu_id,
             "source_url": r.url, "char_span": [r.start_char, r.end_char],
             "evidence_text": r.snippet[:300], "rank": res.index(r) + 1,
-            "captured_at": cap,
+            "captured_at": ts_map.get(r.eu_id),
             "newer_than_last_verified": (
-                (_parse_ts(cap) and lv) and _parse_ts(cap) > lv) or None,
+                (ts_map.get(r.eu_id) and lv) and
+                _parse_ts(ts_map[r.eu_id]) > lv) or None,
         })
     # M-gate #7: freshness precondition — absence is NOT evidence while
     # the index is materially behind the authority

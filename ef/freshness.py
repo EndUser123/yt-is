@@ -55,7 +55,20 @@ def authority_watermark() -> str:
         conn.close()
 
 
+_LAG_CACHE = {"wm": None, "at": 0.0, "result": None}
+_LAG_CACHE_S = 30.0     # staleness checks need trend, not per-second counts
+
+
 def compute_lag(indexed_wm: str) -> dict:
+    """Count/min of authority rows past the indexed watermark. Cached
+    30s: the full-WAL count costs ~6s against the live 1.4GB DB and is
+    polled repeatedly by status emission and staleness modes."""
+    import time as _t
+    now = _t.monotonic()
+    if (_LAG_CACHE["wm"] == indexed_wm
+            and _LAG_CACHE["result"] is not None
+            and now - _LAG_CACHE["at"] < _LAG_CACHE_S):
+        return dict(_LAG_CACHE["result"])
     conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
     try:
         n, oldest = conn.execute(
@@ -72,8 +85,10 @@ def compute_lag(indexed_wm: str) -> dict:
             age_s = (datetime.now(timezone.utc) - dt).total_seconds()
         except ValueError:
             pass
-    return {"index_lag_count": n or 0, "oldest_unindexed_at": oldest,
-            "oldest_unindexed_age_s": age_s}
+    result = {"index_lag_count": n or 0, "oldest_unindexed_at": oldest,
+              "oldest_unindexed_age_s": age_s}
+    _LAG_CACHE.update({"wm": indexed_wm, "at": now, "result": result})
+    return dict(result)
 
 
 def emit_status(index_error: str | None = None) -> dict:
