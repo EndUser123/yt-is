@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO))
 from ef import authority, chunking, routing  # noqa: E402
 
 BENCH = REPO / "docs" / "evidence-fabric" / "benchmark"
-START = 445
+START = 475
 SPAN = 30
 IDENT_SCAN = re.compile(
     r"\b(?:[A-Za-z][A-Za-z0-9]*(?:[._][A-Za-z0-9]+)+"
@@ -191,7 +191,7 @@ def build_auto():
                     break
     out["ambiguous_allcaps_df1"] = amb_caps
     payload = json.dumps(out, indent=1)
-    (BENCH / "shard02_auto.json").write_text(payload, encoding="utf-8")
+    (BENCH / "shard03_auto.json").write_text(payload, encoding="utf-8")
     print({k: len(v) for k, v in out.items()})
 
 
@@ -227,11 +227,11 @@ def main() -> int:
         mode_excerpts()
     else:
         h = ""
-        for f in ("shard02_auto.json", "shard02_hand.json"):
+        for f in ("shard03_auto.json", "shard03_hand.json"):
             p = BENCH / f
             if p.exists():
                 h += hashlib.sha256(p.read_bytes()).hexdigest()[:16] + " "
-        (BENCH / "shard02_seal.txt").write_text(
+        (BENCH / "shard03_seal.txt").write_text(
             f"sealed before C1 final replay\nfiles: auto hand\nsha256[:16]: {h}\n",
             encoding="utf-8")
         print("sealed:", h)

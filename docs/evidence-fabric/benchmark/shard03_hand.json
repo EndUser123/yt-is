@@ -1,0 +1,460 @@
+[
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/review-arch",
+  "style": "descriptive",
+  "need": "assertions for verifying complex function correctness",
+  "query": "using debug assertions to verify a complicated function runs correctly",
+  "need_concepts": [
+   "assertions",
+   "debugging"
+  ],
+  "relevance": "video applies assertions to complex functions",
+  "positive_video": "0mYzyS31DZU"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/wiki",
+  "style": "descriptive",
+  "need": "new state of the art programming model claim",
+  "query": "evidence that a newly released reasoning model is best for programming",
+  "need_concepts": [
+   "reasoning model",
+   "programming"
+  ],
+  "relevance": "video evaluates the new model for coding",
+  "positive_video": "0mpkIAwUe78"
+ },
+ {
+  "consumer": "yt-is",
+  "style": "descriptive",
+  "need": "scooter cleaning tutorial",
+  "query": "cleaning an electric scooter properly after muddy rides",
+  "need_concepts": [
+   "scooter",
+   "cleaning"
+  ],
+  "relevance": "video shows scooter cleaning",
+  "positive_video": "0mryb5fplyg",
+  "stratum": "descriptive_semantic"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/review-arch",
+  "style": "descriptive",
+  "need": "prototyping parallax interactions in design tool",
+  "query": "prototyping parallax scroll and hover animations in a design tool",
+  "need_concepts": [
+   "figma",
+   "parallax",
+   "prototype"
+  ],
+  "relevance": "video demos parallax prototyping",
+  "positive_video": "0n4Ygs49YbY"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/review-arch",
+  "style": "descriptive",
+  "need": "full workflow for building model-context servers",
+  "query": "a complete developer workflow for building and deploying model context protocol servers",
+  "need_concepts": [
+   "mcp server",
+   "workflow",
+   "deploy"
+  ],
+  "relevance": "video shows full mcp build workflow",
+  "positive_video": "0n6nptv39ro"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "yt-is",
+  "style": "descriptive",
+  "need": "cross-platform framework course refresh",
+  "query": "updated complete course for a cross-platform mobile framework",
+  "need_concepts": [
+   "ionic",
+   "course"
+  ],
+  "relevance": "video is the framework course update",
+  "positive_video": "0nAqNLeeJaU"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/www",
+  "style": "descriptive",
+  "need": "token-saving output style skill",
+  "query": "a skill that cuts ai output tokens by forcing terse caveman speech",
+  "need_concepts": [
+   "token reduction",
+   "skill"
+  ],
+  "relevance": "video covers the caveman skill",
+  "positive_video": "0nO64outHWI"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/www",
+  "style": "descriptive",
+  "need": "ops novel recommendation for tech workers",
+  "query": "why tech and it professionals should read a famous ops management novel",
+  "need_concepts": [
+   "phoenix project",
+   "devops book"
+  ],
+  "relevance": "video reviews the book for tech workers",
+  "positive_video": "0nU-0Z3ryXE"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/wiki",
+  "style": "descriptive",
+  "need": "developer conference platform announcements",
+  "query": "developer conference announcements about cloud ai platform and runtime tooling",
+  "need_concepts": [
+   "build conference",
+   "ai foundry",
+   "aspire"
+  ],
+  "relevance": "video covers the conference developer segment",
+  "positive_video": "0nYY_WIJ6YU"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/wiki",
+  "style": "descriptive",
+  "need": "spec-driven planning extension comparison",
+  "query": "extension that enforces spec-driven planning compared to other structured frameworks",
+  "need_concepts": [
+   "plan mode",
+   "spec driven",
+   "extension"
+  ],
+  "relevance": "video reviews the plan-mode extension",
+  "positive_video": "0oNMR8CGGJ8"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/review-arch",
+  "style": "descriptive",
+  "need": "fast list iteration with stack spans",
+  "query": "the fastest way to iterate a list using stack-allocated spans",
+  "need_concepts": [
+   "span",
+   "list iteration",
+   "performance"
+  ],
+  "relevance": "video demonstrates span-based iteration",
+  "positive_video": "0oSN65eM-tc"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/review-arch",
+  "style": "descriptive",
+  "need": "building rest apis in node",
+  "query": "creating a restful api from scratch with node",
+  "need_concepts": [
+   "rest api",
+   "node.js"
+  ],
+  "relevance": "video builds a node rest api",
+  "positive_video": "0oXYLzuucwE"
+ },
+ {
+  "stratum": "descriptive_semantic",
+  "consumer": "/review-arch",
+  "style": "descriptive",
+  "need": "parallel coding with isolated agent workspaces",
+  "query": "running multiple ai coding agents in parallel isolated workspaces",
+  "need_concepts": [
+   "parallel coding",
+   "isolated workspaces"
+  ],
+  "relevance": "video covers parallel agent coding",
+  "positive_video": "0om_qH0LfVY"
+ },
+ {
+  "stratum": "telegraphic",
+  "consumer": "yt-is",
+  "style": "telegraphic-but-sufficient",
+  "need": "best model for coding now",
+  "query": "best ai model for coding right now",
+  "need_concepts": [
+   "ai model",
+   "coding"
+  ],
+  "relevance": "video evaluates best coding model",
+  "positive_video": "0mpkIAwUe78"
+ },
+ {
+  "stratum": "telegraphic",
+  "consumer": "yt-is",
+  "style": "telegraphic-but-sufficient",
+  "need": "mcp server build guide",
+  "query": "build mcp server python",
+  "need_concepts": [
+   "mcp",
+   "python"
+  ],
+  "relevance": "video builds mcp server in python",
+  "positive_video": "0n6nptv39ro"
+ },
+ {
+  "stratum": "telegraphic",
+  "consumer": "yt-is",
+  "style": "telegraphic-but-sufficient",
+  "need": "rest api node series",
+  "query": "rest api node.js tutorial",
+  "need_concepts": [
+   "rest",
+   "node"
+  ],
+  "relevance": "video builds node rest api",
+  "positive_video": "0oXYLzuucwE"
+ },
+ {
+  "stratum": "telegraphic",
+  "consumer": "yt-is",
+  "style": "telegraphic-but-sufficient",
+  "need": "csharp span performance",
+  "query": "c# span list performance",
+  "need_concepts": [
+   "csharp",
+   "span"
+  ],
+  "relevance": "video covers span performance",
+  "positive_video": "0oSN65eM-tc"
+ },
+ {
+  "stratum": "telegraphic",
+  "consumer": "yt-is",
+  "style": "telegraphic-but-sufficient",
+  "need": "parallax prototype figma",
+  "query": "figma parallax animation prototype",
+  "need_concepts": [
+   "figma",
+   "parallax"
+  ],
+  "relevance": "video prototypes parallax",
+  "positive_video": "0n4Ygs49YbY"
+ },
+ {
+  "stratum": "telegraphic",
+  "consumer": "yt-is",
+  "style": "telegraphic-but-sufficient",
+  "need": "assertions complex function",
+  "query": "debug assertions complex function",
+  "need_concepts": [
+   "assertions"
+  ],
+  "relevance": "video applies assertions",
+  "positive_video": "0mYzyS31DZU"
+ },
+ {
+  "stratum": "telegraphic",
+  "consumer": "yt-is",
+  "style": "telegraphic-but-sufficient",
+  "need": "parallel agent coding tool",
+  "query": "parallel ai coding workspaces",
+  "need_concepts": [
+   "parallel",
+   "agents"
+  ],
+  "relevance": "video covers parallel coding",
+  "positive_video": "0om_qH0LfVY"
+ },
+ {
+  "stratum": "technical",
+  "consumer": "/review-arch",
+  "style": "technical",
+  "need": "span vs array performance mechanics",
+  "query": "why spans avoid heap allocation when wrapping arrays",
+  "need_concepts": [
+   "span",
+   "stack",
+   "heap"
+  ],
+  "relevance": "video explains span stack semantics",
+  "positive_video": "0oSN65eM-tc"
+ },
+ {
+  "stratum": "technical",
+  "consumer": "/review-arch",
+  "style": "technical",
+  "need": "assertion cost tuning",
+  "query": "measuring the performance penalty of runtime assertions",
+  "need_concepts": [
+   "assertions",
+   "overhead"
+  ],
+  "relevance": "video measures assertion cost",
+  "positive_video": "0mYzyS31DZU"
+ },
+ {
+  "stratum": "technical",
+  "consumer": "/review-arch",
+  "style": "technical",
+  "need": "mcp deployment target mechanics",
+  "query": "deploying python mcp servers to a package index",
+  "need_concepts": [
+   "mcp",
+   "pip",
+   "deploy"
+  ],
+  "relevance": "video deploys mcp to pip",
+  "positive_video": "0n6nptv39ro"
+ },
+ {
+  "stratum": "technical",
+  "consumer": "/review-arch",
+  "style": "technical",
+  "need": "rest api constituent parts",
+  "query": "what a restful api is made of and design constraints",
+  "need_concepts": [
+   "rest",
+   "api design"
+  ],
+  "relevance": "video explains rest composition",
+  "positive_video": "0oXYLzuucwE"
+ },
+ {
+  "stratum": "comparison",
+  "consumer": "yt-is",
+  "style": "comparison",
+  "need": "spec frameworks vs plan-mode extension",
+  "query": "spec-driven frameworks versus a plan mode extension for structure",
+  "need_concepts": [
+   "spec frameworks",
+   "plan mode"
+  ],
+  "relevance": "video compares structure approaches",
+  "positive_video": "0oNMR8CGGJ8"
+ },
+ {
+  "stratum": "comparison",
+  "consumer": "yt-is",
+  "style": "comparison",
+  "need": "array vs span iteration speed",
+  "query": "iterating with spans versus plain arrays and lists",
+  "need_concepts": [
+   "span",
+   "array",
+   "list"
+  ],
+  "relevance": "video compares iteration performance",
+  "positive_video": "0oSN65eM-tc"
+ },
+ {
+  "stratum": "comparison",
+  "consumer": "yt-is",
+  "style": "comparison",
+  "need": "sequential vs parallel agent coding",
+  "query": "sequential coding versus parallel isolated ai agents",
+  "need_concepts": [
+   "sequential",
+   "parallel"
+  ],
+  "relevance": "video covers parallel vs sequential",
+  "positive_video": "0om_qH0LfVY"
+ },
+ {
+  "stratum": "comparison",
+  "consumer": "yt-is",
+  "style": "comparison",
+  "need": "new model vs previous best for coding",
+  "query": "the newest reasoning model versus the previous best for programming",
+  "need_concepts": [
+   "new model",
+   "previous best"
+  ],
+  "relevance": "video evaluates new vs old model",
+  "positive_video": "0mpkIAwUe78"
+ },
+ {
+  "stratum": "comparison",
+  "consumer": "yt-is",
+  "style": "comparison",
+  "need": "verbose vs terse ai output",
+  "query": "verbose ai output versus minimal token responses",
+  "need_concepts": [
+   "verbose",
+   "terse"
+  ],
+  "relevance": "video covers token-cutting skill",
+  "positive_video": "0nO64outHWI"
+ },
+ {
+  "stratum": "ambiguous_common",
+  "consumer": "yt-is",
+  "style": "ambiguous/common term",
+  "need": "general ionic framework usage",
+  "query": "Ionic",
+  "need_concepts": [
+   "ionic"
+  ],
+  "relevance": "video substantively about ionic framework",
+  "positive_video": "0nAqNLeeJaU"
+ },
+ {
+  "stratum": "ambiguous_common",
+  "consumer": "yt-is",
+  "style": "ambiguous/common term",
+  "need": "general figma usage",
+  "query": "Figma",
+  "need_concepts": [
+   "figma"
+  ],
+  "relevance": "video substantively about figma",
+  "positive_video": "0n4Ygs49YbY"
+ },
+ {
+  "stratum": "ambiguous_common",
+  "consumer": "yt-is",
+  "style": "ambiguous/common term",
+  "need": "general span type usage",
+  "query": "Span",
+  "need_concepts": [
+   "span",
+   "csharp"
+  ],
+  "relevance": "video substantively about the span type",
+  "positive_video": "0oSN65eM-tc"
+ },
+ {
+  "stratum": "ambiguous_common",
+  "consumer": "yt-is",
+  "style": "ambiguous/common term",
+  "need": "general mcp usage",
+  "query": "MCP",
+  "need_concepts": [
+   "model context protocol"
+  ],
+  "relevance": "video substantively about mcp",
+  "positive_video": "0n6nptv39ro"
+ },
+ {
+  "stratum": "ambiguous_common",
+  "consumer": "yt-is",
+  "style": "ambiguous/common term",
+  "need": "general devops novel reference",
+  "query": "Phoenix Project",
+  "need_concepts": [
+   "phoenix project",
+   "devops"
+  ],
+  "relevance": "video substantively about the book",
+  "positive_video": "0nU-0Z3ryXE"
+ },
+ {
+  "stratum": "ambiguous_common",
+  "consumer": "yt-is",
+  "style": "ambiguous/common term",
+  "need": "general rest api usage",
+  "query": "REST",
+  "need_concepts": [
+   "rest"
+  ],
+  "relevance": "video substantively about rest apis",
+  "positive_video": "0oXYLzuucwE"
+ }
+]
