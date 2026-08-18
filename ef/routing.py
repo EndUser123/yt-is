@@ -45,6 +45,8 @@ _STRONG_IDENT = re.compile(
 # Weak (ambiguous) shape: single alphabetic word with internal case shift
 # only (hizoJc, YouTube, OpenAI) — df tiebreak applies.
 _WEAK_IDENT = re.compile(r"^[A-Za-z]+[a-z][A-Z][A-Za-z0-9]*$")
+# conventional short acronyms (VPN/API/SQL): dual lane, same as YouTube
+_ACRONYM = re.compile(r"^[A-Z]{2,5}$")
 
 # G-gate: comparison-shaped multiword queries get a class-specific
 # sparse-heavier fusion (measured best on the comparison dev set).
