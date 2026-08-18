@@ -1,0 +1,2519 @@
+{
+ "rankings": {
+  "A||mesh vpn reverse proxy versus cloudflare tunnels": [
+   "-yfE3Lb3hTI:transcript#00000",
+   "3wJ0IQ3rHjA:transcript#00000",
+   "B4pnGyvj2sM:transcript#00001",
+   "1fKqQi-VuNM:transcript#00000",
+   "1B1Hr-lM7jg:transcript#00000",
+   "B4pnGyvj2sM:transcript#00000",
+   "9jMQA4l8Vwk:transcript#00013",
+   "7UmXs3z3Hks:transcript#00065",
+   "B4pnGyvj2sM:transcript#00002",
+   "OEFZUj_RQKc:transcript#00000"
+  ],
+  "B||mesh vpn reverse proxy versus cloudflare tunnels": [
+   "-yfE3Lb3hTI:transcript#00000",
+   "3wJ0IQ3rHjA:transcript#00000",
+   "B4pnGyvj2sM:transcript#00001",
+   "1fKqQi-VuNM:transcript#00000",
+   "1B1Hr-lM7jg:transcript#00000",
+   "9jMQA4l8Vwk:transcript#00013",
+   "B4pnGyvj2sM:transcript#00000",
+   "111ZDMKVTL4:transcript#00002",
+   "9jMQA4l8Vwk:transcript#00012",
+   "ymHZu2ujuXE:transcript#00005"
+  ],
+  "C||mesh vpn reverse proxy versus cloudflare tunnels": [
+   "3wJ0IQ3rHjA:transcript#00000",
+   "-yfE3Lb3hTI:transcript#00000",
+   "B4pnGyvj2sM:transcript#00001",
+   "1fKqQi-VuNM:transcript#00000",
+   "1B1Hr-lM7jg:transcript#00000",
+   "B4pnGyvj2sM:transcript#00002",
+   "B4pnGyvj2sM:transcript#00000",
+   "OEFZUj_RQKc:transcript#00000",
+   "1GJmyznl4z4:transcript#00000",
+   "7qzgAkDN0q0:transcript#00058"
+  ],
+  "D||mesh vpn reverse proxy versus cloudflare tunnels": [
+   "3wJ0IQ3rHjA:transcript#00000",
+   "-yfE3Lb3hTI:transcript#00000",
+   "B4pnGyvj2sM:transcript#00001",
+   "1fKqQi-VuNM:transcript#00000",
+   "1B1Hr-lM7jg:transcript#00000",
+   "B4pnGyvj2sM:transcript#00000",
+   "B4pnGyvj2sM:transcript#00002",
+   "9jMQA4l8Vwk:transcript#00013",
+   "OEFZUj_RQKc:transcript#00000",
+   "1GJmyznl4z4:transcript#00000"
+  ],
+  "S||mesh vpn reverse proxy versus cloudflare tunnels": [
+   "-yfE3Lb3hTI:transcript#00000",
+   "3wJ0IQ3rHjA:transcript#00000",
+   "B4pnGyvj2sM:transcript#00001",
+   "1B1Hr-lM7jg:transcript#00000",
+   "1fKqQi-VuNM:transcript#00000",
+   "B4pnGyvj2sM:transcript#00000",
+   "OEFZUj_RQKc:transcript#00000",
+   "9jMQA4l8Vwk:transcript#00012",
+   "2C-kLSYBfS4:transcript#00000",
+   "B4pnGyvj2sM:transcript#00002"
+  ],
+  "A||free coding platforms versus paid coding agents": [
+   "Kqk_i1rkWgg:transcript#00000",
+   "kgjnp2gY6Hg:transcript#00000",
+   "0rf2JF4HiJY:transcript#00000",
+   "70uORDj3Lzc:transcript#00000",
+   "dqaooqBPVRI:transcript#00000",
+   "dmnLj-lSXH4:transcript#00037",
+   "9A28wWlZa8Y:transcript#00000",
+   "SsUsGFHfXrk:transcript#00000",
+   "7FDL6E_i0UY:transcript#00000",
+   "2eHzUXuL9OI:transcript#00000"
+  ],
+  "B||free coding platforms versus paid coding agents": [
+   "dqaooqBPVRI:transcript#00000",
+   "rlVUKdQZM6Y:transcript#00004",
+   "dmnLj-lSXH4:transcript#00037",
+   "0rf2JF4HiJY:transcript#00000",
+   "Kqk_i1rkWgg:transcript#00000",
+   "2eHzUXuL9OI:transcript#00000",
+   "70uORDj3Lzc:transcript#00000",
+   "-roCTMUQoV4:transcript#00000",
+   "zVfAVx744Kg:transcript#00000",
+   "qh6njdRxs8U:transcript#00000"
+  ],
+  "C||free coding platforms versus paid coding agents": [
+   "dqaooqBPVRI:transcript#00000",
+   "0rf2JF4HiJY:transcript#00000",
+   "dmnLj-lSXH4:transcript#00037",
+   "Kqk_i1rkWgg:transcript#00000",
+   "kgjnp2gY6Hg:transcript#00000",
+   "-zj3DanltVs:transcript#00000",
+   "uvKGZb8pVc8:transcript#00000",
+   "9U4kdQq2PT0:transcript#00000",
+   "6vloELdILNU:transcript#00000",
+   "70uORDj3Lzc:transcript#00000"
+  ],
+  "D||free coding platforms versus paid coding agents": [
+   "dqaooqBPVRI:transcript#00000",
+   "dmnLj-lSXH4:transcript#00037",
+   "Kqk_i1rkWgg:transcript#00000",
+   "0rf2JF4HiJY:transcript#00000",
+   "70uORDj3Lzc:transcript#00000",
+   "2eHzUXuL9OI:transcript#00000",
+   "-zj3DanltVs:transcript#00000",
+   "kgjnp2gY6Hg:transcript#00000",
+   "uvKGZb8pVc8:transcript#00000",
+   "9U4kdQq2PT0:transcript#00000"
+  ],
+  "S||free coding platforms versus paid coding agents": [
+   "dqaooqBPVRI:transcript#00000",
+   "-zj3DanltVs:transcript#00000",
+   "dmnLj-lSXH4:transcript#00037",
+   "-VuZmoc-Sq8:transcript#00016",
+   "Kqk_i1rkWgg:transcript#00000",
+   "70uORDj3Lzc:transcript#00000",
+   "drefNax1iUM:transcript#00000",
+   "7FDL6E_i0UY:transcript#00000",
+   "-roCTMUQoV4:transcript#00000",
+   "qh6njdRxs8U:transcript#00000"
+  ],
+  "A||laptop generations compared for local model inference": [
+   "9q1RexwBQI0:transcript#00000",
+   "2F6M4Jcgvis:transcript#00016",
+   "k9GvuJXvHRQ:transcript#00000",
+   "4C0RJ01yRok:transcript#00000",
+   "Et-YhlFGFac:transcript#00000",
+   "U8lGbSaCCYI:transcript#00000",
+   "b773XfpS7fw:transcript#00001",
+   "oR9OwhL6sNs:transcript#00000",
+   "-U5FC7rrgd8:transcript#00006",
+   "ATo-t1HAd0M:transcript#00000"
+  ],
+  "B||laptop generations compared for local model inference": [
+   "9q1RexwBQI0:transcript#00000",
+   "2F6M4Jcgvis:transcript#00016",
+   "4C0RJ01yRok:transcript#00000",
+   "k9GvuJXvHRQ:transcript#00000",
+   "Et-YhlFGFac:transcript#00000",
+   "U8lGbSaCCYI:transcript#00000",
+   "b773XfpS7fw:transcript#00001",
+   "oR9OwhL6sNs:transcript#00000",
+   "-U5FC7rrgd8:transcript#00006",
+   "2r_B09iNgQ0:transcript#00006"
+  ],
+  "S||laptop generations compared for local model inference": [
+   "9q1RexwBQI0:transcript#00000",
+   "2F6M4Jcgvis:transcript#00016",
+   "U8lGbSaCCYI:transcript#00000",
+   "-U5FC7rrgd8:transcript#00006",
+   "75PFpW9SOL0:transcript#00000",
+   "1jGR4zqpyKA:transcript#00000",
+   "m9HeWXndjAU:transcript#00173",
+   "eevbc8Caun4:transcript#00000",
+   "Et-YhlFGFac:transcript#00000",
+   "J56AJWivELc:transcript#00003"
+  ],
+  "A||button controls versus touch controls on earbuds": [
+   "96FT-sOwwK4:transcript#00001",
+   "96FT-sOwwK4:transcript#00004",
+   "-y63iMeQTqo:transcript#00000",
+   "PFVvCs9iQco:transcript#00000",
+   "96FT-sOwwK4:transcript#00000",
+   "7Heto-ZbbeE:transcript#00000",
+   "eSpKmZ2J-Ys:transcript#00012",
+   "96FT-sOwwK4:transcript#00003",
+   "PFVvCs9iQco:transcript#00009",
+   "eSpKmZ2J-Ys:transcript#00007"
+  ],
+  "B||button controls versus touch controls on earbuds": [
+   "96FT-sOwwK4:transcript#00001",
+   "96FT-sOwwK4:transcript#00004",
+   "-y63iMeQTqo:transcript#00000",
+   "96FT-sOwwK4:transcript#00003",
+   "96FT-sOwwK4:transcript#00000",
+   "PFVvCs9iQco:transcript#00000",
+   "96FT-sOwwK4:transcript#00005",
+   "8oI1NLGof_A:transcript#00000",
+   "Ih3j5HCuSxk:transcript#00001",
+   "96FT-sOwwK4:transcript#00002"
+  ],
+  "C||button controls versus touch controls on earbuds": [
+   "-y63iMeQTqo:transcript#00000",
+   "96FT-sOwwK4:transcript#00001",
+   "96FT-sOwwK4:transcript#00004",
+   "PFVvCs9iQco:transcript#00000",
+   "96FT-sOwwK4:transcript#00003",
+   "96FT-sOwwK4:transcript#00000",
+   "eSpKmZ2J-Ys:transcript#00007",
+   "7DNBG2c7-RE:transcript#00017",
+   "BtDxvAGhrjg:transcript#00003",
+   "sYSQW_d0l-w:transcript#00000"
+  ],
+  "D||button controls versus touch controls on earbuds": [
+   "-y63iMeQTqo:transcript#00000",
+   "96FT-sOwwK4:transcript#00001",
+   "96FT-sOwwK4:transcript#00004",
+   "PFVvCs9iQco:transcript#00000",
+   "96FT-sOwwK4:transcript#00003",
+   "96FT-sOwwK4:transcript#00000",
+   "96FT-sOwwK4:transcript#00005",
+   "Ih3j5HCuSxk:transcript#00001",
+   "eSpKmZ2J-Ys:transcript#00007",
+   "7DNBG2c7-RE:transcript#00017"
+  ],
+  "S||button controls versus touch controls on earbuds": [
+   "96FT-sOwwK4:transcript#00001",
+   "-y63iMeQTqo:transcript#00000",
+   "96FT-sOwwK4:transcript#00004",
+   "PFVvCs9iQco:transcript#00000",
+   "96FT-sOwwK4:transcript#00003",
+   "eSpKmZ2J-Ys:transcript#00007",
+   "MurmAcAQNtg:transcript#00015",
+   "96FT-sOwwK4:transcript#00005",
+   "2JqlRskEzmE:transcript#00000",
+   "96FT-sOwwK4:transcript#00000"
+  ],
+  "A||open source chatbot builders compared on templates": [
+   "AmduXg_xFEM:transcript#00000",
+   "oUU9uURJQxM:transcript#00000",
+   "ADLggJu9Fw8:transcript#00000",
+   "r1WJiAtCYj0:transcript#00000",
+   "n-EY-KNUM8E:transcript#00000",
+   "6h_jlyxJrX4:transcript#00000",
+   "b6QLKlABj-U:transcript#00005",
+   "Fj6iP_XWct8:transcript#00000",
+   "Iy1yF_SAmUY:transcript#00000",
+   "reI_6DOzxEQ:transcript#00000"
+  ],
+  "B||open source chatbot builders compared on templates": [
+   "oUU9uURJQxM:transcript#00000",
+   "AmduXg_xFEM:transcript#00000",
+   "ADLggJu9Fw8:transcript#00000",
+   "r1WJiAtCYj0:transcript#00000",
+   "6h_jlyxJrX4:transcript#00000",
+   "n-EY-KNUM8E:transcript#00000",
+   "b6QLKlABj-U:transcript#00005",
+   "Fj6iP_XWct8:transcript#00000",
+   "Iy1yF_SAmUY:transcript#00000",
+   "AMUX-nQ_-PI:transcript#00000"
+  ],
+  "S||open source chatbot builders compared on templates": [
+   "Iy1yF_SAmUY:transcript#00000",
+   "oUU9uURJQxM:transcript#00000",
+   "r1WJiAtCYj0:transcript#00000",
+   "n-EY-KNUM8E:transcript#00000",
+   "Fj6iP_XWct8:transcript#00000",
+   "AMUX-nQ_-PI:transcript#00000",
+   "ZkYxLIsqJoo:transcript#00000",
+   "4aHAT0KL0qs:transcript#00000",
+   "qA-RgERzNuA:transcript#00000",
+   "5xejxpjiilI:transcript#00000"
+  ],
+  "A||image models compared recreating retro game sprites": [
+   "EEFjvexJ8eI:transcript#00000",
+   "8BZoPFh3EGM:transcript#00000",
+   "03Xsy18Hsdo:transcript#00016",
+   "wZYD-zTKe7Y:transcript#00001",
+   "gBDLFZJMvc8:transcript#00000",
+   "tMJZYPk93Ik:transcript#00011",
+   "16mBzByUOSo:transcript#00000",
+   "AISs6TFa29U:transcript#00000",
+   "_uo7CXd33Uc:transcript#00006",
+   "2OrOufa3eoc:transcript#00001"
+  ],
+  "B||image models compared recreating retro game sprites": [
+   "EEFjvexJ8eI:transcript#00000",
+   "8BZoPFh3EGM:transcript#00000",
+   "03Xsy18Hsdo:transcript#00016",
+   "wZYD-zTKe7Y:transcript#00001",
+   "gBDLFZJMvc8:transcript#00000",
+   "tMJZYPk93Ik:transcript#00011",
+   "16mBzByUOSo:transcript#00000",
+   "AISs6TFa29U:transcript#00000",
+   "_uo7CXd33Uc:transcript#00006",
+   "2OrOufa3eoc:transcript#00001"
+  ],
+  "S||image models compared recreating retro game sprites": [
+   "EEFjvexJ8eI:transcript#00000",
+   "gBDLFZJMvc8:transcript#00000",
+   "l3FilH7vMxw:transcript#00001",
+   "5p1p3lRxZaY:transcript#00000",
+   "w--_TfR_qp8:transcript#00000",
+   "RE8DA1y6GME:transcript#00006",
+   "2OrOufa3eoc:transcript#00001",
+   "wZYD-zTKe7Y:transcript#00001",
+   "AISs6TFa29U:transcript#00000",
+   "_uo7CXd33Uc:transcript#00006"
+  ],
+  "A||new home screen versus old streaming interface": [
+   "7J04K126Z6A:transcript#00000",
+   "DLjv_2nbQAA:transcript#00165",
+   "01Rn93sX-b4:transcript#00000",
+   "7TkFXwnYmkw:transcript#00005",
+   "87ET_an5Zj0:transcript#00000",
+   "9shw43ECE78:transcript#00000",
+   "7i6cYtldkwE:transcript#00000",
+   "11c85To_JvM:transcript#00000",
+   "Ayx1EQjoF2U:transcript#00000",
+   "9NFWhMAlPag:transcript#00000"
+  ],
+  "B||new home screen versus old streaming interface": [
+   "DLjv_2nbQAA:transcript#00165",
+   "8Qtkl8jNBRk:transcript#00001",
+   "01Rn93sX-b4:transcript#00000",
+   "7TkFXwnYmkw:transcript#00005",
+   "11c85To_JvM:transcript#00000",
+   "7i6cYtldkwE:transcript#00000",
+   "9NFWhMAlPag:transcript#00000",
+   "Ayx1EQjoF2U:transcript#00000",
+   "9Yn7zDBv7xo:transcript#00000",
+   "94Rj82wtNR4:transcript#00000"
+  ],
+  "C||new home screen versus old streaming interface": [
+   "7TkFXwnYmkw:transcript#00005",
+   "01Rn93sX-b4:transcript#00000",
+   "DLjv_2nbQAA:transcript#00165",
+   "11c85To_JvM:transcript#00000",
+   "Ayx1EQjoF2U:transcript#00000",
+   "7J04K126Z6A:transcript#00000",
+   "vpEik_fVtvM:transcript#00000",
+   "h6gXz8StD8k:transcript#00001",
+   "3WVFgczD7MA:transcript#00000",
+   "dmnLj-lSXH4:transcript#00076"
+  ],
+  "D||new home screen versus old streaming interface": [
+   "DLjv_2nbQAA:transcript#00165",
+   "01Rn93sX-b4:transcript#00000",
+   "7TkFXwnYmkw:transcript#00005",
+   "11c85To_JvM:transcript#00000",
+   "Ayx1EQjoF2U:transcript#00000",
+   "7i6cYtldkwE:transcript#00000",
+   "9NFWhMAlPag:transcript#00000",
+   "7J04K126Z6A:transcript#00000",
+   "vpEik_fVtvM:transcript#00000",
+   "8Qtkl8jNBRk:transcript#00001"
+  ],
+  "S||new home screen versus old streaming interface": [
+   "7J04K126Z6A:transcript#00000",
+   "87ET_an5Zj0:transcript#00000",
+   "9NFWhMAlPag:transcript#00000",
+   "01Rn93sX-b4:transcript#00000",
+   "7TkFXwnYmkw:transcript#00005",
+   "0Fl6tdWBZ2Q:transcript#00000",
+   "94Rj82wtNR4:transcript#00000",
+   "5Olc2iPsGEA:transcript#00000",
+   "2BKm-bVzF6E:transcript#00000",
+   "ZnqLqkEKD_4:transcript#00001"
+  ],
+  "A||structured project memory versus diary style notes": [
+   "g8hmAjogElQ:transcript#00017",
+   "JukZ7WWtOSg:transcript#00000",
+   "iQyg-KypKAA:transcript#00015",
+   "srqWFT_TUec:transcript#00000",
+   "md-ie6D_AZc:transcript#00000",
+   "4h-aeqkWAPo:transcript#00000",
+   "zPzFKigN7lY:transcript#00000",
+   "3MBITu8qf4I:transcript#00000",
+   "AuofNgImNhk:transcript#00008",
+   "kC0bouiUwd0:transcript#00002"
+  ],
+  "B||structured project memory versus diary style notes": [
+   "4h-aeqkWAPo:transcript#00000",
+   "JukZ7WWtOSg:transcript#00000",
+   "VbJCyuUB0eA:transcript#00018",
+   "srqWFT_TUec:transcript#00000",
+   "md-ie6D_AZc:transcript#00000",
+   "L2SP9kmbfzs:transcript#00000",
+   "g8hmAjogElQ:transcript#00017",
+   "zPzFKigN7lY:transcript#00000",
+   "81NS91VgjWM:transcript#00000",
+   "ja72JeVPvgQ:transcript#00003"
+  ],
+  "C||structured project memory versus diary style notes": [
+   "JukZ7WWtOSg:transcript#00000",
+   "AuofNgImNhk:transcript#00008",
+   "g8hmAjogElQ:transcript#00017",
+   "XFtqEbfFyMc:transcript#00032",
+   "5miHyP6lExg:transcript#00321",
+   "IiA4Ku5viyg:transcript#00009",
+   "Nh14wYWRsIY:transcript#00000",
+   "iQyg-KypKAA:transcript#00015",
+   "WL5ecxtCx60:transcript#00000",
+   "-YSCVDTKaWU:transcript#00000"
+  ],
+  "D||structured project memory versus diary style notes": [
+   "JukZ7WWtOSg:transcript#00000",
+   "srqWFT_TUec:transcript#00000",
+   "g8hmAjogElQ:transcript#00017",
+   "4h-aeqkWAPo:transcript#00000",
+   "md-ie6D_AZc:transcript#00000",
+   "zPzFKigN7lY:transcript#00000",
+   "AuofNgImNhk:transcript#00008",
+   "XFtqEbfFyMc:transcript#00032",
+   "Nh14wYWRsIY:transcript#00000",
+   "IiA4Ku5viyg:transcript#00009"
+  ],
+  "S||structured project memory versus diary style notes": [
+   "g8hmAjogElQ:transcript#00017",
+   "GK7TLrILmjE:transcript#00009",
+   "IiA4Ku5viyg:transcript#00009",
+   "raZOpHKoVa0:transcript#00000",
+   "JukZ7WWtOSg:transcript#00000",
+   "GK7TLrILmjE:transcript#00004",
+   "3NwD6mQCA9E:transcript#00000",
+   "srqWFT_TUec:transcript#00000",
+   "md-ie6D_AZc:transcript#00000",
+   "zPzFKigN7lY:transcript#00000"
+  ],
+  "A||cheap generated vfx versus ten thousand dollar shots": [
+   "22zcydi__Lk:transcript#00002",
+   "-zA021g1sl4:transcript#00000",
+   "2qkqThjT0lI:transcript#00007",
+   "2E4AUYWPStc:transcript#00000",
+   "43knP15HEok:transcript#00000",
+   "nclv_9Oibok:transcript#00000",
+   "z7DapXvhxPs:transcript#00000",
+   "43lCnTVN5uM:transcript#00002",
+   "MiqUQ4P2cpI:transcript#00008",
+   "_ey0HNGdMBk:transcript#00002"
+  ],
+  "B||cheap generated vfx versus ten thousand dollar shots": [
+   "22zcydi__Lk:transcript#00002",
+   "-zA021g1sl4:transcript#00000",
+   "2E4AUYWPStc:transcript#00000",
+   "-Wvumm6XfgE:transcript#00002",
+   "z7DapXvhxPs:transcript#00000",
+   "43knP15HEok:transcript#00000",
+   "PrKRoP5U_58:transcript#00000",
+   "YzAoRqTL6s4:transcript#00000",
+   "_ey0HNGdMBk:transcript#00002",
+   "5YkCba4aZ2A:transcript#00000"
+  ],
+  "C||cheap generated vfx versus ten thousand dollar shots": [
+   "-zA021g1sl4:transcript#00000",
+   "2E4AUYWPStc:transcript#00000",
+   "nclv_9Oibok:transcript#00000",
+   "22zcydi__Lk:transcript#00002",
+   "A_nAU8h9YOY:transcript#00033",
+   "0jDx2SvA944:transcript#00001",
+   "-Wvumm6XfgE:transcript#00002",
+   "7wcEZZv8dXc:transcript#00008",
+   "2qkqThjT0lI:transcript#00007",
+   "8MWHQL54auw:transcript#00000"
+  ],
+  "D||cheap generated vfx versus ten thousand dollar shots": [
+   "-zA021g1sl4:transcript#00000",
+   "2E4AUYWPStc:transcript#00000",
+   "22zcydi__Lk:transcript#00002",
+   "nclv_9Oibok:transcript#00000",
+   "-Wvumm6XfgE:transcript#00002",
+   "43knP15HEok:transcript#00000",
+   "z7DapXvhxPs:transcript#00000",
+   "_ey0HNGdMBk:transcript#00002",
+   "0jDx2SvA944:transcript#00001",
+   "A_nAU8h9YOY:transcript#00033"
+  ],
+  "S||cheap generated vfx versus ten thousand dollar shots": [
+   "PrKRoP5U_58:transcript#00000",
+   "22zcydi__Lk:transcript#00002",
+   "2E4AUYWPStc:transcript#00000",
+   "nclv_9Oibok:transcript#00000",
+   "z7DapXvhxPs:transcript#00000",
+   "_ey0HNGdMBk:transcript#00002",
+   "YzAoRqTL6s4:transcript#00000",
+   "7KzgH-wJVZA:transcript#00004",
+   "LnCoNJ8TcRw:transcript#00000",
+   "A0maDQDcfHM:transcript#00000"
+  ],
+  "A||certification learning path versus self directed study": [
+   "7sJ1hwoEQNw:transcript#00000",
+   "lp6WcmCPXow:transcript#00000",
+   "9wkHM2qy8tY:transcript#00000",
+   "Ie-9n94AHAU:transcript#00003",
+   "-0CPwRZimO0:transcript#00000",
+   "QZaDAfBHodk:transcript#00000",
+   "0NEQQjKXhuI:transcript#00000",
+   "aTLr9Qj-VRA:transcript#00000",
+   "CnufavbVmTc:transcript#00000",
+   "XozqaWCzL6w:transcript#00000"
+  ],
+  "B||certification learning path versus self directed study": [
+   "7sJ1hwoEQNw:transcript#00000",
+   "lp6WcmCPXow:transcript#00000",
+   "0NEQQjKXhuI:transcript#00000",
+   "2YkiD02s0d8:transcript#00000",
+   "9wkHM2qy8tY:transcript#00000",
+   "QZaDAfBHodk:transcript#00000",
+   "-0CPwRZimO0:transcript#00000",
+   "Vqk8hoT6moU:transcript#00000",
+   "CnufavbVmTc:transcript#00000",
+   "XozqaWCzL6w:transcript#00000"
+  ],
+  "C||certification learning path versus self directed study": [
+   "7sJ1hwoEQNw:transcript#00000",
+   "lp6WcmCPXow:transcript#00000",
+   "Ie-9n94AHAU:transcript#00003",
+   "0NEQQjKXhuI:transcript#00000",
+   "-0CPwRZimO0:transcript#00000",
+   "aTLr9Qj-VRA:transcript#00000",
+   "YZHPEkfy2kc:transcript#00000",
+   "2YkiD02s0d8:transcript#00000",
+   "9wkHM2qy8tY:transcript#00000",
+   "84zaJvoq7l4:transcript#00000"
+  ],
+  "D||certification learning path versus self directed study": [
+   "7sJ1hwoEQNw:transcript#00000",
+   "lp6WcmCPXow:transcript#00000",
+   "0NEQQjKXhuI:transcript#00000",
+   "-0CPwRZimO0:transcript#00000",
+   "2YkiD02s0d8:transcript#00000",
+   "Ie-9n94AHAU:transcript#00003",
+   "9wkHM2qy8tY:transcript#00000",
+   "QZaDAfBHodk:transcript#00000",
+   "aTLr9Qj-VRA:transcript#00000",
+   "CnufavbVmTc:transcript#00000"
+  ],
+  "S||certification learning path versus self directed study": [
+   "-0CPwRZimO0:transcript#00000",
+   "7sJ1hwoEQNw:transcript#00000",
+   "Ie-9n94AHAU:transcript#00003",
+   "aTLr9Qj-VRA:transcript#00000",
+   "0NEQQjKXhuI:transcript#00000",
+   "XozqaWCzL6w:transcript#00000",
+   "9wkHM2qy8tY:transcript#00000",
+   "-Bx3jUBtTlA:transcript#00000",
+   "iWXpQE9zbjY:transcript#00000",
+   "S7Hfoyq9qag:transcript#00000"
+  ],
+  "A||declarative versus imperative coding styles": [
+   "0AAuYgG90zc:transcript#00000",
+   "1fDJSDPksOU:transcript#00011",
+   "1fDJSDPksOU:transcript#00006",
+   "1fDJSDPksOU:transcript#00007",
+   "1fDJSDPksOU:transcript#00000",
+   "8qgcTeO8a_0:transcript#00009",
+   "4V3fjQ-x2SI:transcript#00000",
+   "8uoifFX1I3U:transcript#00000",
+   "876aSEUA_8c:transcript#00118",
+   "4baq00tHfmA:transcript#00004"
+  ],
+  "B||declarative versus imperative coding styles": [
+   "0AAuYgG90zc:transcript#00000",
+   "1fDJSDPksOU:transcript#00011",
+   "1fDJSDPksOU:transcript#00006",
+   "1fDJSDPksOU:transcript#00007",
+   "1fDJSDPksOU:transcript#00000",
+   "4lKbesI5eLI:transcript#00166",
+   "4V3fjQ-x2SI:transcript#00000",
+   "4lKbesI5eLI:transcript#00595",
+   "mJhsWrEv-Go:transcript#00000",
+   "4lKbesI5eLI:transcript#00165"
+  ],
+  "C||declarative versus imperative coding styles": [
+   "0AAuYgG90zc:transcript#00000",
+   "1fDJSDPksOU:transcript#00011",
+   "1fDJSDPksOU:transcript#00006",
+   "1fDJSDPksOU:transcript#00000",
+   "1fDJSDPksOU:transcript#00007",
+   "4V3fjQ-x2SI:transcript#00000",
+   "cD09UPUp1ww:transcript#00000",
+   "2TX7Pal5NMc:transcript#00161",
+   "4h4R7JL-h10:transcript#00062",
+   "vLibOCfXooQ:transcript#00001"
+  ],
+  "D||declarative versus imperative coding styles": [
+   "0AAuYgG90zc:transcript#00000",
+   "1fDJSDPksOU:transcript#00011",
+   "1fDJSDPksOU:transcript#00006",
+   "1fDJSDPksOU:transcript#00000",
+   "1fDJSDPksOU:transcript#00007",
+   "4V3fjQ-x2SI:transcript#00000",
+   "cD09UPUp1ww:transcript#00000",
+   "2TX7Pal5NMc:transcript#00161",
+   "4h4R7JL-h10:transcript#00062",
+   "vLibOCfXooQ:transcript#00001"
+  ],
+  "S||declarative versus imperative coding styles": [
+   "0AAuYgG90zc:transcript#00000",
+   "1fDJSDPksOU:transcript#00011",
+   "1fDJSDPksOU:transcript#00006",
+   "1fDJSDPksOU:transcript#00007",
+   "1fDJSDPksOU:transcript#00000",
+   "4baq00tHfmA:transcript#00004",
+   "4V3fjQ-x2SI:transcript#00000",
+   "8uoifFX1I3U:transcript#00000",
+   "4lKbesI5eLI:transcript#00595",
+   "4baq00tHfmA:transcript#00063"
+  ],
+  "A||cli git tools versus gui editors": [
+   "06lEP59XAgM:transcript#00000",
+   "9fg5cXk2Tr4:transcript#00000",
+   "u-jsmxs6A84:transcript#00000",
+   "SFOVWPAhJtk:transcript#00019",
+   "Ge0FnCCLa5c:transcript#00000",
+   "5zPckD0uwrM:transcript#00013",
+   "7cy0CIPW_oo:transcript#00000",
+   "5zPckD0uwrM:transcript#00010",
+   "V94BUC1kop8:transcript#00000",
+   "qUE-nVUrpq4:transcript#00000"
+  ],
+  "B||cli git tools versus gui editors": [
+   "06lEP59XAgM:transcript#00000",
+   "9fg5cXk2Tr4:transcript#00000",
+   "u-jsmxs6A84:transcript#00000",
+   "vVIJEZR9AUI:transcript#00000",
+   "Ge0FnCCLa5c:transcript#00000",
+   "7cy0CIPW_oo:transcript#00000",
+   "2AdKzkQyKkg:transcript#00000",
+   "27evFoy-SiU:transcript#00000",
+   "7C3vRJOtoXU:transcript#00000",
+   "yv8VZpov8bk:transcript#00000"
+  ],
+  "C||cli git tools versus gui editors": [
+   "u-jsmxs6A84:transcript#00000",
+   "06lEP59XAgM:transcript#00000",
+   "V94BUC1kop8:transcript#00000",
+   "SFOVWPAhJtk:transcript#00019",
+   "QcElsN67VXM:transcript#00000",
+   "9fg5cXk2Tr4:transcript#00000",
+   "vVIJEZR9AUI:transcript#00000",
+   "3YRcVN7Lg_c:transcript#00000",
+   "27evFoy-SiU:transcript#00000",
+   "22BbvkfLA3U:transcript#00000"
+  ],
+  "D||cli git tools versus gui editors": [
+   "06lEP59XAgM:transcript#00000",
+   "u-jsmxs6A84:transcript#00000",
+   "9fg5cXk2Tr4:transcript#00000",
+   "vVIJEZR9AUI:transcript#00000",
+   "Ge0FnCCLa5c:transcript#00000",
+   "27evFoy-SiU:transcript#00000",
+   "V94BUC1kop8:transcript#00000",
+   "SFOVWPAhJtk:transcript#00019",
+   "7cy0CIPW_oo:transcript#00000",
+   "7C3vRJOtoXU:transcript#00000"
+  ],
+  "S||cli git tools versus gui editors": [
+   "06lEP59XAgM:transcript#00000",
+   "u-jsmxs6A84:transcript#00000",
+   "9fg5cXk2Tr4:transcript#00000",
+   "wfBz0_k0kqE:transcript#00000",
+   "jzfoFF_bZCI:transcript#00007",
+   "Ge0FnCCLa5c:transcript#00000",
+   "7cy0CIPW_oo:transcript#00000",
+   "V94BUC1kop8:transcript#00000",
+   "SFOVWPAhJtk:transcript#00000",
+   "7C3vRJOtoXU:transcript#00000"
+  ],
+  "A||self hosting versus managed automation platforms": [
+   "4Hp-diBp-2Q:transcript#00000",
+   "5YTMri7NMjY:transcript#00011",
+   "1jDEZGjvXbk:transcript#00012",
+   "N1dr72DTFbg:transcript#00000",
+   "GasTL0DIehs:transcript#00000",
+   "sYTDCyNDaYU:transcript#00000",
+   "PCU--5PGh4c:transcript#00016",
+   "JC3CKXkGIvg:transcript#00000",
+   "5dlqJwFGBn0:transcript#00004",
+   "5YTMri7NMjY:transcript#00012"
+  ],
+  "B||self hosting versus managed automation platforms": [
+   "1jDEZGjvXbk:transcript#00012",
+   "4Hp-diBp-2Q:transcript#00000",
+   "5YTMri7NMjY:transcript#00012",
+   "N1dr72DTFbg:transcript#00000",
+   "sYTDCyNDaYU:transcript#00000",
+   "5dlqJwFGBn0:transcript#00004",
+   "Urukq_ibbOU:transcript#00000",
+   "5iNYhZXeDXc:transcript#00000",
+   "JC3CKXkGIvg:transcript#00000",
+   "9ctOnQKoxv8:transcript#00045"
+  ],
+  "C||self hosting versus managed automation platforms": [
+   "4Hp-diBp-2Q:transcript#00000",
+   "1jDEZGjvXbk:transcript#00012",
+   "5YTMri7NMjY:transcript#00012",
+   "sYTDCyNDaYU:transcript#00000",
+   "9ctOnQKoxv8:transcript#00045",
+   "5YTMri7NMjY:transcript#00011",
+   "ZqoXUJPFmBA:transcript#00000",
+   "5DbJhv7ikIk:transcript#00033",
+   "3wz_hcgtd9A:transcript#00000",
+   "N1dr72DTFbg:transcript#00000"
+  ],
+  "D||self hosting versus managed automation platforms": [
+   "4Hp-diBp-2Q:transcript#00000",
+   "1jDEZGjvXbk:transcript#00012",
+   "5YTMri7NMjY:transcript#00012",
+   "sYTDCyNDaYU:transcript#00000",
+   "N1dr72DTFbg:transcript#00000",
+   "9ctOnQKoxv8:transcript#00045",
+   "5dlqJwFGBn0:transcript#00004",
+   "JC3CKXkGIvg:transcript#00000",
+   "5YTMri7NMjY:transcript#00011",
+   "ZqoXUJPFmBA:transcript#00000"
+  ],
+  "S||self hosting versus managed automation platforms": [
+   "1jDEZGjvXbk:transcript#00012",
+   "4Hp-diBp-2Q:transcript#00000",
+   "5YTMri7NMjY:transcript#00012",
+   "5dlqJwFGBn0:transcript#00004",
+   "N1dr72DTFbg:transcript#00000",
+   "sYTDCyNDaYU:transcript#00000",
+   "BEn2oN_o7rA:transcript#00000",
+   "JC3CKXkGIvg:transcript#00000",
+   "3wz_hcgtd9A:transcript#00000",
+   "5iNYhZXeDXc:transcript#00000"
+  ],
+  "A||nested loops versus the real maintainability problem": [
+   "095HrcWwHLI:transcript#00001",
+   "095HrcWwHLI:transcript#00000",
+   "sWDhIGIiK5w:transcript#00130",
+   "4lKbesI5eLI:transcript#00643",
+   "4lKbesI5eLI:transcript#00638",
+   "1N5NuSIds10:transcript#00000",
+   "84V1xd_kRbQ:transcript#00002",
+   "86XG4BIlA7w:transcript#00000",
+   "3eSbtTgEha0:transcript#00000",
+   "-LtiHmmxXkU:transcript#00021"
+  ],
+  "B||nested loops versus the real maintainability problem": [
+   "095HrcWwHLI:transcript#00001",
+   "095HrcWwHLI:transcript#00000",
+   "sWDhIGIiK5w:transcript#00130",
+   "4lKbesI5eLI:transcript#00643",
+   "4lKbesI5eLI:transcript#00638",
+   "M4MruTOrLyM:transcript#00015",
+   "1N5NuSIds10:transcript#00000",
+   "84V1xd_kRbQ:transcript#00002",
+   "86XG4BIlA7w:transcript#00000",
+   "3eSbtTgEha0:transcript#00000"
+  ],
+  "C||nested loops versus the real maintainability problem": [
+   "095HrcWwHLI:transcript#00001",
+   "095HrcWwHLI:transcript#00000",
+   "4lKbesI5eLI:transcript#00643",
+   "4lKbesI5eLI:transcript#00638",
+   "sWDhIGIiK5w:transcript#00130",
+   "1N5NuSIds10:transcript#00000",
+   "oukyHzf_3cQ:transcript#00000",
+   "74FjlxQgftg:transcript#00000",
+   "7-HKy1D7iso:transcript#00025",
+   "-jxdjHMjRK4:transcript#00013"
+  ],
+  "D||nested loops versus the real maintainability problem": [
+   "095HrcWwHLI:transcript#00001",
+   "095HrcWwHLI:transcript#00000",
+   "4lKbesI5eLI:transcript#00643",
+   "sWDhIGIiK5w:transcript#00130",
+   "4lKbesI5eLI:transcript#00638",
+   "1N5NuSIds10:transcript#00000",
+   "84V1xd_kRbQ:transcript#00002",
+   "86XG4BIlA7w:transcript#00000",
+   "3eSbtTgEha0:transcript#00000",
+   "oukyHzf_3cQ:transcript#00000"
+  ],
+  "S||nested loops versus the real maintainability problem": [
+   "095HrcWwHLI:transcript#00001",
+   "sWDhIGIiK5w:transcript#00130",
+   "9kW5epVSRG0:transcript#00005",
+   "3eSbtTgEha0:transcript#00000",
+   "4lKbesI5eLI:transcript#00223",
+   "7Y36MidpB7Y:transcript#00000",
+   "4lKbesI5eLI:transcript#00643",
+   "4lKbesI5eLI:transcript#00638",
+   "86XG4BIlA7w:transcript#00000",
+   "lUMi_8bedXs:transcript#00000"
+  ],
+  "A||coding solo versus team hidden costs": [
+   "hLDJr7PAwlo:transcript#00000",
+   "QUHrntlfPo4:transcript#00000",
+   "1dSNfnFL40c:transcript#00000",
+   "ixmkyjZGjko:transcript#00001",
+   "IYnUpJi7zjY:transcript#00003",
+   "UslVzxAkiZ0:transcript#00016",
+   "rdaAT9jeEgc:transcript#00000",
+   "uqCIENbxBvg:transcript#00000",
+   "1d2NfzSRRUw:transcript#00012",
+   "Ob3pQWwdjYc:transcript#00000"
+  ],
+  "B||coding solo versus team hidden costs": [
+   "1dSNfnFL40c:transcript#00000",
+   "QUHrntlfPo4:transcript#00000",
+   "ixmkyjZGjko:transcript#00001",
+   "hLDJr7PAwlo:transcript#00000",
+   "IYnUpJi7zjY:transcript#00003",
+   "uqCIENbxBvg:transcript#00000",
+   "JqXkPlX_4gQ:transcript#00000",
+   "rdaAT9jeEgc:transcript#00000",
+   "towF0_V7oHw:transcript#00003",
+   "UslVzxAkiZ0:transcript#00016"
+  ],
+  "C||coding solo versus team hidden costs": [
+   "hLDJr7PAwlo:transcript#00000",
+   "UslVzxAkiZ0:transcript#00016",
+   "1d2NfzSRRUw:transcript#00012",
+   "nSz2UH77-Mk:transcript#00000",
+   "towF0_V7oHw:transcript#00003",
+   "QUHrntlfPo4:transcript#00000",
+   "6pQeYHDPONk:transcript#00000",
+   "1dSNfnFL40c:transcript#00000",
+   "T9UQ9abO8FM:transcript#00000",
+   "ixmkyjZGjko:transcript#00001"
+  ],
+  "D||coding solo versus team hidden costs": [
+   "hLDJr7PAwlo:transcript#00000",
+   "UslVzxAkiZ0:transcript#00016",
+   "1dSNfnFL40c:transcript#00000",
+   "QUHrntlfPo4:transcript#00000",
+   "ixmkyjZGjko:transcript#00001",
+   "towF0_V7oHw:transcript#00003",
+   "1d2NfzSRRUw:transcript#00012",
+   "uqCIENbxBvg:transcript#00000",
+   "IYnUpJi7zjY:transcript#00003",
+   "rdaAT9jeEgc:transcript#00000"
+  ],
+  "S||coding solo versus team hidden costs": [
+   "1d2NfzSRRUw:transcript#00012",
+   "1dSNfnFL40c:transcript#00000",
+   "Ob3pQWwdjYc:transcript#00000",
+   "hLDJr7PAwlo:transcript#00000",
+   "zUNCGRdTrf4:transcript#00002",
+   "5DbJhv7ikIk:transcript#00041",
+   "5DbJhv7ikIk:transcript#00040",
+   "IYnUpJi7zjY:transcript#00003",
+   "-qLW2Awz-74:transcript#00000",
+   "rdaAT9jeEgc:transcript#00000"
+  ],
+  "A||plugin bundles versus single skills for agents": [
+   "Z9IpnQbS2vI:transcript#00011",
+   "fcS5BFthUdg:transcript#00000",
+   "7o5a-MYWIXE:transcript#00000",
+   "VnOnv1yKaKc:transcript#00011",
+   "rjDFESbFnBY:transcript#00000",
+   "3Iua8f_c6ns:transcript#00000",
+   "0AaisdDALe8:transcript#00000",
+   "h5n6NfuY1cU:transcript#00008",
+   "Vf9YAhn1RyQ:transcript#00000",
+   "_A02brv2Csg:transcript#00000"
+  ],
+  "B||plugin bundles versus single skills for agents": [
+   "Z9IpnQbS2vI:transcript#00011",
+   "fcS5BFthUdg:transcript#00000",
+   "7o5a-MYWIXE:transcript#00000",
+   "3Iua8f_c6ns:transcript#00000",
+   "9EiG26FMcZk:transcript#00000",
+   "0AaisdDALe8:transcript#00000",
+   "VnOnv1yKaKc:transcript#00011",
+   "MisM3AWe7iU:transcript#00000",
+   "Vf9YAhn1RyQ:transcript#00000",
+   "kPLFINpFwvQ:transcript#00000"
+  ],
+  "C||plugin bundles versus single skills for agents": [
+   "Z9IpnQbS2vI:transcript#00011",
+   "7o5a-MYWIXE:transcript#00000",
+   "fcS5BFthUdg:transcript#00000",
+   "rjDFESbFnBY:transcript#00000",
+   "0AaisdDALe8:transcript#00000",
+   "Vf9YAhn1RyQ:transcript#00000",
+   "YXszYsAy2dQ:transcript#00000",
+   "1-pmY-b8Nos:transcript#00000",
+   "Z9IpnQbS2vI:transcript#00012",
+   "9AfgClkTW8Q:transcript#00000"
+  ],
+  "D||plugin bundles versus single skills for agents": [
+   "Z9IpnQbS2vI:transcript#00011",
+   "7o5a-MYWIXE:transcript#00000",
+   "fcS5BFthUdg:transcript#00000",
+   "0AaisdDALe8:transcript#00000",
+   "Vf9YAhn1RyQ:transcript#00000",
+   "3Iua8f_c6ns:transcript#00000",
+   "VnOnv1yKaKc:transcript#00011",
+   "rjDFESbFnBY:transcript#00000",
+   "kPLFINpFwvQ:transcript#00000",
+   "MisM3AWe7iU:transcript#00000"
+  ],
+  "S||plugin bundles versus single skills for agents": [
+   "fcS5BFthUdg:transcript#00000",
+   "Z9IpnQbS2vI:transcript#00011",
+   "VnOnv1yKaKc:transcript#00011",
+   "rjDFESbFnBY:transcript#00000",
+   "3Iua8f_c6ns:transcript#00000",
+   "0AaisdDALe8:transcript#00000",
+   "_A02brv2Csg:transcript#00000",
+   "kPLFINpFwvQ:transcript#00000",
+   "_vpNQ6IwP9w:transcript#00000",
+   "VnOnv1yKaKc:transcript#00000"
+  ],
+  "A||local dns on one box versus high availability pairs": [
+   "A2f_niGFlEI:transcript#00000",
+   "4KmVwzfF_Fs:transcript#00000",
+   "4m9j6hlbf4g:transcript#00288",
+   "0BitYPzPREw:transcript#00000",
+   "4zN95qA3Au8:transcript#00000",
+   "4m9j6hlbf4g:transcript#00510",
+   "KB41dTlX1Uc:transcript#00051",
+   "reYE4IQr8fw:transcript#00000",
+   "PCU--5PGh4c:transcript#00016",
+   "6nGYxOaxYNU:transcript#00000"
+  ],
+  "B||local dns on one box versus high availability pairs": [
+   "0BitYPzPREw:transcript#00000",
+   "4zN95qA3Au8:transcript#00000",
+   "4m9j6hlbf4g:transcript#00288",
+   "A2f_niGFlEI:transcript#00000",
+   "4KmVwzfF_Fs:transcript#00000",
+   "1lkAUaEWLXI:transcript#00000",
+   "6nGYxOaxYNU:transcript#00000",
+   "2TX7Pal5NMc:transcript#00025",
+   "reYE4IQr8fw:transcript#00000",
+   "4m9j6hlbf4g:transcript#00510"
+  ],
+  "C||local dns on one box versus high availability pairs": [
+   "A2f_niGFlEI:transcript#00000",
+   "4KmVwzfF_Fs:transcript#00000",
+   "4m9j6hlbf4g:transcript#00288",
+   "reYE4IQr8fw:transcript#00000",
+   "2TX7Pal5NMc:transcript#00020",
+   "6O4NuKA0pSI:transcript#00001",
+   "5miHyP6lExg:transcript#00321",
+   "0BitYPzPREw:transcript#00000",
+   "6bdmjUMe8Nk:transcript#00000",
+   "4zN95qA3Au8:transcript#00000"
+  ],
+  "D||local dns on one box versus high availability pairs": [
+   "A2f_niGFlEI:transcript#00000",
+   "4m9j6hlbf4g:transcript#00288",
+   "4KmVwzfF_Fs:transcript#00000",
+   "reYE4IQr8fw:transcript#00000",
+   "0BitYPzPREw:transcript#00000",
+   "4zN95qA3Au8:transcript#00000",
+   "1lkAUaEWLXI:transcript#00000",
+   "4m9j6hlbf4g:transcript#00510",
+   "2TX7Pal5NMc:transcript#00025",
+   "6nGYxOaxYNU:transcript#00000"
+  ],
+  "S||local dns on one box versus high availability pairs": [
+   "4m9j6hlbf4g:transcript#00288",
+   "0BitYPzPREw:transcript#00000",
+   "KB41dTlX1Uc:transcript#00051",
+   "4m9j6hlbf4g:transcript#00124",
+   "4KmVwzfF_Fs:transcript#00000",
+   "4zN95qA3Au8:transcript#00000",
+   "reYE4IQr8fw:transcript#00000",
+   "6nGYxOaxYNU:transcript#00000",
+   "6bdmjUMe8Nk:transcript#00000",
+   "bwspT0yegW8:transcript#00000"
+  ],
+  "A||manual bookmark sorting versus folder workflows": [
+   "1H-t0j33nTM:transcript#00000",
+   "g8hmAjogElQ:transcript#00017",
+   "2fbmlgu0Lkc:transcript#00000",
+   "1hf8OC39-to:transcript#00003",
+   "frjyb4_4Rlg:transcript#00000",
+   "eydMCTfbYz8:transcript#00000",
+   "CQeKmG1o85E:transcript#00002",
+   "ndF4_JzXaRA:transcript#00000",
+   "5D6qgieoe-g:transcript#00000",
+   "VbJCyuUB0eA:transcript#00003"
+  ],
+  "B||manual bookmark sorting versus folder workflows": [
+   "1H-t0j33nTM:transcript#00000",
+   "2fbmlgu0Lkc:transcript#00000",
+   "eydMCTfbYz8:transcript#00000",
+   "VbJCyuUB0eA:transcript#00003",
+   "CQeKmG1o85E:transcript#00002",
+   "s-Mc26Ytz10:transcript#00008",
+   "ndF4_JzXaRA:transcript#00000",
+   "1hf8OC39-to:transcript#00003",
+   "s-Mc26Ytz10:transcript#00009",
+   "5D6qgieoe-g:transcript#00000"
+  ],
+  "C||manual bookmark sorting versus folder workflows": [
+   "1H-t0j33nTM:transcript#00000",
+   "2fbmlgu0Lkc:transcript#00000",
+   "VbJCyuUB0eA:transcript#00003",
+   "frjyb4_4Rlg:transcript#00000",
+   "zm0Vo6Di3V8:transcript#00006",
+   "g8hmAjogElQ:transcript#00017",
+   "s-Mc26Ytz10:transcript#00008",
+   "SMO3x3eSKHM:transcript#00000",
+   "1hf8OC39-to:transcript#00003",
+   "1hf8OC39-to:transcript#00004"
+  ],
+  "D||manual bookmark sorting versus folder workflows": [
+   "1H-t0j33nTM:transcript#00000",
+   "2fbmlgu0Lkc:transcript#00000",
+   "VbJCyuUB0eA:transcript#00003",
+   "eydMCTfbYz8:transcript#00000",
+   "s-Mc26Ytz10:transcript#00008",
+   "frjyb4_4Rlg:transcript#00000",
+   "1hf8OC39-to:transcript#00003",
+   "CQeKmG1o85E:transcript#00002",
+   "s-Mc26Ytz10:transcript#00009",
+   "ndF4_JzXaRA:transcript#00000"
+  ],
+  "S||manual bookmark sorting versus folder workflows": [
+   "2fbmlgu0Lkc:transcript#00000",
+   "1H-t0j33nTM:transcript#00000",
+   "1hf8OC39-to:transcript#00003",
+   "VbJCyuUB0eA:transcript#00003",
+   "gHB4JFG9i3k:transcript#00000",
+   "s-Mc26Ytz10:transcript#00009",
+   "1hf8OC39-to:transcript#00004",
+   "36RLT1eXxj8:transcript#00000",
+   "CQeKmG1o85E:transcript#00002",
+   "0BttgDIvk48:transcript#00000"
+  ],
+  "A||vanilla javascript versus framework for small widgets": [
+   "8C_v7eOJo5w:transcript#00000",
+   "4tqzfQ6O4Mc:transcript#00020",
+   "7CCQJ0bu9s8:transcript#00000",
+   "GSSqoxjB24Q:transcript#00039",
+   "AA0Rd9MDEik:transcript#00000",
+   "3XijTEQLS4o:transcript#00012",
+   "5EsLj3JOdE0:transcript#00000",
+   "4tqzfQ6O4Mc:transcript#00021",
+   "8cb4auJt1TA:transcript#00000",
+   "PaXvWs9JupI:transcript#00000"
+  ],
+  "B||vanilla javascript versus framework for small widgets": [
+   "7CCQJ0bu9s8:transcript#00000",
+   "8C_v7eOJo5w:transcript#00000",
+   "AA0Rd9MDEik:transcript#00000",
+   "GSSqoxjB24Q:transcript#00039",
+   "kPHNT2nDzS4:transcript#00000",
+   "3XijTEQLS4o:transcript#00012",
+   "sVA5hsrmR4w:transcript#00001",
+   "9X8GRGcl5oA:transcript#00000",
+   "876aSEUA_8c:transcript#00006",
+   "8cb4auJt1TA:transcript#00000"
+  ],
+  "C||vanilla javascript versus framework for small widgets": [
+   "7CCQJ0bu9s8:transcript#00000",
+   "GSSqoxjB24Q:transcript#00039",
+   "8C_v7eOJo5w:transcript#00000",
+   "AA0Rd9MDEik:transcript#00000",
+   "3XijTEQLS4o:transcript#00012",
+   "4tqzfQ6O4Mc:transcript#00020",
+   "7f-71kYhK00:transcript#00000",
+   "2FVBMjzlj90:transcript#00001",
+   "2EH76dVtoeY:transcript#00000",
+   "gJrjgg1KVL4:transcript#00023"
+  ],
+  "D||vanilla javascript versus framework for small widgets": [
+   "7CCQJ0bu9s8:transcript#00000",
+   "8C_v7eOJo5w:transcript#00000",
+   "GSSqoxjB24Q:transcript#00039",
+   "AA0Rd9MDEik:transcript#00000",
+   "3XijTEQLS4o:transcript#00012",
+   "9X8GRGcl5oA:transcript#00000",
+   "kPHNT2nDzS4:transcript#00000",
+   "8cb4auJt1TA:transcript#00000",
+   "4tqzfQ6O4Mc:transcript#00020",
+   "7f-71kYhK00:transcript#00000"
+  ],
+  "S||vanilla javascript versus framework for small widgets": [
+   "7CCQJ0bu9s8:transcript#00000",
+   "8C_v7eOJo5w:transcript#00000",
+   "5EsLj3JOdE0:transcript#00000",
+   "SnXKNweikiY:transcript#00003",
+   "7f-71kYhK00:transcript#00000",
+   "GSSqoxjB24Q:transcript#00039",
+   "3XijTEQLS4o:transcript#00012",
+   "9EC71ha07pg:transcript#00000",
+   "8cb4auJt1TA:transcript#00000",
+   "PaXvWs9JupI:transcript#00000"
+  ],
+  "A||linux versus windows desktop customization": [
+   "4m9j6hlbf4g:transcript#00023",
+   "2AghaTV9gxQ:transcript#00000",
+   "-4lqA01d_yE:transcript#00000",
+   "lDkQx2egY2s:transcript#00008",
+   "cGTcgFw61tM:transcript#00008",
+   "Q8QdKRbC1O0:transcript#00000",
+   "50JGJqp1Tg8:transcript#00000",
+   "4aSwSE9JmW4:transcript#00003",
+   "10f4899srvc:transcript#00000",
+   "1expcUP3BaI:transcript#00000"
+  ],
+  "B||linux versus windows desktop customization": [
+   "FaELQHVGn-Y:transcript#00000",
+   "2AghaTV9gxQ:transcript#00000",
+   "uDzVL96Np1A:transcript#00000",
+   "1QQps1qTgG4:transcript#00000",
+   "50JGJqp1Tg8:transcript#00000",
+   "cGTcgFw61tM:transcript#00008",
+   "ZQ95Yon-ccg:transcript#00007",
+   "Q8QdKRbC1O0:transcript#00000",
+   "-4lqA01d_yE:transcript#00000",
+   "cGTcgFw61tM:transcript#00002"
+  ],
+  "C||linux versus windows desktop customization": [
+   "-4lqA01d_yE:transcript#00000",
+   "cGTcgFw61tM:transcript#00008",
+   "1expcUP3BaI:transcript#00000",
+   "4m9j6hlbf4g:transcript#00023",
+   "zm0Vo6Di3V8:transcript#00006",
+   "FaELQHVGn-Y:transcript#00000",
+   "2AghaTV9gxQ:transcript#00000",
+   "7SU-BupOe7s:transcript#00000",
+   "uDzVL96Np1A:transcript#00000",
+   "6ChzCaljcaI:transcript#00019"
+  ],
+  "D||linux versus windows desktop customization": [
+   "-4lqA01d_yE:transcript#00000",
+   "cGTcgFw61tM:transcript#00008",
+   "FaELQHVGn-Y:transcript#00000",
+   "2AghaTV9gxQ:transcript#00000",
+   "uDzVL96Np1A:transcript#00000",
+   "1QQps1qTgG4:transcript#00000",
+   "ZQ95Yon-ccg:transcript#00007",
+   "50JGJqp1Tg8:transcript#00000",
+   "Q8QdKRbC1O0:transcript#00000",
+   "1expcUP3BaI:transcript#00000"
+  ],
+  "S||linux versus windows desktop customization": [
+   "-4lqA01d_yE:transcript#00000",
+   "50JGJqp1Tg8:transcript#00000",
+   "7SU-BupOe7s:transcript#00000",
+   "4aSwSE9JmW4:transcript#00002",
+   "FaELQHVGn-Y:transcript#00000",
+   "2AghaTV9gxQ:transcript#00000",
+   "4m9j6hlbf4g:transcript#00023",
+   "6h2UmKTcCfA:transcript#00000",
+   "1expcUP3BaI:transcript#00000",
+   "uDzVL96Np1A:transcript#00000"
+  ],
+  "A||vibe coding versus agentic coding": [
+   "x2GqMs9Qcgk:transcript#00000",
+   "0Ls4486mL1w:transcript#00000",
+   "Ww3Z_R2KWTk:transcript#00012",
+   "JbhiLUY_V2U:transcript#00000",
+   "j7_WTxwQSqo:transcript#00001",
+   "V5A1IU8VVp4:transcript#00000",
+   "5yhzuJDcyps:transcript#00000",
+   "m9HeWXndjAU:transcript#00193",
+   "cHUwAqldQXM:transcript#00000",
+   "8LQVHFKH374:transcript#00000"
+  ],
+  "B||vibe coding versus agentic coding": [
+   "JbhiLUY_V2U:transcript#00000",
+   "0Ls4486mL1w:transcript#00000",
+   "x2GqMs9Qcgk:transcript#00000",
+   "cHUwAqldQXM:transcript#00000",
+   "j7_WTxwQSqo:transcript#00001",
+   "V5A1IU8VVp4:transcript#00000",
+   "pqgBUdCNF-s:transcript#00002",
+   "7HErPVFNO0Q:transcript#00000",
+   "5yhzuJDcyps:transcript#00000",
+   "8LQVHFKH374:transcript#00000"
+  ],
+  "C||vibe coding versus agentic coding": [
+   "JbhiLUY_V2U:transcript#00000",
+   "cHUwAqldQXM:transcript#00000",
+   "8LQVHFKH374:transcript#00000",
+   "j7_WTxwQSqo:transcript#00001",
+   "x2GqMs9Qcgk:transcript#00000",
+   "-VuZmoc-Sq8:transcript#00000",
+   "0Ls4486mL1w:transcript#00000",
+   "PjrXaC5UsIw:transcript#00000",
+   "Ww3Z_R2KWTk:transcript#00012",
+   "xSbXQXHxCzo:transcript#00000"
+  ],
+  "D||vibe coding versus agentic coding": [
+   "JbhiLUY_V2U:transcript#00000",
+   "cHUwAqldQXM:transcript#00000",
+   "j7_WTxwQSqo:transcript#00001",
+   "8LQVHFKH374:transcript#00000",
+   "x2GqMs9Qcgk:transcript#00000",
+   "0Ls4486mL1w:transcript#00000",
+   "7HErPVFNO0Q:transcript#00000",
+   "V5A1IU8VVp4:transcript#00000",
+   "5yhzuJDcyps:transcript#00000",
+   "-VuZmoc-Sq8:transcript#00000"
+  ],
+  "S||vibe coding versus agentic coding": [
+   "x2GqMs9Qcgk:transcript#00000",
+   "0Ls4486mL1w:transcript#00000",
+   "JbhiLUY_V2U:transcript#00000",
+   "V5A1IU8VVp4:transcript#00000",
+   "j7_WTxwQSqo:transcript#00001",
+   "5yhzuJDcyps:transcript#00000",
+   "m9HeWXndjAU:transcript#00193",
+   "cHUwAqldQXM:transcript#00000",
+   "wwfJlSF34n8:transcript#00000",
+   "m9HeWXndjAU:transcript#00192"
+  ],
+  "A||minipc versus rack server for homelab": [
+   "0ICUM3Q999Y:transcript#00000",
+   "3G13mf2Tkzs:transcript#00000",
+   "7lxs_dDwlGs:transcript#00000",
+   "9oNKRLmszWI:transcript#00000",
+   "5yrZxxSpZ90:transcript#00000",
+   "4m9j6hlbf4g:transcript#00065",
+   "7vSrsWta9NM:transcript#00000",
+   "3rvIcWZZXEI:transcript#00000",
+   "2kGGP2V00Yk:transcript#00004",
+   "Y09J8Npo5Lk:transcript#00000"
+  ],
+  "B||minipc versus rack server for homelab": [
+   "3G13mf2Tkzs:transcript#00000",
+   "0ICUM3Q999Y:transcript#00000",
+   "4m9j6hlbf4g:transcript#00065",
+   "7lxs_dDwlGs:transcript#00000",
+   "7vSrsWta9NM:transcript#00000",
+   "9oNKRLmszWI:transcript#00000",
+   "5yrZxxSpZ90:transcript#00000",
+   "3rvIcWZZXEI:transcript#00000",
+   "8cO9OTjk5H0:transcript#00000",
+   "rHtRWyxVQps:transcript#00057"
+  ],
+  "C||minipc versus rack server for homelab": [
+   "0ICUM3Q999Y:transcript#00000",
+   "4m9j6hlbf4g:transcript#00065",
+   "3rvIcWZZXEI:transcript#00000",
+   "rHtRWyxVQps:transcript#00057",
+   "B0Bl0Cu34D4:transcript#00000",
+   "3G13mf2Tkzs:transcript#00000",
+   "Q1px6T3vT-g:transcript#00000",
+   "7lxs_dDwlGs:transcript#00000",
+   "4lKbesI5eLI:transcript#00034",
+   "9oNKRLmszWI:transcript#00000"
+  ],
+  "D||minipc versus rack server for homelab": [
+   "0ICUM3Q999Y:transcript#00000",
+   "4m9j6hlbf4g:transcript#00065",
+   "3rvIcWZZXEI:transcript#00000",
+   "3G13mf2Tkzs:transcript#00000",
+   "7lxs_dDwlGs:transcript#00000",
+   "9oNKRLmszWI:transcript#00000",
+   "5yrZxxSpZ90:transcript#00000",
+   "7vSrsWta9NM:transcript#00000",
+   "rHtRWyxVQps:transcript#00057",
+   "8cO9OTjk5H0:transcript#00000"
+  ],
+  "S||minipc versus rack server for homelab": [
+   "0ICUM3Q999Y:transcript#00000",
+   "3G13mf2Tkzs:transcript#00000",
+   "7lxs_dDwlGs:transcript#00000",
+   "9oNKRLmszWI:transcript#00000",
+   "2kGGP2V00Yk:transcript#00004",
+   "4PpKiZGYswE:transcript#00000",
+   "2gCr4VvbL_4:transcript#00000",
+   "-U88ctHX_SQ:transcript#00000",
+   "3wJ0IQ3rHjA:transcript#00000",
+   "3rvIcWZZXEI:transcript#00000"
+  ],
+  "A||tldr versus man pages": [
+   "7O1nadoBpos:transcript#00001",
+   "5dgYg10B9p0:transcript#00013",
+   "Bk0Nao5BWYk:transcript#00000",
+   "4lKbesI5eLI:transcript#01749",
+   "BnIp3MKORuE:transcript#00000",
+   "4GRbeXqLAxA:transcript#00033",
+   "IUa-ZyrdIKc:transcript#00000",
+   "4lKbesI5eLI:transcript#00034",
+   "0JhxwLSD6YQ:transcript#00000",
+   "_7uTJ8Qrzu0:transcript#00001"
+  ],
+  "B||tldr versus man pages": [
+   "5dgYg10B9p0:transcript#00013",
+   "7O1nadoBpos:transcript#00001",
+   "AH3xlNuui_A:transcript#00017",
+   "4lKbesI5eLI:transcript#01749",
+   "Bk0Nao5BWYk:transcript#00000",
+   "xKy4daqYR6c:transcript#00000",
+   "3CMgznBdl-M:transcript#00034",
+   "4GRbeXqLAxA:transcript#00033",
+   "qA9H1t-eFs8:transcript#00031",
+   "4lKbesI5eLI:transcript#00034"
+  ],
+  "C||tldr versus man pages": [
+   "7O1nadoBpos:transcript#00001",
+   "4lKbesI5eLI:transcript#01749",
+   "5dgYg10B9p0:transcript#00013",
+   "4GRbeXqLAxA:transcript#00033",
+   "4lKbesI5eLI:transcript#00034",
+   "2CR9tDNAzB0:transcript#00006",
+   "AH3xlNuui_A:transcript#00017",
+   "3CMgznBdl-M:transcript#00023",
+   "Bk0Nao5BWYk:transcript#00000",
+   "AH3xlNuui_A:transcript#00096"
+  ],
+  "D||tldr versus man pages": [
+   "7O1nadoBpos:transcript#00001",
+   "4lKbesI5eLI:transcript#01749",
+   "5dgYg10B9p0:transcript#00013",
+   "4GRbeXqLAxA:transcript#00033",
+   "4lKbesI5eLI:transcript#00034",
+   "AH3xlNuui_A:transcript#00017",
+   "Bk0Nao5BWYk:transcript#00000",
+   "xKy4daqYR6c:transcript#00000",
+   "2CR9tDNAzB0:transcript#00006",
+   "3CMgznBdl-M:transcript#00023"
+  ],
+  "S||tldr versus man pages": [
+   "0JhxwLSD6YQ:transcript#00000",
+   "xKy4daqYR6c:transcript#00000",
+   "4lKbesI5eLI:transcript#01764",
+   "7O1nadoBpos:transcript#00001",
+   "4lKbesI5eLI:transcript#01749",
+   "4GRbeXqLAxA:transcript#00033",
+   "qA9H1t-eFs8:transcript#00009",
+   "4lKbesI5eLI:transcript#00034",
+   "4lKbesI5eLI:transcript#01761",
+   "xhN8bLfYfXw:transcript#00000"
+  ],
+  "A||soft reset versus hard reset streaming device": [
+   "0J-CB0huS3I:transcript#00000",
+   "2460ylTcH1A:transcript#00000",
+   "9syfvOPEtU0:transcript#00000",
+   "x_so44HszDo:transcript#00000",
+   "5mD3_GehMcI:transcript#00000",
+   "5Olc2iPsGEA:transcript#00000",
+   "-lI4YwI1q9c:transcript#00000",
+   "8liy5_Z4zEs:transcript#00000",
+   "2BKm-bVzF6E:transcript#00000",
+   "3qlJFT-wKXw:transcript#00000"
+  ],
+  "B||soft reset versus hard reset streaming device": [
+   "0J-CB0huS3I:transcript#00000",
+   "2460ylTcH1A:transcript#00000",
+   "9syfvOPEtU0:transcript#00000",
+   "5Olc2iPsGEA:transcript#00000",
+   "-lI4YwI1q9c:transcript#00000",
+   "-yddTHRtExM:transcript#00000",
+   "x_so44HszDo:transcript#00000",
+   "5QP_uge_jJs:transcript#00000",
+   "4gcBwker1aQ:transcript#00000",
+   "5mD3_GehMcI:transcript#00000"
+  ],
+  "C||soft reset versus hard reset streaming device": [
+   "0J-CB0huS3I:transcript#00000",
+   "8liy5_Z4zEs:transcript#00000",
+   "2460ylTcH1A:transcript#00000",
+   "x_so44HszDo:transcript#00000",
+   "9syfvOPEtU0:transcript#00000",
+   "-lI4YwI1q9c:transcript#00000",
+   "5mD3_GehMcI:transcript#00000",
+   "5Olc2iPsGEA:transcript#00000",
+   "2BKm-bVzF6E:transcript#00000",
+   "1lkQoAEP_4w:transcript#00000"
+  ],
+  "D||soft reset versus hard reset streaming device": [
+   "0J-CB0huS3I:transcript#00000",
+   "2460ylTcH1A:transcript#00000",
+   "9syfvOPEtU0:transcript#00000",
+   "x_so44HszDo:transcript#00000",
+   "5Olc2iPsGEA:transcript#00000",
+   "-lI4YwI1q9c:transcript#00000",
+   "5mD3_GehMcI:transcript#00000",
+   "8liy5_Z4zEs:transcript#00000",
+   "4gcBwker1aQ:transcript#00000",
+   "2BKm-bVzF6E:transcript#00000"
+  ],
+  "S||soft reset versus hard reset streaming device": [
+   "0J-CB0huS3I:transcript#00000",
+   "2460ylTcH1A:transcript#00000",
+   "8liy5_Z4zEs:transcript#00000",
+   "-lI4YwI1q9c:transcript#00000",
+   "0Y0OxoZ1Am0:transcript#00000",
+   "1-vIiEpUqI0:transcript#00000",
+   "1yM4NPURgiI:transcript#00000",
+   "4gcBwker1aQ:transcript#00000",
+   "3iwl-cELgIM:transcript#00000",
+   "6XNHgeUZrI0:transcript#00000"
+  ],
+  "A||paid coding tools versus free open workflows": [
+   "sYTDCyNDaYU:transcript#00000",
+   "dqaooqBPVRI:transcript#00000",
+   "kgjnp2gY6Hg:transcript#00000",
+   "X98IpRiTdhg:transcript#00000",
+   "0rf2JF4HiJY:transcript#00000",
+   "qbV1kQgT4ck:transcript#00000",
+   "BZ0w0JhPQ9o:transcript#00000",
+   "OSaq_WHFUGk:transcript#00000",
+   "JOKWQBfnY8A:transcript#00000",
+   "5JAY4uj-qok:transcript#00000"
+  ],
+  "B||paid coding tools versus free open workflows": [
+   "sYTDCyNDaYU:transcript#00000",
+   "dqaooqBPVRI:transcript#00000",
+   "0rf2JF4HiJY:transcript#00000",
+   "EHSOeXx2EvE:transcript#00000",
+   "X98IpRiTdhg:transcript#00000",
+   "8olQhkaGxyM:transcript#00000",
+   "BZ0w0JhPQ9o:transcript#00000",
+   "XK1-c3fK7Y8:transcript#00000",
+   "Q0YgzCHkNXo:transcript#00000",
+   "-bNw43JidU0:transcript#00000"
+  ],
+  "C||paid coding tools versus free open workflows": [
+   "0rf2JF4HiJY:transcript#00000",
+   "dqaooqBPVRI:transcript#00000",
+   "sYTDCyNDaYU:transcript#00000",
+   "uoCzjhWQOOY:transcript#00000",
+   "3jnWpuivSe8:transcript#00000",
+   "7d5MfqVTClc:transcript#00000",
+   "kgjnp2gY6Hg:transcript#00000",
+   "5m6NK4D2MkY:transcript#00003",
+   "r8J0a-A0em4:transcript#00004",
+   "X98IpRiTdhg:transcript#00000"
+  ],
+  "D||paid coding tools versus free open workflows": [
+   "dqaooqBPVRI:transcript#00000",
+   "0rf2JF4HiJY:transcript#00000",
+   "sYTDCyNDaYU:transcript#00000",
+   "X98IpRiTdhg:transcript#00000",
+   "EHSOeXx2EvE:transcript#00000",
+   "8olQhkaGxyM:transcript#00000",
+   "BZ0w0JhPQ9o:transcript#00000",
+   "XK1-c3fK7Y8:transcript#00000",
+   "3jnWpuivSe8:transcript#00000",
+   "uoCzjhWQOOY:transcript#00000"
+  ],
+  "S||paid coding tools versus free open workflows": [
+   "sYTDCyNDaYU:transcript#00000",
+   "dqaooqBPVRI:transcript#00000",
+   "EHSOeXx2EvE:transcript#00000",
+   "5JAY4uj-qok:transcript#00000",
+   "HywmktKaKd4:transcript#00000",
+   "uoCzjhWQOOY:transcript#00000",
+   "SFOVWPAhJtk:transcript#00000",
+   "mNTHH5Uiw0U:transcript#00000",
+   "X98IpRiTdhg:transcript#00000",
+   "-FawvwoX6hQ:transcript#00000"
+  ],
+  "A||override animation versus code components": [
+   "9nIwTjG2fdI:transcript#00168",
+   "9nIwTjG2fdI:transcript#00170",
+   "9nIwTjG2fdI:transcript#00167",
+   "9nIwTjG2fdI:transcript#00174",
+   "0GYSR2rRSZw:transcript#00000",
+   "9nIwTjG2fdI:transcript#00172",
+   "9nIwTjG2fdI:transcript#00175",
+   "7IRdNQO-olw:transcript#00000",
+   "MAhkbZHcbLA:transcript#00000",
+   "Xwa5x0jJI0Y:transcript#00000"
+  ],
+  "B||override animation versus code components": [
+   "9nIwTjG2fdI:transcript#00168",
+   "9nIwTjG2fdI:transcript#00167",
+   "9nIwTjG2fdI:transcript#00170",
+   "9nIwTjG2fdI:transcript#00174",
+   "9nIwTjG2fdI:transcript#00172",
+   "0GYSR2rRSZw:transcript#00000",
+   "egMU3JBQZO8:transcript#00000",
+   "9nIwTjG2fdI:transcript#00175",
+   "FzLIWW3eDlQ:transcript#00000",
+   "9A6XzkhkuGY:transcript#00002"
+  ],
+  "C||override animation versus code components": [
+   "9nIwTjG2fdI:transcript#00170",
+   "9nIwTjG2fdI:transcript#00167",
+   "9nIwTjG2fdI:transcript#00168",
+   "9nIwTjG2fdI:transcript#00174",
+   "MAhkbZHcbLA:transcript#00000",
+   "9nIwTjG2fdI:transcript#00160",
+   "fJ74BnYVqhQ:transcript#00000",
+   "0korQqBgJ_o:transcript#00054",
+   "2I7uX8m0Ta0:transcript#00000",
+   "D8N4252sUE4:transcript#00010"
+  ],
+  "D||override animation versus code components": [
+   "9nIwTjG2fdI:transcript#00170",
+   "9nIwTjG2fdI:transcript#00167",
+   "9nIwTjG2fdI:transcript#00168",
+   "9nIwTjG2fdI:transcript#00174",
+   "0GYSR2rRSZw:transcript#00000",
+   "9nIwTjG2fdI:transcript#00172",
+   "MAhkbZHcbLA:transcript#00000",
+   "9nIwTjG2fdI:transcript#00175",
+   "9nIwTjG2fdI:transcript#00160",
+   "fJ74BnYVqhQ:transcript#00000"
+  ],
+  "S||override animation versus code components": [
+   "9nIwTjG2fdI:transcript#00168",
+   "9nIwTjG2fdI:transcript#00170",
+   "9nIwTjG2fdI:transcript#00174",
+   "9nIwTjG2fdI:transcript#00167",
+   "9nIwTjG2fdI:transcript#00172",
+   "0GYSR2rRSZw:transcript#00000",
+   "9nIwTjG2fdI:transcript#00175",
+   "FzLIWW3eDlQ:transcript#00000",
+   "9nIwTjG2fdI:transcript#00173",
+   "egMU3JBQZO8:transcript#00000"
+  ],
+  "A||creator analytics versus google analytics": [
+   "ZqzukGHQ1hE:transcript#00000",
+   "2IHeKib9LEA:transcript#00036",
+   "UTulQhX85Jc:transcript#00005",
+   "Nkih_eYrVtg:transcript#00001",
+   "-L0CVvJMzZI:transcript#00000",
+   "ODBXp3440Tc:transcript#00002",
+   "2fvngjQUrRU:transcript#00009",
+   "8xW2pds1Pd4:transcript#00000",
+   "N1UMycRJbAw:transcript#00000",
+   "2IHeKib9LEA:transcript#00007"
+  ],
+  "B||creator analytics versus google analytics": [
+   "ZqzukGHQ1hE:transcript#00000",
+   "UTulQhX85Jc:transcript#00005",
+   "Nkih_eYrVtg:transcript#00001",
+   "UkRE87yDwH8:transcript#00098",
+   "-L0CVvJMzZI:transcript#00000",
+   "9t4mE40jymk:transcript#00000",
+   "2fvngjQUrRU:transcript#00009",
+   "5t8aFJRMiP0:transcript#00004",
+   "3kjaKNurA_I:transcript#00000",
+   "N1UMycRJbAw:transcript#00000"
+  ],
+  "C||creator analytics versus google analytics": [
+   "ZqzukGHQ1hE:transcript#00000",
+   "N1UMycRJbAw:transcript#00000",
+   "-L0CVvJMzZI:transcript#00000",
+   "Nkih_eYrVtg:transcript#00001",
+   "UTulQhX85Jc:transcript#00005",
+   "2fvngjQUrRU:transcript#00009",
+   "PvnSSrnjLX8:transcript#00000",
+   "2IHeKib9LEA:transcript#00036",
+   "UkRE87yDwH8:transcript#00098",
+   "y67uLWDth30:transcript#00000"
+  ],
+  "D||creator analytics versus google analytics": [
+   "ZqzukGHQ1hE:transcript#00000",
+   "N1UMycRJbAw:transcript#00000",
+   "-L0CVvJMzZI:transcript#00000",
+   "UTulQhX85Jc:transcript#00005",
+   "Nkih_eYrVtg:transcript#00001",
+   "2fvngjQUrRU:transcript#00009",
+   "UkRE87yDwH8:transcript#00098",
+   "5t8aFJRMiP0:transcript#00004",
+   "3kjaKNurA_I:transcript#00000",
+   "PvnSSrnjLX8:transcript#00000"
+  ],
+  "S||creator analytics versus google analytics": [
+   "ZqzukGHQ1hE:transcript#00000",
+   "-L0CVvJMzZI:transcript#00000",
+   "2fvngjQUrRU:transcript#00009",
+   "6r0Hrp-kAn0:transcript#00000",
+   "ODBXp3440Tc:transcript#00003",
+   "Nkih_eYrVtg:transcript#00001",
+   "N1UMycRJbAw:transcript#00000",
+   "2nOHxCSsv5g:transcript#00002",
+   "7crgK064eoY:transcript#00000",
+   "PvnSSrnjLX8:transcript#00000"
+  ],
+  "A||gpu versus cpu instances for model serving": [
+   "0LZJZIjNSDc:transcript#00001",
+   "0AOeanTal0g:transcript#00004",
+   "njWyDHKYeVA:transcript#00019",
+   "ckWULAbePmo:transcript#00000",
+   "6oxS1Z35bE0:transcript#00006",
+   "yBxRoYj-i28:transcript#00009",
+   "coP5_SmE4AI:transcript#00021",
+   "jEa_rEUL-vA:transcript#00000",
+   "58Oozg79UWo:transcript#00000",
+   "2p_83Umbj2I:transcript#00002"
+  ],
+  "B||gpu versus cpu instances for model serving": [
+   "0LZJZIjNSDc:transcript#00001",
+   "0AOeanTal0g:transcript#00004",
+   "njWyDHKYeVA:transcript#00019",
+   "6oxS1Z35bE0:transcript#00006",
+   "ckWULAbePmo:transcript#00000",
+   "coP5_SmE4AI:transcript#00021",
+   "2p_83Umbj2I:transcript#00002",
+   "yBxRoYj-i28:transcript#00015",
+   "8XXnsFYaY0s:transcript#00001",
+   "11ueh2fcTjg:transcript#00000"
+  ],
+  "C||gpu versus cpu instances for model serving": [
+   "0AOeanTal0g:transcript#00004",
+   "ckWULAbePmo:transcript#00000",
+   "0LZJZIjNSDc:transcript#00001",
+   "njWyDHKYeVA:transcript#00019",
+   "6oxS1Z35bE0:transcript#00006",
+   "coP5_SmE4AI:transcript#00021",
+   "coP5_SmE4AI:transcript#00001",
+   "4m9j6hlbf4g:transcript#00014",
+   "D1GY9AJRFwU:transcript#00005",
+   "2486auSLTUI:transcript#00007"
+  ],
+  "D||gpu versus cpu instances for model serving": [
+   "0AOeanTal0g:transcript#00004",
+   "ckWULAbePmo:transcript#00000",
+   "0LZJZIjNSDc:transcript#00001",
+   "njWyDHKYeVA:transcript#00019",
+   "6oxS1Z35bE0:transcript#00006",
+   "coP5_SmE4AI:transcript#00021",
+   "2p_83Umbj2I:transcript#00002",
+   "yBxRoYj-i28:transcript#00015",
+   "coP5_SmE4AI:transcript#00001",
+   "4m9j6hlbf4g:transcript#00014"
+  ],
+  "S||gpu versus cpu instances for model serving": [
+   "0LZJZIjNSDc:transcript#00001",
+   "ckWULAbePmo:transcript#00000",
+   "58Oozg79UWo:transcript#00000",
+   "njWyDHKYeVA:transcript#00019",
+   "aifIIkQcy4Y:transcript#00001",
+   "aifIIkQcy4Y:transcript#00004",
+   "0AOeanTal0g:transcript#00004",
+   "6oxS1Z35bE0:transcript#00006",
+   "jEa_rEUL-vA:transcript#00000",
+   "2p_83Umbj2I:transcript#00002"
+  ],
+  "A||keynote speaker perks versus checklists": [
+   "3zrJ6saQvzE:transcript#00000",
+   "bwLMeSvpu-I:transcript#00000",
+   "CXDObEQ2Dv0:transcript#00000",
+   "pBOK06Q3VVQ:transcript#00033",
+   "E_QJ8j74U_0:transcript#00027",
+   "b2_b1KrheJ4:transcript#00008",
+   "8u594Q2ukZU:transcript#00005",
+   "IyTKndrR0io:transcript#00000",
+   "lhTdBJK8wZI:transcript#00000",
+   "KaFVcejvWm0:transcript#00002"
+  ],
+  "B||keynote speaker perks versus checklists": [
+   "b2_b1KrheJ4:transcript#00008",
+   "bwLMeSvpu-I:transcript#00000",
+   "E_QJ8j74U_0:transcript#00027",
+   "pBOK06Q3VVQ:transcript#00033",
+   "32srgxA0Nmk:transcript#00007",
+   "CXDObEQ2Dv0:transcript#00000",
+   "2ifl1WtXjfw:transcript#00001",
+   "LorEJPrALcg:transcript#00074",
+   "8u594Q2ukZU:transcript#00005",
+   "lhTdBJK8wZI:transcript#00000"
+  ],
+  "C||keynote speaker perks versus checklists": [
+   "bwLMeSvpu-I:transcript#00000",
+   "E_QJ8j74U_0:transcript#00027",
+   "CXDObEQ2Dv0:transcript#00000",
+   "pBOK06Q3VVQ:transcript#00033",
+   "IyTKndrR0io:transcript#00000",
+   "3zrJ6saQvzE:transcript#00000",
+   "0pQ2vbeHEvg:transcript#00000",
+   "Vg7FRnIVW70:transcript#00000",
+   "2lx6PE1-e_Q:transcript#00003",
+   "5miHyP6lExg:transcript#00321"
+  ],
+  "D||keynote speaker perks versus checklists": [
+   "bwLMeSvpu-I:transcript#00000",
+   "E_QJ8j74U_0:transcript#00027",
+   "pBOK06Q3VVQ:transcript#00033",
+   "CXDObEQ2Dv0:transcript#00000",
+   "b2_b1KrheJ4:transcript#00008",
+   "IyTKndrR0io:transcript#00000",
+   "8u594Q2ukZU:transcript#00005",
+   "lhTdBJK8wZI:transcript#00000",
+   "3zrJ6saQvzE:transcript#00000",
+   "0pQ2vbeHEvg:transcript#00000"
+  ],
+  "S||keynote speaker perks versus checklists": [
+   "CXDObEQ2Dv0:transcript#00000",
+   "b2_b1KrheJ4:transcript#00008",
+   "E_QJ8j74U_0:transcript#00027",
+   "LorEJPrALcg:transcript#00074",
+   "2IO8tQmTbRs:transcript#00005",
+   "9Oq5iBHFajE:transcript#00012",
+   "pBOK06Q3VVQ:transcript#00033",
+   "bwLMeSvpu-I:transcript#00000",
+   "3zrJ6saQvzE:transcript#00000",
+   "3BztBtxvtOU:transcript#00001"
+  ],
+  "A||scriptsharp versus typescript history": [
+   "5DbJhv7ikIk:transcript#00029",
+   "8q3cYi5p_VA:transcript#00000",
+   "5DbJhv7ikIk:transcript#00028",
+   "7P9sxqt7HfA:transcript#00000",
+   "wvt5JNUXXLM:transcript#00000",
+   "9yRmryJvj7M:transcript#00000",
+   "2gkcZxcNUYY:transcript#00000",
+   "8q3cYi5p_VA:transcript#00001",
+   "41nVtaAVdh4:transcript#00000",
+   "9wc8Gv8X49U:transcript#00000"
+  ],
+  "B||scriptsharp versus typescript history": [
+   "5DbJhv7ikIk:transcript#00029",
+   "9yRmryJvj7M:transcript#00000",
+   "5DbJhv7ikIk:transcript#00028",
+   "8q3cYi5p_VA:transcript#00000",
+   "2gkcZxcNUYY:transcript#00000",
+   "wvt5JNUXXLM:transcript#00000",
+   "9wc8Gv8X49U:transcript#00000",
+   "9yRmryJvj7M:transcript#00001",
+   "7P9sxqt7HfA:transcript#00000",
+   "485-1xZjKS4:transcript#00002"
+  ],
+  "C||scriptsharp versus typescript history": [
+   "8q3cYi5p_VA:transcript#00000",
+   "5DbJhv7ikIk:transcript#00029",
+   "7P9sxqt7HfA:transcript#00000",
+   "wvt5JNUXXLM:transcript#00000",
+   "9yRmryJvj7M:transcript#00000",
+   "2gkcZxcNUYY:transcript#00000",
+   "9wc8Gv8X49U:transcript#00000",
+   "8q3cYi5p_VA:transcript#00001",
+   "41nVtaAVdh4:transcript#00000",
+   "0KgJnOXoaKg:transcript#00000"
+  ],
+  "D||scriptsharp versus typescript history": [
+   "5DbJhv7ikIk:transcript#00029",
+   "8q3cYi5p_VA:transcript#00000",
+   "9yRmryJvj7M:transcript#00000",
+   "7P9sxqt7HfA:transcript#00000",
+   "wvt5JNUXXLM:transcript#00000",
+   "2gkcZxcNUYY:transcript#00000",
+   "9wc8Gv8X49U:transcript#00000",
+   "5DbJhv7ikIk:transcript#00028",
+   "8q3cYi5p_VA:transcript#00001",
+   "41nVtaAVdh4:transcript#00000"
+  ],
+  "S||scriptsharp versus typescript history": [
+   "5DbJhv7ikIk:transcript#00029",
+   "7P9sxqt7HfA:transcript#00000",
+   "5DbJhv7ikIk:transcript#00028",
+   "2gkcZxcNUYY:transcript#00000",
+   "wvt5JNUXXLM:transcript#00000",
+   "8q3cYi5p_VA:transcript#00001",
+   "9wc8Gv8X49U:transcript#00000",
+   "9GRzNXKVa2o:transcript#00000",
+   "3NjaZbx4iZY:transcript#00000",
+   "35cESnxXH6o:transcript#00000"
+  ]
+ },
+ "listing": [
+  {
+   "query": "mesh vpn reverse proxy versus cloudflare tunnels",
+   "video": "-yfE3Lb3hTI",
+   "title": "NetBird Reverse Proxy: Better than Cloudflare Tunnels?"
+  },
+  {
+   "query": "mesh vpn reverse proxy versus cloudflare tunnels",
+   "video": "3wJ0IQ3rHjA",
+   "title": "This Underrated Tool Replaced 3 Homelab Services (and it's open source!)"
+  },
+  {
+   "query": "mesh vpn reverse proxy versus cloudflare tunnels",
+   "video": "B4pnGyvj2sM",
+   "title": "Stop Paying for Tunnels. Use Open Source Instead."
+  },
+  {
+   "query": "free coding platforms versus paid coding agents",
+   "video": "Kqk_i1rkWgg",
+   "title": "Launch 20+ AI Agents in SECONDS (Claude Code CLUSTER)"
+  },
+  {
+   "query": "free coding platforms versus paid coding agents",
+   "video": "kgjnp2gY6Hg",
+   "title": "Should My AI Coding Agent be Open Source?"
+  },
+  {
+   "query": "free coding platforms versus paid coding agents",
+   "video": "0rf2JF4HiJY",
+   "title": "$240/Year Claude Code vs FREE OpenCode \u2014 I Gave Both the Same Task (Real Test, 2026)"
+  },
+  {
+   "query": "free coding platforms versus paid coding agents",
+   "video": "dqaooqBPVRI",
+   "title": "10 Open-Source AI Agents Replacing Paid Tools in 2026"
+  },
+  {
+   "query": "free coding platforms versus paid coding agents",
+   "video": "rlVUKdQZM6Y",
+   "title": "This vibe coding trend will DOMINATE 2026"
+  },
+  {
+   "query": "free coding platforms versus paid coding agents",
+   "video": "dmnLj-lSXH4",
+   "title": "The Hackathon Where Humans Can't Code"
+  },
+  {
+   "query": "free coding platforms versus paid coding agents",
+   "video": "-zj3DanltVs",
+   "title": "STOP Paying for Claude Code \ud83e\udd2f Use Freebuff for FREE Unlimited Coding"
+  },
+  {
+   "query": "laptop generations compared for local model inference",
+   "video": "9q1RexwBQI0",
+   "title": "(no title)"
+  },
+  {
+   "query": "laptop generations compared for local model inference",
+   "video": "2F6M4Jcgvis",
+   "title": "Gemma 4: The Free ChatGPT That Runs Offline"
+  },
+  {
+   "query": "laptop generations compared for local model inference",
+   "video": "k9GvuJXvHRQ",
+   "title": "This 7B AI Reads Images, Fixes Code & Understands Video #ai #coding"
+  },
+  {
+   "query": "laptop generations compared for local model inference",
+   "video": "4C0RJ01yRok",
+   "title": "I Ran FLUX.1 Image Generation on a RTX 3050 So You Don't Have To."
+  },
+  {
+   "query": "laptop generations compared for local model inference",
+   "video": "U8lGbSaCCYI",
+   "title": "(no title)"
+  },
+  {
+   "query": "button controls versus touch controls on earbuds",
+   "video": "96FT-sOwwK4",
+   "title": "Everything Hidden in Galaxy Buds 4 Pro Settings"
+  },
+  {
+   "query": "button controls versus touch controls on earbuds",
+   "video": "-y63iMeQTqo",
+   "title": "Do Shokz OpenFit Pro Have Touch Controls?"
+  },
+  {
+   "query": "open source chatbot builders compared on templates",
+   "video": "AmduXg_xFEM",
+   "title": "Your Favorite AI Model Might Be the Worst One... Let's Find Out"
+  },
+  {
+   "query": "open source chatbot builders compared on templates",
+   "video": "oUU9uURJQxM",
+   "title": "5 Lazy AI Businesses Making Up To \u20ac167K/Year (2026)"
+  },
+  {
+   "query": "open source chatbot builders compared on templates",
+   "video": "ADLggJu9Fw8",
+   "title": "ChatGPT 5.4 vs Claude Opus 4.6: I Made Them Roast Each Other"
+  },
+  {
+   "query": "open source chatbot builders compared on templates",
+   "video": "Iy1yF_SAmUY",
+   "title": "LangGraph + MCP + Ollama: The Key To Powerful Agentic\u00a0AI"
+  },
+  {
+   "query": "open source chatbot builders compared on templates",
+   "video": "r1WJiAtCYj0",
+   "title": "LangExtract + Knowledge Graph- Google's New Library for NLP\u00a0Tasks"
+  },
+  {
+   "query": "image models compared recreating retro game sprites",
+   "video": "EEFjvexJ8eI",
+   "title": "ChatGPT's New Image Model Is Terrifyingly Good"
+  },
+  {
+   "query": "image models compared recreating retro game sprites",
+   "video": "8BZoPFh3EGM",
+   "title": "Duck Hunt Remake (UE5)"
+  },
+  {
+   "query": "image models compared recreating retro game sprites",
+   "video": "03Xsy18Hsdo",
+   "title": "I Recreated Final Fantasy Tactics Sprites With AI (GPT Image 1.5, Nano Banana 2, Codex, Claude Code)"
+  },
+  {
+   "query": "image models compared recreating retro game sprites",
+   "video": "gBDLFZJMvc8",
+   "title": "Gemini 3.1 Pro Killer UI Prompts!"
+  },
+  {
+   "query": "image models compared recreating retro game sprites",
+   "video": "l3FilH7vMxw",
+   "title": "(no title)"
+  },
+  {
+   "query": "new home screen versus old streaming interface",
+   "video": "7J04K126Z6A",
+   "title": "NEW Onn 4K Pro vs OLD Onn 4K Pro \u2014 is the upgrade actually worth it?"
+  },
+  {
+   "query": "new home screen versus old streaming interface",
+   "video": "DLjv_2nbQAA",
+   "title": "Is Grok 4.5 better than Opus?"
+  },
+  {
+   "query": "new home screen versus old streaming interface",
+   "video": "01Rn93sX-b4",
+   "title": "Fire TV Gets Its Biggest Makeover in YEARS"
+  },
+  {
+   "query": "new home screen versus old streaming interface",
+   "video": "8Qtkl8jNBRk",
+   "title": "How to Fix the Blue Screen of Death"
+  },
+  {
+   "query": "new home screen versus old streaming interface",
+   "video": "7TkFXwnYmkw",
+   "title": "Building with AI - Live!"
+  },
+  {
+   "query": "new home screen versus old streaming interface",
+   "video": "87ET_an5Zj0",
+   "title": "How To Use Discovery Plus and Get the Most Out of It: 7 Pro Tips Revealed!"
+  },
+  {
+   "query": "new home screen versus old streaming interface",
+   "video": "9NFWhMAlPag",
+   "title": "You Said Winhance Needed Changes, and I Listened | Winhance Release #17"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "g8hmAjogElQ",
+   "title": "I Built a Second Brain That Organises Itself (and you can too!)"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "JukZ7WWtOSg",
+   "title": "PAI: The Life OS for AI-Powered Development"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "iQyg-KypKAA",
+   "title": "L8 Principal's Agentic Engineering Workflow"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "4h-aeqkWAPo",
+   "title": "Build a PowerShell AI Diary: Capture Notes, Search Memories, and Talk to Your Past Self"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "VbJCyuUB0eA",
+   "title": "15 things every Obsidian beginner should know"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "AuofNgImNhk",
+   "title": "Making OpenClaw Actually Remember Things"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "srqWFT_TUec",
+   "title": "Claude Code + Obsidian = UNLIMITED Memory! Solves Claude's Memory Problem!"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "GK7TLrILmjE",
+   "title": "Journaling Feels Like a Chore? Try This Simple Obsidian Hack!"
+  },
+  {
+   "query": "structured project memory versus diary style notes",
+   "video": "IiA4Ku5viyg",
+   "title": "Anthropic Just Added These Features to Claude Code"
+  },
+  {
+   "query": "cheap generated vfx versus ten thousand dollar shots",
+   "video": "22zcydi__Lk",
+   "title": "Google Imagen 3 CRUSHED $100 Professional Headshot Fees (Build This Service Today) \ud83d\udc80"
+  },
+  {
+   "query": "cheap generated vfx versus ten thousand dollar shots",
+   "video": "-zA021g1sl4",
+   "title": "Kling 3 VFX That Used to Cost $10K Now 50 Cents"
+  },
+  {
+   "query": "cheap generated vfx versus ten thousand dollar shots",
+   "video": "2qkqThjT0lI",
+   "title": "Ollama Runs A 32B Local LLM For Free On A $599 Mac"
+  },
+  {
+   "query": "cheap generated vfx versus ten thousand dollar shots",
+   "video": "2E4AUYWPStc",
+   "title": "This Free AI Tool Creates High-End Visuals Instantly."
+  },
+  {
+   "query": "cheap generated vfx versus ten thousand dollar shots",
+   "video": "nclv_9Oibok",
+   "title": "The Most Cost-Efficient AI Coding Agent (I Did The Math)"
+  },
+  {
+   "query": "cheap generated vfx versus ten thousand dollar shots",
+   "video": "PrKRoP5U_58",
+   "title": "This #ai  Turns One Photo Into a #photoshoot ."
+  },
+  {
+   "query": "certification learning path versus self directed study",
+   "video": "7sJ1hwoEQNw",
+   "title": "Get AI Certified in 2026: Google, Microsoft, AWS, NVIDIA & IBM (Real Screens + Study Plan)"
+  },
+  {
+   "query": "certification learning path versus self directed study",
+   "video": "lp6WcmCPXow",
+   "title": "(no title)"
+  },
+  {
+   "query": "certification learning path versus self directed study",
+   "video": "9wkHM2qy8tY",
+   "title": "This Thinking Habit is Ruining Your Life"
+  },
+  {
+   "query": "certification learning path versus self directed study",
+   "video": "0NEQQjKXhuI",
+   "title": "Starting the Google Data Engineer Learning Path | Week 0 | GCP PDE exam prep"
+  },
+  {
+   "query": "certification learning path versus self directed study",
+   "video": "Ie-9n94AHAU",
+   "title": "There Is No Safe Path in Tech (So Do This Instead)"
+  },
+  {
+   "query": "certification learning path versus self directed study",
+   "video": "-0CPwRZimO0",
+   "title": "IBM, Google and Amazon Sell Certifications Worth More Than a Degree"
+  },
+  {
+   "query": "declarative versus imperative coding styles",
+   "video": "0AAuYgG90zc",
+   "title": "Favor Declarative Design in C#"
+  },
+  {
+   "query": "declarative versus imperative coding styles",
+   "video": "1fDJSDPksOU",
+   "title": "Is Your Coding Style Older Than You?"
+  },
+  {
+   "query": "cli git tools versus gui editors",
+   "video": "06lEP59XAgM",
+   "title": "My new favorite way to use git"
+  },
+  {
+   "query": "cli git tools versus gui editors",
+   "video": "9fg5cXk2Tr4",
+   "title": "Tower: a graphical interface for git"
+  },
+  {
+   "query": "cli git tools versus gui editors",
+   "video": "u-jsmxs6A84",
+   "title": "Agent Browser vs Browser Use vs Playwright CLI - Which Should You Use?"
+  },
+  {
+   "query": "cli git tools versus gui editors",
+   "video": "V94BUC1kop8",
+   "title": "How LLM tools work under the hood"
+  },
+  {
+   "query": "self hosting versus managed automation platforms",
+   "video": "4Hp-diBp-2Q",
+   "title": "How I Saved $700/Month With Self Hosting"
+  },
+  {
+   "query": "self hosting versus managed automation platforms",
+   "video": "5YTMri7NMjY",
+   "title": "Build an n8n AI Agent That Writes Quality Blogs & Newsletters"
+  },
+  {
+   "query": "self hosting versus managed automation platforms",
+   "video": "1jDEZGjvXbk",
+   "title": "n8n Tutorial for Beginners 2026 - Full Guide"
+  },
+  {
+   "query": "nested loops versus the real maintainability problem",
+   "video": "095HrcWwHLI",
+   "title": "Nested Loops Aren\u2019t the Problem. This Is."
+  },
+  {
+   "query": "nested loops versus the real maintainability problem",
+   "video": "sWDhIGIiK5w",
+   "title": "they blocked OpenClaw. now what."
+  },
+  {
+   "query": "nested loops versus the real maintainability problem",
+   "video": "4lKbesI5eLI",
+   "title": "LaTeX Course for Beginners"
+  },
+  {
+   "query": "nested loops versus the real maintainability problem",
+   "video": "9kW5epVSRG0",
+   "title": "7 JavaScript Changes You Missed in 2024"
+  },
+  {
+   "query": "coding solo versus team hidden costs",
+   "video": "hLDJr7PAwlo",
+   "title": "Anthropic\u2019s Study: Can You Learn By Letting AI Code?"
+  },
+  {
+   "query": "coding solo versus team hidden costs",
+   "video": "QUHrntlfPo4",
+   "title": "Claude Code is Expensive. This MCP Server Fixes It (Context Mode)"
+  },
+  {
+   "query": "coding solo versus team hidden costs",
+   "video": "1dSNfnFL40c",
+   "title": "Claude Cowork for Beginners"
+  },
+  {
+   "query": "coding solo versus team hidden costs",
+   "video": "ixmkyjZGjko",
+   "title": "Claude Code Steals Your Code!"
+  },
+  {
+   "query": "coding solo versus team hidden costs",
+   "video": "UslVzxAkiZ0",
+   "title": "How To Save 90% of Claude Code Token Usage"
+  },
+  {
+   "query": "coding solo versus team hidden costs",
+   "video": "1d2NfzSRRUw",
+   "title": "Before You Buy Local AI Hardware, Watch This - YouTube"
+  },
+  {
+   "query": "coding solo versus team hidden costs",
+   "video": "Ob3pQWwdjYc",
+   "title": "Beyond Competition: Achieving Balance and Scalability with a Small Quant Team"
+  },
+  {
+   "query": "plugin bundles versus single skills for agents",
+   "video": "Z9IpnQbS2vI",
+   "title": "From CLI to Platform: Claude Code's Extension System"
+  },
+  {
+   "query": "plugin bundles versus single skills for agents",
+   "video": "fcS5BFthUdg",
+   "title": "GitHub Copilot Agent Plugins: Package & Distribute Skills, MCP, Hooks & Custom Agents"
+  },
+  {
+   "query": "plugin bundles versus single skills for agents",
+   "video": "7o5a-MYWIXE",
+   "title": "(no title)"
+  },
+  {
+   "query": "plugin bundles versus single skills for agents",
+   "video": "VnOnv1yKaKc",
+   "title": "I Tested 5 Claude Code Plugins to Build Medical AI Agents"
+  },
+  {
+   "query": "local dns on one box versus high availability pairs",
+   "video": "A2f_niGFlEI",
+   "title": "DNS failover solutions for home lab"
+  },
+  {
+   "query": "local dns on one box versus high availability pairs",
+   "video": "4KmVwzfF_Fs",
+   "title": "The Hedge Fund Strategy No One Talks About \ud83e\udde0\ud83d\udcb0"
+  },
+  {
+   "query": "local dns on one box versus high availability pairs",
+   "video": "4m9j6hlbf4g",
+   "title": "IT Fundamentals Course \u2013 Hardware, Cloud, DevOps, Networking, Security, Databases, DNS, Git, Linux"
+  },
+  {
+   "query": "local dns on one box versus high availability pairs",
+   "video": "0BitYPzPREw",
+   "title": "Pihole local DNS synchronized from Active Directory with PowerShell providing high availability"
+  },
+  {
+   "query": "local dns on one box versus high availability pairs",
+   "video": "4zN95qA3Au8",
+   "title": "Hideal Digital Magnifier Review"
+  },
+  {
+   "query": "local dns on one box versus high availability pairs",
+   "video": "KB41dTlX1Uc",
+   "title": "State of the Union: Why Local, Why Now \u2014 NVIDIA, Osmantic, Roboflow, EXO Labs, @matthew_berman - YouTube"
+  },
+  {
+   "query": "manual bookmark sorting versus folder workflows",
+   "video": "1H-t0j33nTM",
+   "title": "Never Manually Sort Photos Again Thanks To n8n + Nano Banana (step-by-step tutorial)"
+  },
+  {
+   "query": "manual bookmark sorting versus folder workflows",
+   "video": "g8hmAjogElQ",
+   "title": "I Built a Second Brain That Organises Itself (and you can too!)"
+  },
+  {
+   "query": "manual bookmark sorting versus folder workflows",
+   "video": "2fbmlgu0Lkc",
+   "title": "Saved Links Are Useless\u2014Until You Automate with Karakeep and Ollama"
+  },
+  {
+   "query": "manual bookmark sorting versus folder workflows",
+   "video": "eydMCTfbYz8",
+   "title": "Supercharge Bookmarks with n8n, Ollama, and Karakeep"
+  },
+  {
+   "query": "manual bookmark sorting versus folder workflows",
+   "video": "VbJCyuUB0eA",
+   "title": "15 things every Obsidian beginner should know"
+  },
+  {
+   "query": "manual bookmark sorting versus folder workflows",
+   "video": "1hf8OC39-to",
+   "title": "NotebookLM Just Got Way More Powerful With Gemini"
+  },
+  {
+   "query": "vanilla javascript versus framework for small widgets",
+   "video": "8C_v7eOJo5w",
+   "title": "TanStack Creator: Favorite 2026 Stack, Agentic Workflow, T3 Code & Why JS Isn't for Backends"
+  },
+  {
+   "query": "vanilla javascript versus framework for small widgets",
+   "video": "4tqzfQ6O4Mc",
+   "title": "Vibe Coding or PLD? Ship Faster vs Maintain Better (LIVE with OpenAI)"
+  },
+  {
+   "query": "vanilla javascript versus framework for small widgets",
+   "video": "7CCQJ0bu9s8",
+   "title": "Why I don\u2019t need Algolia Search"
+  },
+  {
+   "query": "vanilla javascript versus framework for small widgets",
+   "video": "AA0Rd9MDEik",
+   "title": "Vanilla JS Project: Multi Step form in HTML, CSS & OOP Javascript"
+  },
+  {
+   "query": "vanilla javascript versus framework for small widgets",
+   "video": "GSSqoxjB24Q",
+   "title": "We Had 24 Hours at Y Combinator to Build Something Real"
+  },
+  {
+   "query": "vanilla javascript versus framework for small widgets",
+   "video": "5EsLj3JOdE0",
+   "title": "The past, current state & future of JavaScript frameworks"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "4m9j6hlbf4g",
+   "title": "IT Fundamentals Course \u2013 Hardware, Cloud, DevOps, Networking, Security, Databases, DNS, Git, Linux"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "2AghaTV9gxQ",
+   "title": "Everyone Is Leaving Windows. Here's Why"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "-4lqA01d_yE",
+   "title": "Linux is NOT for Everyone"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "FaELQHVGn-Y",
+   "title": "I Tried Seelen UI and Can't Go Back to Normal Windows"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "uDzVL96Np1A",
+   "title": "This Free App Makes Windows 11 Look Insanely Good"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "cGTcgFw61tM",
+   "title": "THESE Tools Make Creating CUSTOM Windows ISO Files REALLY Easy"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "1expcUP3BaI",
+   "title": "7 things you need to know BEFORE leaving Windows for Linux"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "50JGJqp1Tg8",
+   "title": "PC Gaming Setups for Windows and Linux"
+  },
+  {
+   "query": "linux versus windows desktop customization",
+   "video": "7SU-BupOe7s",
+   "title": "Who should use Linux?"
+  },
+  {
+   "query": "vibe coding versus agentic coding",
+   "video": "x2GqMs9Qcgk",
+   "title": "Why Vibe Coding is Dying ! | Andrej Karpathy"
+  },
+  {
+   "query": "vibe coding versus agentic coding",
+   "video": "0Ls4486mL1w",
+   "title": "Vibe Coding vs. Agentic Coding: The Truth About Building Apps With AI in 2025"
+  },
+  {
+   "query": "vibe coding versus agentic coding",
+   "video": "Ww3Z_R2KWTk",
+   "title": "Stop Burning Codex and Claude Code Tokens (Do This Instead)"
+  },
+  {
+   "query": "vibe coding versus agentic coding",
+   "video": "JbhiLUY_V2U",
+   "title": "Better Than Vibe Coding: Agile AI Driven Development for Complex Apps"
+  },
+  {
+   "query": "vibe coding versus agentic coding",
+   "video": "cHUwAqldQXM",
+   "title": "What is Agentic Coding? The Future of Software Development"
+  },
+  {
+   "query": "vibe coding versus agentic coding",
+   "video": "8LQVHFKH374",
+   "title": "I Built 3 Professional Websites in 30 Minutes Using AI (Vibe Coding is Insane)"
+  },
+  {
+   "query": "vibe coding versus agentic coding",
+   "video": "j7_WTxwQSqo",
+   "title": "Karpathy Just Ended Vibe Coding. Here\u2019s What\u2019s Next..."
+  },
+  {
+   "query": "minipc versus rack server for homelab",
+   "video": "0ICUM3Q999Y",
+   "title": "MiniPC vs Servers in the Home Lab in 2024"
+  },
+  {
+   "query": "minipc versus rack server for homelab",
+   "video": "3G13mf2Tkzs",
+   "title": "Top 5 Mini PCs for Home Server in early 2024"
+  },
+  {
+   "query": "minipc versus rack server for homelab",
+   "video": "7lxs_dDwlGs",
+   "title": "Beelink ME Pro Review: A Tiny NAS That Doubles as a Home Lab Server in 2026"
+  },
+  {
+   "query": "minipc versus rack server for homelab",
+   "video": "4m9j6hlbf4g",
+   "title": "IT Fundamentals Course \u2013 Hardware, Cloud, DevOps, Networking, Security, Databases, DNS, Git, Linux"
+  },
+  {
+   "query": "minipc versus rack server for homelab",
+   "video": "3rvIcWZZXEI",
+   "title": "New Home Server Rack Cable Management - New Patch panel and cabling!"
+  },
+  {
+   "query": "tldr versus man pages",
+   "video": "7O1nadoBpos",
+   "title": "It\u2019s Official: Trump\u2019s Grift IS OUT OF CONTROL!"
+  },
+  {
+   "query": "tldr versus man pages",
+   "video": "5dgYg10B9p0",
+   "title": "Create a SaaS Application with Next.js.14, Stripe, Kinde, Prisma, Supabase and Tailwind"
+  },
+  {
+   "query": "tldr versus man pages",
+   "video": "Bk0Nao5BWYk",
+   "title": "Dr. Max Draper: Who Should Consider Testosterone?"
+  },
+  {
+   "query": "tldr versus man pages",
+   "video": "AH3xlNuui_A",
+   "title": "Create a Invoice Platform using Next.js, Mailtrap, Auth.js, Tailwind | 2024"
+  },
+  {
+   "query": "tldr versus man pages",
+   "video": "4lKbesI5eLI",
+   "title": "LaTeX Course for Beginners"
+  },
+  {
+   "query": "tldr versus man pages",
+   "video": "0JhxwLSD6YQ",
+   "title": "Learn ANY Linux Command in Seconds (No More Googling!)"
+  },
+  {
+   "query": "tldr versus man pages",
+   "video": "xKy4daqYR6c",
+   "title": "This Is Hurting Linux More Than Bugs"
+  },
+  {
+   "query": "soft reset versus hard reset streaming device",
+   "video": "0J-CB0huS3I",
+   "title": "How to Reset the Onn 4k Pro 2"
+  },
+  {
+   "query": "soft reset versus hard reset streaming device",
+   "video": "2460ylTcH1A",
+   "title": "How to Fix your Google TV Streamer Remote"
+  },
+  {
+   "query": "soft reset versus hard reset streaming device",
+   "video": "9syfvOPEtU0",
+   "title": "\ud83d\udee0\ufe0f The Ultimate Firestick Troubleshooting Hack (So Easy!) \ud83d\ude80"
+  },
+  {
+   "query": "soft reset versus hard reset streaming device",
+   "video": "8liy5_Z4zEs",
+   "title": "From Digital Mess to Peace: The Ultimate Reset Guide"
+  },
+  {
+   "query": "paid coding tools versus free open workflows",
+   "video": "sYTDCyNDaYU",
+   "title": "10 Open Source Tools Replacing Paid Software in 2026"
+  },
+  {
+   "query": "paid coding tools versus free open workflows",
+   "video": "dqaooqBPVRI",
+   "title": "10 Open-Source AI Agents Replacing Paid Tools in 2026"
+  },
+  {
+   "query": "paid coding tools versus free open workflows",
+   "video": "kgjnp2gY6Hg",
+   "title": "Should My AI Coding Agent be Open Source?"
+  },
+  {
+   "query": "paid coding tools versus free open workflows",
+   "video": "0rf2JF4HiJY",
+   "title": "$240/Year Claude Code vs FREE OpenCode \u2014 I Gave Both the Same Task (Real Test, 2026)"
+  },
+  {
+   "query": "paid coding tools versus free open workflows",
+   "video": "EHSOeXx2EvE",
+   "title": "Claude Code is now FREE: Here\u2019s how\u2026"
+  },
+  {
+   "query": "override animation versus code components",
+   "video": "9nIwTjG2fdI",
+   "title": "Master No-Code Web Design with Framer - 4-hour Free Course"
+  },
+  {
+   "query": "creator analytics versus google analytics",
+   "video": "ZqzukGHQ1hE",
+   "title": "What are the best analytics for digital business content creators?"
+  },
+  {
+   "query": "creator analytics versus google analytics",
+   "video": "2IHeKib9LEA",
+   "title": "The best ways to use AI in Product | Bandan Jot Singh | Beyond Coding Podcast #185"
+  },
+  {
+   "query": "creator analytics versus google analytics",
+   "video": "UTulQhX85Jc",
+   "title": "Talk to your data: Build AI agents to query databases & analyze video (Google ADK)"
+  },
+  {
+   "query": "creator analytics versus google analytics",
+   "video": "Nkih_eYrVtg",
+   "title": "The Content Strategy That Actually Makes Money"
+  },
+  {
+   "query": "creator analytics versus google analytics",
+   "video": "N1UMycRJbAw",
+   "title": "(no title)"
+  },
+  {
+   "query": "creator analytics versus google analytics",
+   "video": "-L0CVvJMzZI",
+   "title": "Watch Me Build Tube Analytics In Public!"
+  },
+  {
+   "query": "creator analytics versus google analytics",
+   "video": "2fvngjQUrRU",
+   "title": "We Lose 73% of Revenue to Ad Blocking (AFDS 2025 Presentation)"
+  },
+  {
+   "query": "gpu versus cpu instances for model serving",
+   "video": "0LZJZIjNSDc",
+   "title": "Ollama: Free Open Source LLM Platform"
+  },
+  {
+   "query": "gpu versus cpu instances for model serving",
+   "video": "0AOeanTal0g",
+   "title": "SpaceX just bought your code editor for sixty billion dollars \u2014 and 11 more AI stories"
+  },
+  {
+   "query": "gpu versus cpu instances for model serving",
+   "video": "njWyDHKYeVA",
+   "title": "Self host Gemma 4: Deploy LLMs on Cloud Run GPUs"
+  },
+  {
+   "query": "gpu versus cpu instances for model serving",
+   "video": "ckWULAbePmo",
+   "title": "How to Run ANY AI Model on Your Computer WITHOUT a GPU"
+  },
+  {
+   "query": "gpu versus cpu instances for model serving",
+   "video": "58Oozg79UWo",
+   "title": "Achieve high performance with lowest cost for generative AI inference"
+  },
+  {
+   "query": "keynote speaker perks versus checklists",
+   "video": "3zrJ6saQvzE",
+   "title": "Cal Newport Pontificates On The Past And Future Of Podcasting"
+  },
+  {
+   "query": "keynote speaker perks versus checklists",
+   "video": "bwLMeSvpu-I",
+   "title": "Stop Making Stupid Mistakes With This Surgeon's Trick #productivity #personaldevelopment #deepwork"
+  },
+  {
+   "query": "keynote speaker perks versus checklists",
+   "video": "CXDObEQ2Dv0",
+   "title": "The Counterintuitive Secret of Leadership | Jessica Kriegel | TED"
+  },
+  {
+   "query": "keynote speaker perks versus checklists",
+   "video": "b2_b1KrheJ4",
+   "title": "How to REALLY BOOST note taking with SMART Obsidian Templates!"
+  },
+  {
+   "query": "keynote speaker perks versus checklists",
+   "video": "E_QJ8j74U_0",
+   "title": "BMAD V3 Orchestrating Agent Is Live \u2013 Setup, and Fullstack Coding Demo"
+  },
+  {
+   "query": "keynote speaker perks versus checklists",
+   "video": "pBOK06Q3VVQ",
+   "title": "I Maxed Out My Credit Cards Day Trading (Then This Happened) w/ Erick Jablonski"
+  },
+  {
+   "query": "scriptsharp versus typescript history",
+   "video": "5DbJhv7ikIk",
+   "title": "Open Core, Pricing and AI product development | Dat Tran | Beyond Coding Podcast #84"
+  },
+  {
+   "query": "scriptsharp versus typescript history",
+   "video": "8q3cYi5p_VA",
+   "title": "TypeScript got 10x faster and here's why!"
+  },
+  {
+   "query": "scriptsharp versus typescript history",
+   "video": "9yRmryJvj7M",
+   "title": "Arrays and Tuples - TypeScript for C# Developers"
+  },
+  {
+   "query": "scriptsharp versus typescript history",
+   "video": "7P9sxqt7HfA",
+   "title": "TypeScript Makes You A Faster Developer"
+  }
+ ]
+}

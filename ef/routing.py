@@ -46,6 +46,16 @@ _STRONG_IDENT = re.compile(
 # only (hizoJc, YouTube, OpenAI) — df tiebreak applies.
 _WEAK_IDENT = re.compile(r"^[A-Za-z]+[a-z][A-Z][A-Za-z0-9]*$")
 
+# G-gate: comparison-shaped multiword queries get a class-specific
+# sparse-heavier fusion (measured best on the comparison dev set).
+_COMPARISON = re.compile(
+    r"(?:vs[.]?|versus|compared[ ]+(?:to|with|for)|difference[ ]+between)",
+    re.I)
+
+
+def comparison_shaped(query: str) -> bool:
+    return bool(_COMPARISON.search(query))
+
 
 @dataclass(frozen=True)
 class Routing:
@@ -116,8 +126,9 @@ def classify(query: str, exact: bool | None = None) -> Routing:
     if _STRONG_IDENT.match(t):
         return Routing("identifier", "strong identifier shape (any df)")
     if _WEAK_IDENT.match(t):
-        # F-gate: do NOT force classification; dual-evaluate at retrieval
         return Routing("ambiguous", "weak single token — dual retrieval")
+    if comparison_shaped(query):
+        return Routing("comparison", "comparison-shaped — sparse-heavy fusion")
     return Routing("semantic", "natural language")
 
 

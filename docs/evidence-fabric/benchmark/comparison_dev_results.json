@@ -1,0 +1,40 @@
+{
+ "judged_by": "agent:zcode enumerated relevant sets",
+ "metrics": {
+  "A": {
+   "n": 30,
+   "any@3": 0.8333,
+   "ndcg@3": 0.7469,
+   "recall@5": 0.8333,
+   "entity_cov@5": 0.5667
+  },
+  "B": {
+   "n": 30,
+   "any@3": 0.8667,
+   "ndcg@3": 0.7963,
+   "recall@5": 0.8667,
+   "entity_cov@5": 0.5667
+  },
+  "C": {
+   "n": 27,
+   "any@3": 0.8519,
+   "ndcg@3": 0.7869,
+   "recall@5": 0.8889,
+   "entity_cov@5": 0.4815
+  },
+  "D": {
+   "n": 27,
+   "any@3": 0.8889,
+   "ndcg@3": 0.8221,
+   "recall@5": 0.8889,
+   "entity_cov@5": 0.5556
+  },
+  "S": {
+   "n": 30,
+   "any@3": 0.9,
+   "ndcg@3": 0.8534,
+   "recall@5": 0.9,
+   "entity_cov@5": 0.5
+  }
+ }
+}
