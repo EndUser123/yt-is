@@ -1,0 +1,597 @@
+[
+ {
+  "claim_id": "K00",
+  "true_rank_order": [
+   "C00-0",
+   "C00-1",
+   "C00-2",
+   "C00-3",
+   "C00-4"
+  ],
+  "video_ids_in_rank_order": [
+   "RvAsNAh0rIg",
+   "MxISquIVh-g",
+   "2UNAMhhh6n0",
+   "MNtw5DKVBDE",
+   "BaH04m_fS1c"
+  ]
+ },
+ {
+  "claim_id": "K01",
+  "true_rank_order": [
+   "C01-0",
+   "C01-1",
+   "C01-2",
+   "C01-3",
+   "C01-4"
+  ],
+  "video_ids_in_rank_order": [
+   "Rmt56SadR_g",
+   "jgEFYCJA4Jw",
+   "lPKOJxfsGG4",
+   "EQWEAUumEAw",
+   "A_A5aIFZECw"
+  ]
+ },
+ {
+  "claim_id": "K02",
+  "true_rank_order": [
+   "C02-0",
+   "C02-1",
+   "C02-2",
+   "C02-3",
+   "C02-4"
+  ],
+  "video_ids_in_rank_order": [
+   "wiZkPAReXmI",
+   "kW6eqgULQJY",
+   "BedAaB1RKgE",
+   "Mlo41ljP_XY",
+   "ItoJUYT51dI"
+  ]
+ },
+ {
+  "claim_id": "K03",
+  "true_rank_order": [
+   "C03-0",
+   "C03-1",
+   "C03-2",
+   "C03-3",
+   "C03-4"
+  ],
+  "video_ids_in_rank_order": [
+   "DIEAEiyceCo",
+   "S9Xm1ukbNp8",
+   "ktvNJZYVMoU",
+   "KaFVcejvWm0",
+   "WAMRfmeNZws"
+  ]
+ },
+ {
+  "claim_id": "K04",
+  "true_rank_order": [
+   "C04-0",
+   "C04-1",
+   "C04-2",
+   "C04-3",
+   "C04-4"
+  ],
+  "video_ids_in_rank_order": [
+   "wG8mOnCR0Ns",
+   "t-_5GbamQq0",
+   "QkTrdDMKE7I",
+   "Whxv-D51ZPE",
+   "9wgKC0GMT9w"
+  ]
+ },
+ {
+  "claim_id": "K05",
+  "true_rank_order": [
+   "C05-0",
+   "C05-1",
+   "C05-2",
+   "C05-3",
+   "C05-4"
+  ],
+  "video_ids_in_rank_order": [
+   "DAufX-Y0he4",
+   "4oosy5yg9U4",
+   "qfQ3Uf1Krwc",
+   "wDpN2ORnqZk",
+   "UhPlsIpiuW0"
+  ]
+ },
+ {
+  "claim_id": "K06",
+  "true_rank_order": [
+   "C06-0",
+   "C06-1",
+   "C06-2",
+   "C06-3",
+   "C06-4"
+  ],
+  "video_ids_in_rank_order": [
+   "-Bc_VeH3kQ4",
+   "kz9t-B1hD_Y",
+   "eiRlCVtzlm4",
+   "YBYUvGOuotE",
+   "Y8-M122VN-E"
+  ]
+ },
+ {
+  "claim_id": "K07",
+  "true_rank_order": [
+   "C07-0",
+   "C07-1",
+   "C07-2",
+   "C07-3",
+   "C07-4"
+  ],
+  "video_ids_in_rank_order": [
+   "_U7iWKeOO7Y",
+   "hNPXxyEHvYs",
+   "0c2MTWnOsJc",
+   "hNPXxyEHvYs",
+   "iRExL7mTtfM"
+  ]
+ },
+ {
+  "claim_id": "K08",
+  "true_rank_order": [
+   "C08-0",
+   "C08-1",
+   "C08-2",
+   "C08-3",
+   "C08-4"
+  ],
+  "video_ids_in_rank_order": [
+   "1Pk1xoJJ-_A",
+   "-ovM0daP6bw",
+   "VkMQ3LrMvcU",
+   "VDF82wabPkg",
+   "WRU7-4bpZkg"
+  ]
+ },
+ {
+  "claim_id": "K09",
+  "true_rank_order": [
+   "C09-0",
+   "C09-1",
+   "C09-2",
+   "C09-3",
+   "C09-4"
+  ],
+  "video_ids_in_rank_order": [
+   "7UmXs3z3Hks",
+   "9ebUPwhX18U",
+   "QWnnyNobq2g",
+   "diy3kmUl8mY",
+   "FXV-zwkRMxo"
+  ]
+ },
+ {
+  "claim_id": "K10",
+  "true_rank_order": [
+   "C10-0",
+   "C10-1",
+   "C10-2",
+   "C10-3",
+   "C10-4"
+  ],
+  "video_ids_in_rank_order": [
+   "FiFcXIGgX6g",
+   "9vt8hkAWLRM",
+   "VQoECwS7xt0",
+   "JxH7cdDCFwE",
+   "-biLMfBXNkk"
+  ]
+ },
+ {
+  "claim_id": "K11",
+  "true_rank_order": [
+   "C11-0",
+   "C11-1",
+   "C11-2",
+   "C11-3",
+   "C11-4"
+  ],
+  "video_ids_in_rank_order": [
+   "ExbkQS6jZ9k",
+   "XUzUf_HCgvk",
+   "BedAaB1RKgE",
+   "2Oa0lUKHVm8",
+   "BRnGydDiCIo"
+  ]
+ },
+ {
+  "claim_id": "K12",
+  "true_rank_order": [
+   "C12-0",
+   "C12-1",
+   "C12-2",
+   "C12-3",
+   "C12-4"
+  ],
+  "video_ids_in_rank_order": [
+   "Kleu3ROhpvY",
+   "yjBHheCB6Ek",
+   "J5WnKMIOQuY",
+   "WRU7-4bpZkg",
+   "1GETSsCn6-4"
+  ]
+ },
+ {
+  "claim_id": "K13",
+  "true_rank_order": [
+   "C13-0",
+   "C13-1",
+   "C13-2",
+   "C13-3",
+   "C13-4"
+  ],
+  "video_ids_in_rank_order": [
+   "8PJepXx0Jd0",
+   "BZ0w0JhPQ9o",
+   "IJe9CabMeTk",
+   "pr2WGRhVKys",
+   "OMFIPv8a4qA"
+  ]
+ },
+ {
+  "claim_id": "K14",
+  "true_rank_order": [
+   "C14-0",
+   "C14-1",
+   "C14-2",
+   "C14-3",
+   "C14-4"
+  ],
+  "video_ids_in_rank_order": [
+   "5G8xUYXdWFs",
+   "IxTf9WXMV6Y",
+   "KaFVcejvWm0",
+   "qCBreTfjFHQ",
+   "MsJzacfjzp8"
+  ]
+ },
+ {
+  "claim_id": "K15",
+  "true_rank_order": [
+   "C15-0",
+   "C15-1",
+   "C15-2",
+   "C15-3",
+   "C15-4"
+  ],
+  "video_ids_in_rank_order": [
+   "yDVwptu-Iz4",
+   "D62gR5ZMqlQ",
+   "ZgXG5hE8Na8",
+   "rlVUKdQZM6Y",
+   "drefNax1iUM"
+  ]
+ },
+ {
+  "claim_id": "K16",
+  "true_rank_order": [
+   "C16-0",
+   "C16-1",
+   "C16-2",
+   "C16-3",
+   "C16-4"
+  ],
+  "video_ids_in_rank_order": [
+   "TD4tZTrcLXQ",
+   "ZeZozy3lsJg",
+   "eHEHE2fpnWQ",
+   "a_ul20sgxIM",
+   "2XI-lO7ANYw"
+  ]
+ },
+ {
+  "claim_id": "K17",
+  "true_rank_order": [
+   "C17-0",
+   "C17-1",
+   "C17-2",
+   "C17-3",
+   "C17-4"
+  ],
+  "video_ids_in_rank_order": [
+   "UAxKs9Yuljo",
+   "vp6Dlx5aHDU",
+   "VCVXeLho_2c",
+   "MmPtJ7TEkm8",
+   "B0548hGnyt0"
+  ]
+ },
+ {
+  "claim_id": "K18",
+  "true_rank_order": [
+   "C18-0",
+   "C18-1",
+   "C18-2",
+   "C18-3",
+   "C18-4"
+  ],
+  "video_ids_in_rank_order": [
+   "LmgxRW444cQ",
+   "3ArPlGNbcgs",
+   "HKKMbb94xcw",
+   "902-wyf7CaE",
+   "LJvHLgWlvIQ"
+  ]
+ },
+ {
+  "claim_id": "K19",
+  "true_rank_order": [
+   "C19-0",
+   "C19-1",
+   "C19-2",
+   "C19-3",
+   "C19-4"
+  ],
+  "video_ids_in_rank_order": [
+   "Nt9rpR2Miag",
+   "WozA_qHEAqo",
+   "l27K7w-M4ns",
+   "7T_TjH6P8CE",
+   "P-BUZViHK4o"
+  ]
+ },
+ {
+  "claim_id": "K20",
+  "true_rank_order": [
+   "C20-0",
+   "C20-1",
+   "C20-2",
+   "C20-3",
+   "C20-4"
+  ],
+  "video_ids_in_rank_order": [
+   "aX4ka_oTCLs",
+   "XYz8Bkf94yU",
+   "Lg-meK5IU8Q",
+   "Ljf_O0O2WL8",
+   "XkZaBvb-lbo"
+  ]
+ },
+ {
+  "claim_id": "K21",
+  "true_rank_order": [
+   "C21-0",
+   "C21-1",
+   "C21-2",
+   "C21-3",
+   "C21-4"
+  ],
+  "video_ids_in_rank_order": [
+   "SsFU0w3KrI4",
+   "CUQENa4gOCA",
+   "5dHRqb51fs0",
+   "SsFU0w3KrI4",
+   "BGTOnMz_qcw"
+  ]
+ },
+ {
+  "claim_id": "K22",
+  "true_rank_order": [
+   "C22-0",
+   "C22-1",
+   "C22-2",
+   "C22-3",
+   "C22-4"
+  ],
+  "video_ids_in_rank_order": [
+   "TnaMDr6Vcp4",
+   "ivvkl6HXGwo",
+   "HxvwErr9WN8",
+   "XEdICT5kSCA",
+   "R4Vq1xpjqHY"
+  ]
+ },
+ {
+  "claim_id": "K23",
+  "true_rank_order": [
+   "C23-0",
+   "C23-1",
+   "C23-2",
+   "C23-3",
+   "C23-4"
+  ],
+  "video_ids_in_rank_order": [
+   "QB1h_4UoILU",
+   "7dL2kYihEAM",
+   "D37Ijn2o5U0",
+   "1saDEU_wZ0Y",
+   "UM-3ZsHhogA"
+  ]
+ },
+ {
+  "claim_id": "K24",
+  "true_rank_order": [
+   "C24-0",
+   "C24-1",
+   "C24-2",
+   "C24-3",
+   "C24-4"
+  ],
+  "video_ids_in_rank_order": [
+   "Yapbg0i_9w4",
+   "7iNzi0H8UM8",
+   "CRlGDDprdOQ",
+   "Ni1P8TITtE8",
+   "SpReZZk_13w"
+  ]
+ },
+ {
+  "claim_id": "K25",
+  "true_rank_order": [
+   "C25-0",
+   "C25-1",
+   "C25-2",
+   "C25-3",
+   "C25-4"
+  ],
+  "video_ids_in_rank_order": [
+   "NVkRkioBXQc",
+   "rHtRWyxVQps",
+   "JxMrpWg0zMc",
+   "U2wFSnD09-A",
+   "SpReZZk_13w"
+  ]
+ },
+ {
+  "claim_id": "K26",
+  "true_rank_order": [
+   "C26-0",
+   "C26-1",
+   "C26-2",
+   "C26-3",
+   "C26-4"
+  ],
+  "video_ids_in_rank_order": [
+   "p1xZ-Ni2t8Q",
+   "GSfnlQmcefM",
+   "7A39ThmrTEE",
+   "2zbdJRcn6lo",
+   "Kleu3ROhpvY"
+  ]
+ },
+ {
+  "claim_id": "K27",
+  "true_rank_order": [
+   "C27-0",
+   "C27-1",
+   "C27-2",
+   "C27-3",
+   "C27-4"
+  ],
+  "video_ids_in_rank_order": [
+   "ztkZBk6w4uw",
+   "1-zGa-0XRFg",
+   "N6bj532vyoU",
+   "URjJQYAPsQc",
+   "6ZmkuL5wB6c"
+  ]
+ },
+ {
+  "claim_id": "K28",
+  "true_rank_order": [
+   "C28-0",
+   "C28-1",
+   "C28-2",
+   "C28-3",
+   "C28-4"
+  ],
+  "video_ids_in_rank_order": [
+   "b8gTYPBZ-UA",
+   "P97qZKAFO7s",
+   "dEe9XBqzK10",
+   "a7X8zZEXrDY",
+   "DzLWM6yjto0"
+  ]
+ },
+ {
+  "claim_id": "K29",
+  "true_rank_order": [
+   "C29-0",
+   "C29-1",
+   "C29-2",
+   "C29-3",
+   "C29-4"
+  ],
+  "video_ids_in_rank_order": [
+   "GF-yUANql0c",
+   "9CiOwbmOKdU",
+   "ut8mTsgzdhY",
+   "RSNQcfQJk-o",
+   "K4dpe2-cP5Q"
+  ]
+ },
+ {
+  "claim_id": "K30",
+  "true_rank_order": [
+   "C30-0",
+   "C30-1",
+   "C30-2",
+   "C30-3",
+   "C30-4"
+  ],
+  "video_ids_in_rank_order": [
+   "Z9IpnQbS2vI",
+   "Yf8xl73ZTM8",
+   "wiZkPAReXmI",
+   "Asxit66niRI",
+   "Pa3xjWd0NkA"
+  ]
+ },
+ {
+  "claim_id": "K31",
+  "true_rank_order": [
+   "C31-0",
+   "C31-1",
+   "C31-2",
+   "C31-3",
+   "C31-4"
+  ],
+  "video_ids_in_rank_order": [
+   "T-V7ZVgcz1c",
+   "rHtRWyxVQps",
+   "5kQivY2oBg8",
+   "rHtRWyxVQps",
+   "422SXqjluuw"
+  ]
+ },
+ {
+  "claim_id": "K32",
+  "true_rank_order": [
+   "C32-0",
+   "C32-1",
+   "C32-2",
+   "C32-3",
+   "C32-4"
+  ],
+  "video_ids_in_rank_order": [
+   "9Yq9DaL0dpI",
+   "F8X9_Dp3ZUk",
+   "CAKGKkWf0tI",
+   "GKJh3vdat8A",
+   "Yiy0cU6ChSw"
+  ]
+ },
+ {
+  "claim_id": "K33",
+  "true_rank_order": [
+   "C33-0",
+   "C33-1",
+   "C33-2",
+   "C33-3",
+   "C33-4"
+  ],
+  "video_ids_in_rank_order": [
+   "YVk42K2rNx8",
+   "jQRcYIZbYg8",
+   "3BxpDR8bR8Y",
+   "PQORTKShZFw",
+   "A6x5y8yQRHY"
+  ]
+ },
+ {
+  "claim_id": "K34",
+  "true_rank_order": [
+   "C34-0",
+   "C34-1",
+   "C34-2",
+   "C34-3",
+   "C34-4"
+  ],
+  "video_ids_in_rank_order": [
+   "um1o-bnhoTA",
+   "Qk6hHuUtoJU",
+   "0HcrxJy5Tqo",
+   "2XI-lO7ANYw",
+   "QoQBzR1NIqI"
+  ]
+ }
+]
