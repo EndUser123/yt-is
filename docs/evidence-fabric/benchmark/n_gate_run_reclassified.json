@@ -1,0 +1,128 @@
+[
+ {
+  "file": "design-patterns-domain-overview.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 5
+ },
+ {
+  "file": "agent-memory-systems.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 3
+ },
+ {
+  "file": "shared-mcp-infrastructure-grok-build.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 4
+ },
+ {
+  "file": "examples-over-rules-escape-hatch.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 4
+ },
+ {
+  "file": "detection-gates-cannot-fire-against-parked-files-operator-lifecycle-is-the-missing-input.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 2
+ },
+ {
+  "file": "zai-coding-plan-auto-routes-glm-5-2-requests-to-glm-5-3.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 2
+ },
+ {
+  "file": "cli-over-mcp-for-subagent-reachable-shared-query-surfaces.md",
+  "signal": "no_new_evidence",
+  "genuinely_newer": 0,
+  "newly_available_only": 0
+ },
+ {
+  "file": "windows-terminal-concurrent-agent-session-workflow.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 4
+ },
+ {
+  "file": "behavioral-adoption-test-before-ship.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 4
+ },
+ {
+  "file": "ripgrep-hidden-dir-pruning-root-scope-false-negatives.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 3
+ },
+ {
+  "file": "verifier-scope-acceptance-name-the-file-not-the-directory.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 2
+ },
+ {
+  "file": "orchestrator-controlled-cross-model-validation-ship-py.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 5
+ },
+ {
+  "file": "analyst-exhibits-pattern-being-analyzed.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 5
+ },
+ {
+  "file": "pi-agentic-harness-hang-extension-tool-result-middleware-no-timeout.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 4
+ },
+ {
+  "file": "agent-config-directory-taxonomy.md",
+  "signal": "newly_available_evidence_needs_review",
+  "genuinely_newer": 0,
+  "newly_available_only": 5
+ },
+ {
+  "file": "ai-automated-test-generation-patterns.md",
+  "signal": "unknown_last_verified",
+  "genuinely_newer": 0,
+  "newly_available_only": 0
+ },
+ {
+  "file": "ai-agent-steering-and-self-improvement-patterns.md",
+  "signal": "unknown_last_verified",
+  "genuinely_newer": 0,
+  "newly_available_only": 0
+ },
+ {
+  "file": "claude-code-guardrails.md",
+  "signal": "unknown_last_verified",
+  "genuinely_newer": 0,
+  "newly_available_only": 0
+ },
+ {
+  "file": "free-ai-coding-alternatives.md",
+  "signal": "unknown_last_verified",
+  "genuinely_newer": 0,
+  "newly_available_only": 0
+ },
+ {
+  "file": "generative-ai-tool-patterns.md",
+  "signal": "unknown_last_verified",
+  "genuinely_newer": 0,
+  "newly_available_only": 0
+ },
+ {
+  "file": "skill-graph.md",
+  "signal": "unknown_last_verified",
+  "genuinely_newer": 0,
+  "newly_available_only": 0
+ }
+]
