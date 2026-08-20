@@ -71,8 +71,23 @@ def transcribe(audio_path: Path, lang: str) -> dict[str, object]:
     except ImportError:
         return {"ok": False, "error": "faster-whisper not installed"}
 
+    # GPU-first with CPU fallback (review F-3, 2026-08-19): large-v3-turbo
+    # on CUDA fp16 is 5-20x faster than medium/int8/CPU. Env overrides.
+    model_name = os.environ.get("YTIS_WHISPER_MODEL", "large-v3-turbo")
     try:
-        model = WhisperModel("medium", device="cpu", compute_type="int8")
+        import torch as _torch
+        _cuda = _torch.cuda.is_available()
+    except ImportError:
+        _cuda = False
+
+    try:
+        if _cuda:
+            model = WhisperModel(model_name, device="cuda", compute_type="float16")
+        else:
+            model = WhisperModel(
+                os.environ.get("YTIS_WHISPER_CPU_MODEL", "medium"),
+                device="cpu", compute_type="int8",
+            )
         segments, _ = model.transcribe(
             str(audio_path),
             language=lang if lang != "en" else None,

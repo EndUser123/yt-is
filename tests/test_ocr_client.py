@@ -18,6 +18,24 @@ def _skip_if_no_easyocr():
     pytest.importorskip("easyocr")
 
 
+@pytest.fixture(autouse=True)
+def _reset_reader_singleton():
+    """Isolate the module-level EasyOCR reader singleton per test.
+
+    Without this, the first test's mocked ``easyocr.Reader`` is cached in
+    ``csf.ocr_client._reader`` and every later patch of ``easyocr.Reader`` is
+    silently ignored (the singleton is returned as-is). Latent until easyocr
+    was actually installed — before that, importorskip hid these tests.
+    """
+    import csf.ocr_client as ocr_client_module
+
+    ocr_client_module._reader = None
+    ocr_client_module._gpu_available = False  # force CPU for mocked tests
+    yield
+    ocr_client_module._reader = None
+    ocr_client_module._gpu_available = None
+
+
 class TestExtractCodeSnippets:
     """Tests for extract_code_snippets() EasyOCR wrapper."""
 

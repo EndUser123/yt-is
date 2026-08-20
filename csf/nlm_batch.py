@@ -4319,7 +4319,7 @@ class NLMBatchIngestor:
         try:
             sources = json.loads(res.stdout)
             if isinstance(sources, dict): sources = sources.get("sources", [])
-        except:
+        except (json.JSONDecodeError, TypeError, ValueError):
             return {vid: (False, None, "Parse failed") for vid in batch_ids}
 
         # 2. Map Source IDs to Video IDs

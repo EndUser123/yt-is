@@ -137,7 +137,7 @@ class ProductionQuery:
                 final = [(by_id[c], 1.0 / (i + 1)) for i, (c, _l) in
                          enumerate(fused) if c in by_id]
                 exact_hit = any(l for _c, l in fused[:1])
-        if route.intent == "comparison":
+        elif route.intent == "comparison":
             # G-gate: class-specific sparse-heavier fusion (dev-measured
             # best: any@3 0.90 / nDCG@3 0.853 vs production 0.833/0.747).
             qv, lw = self._encode(query_text)

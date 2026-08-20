@@ -14,3 +14,19 @@ playwright>=1.40.0
 # tested against NiceGUI 3.16 / AG Grid 34 (cellClicked event contract,
 # run.io_bound, client.is_deleted liveness guard).
 nicegui>=3.16.0
+# Evidence Fabric (ef/)
+qdrant-client>=1.16
+numpy
+sentence-transformers
+FlagEmbedding
+
+# Visual pipeline
+hdbscan
+easyocr
+faster-whisper
+psutil
+clip
+
+# Core
+fasteners
+Pillow

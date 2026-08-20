@@ -189,6 +189,20 @@ def compute_health(
         **(backlog or {}),
     }
 
+    # ---- drain composition (caption-state context) -------------------------
+    composition = ctx.drain_composition()
+    if composition is None:
+        evidence["drain_composition"] = {"available": False}
+    else:
+        evidence["drain_composition"] = {"available": True, **composition}
+
+    # ---- visual pipeline (queue, budget, cooldown) --------------------------
+    visual = ctx.visual_pipeline_state()
+    if visual is None:
+        evidence["visual_pipeline"] = {"available": False, "reason": "db_unreadable"}
+    else:
+        evidence["visual_pipeline"] = visual
+
     # ---- auth (typed probes only) -----------------------------------------
     keepalive = core.read_keepalive(ctx.keepalive_log)
     summary, _ = core.load_summary(latest.summary_path if latest else None)

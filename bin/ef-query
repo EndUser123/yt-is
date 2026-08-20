@@ -55,6 +55,23 @@ def main(argv=None) -> int:
               else f"ef-query unavailable ({state})")
         return 0    # graceful: never break the consumer flow
 
+    # Warm-service path first (review F-5): avoids 5-15s BGE-M3 cold start
+    # per CLI invocation. Falls back to in-process if service is down.
+    try:
+        import urllib.request as _ur
+        _params = f"?q={urllib.parse.quote(a.query)}&top_k={a.top_k}"
+        if a.channel_id:
+            _params += f"&channel_id={a.channel_id}"
+        if a.exact:
+            _params += "&exact=true"
+        _params += f"&format={a.format}"
+        with _ur.urlopen(f"http://127.0.0.1:6391/query{_params}", timeout=30) as _r:
+            if _r.status == 200:
+                print(_r.read().decode("utf-8"))
+                return 0
+    except Exception:
+        pass  # warm service not running — fall through to in-process
+
     from ef import embedding, buildspec
     from ef.query_server import ProductionQuery
     q = ProductionQuery(embedding.BGEM3Dual(),

@@ -2868,6 +2868,7 @@ def get_provider_scores(
 # =============================================================================
 
 V2_MIGRATION_SQL_PATH = Path(__file__).parent / "migrations" / "v2_split_states.sql"
+V3_VISUAL_QUEUE_SQL_PATH = Path(__file__).parent / "migrations" / "v3_visual_queue.sql"
 
 # State-rank ordering: prevents backward state transitions (e.g., complete→pending).
 # Higher rank = more progressed. record_status_event uses this for monotonic enforcement.
@@ -2955,6 +2956,47 @@ def run_v2_migration(db_path: str | Path | None = None) -> dict[str, int]:
         conn.close()
 
     return counts
+
+
+def run_v3_visual_queue_migration(db_path: str | Path | None = None) -> dict[str, int]:
+    """Run the v3 visual-queue migration: dedupe visual_jobs, add UNIQUE(video_id).
+
+    Idempotent. Returns counts for the migration audit/receipts.
+    """
+    if db_path is None:
+        db_path = _get_batch_status_storage()._db_path
+    else:
+        db_path = Path(db_path)
+
+    if not V3_VISUAL_QUEUE_SQL_PATH.exists():
+        raise FileNotFoundError(f"v3 migration SQL not found: {V3_VISUAL_QUEUE_SQL_PATH}")
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        before = conn.execute("SELECT COUNT(*) FROM visual_jobs").fetchone()[0]
+        distinct = conn.execute(
+            "SELECT COUNT(DISTINCT video_id) FROM visual_jobs"
+        ).fetchone()[0]
+        sql = V3_VISUAL_QUEUE_SQL_PATH.read_text(encoding="utf-8")
+        conn.executescript(sql)
+        conn.commit()
+        after = conn.execute("SELECT COUNT(*) FROM visual_jobs").fetchone()[0]
+        unique_ok = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' "
+            "AND name='uq_visual_jobs_video'"
+        ).fetchone()[0]
+        if not unique_ok:
+            raise RuntimeError("v3 migration did not create uq_visual_jobs_video index")
+        return {
+            "jobs_before": int(before),
+            "duplicates_removed": int(before - after),
+            "jobs_after": int(after),
+            "distinct_video_ids": int(distinct),
+        }
+    finally:
+        conn.close()
 
 
 def run_v2_cross_db_backfill(

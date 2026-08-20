@@ -38,7 +38,17 @@ def _get_clip_model() -> tuple:
             if _clip_model is None:
                 import clip
 
-                model, preprocess = clip.load("ViT-B/32", device="cpu")
+                # GPU-first (review F-4, 2026-08-19): idle RTX 5070 while
+                # CLIP tags run on CPU. Env override for CPU-only hosts.
+                _device = os.environ.get("YTIS_CLIP_DEVICE", "auto")
+                if _device == "auto":
+                    try:
+                        import torch
+                        _device = "cuda" if torch.cuda.is_available() else "cpu"
+                    except ImportError:
+                        _device = "cpu"
+
+                model, preprocess = clip.load("ViT-B/32", device=_device)
                 _clip_model = (model, preprocess)
     return _clip_model
 
@@ -130,3 +140,17 @@ def tag_frames(
                 continue
 
     return sorted(list(all_labels))
+
+
+def shutdown() -> None:
+    """Release the CLIP model and free GPU memory."""
+    global _clip_model
+    _clip_model = None
+    import gc
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass

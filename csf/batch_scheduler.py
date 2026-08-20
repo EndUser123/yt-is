@@ -114,7 +114,10 @@ class BatchScheduler:
         conn.close()
         if row is None:
             return False
-        return row[0] > time.monotonic()
+        # Wall-clock comparison: cooldown_until is written as time.time() so
+        # entries stay meaningful across reboots (older monotonic-era rows are
+        # tiny numbers and simply read as expired).
+        return row[0] > time.time()
 
     def _record_attempting(self, video_id: str, source: str) -> None:
         # EXCLUSIVE mode prevents inter-process races where two terminals
@@ -141,7 +144,7 @@ class BatchScheduler:
         """Record a 429 for this channel. Sets cooldown until _COOLDOWN_SECONDS from now."""
         conn = sqlite3.connect(self._db_path)
         conn.execute("PRAGMA busy_timeout=5000")
-        cooldown_until = time.monotonic() + _COOLDOWN_SECONDS
+        cooldown_until = time.time() + _COOLDOWN_SECONDS
         conn.execute(
             "INSERT OR REPLACE INTO channel_cooldown (source, cooldown_until) VALUES (?, ?)",
             (source, cooldown_until),

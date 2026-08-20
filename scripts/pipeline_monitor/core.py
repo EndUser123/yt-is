@@ -246,6 +246,145 @@ class MonitorContext:
             "failed": counts.get("failed", 0),
         }
 
+    def drain_composition(self, window_h: float = 12.0) -> dict | None:
+        """Caption-state composition of the pending pool and of recently
+        processed rows.
+
+        The drain population's caption mix is structural context for every
+        completion/failure rate: a no-caption video asks NotebookLM to
+        transcribe audio itself, so per-caption completion rates and the
+        pending caption mix belong in the health model, not in ad-hoc SQL.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        conn, err = _connect_ro(self.db_path)
+        if conn is None:
+            self.db_error = err
+            return None
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=window_h)
+        ).isoformat()
+        try:
+            pending_rows = conn.execute(
+                "SELECT COALESCE(has_captions, -1), COUNT(*) FROM analysis_status "
+                "WHERE status='pending' GROUP BY 1"
+            ).fetchall()
+            processed_rows = conn.execute(
+                "SELECT COALESCE(has_captions, -1), status, COUNT(*) FROM analysis_status "
+                "WHERE updated_at >= ? AND status IN ('complete','failed') GROUP BY 1, 2",
+                (cutoff,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            self.db_error = f"unreadable:{type(exc).__name__}"
+            conn.close()
+            return None
+        conn.close()
+        caption_labels = {0: "no_captions", 1: "captions", -1: "unknown_captions"}
+        pending: dict[str, int] = {label: 0 for label in caption_labels.values()}
+        for raw_caption, count in pending_rows:
+            label = caption_labels.get(int(raw_caption), "unknown_captions")
+            pending[label] += int(count)
+        processed: dict[str, dict] = {}
+        for raw_caption, status, count in processed_rows:
+            label = caption_labels.get(int(raw_caption), "unknown_captions")
+            entry = processed.setdefault(label, {"complete": 0, "failed": 0})
+            entry[str(status)] = entry.get(str(status), 0) + int(count)
+        for entry in processed.values():
+            total = entry["complete"] + entry["failed"]
+            entry["completion_rate"] = round(entry["complete"] / total, 4) if total else None
+            entry["processed"] = total
+        return {
+            "window_h": window_h,
+            "pending_by_caption": pending,
+            "processed_in_window": processed,
+        }
+
+    def visual_pipeline_state(self) -> dict | None:
+        """Read-only visual-pipeline state: queue, budget, cooldown, downloads.
+
+        Tables are visual-owned (v2/v3 migrations + media_fetch); absent
+        tables mean the visual pipeline has not run on this DB.
+        """
+        conn, err = _connect_ro(self.db_path)
+        if conn is None:
+            self.db_error = err
+            return None
+        try:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if "visual_jobs" not in tables:
+                return {"available": False, "reason": "visual tables absent"}
+            jobs_total = conn.execute("SELECT COUNT(*) FROM visual_jobs").fetchone()[0]
+            jobs_open = conn.execute(
+                "SELECT COUNT(*) FROM visual_jobs WHERE completed_at IS NULL"
+            ).fetchone()[0]
+            by_status = {
+                str(s): int(c)
+                for s, c in conn.execute(
+                    "SELECT status, COUNT(*) FROM visual_status GROUP BY status"
+                )
+            }
+            artifacts = conn.execute("SELECT COUNT(*) FROM visual_artifacts").fetchone()[0]
+            promoted = conn.execute(
+                "SELECT COUNT(*) FROM visual_status WHERE profile='visual'"
+            ).fetchone()[0]
+            cooldown = None
+            if "media_rate_limit" in tables:
+                row = conn.execute(
+                    "SELECT cooldown_until_epoch, reason FROM media_rate_limit "
+                    "WHERE kind='visual_media'"
+                ).fetchone()
+                if row is not None:
+                    import time as _time
+
+                    remaining = max(0.0, float(row[0]) - _time.time())
+                    cooldown = {
+                        "active": remaining > 0,
+                        "remaining_s": round(remaining, 1),
+                        "reason": row[1],
+                    }
+            budget = None
+            if "media_download_budget" in tables:
+                import time as _time
+
+                window = int(_time.time() // 3600)
+                row = conn.execute(
+                    "SELECT count FROM media_download_budget WHERE window_epoch = ?",
+                    (window,),
+                ).fetchone()
+                budget = {"window_epoch": window, "used": int(row[0]) if row else 0}
+            downloads = None
+            if "media_download_log" in tables:
+                from datetime import datetime as _dt, timedelta as _td
+
+                cutoff = (_dt.now(timezone.utc) - _td(hours=24)).isoformat()
+                downloads = conn.execute(
+                    "SELECT COUNT(*) FROM media_download_log WHERE attempted_at >= ?",
+                    (cutoff,),
+                ).fetchone()[0]
+        except sqlite3.Error as exc:
+            self.db_error = f"unreadable:{type(exc).__name__}"
+            conn.close()
+            return None
+        conn.close()
+        return {
+            "available": True,
+            "jobs_total": int(jobs_total),
+            "jobs_open": int(jobs_open),
+            "visual_status_counts": by_status,
+            "artifacts": int(artifacts),
+            "promoted_profile": int(promoted),
+            "media_cooldown": cooldown,
+            "media_budget_current_window": budget,
+            "media_downloads_24h": downloads,
+            "active_worker_run": _active_visual_run(),
+        }
+
+
     def analysis_rows(self, video_ids: list[str]) -> dict[str, dict]:
         """Authoritative analysis_status rows for exact video IDs."""
         rows: dict[str, dict] = {}
@@ -324,6 +463,35 @@ class MonitorContext:
 # -- chunk artifact loaders -------------------------------------------------
 
 
+def _default_visual_runs_root() -> Path:
+    return Path(__file__).resolve().parents[2] / ".logs" / "visual"
+
+
+def _active_visual_run(runs_root: Path | None = None) -> dict | None:
+    """Newest visual worker run with fresh progress and no final summary."""
+    import time as _time
+
+    runs_root = runs_root or _default_visual_runs_root()
+    if not runs_root.is_dir():
+        return None
+    best: dict | None = None
+    for progress_path in runs_root.glob("*/progress.json"):
+        try:
+            payload = json.loads(progress_path.read_text(encoding="utf-8"))
+            mtime = progress_path.stat().st_mtime
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (progress_path.parent / "summary.json").exists():
+            continue  # finished run
+        age_s = max(0.0, _time.time() - mtime)
+        if age_s > 45 * 60:
+            continue  # stale; worker presumed dead
+        if best is None or mtime > best["_mtime_epoch"]:
+            best = {**payload, "_mtime_epoch": mtime, "progress_age_s": round(age_s, 1)}
+    if best is not None:
+        best.pop("_mtime_epoch", None)
+    return best
+
 def load_runtime_receipt(output_root: Path | None) -> tuple[dict | None, str | None]:
     if output_root is None:
         return None, "no_output_root"
@@ -386,6 +554,10 @@ class EventScan:
     auth_failures: int = 0
     notebook_cleanup_receipts: list[dict] = field(default_factory=list)
     retry_queue_wait_s: list[float] = field(default_factory=list)
+    # Per-video final below-threshold evidence (last event wins): the NLM
+    # content length that failed the readiness gate, the ytdlp availability
+    # classification, and whether the retry/fallback queue admitted the row.
+    below_threshold_videos: dict[str, dict] = field(default_factory=dict)
 
     def consume(self, event: dict) -> None:
         action = event.get("action")
@@ -434,6 +606,14 @@ class EventScan:
                 )
                 if count > 1:
                     self.fetch_retries += 1
+            if data.get("status") == "nlm_content_below_threshold" and isinstance(video, str):
+                chars = _as_float(data.get("nlm_content_chars"))
+                self.below_threshold_videos[video] = {
+                    "nlm_content_chars": int(chars) if chars is not None else None,
+                    "ytdlp_classification": data.get("youtube_ytdlp_classification"),
+                    "ytdlp_available": data.get("youtube_ytdlp_available"),
+                    "queued_for_retry": data.get("queued_for_retry"),
+                }
         elif action == "nlm_batch_subbatch_add_completed":
             elapsed = _as_float(data.get("elapsed_s"))
             if elapsed is not None:
@@ -500,6 +680,77 @@ def _as_float(value: object) -> float | None:
 
 def scan_chunk_events(chunk_root: Path, accounts: list[str]) -> dict[str, EventScan]:
     return {account: scan_account_events(chunk_root, account) for account in accounts}
+
+
+_BELOW_THRESHOLD_BANDS = ("0", "1-20", "21-50", "51-99", "100+")
+
+
+def _below_threshold_band(chars: int | None) -> str:
+    if chars is None:
+        return "100+"  # unknown lengths are not evidence of near-empty content
+    if chars <= 0:
+        return "0"
+    if chars <= 20:
+        return "1-20"
+    if chars <= 50:
+        return "21-50"
+    if chars <= 99:
+        return "51-99"
+    return "100+"
+
+
+def below_threshold_summary(scans: list[EventScan]) -> dict:
+    """Aggregate per-video below-threshold evidence across account scans.
+
+    Surfaces the measured nature of the class: NLM content-length bands
+    (median/min/max), ytdlp availability (Whisper-route eligibility), and
+    how many eligible rows the retry/fallback queue actually admitted.
+    """
+    videos: dict[str, dict] = {}
+    for scan in scans:
+        videos.update(scan.below_threshold_videos)
+    bands: dict[str, int] = {band: 0 for band in _BELOW_THRESHOLD_BANDS}
+    lengths: list[int] = []
+    ytdlp: dict[str, int] = {}
+    queued: dict[str, int] = {}
+    eligible_unrouted = 0
+    for entry in videos.values():
+        chars = entry.get("nlm_content_chars")
+        if isinstance(chars, int):
+            lengths.append(chars)
+        bands[_below_threshold_band(chars)] += 1
+        classification = str(entry.get("ytdlp_classification"))
+        ytdlp[classification] = ytdlp.get(classification, 0) + 1
+        queued_flag = str(entry.get("queued_for_retry"))
+        queued[queued_flag] = queued.get(queued_flag, 0) + 1
+        if classification == "ok" and entry.get("queued_for_retry") is not True:
+            eligible_unrouted += 1
+    sorted_lengths = sorted(lengths)
+    midpoint = len(sorted_lengths) // 2
+    median = (
+        sorted_lengths[midpoint]
+        if sorted_lengths and len(sorted_lengths) % 2 == 1
+        else (
+            (sorted_lengths[midpoint - 1] + sorted_lengths[midpoint]) / 2.0
+            if sorted_lengths
+            else None
+        )
+    )
+    return {
+        "videos": len(videos),
+        "nlm_content_chars_bands": bands,
+        "nlm_content_chars_median": median,
+        "nlm_content_chars_min": sorted_lengths[0] if sorted_lengths else None,
+        "nlm_content_chars_max": sorted_lengths[-1] if sorted_lengths else None,
+        "ytdlp_classification_counts": ytdlp,
+        "queued_for_retry_counts": queued,
+        "whisper_eligible_unrouted": eligible_unrouted,
+        "note": (
+            "whisper_eligible_unrouted = ytdlp classification ok but not "
+            "queued_for_retry; these are recoverable only through an explicit "
+            "fallback route/batch, not the in-run retry queue"
+        ),
+    }
 
 
 # -- keepalive / control-plane / host evidence -------------------------------

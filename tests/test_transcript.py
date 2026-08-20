@@ -1855,8 +1855,14 @@ class TestWhisperFallback:
         assert transcript == "hello from whisper"
         assert error is None
         assert len(calls) == 2
-        assert "--js-runtimes" in calls[0]
-        assert calls[0][calls[0].index("--js-runtimes") + 1] == "node"
+        # JS runtime comes from the shared resolver (deno on this host; node
+        # never existed here — the old hard-coded "node" left the flag absent
+        # and downloads failed on yt-dlp's JS-runtime requirement).
+        from csf.visual.media_fetch import resolve_js_runtime
+
+        resolved = resolve_js_runtime()
+        if resolved:
+            assert calls[0][calls[0].index("--js-runtimes") + 1] == resolved
         assert calls[0][calls[0].index("-f") + 1] == "bestaudio/best"
         assert calls[1][calls[1].index("-f") + 1] == "bestaudio"
 

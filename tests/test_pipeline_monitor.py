@@ -364,6 +364,263 @@ def test_classify_rows_aggregates_with_captions_split():
 
 
 # --------------------------------------------------------------------------
+# 1b. drain caption composition + measured below-threshold evidence (2026-08-18)
+# --------------------------------------------------------------------------
+
+
+def _below_threshold_event(video: str, chars, *, classification="ok", queued=False):
+    data = {
+        "video_id": video,
+        "attempts": 2,
+        "elapsed_s": 12.0,
+        "status": "nlm_content_below_threshold",
+        "nlm_content_chars": chars,
+        "ready_threshold": 100,
+        "youtube_ytdlp_classification": classification,
+        "youtube_ytdlp_available": classification == "ok",
+        "queued_for_retry": queued,
+    }
+    return {
+        "timestamp": "2026-08-18T00:00:00+00:00",
+        "trace_id": "t",
+        "action": "nlm_batch_source_content_fetch_completed",
+        "data": data,
+    }
+
+
+def test_event_scan_records_below_threshold_last_event_wins():
+    scan = pc.EventScan(account="a.hominidae")
+    scan.consume(_below_threshold_event(vid("below", 1), 10))
+    scan.consume(_below_threshold_event(vid("below", 1), 60))
+    scan.consume(
+        _below_threshold_event(vid("below", 2), 16, classification="unavailable")
+    )
+    scan.consume(_below_threshold_event(vid("below", 3), 80, queued=True))
+    scan.consume(_below_threshold_event(vid("below", 4), 95))
+    scan.consume(_below_threshold_event(vid("below", 5), None))
+    scan.consume(
+        {
+            "timestamp": "2026-08-18T00:00:01+00:00",
+            "trace_id": "t",
+            "action": "nlm_batch_source_content_fetch_completed",
+            "data": {
+                "video_id": vid("ready", 1),
+                "attempts": 1,
+                "status": "ready",
+                "nlm_content_chars": 500,
+            },
+        }
+    )
+    assert scan.below_threshold_videos[vid("below", 1)]["nlm_content_chars"] == 60
+    assert vid("ready", 1) not in scan.below_threshold_videos
+    summary = pc.below_threshold_summary([scan])
+    assert summary["videos"] == 5
+    assert summary["nlm_content_chars_bands"] == {
+        "0": 0,
+        "1-20": 1,
+        "21-50": 0,
+        "51-99": 3,
+        "100+": 1,
+    }
+    assert summary["nlm_content_chars_median"] == 70.0
+    assert summary["nlm_content_chars_min"] == 16
+    assert summary["nlm_content_chars_max"] == 95
+    assert summary["ytdlp_classification_counts"] == {"ok": 4, "unavailable": 1}
+    assert summary["queued_for_retry_counts"] == {"False": 4, "True": 1}
+    assert summary["whisper_eligible_unrouted"] == 3
+
+
+def test_below_threshold_summary_empty_scans():
+    summary = pc.below_threshold_summary([])
+    assert summary["videos"] == 0
+    assert summary["whisper_eligible_unrouted"] == 0
+    assert summary["nlm_content_chars_median"] is None
+
+
+def test_drain_composition_splits_pending_and_processed_by_caption(tmp_path):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [
+        (vid("pend", 1), "pending", now, 0, None, None),
+        (vid("pend", 2), "pending", now, 0, None, None),
+        (vid("pend", 3), "pending", now, 1, None, None),
+        (vid("pend", 4), "pending", now, None, None, None),
+    ]
+    rows += [
+        (vid("done", i), "complete", now, 0, "notebooklm", None) for i in range(8)
+    ]
+    below_reason = (
+        "Fetch failed for 0fc556fa-21cc-416c-b624-c7d05d1cf06a: "
+        "nlm_content_below_threshold"
+    )
+    rows += [
+        (vid("fail", i), "failed", now, 0, "notebooklm", below_reason)
+        for i in range(2)
+    ]
+    rows.append((vid("done", 9), "complete", now, 1, "notebooklm", None))
+    rows.append(
+        (vid("old", 1), "complete", "2020-01-01T00:00:00+00:00", 0, "notebooklm", None)
+    )
+    ctx = base_ctx(tmp_path, rows=rows)
+    composition = ctx.drain_composition()
+    assert composition["pending_by_caption"] == {
+        "no_captions": 2,
+        "captions": 1,
+        "unknown_captions": 1,
+    }
+    assert composition["processed_in_window"]["no_captions"] == {
+        "complete": 8,
+        "failed": 2,
+        "completion_rate": 0.8,
+        "processed": 10,
+    }
+    assert composition["processed_in_window"]["captions"] == {
+        "complete": 1,
+        "failed": 0,
+        "completion_rate": 1.0,
+        "processed": 1,
+    }
+    assert "unknown_captions" not in composition["processed_in_window"]
+
+
+def test_drain_composition_unreadable_db_returns_none(tmp_path):
+    ctx = base_ctx(tmp_path)
+    ctx.db_path = tmp_path / "missing.sqlite"
+    assert ctx.drain_composition() is None
+
+
+def test_health_includes_drain_composition(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [(vid("pend", 1), "pending", now, 0, None, None)]
+    ctx = base_ctx(tmp_path, state_status="paused", rows=rows)
+    report = ph.compute_health(ctx, include_host=False, include_control_plane=False)
+    composition = report["evidence"]["drain_composition"]
+    assert composition["available"] is True
+    assert composition["pending_by_caption"]["no_captions"] == 1
+
+
+def test_health_includes_visual_pipeline_block(tmp_path):
+    from datetime import datetime, timezone
+
+    import sqlite3 as _sq
+
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [(vid("pend", 1), "pending", now, 0, None, None)]
+    ctx = base_ctx(tmp_path, state_status="paused", rows=rows)
+    # Without visual tables the block reports unavailable, not an error.
+    report = ph.compute_health(ctx, include_host=False, include_control_plane=False)
+    assert report["evidence"]["visual_pipeline"]["available"] is False
+    # With the v2 tables + one job, the block reports the queue.
+    conn = _sq.connect(ctx.db_path)
+    conn.executescript(pc.Path("csf/migrations/v2_split_states.sql").read_text(encoding="utf-8"))
+    conn.execute(
+        "INSERT INTO visual_jobs (video_id, profile, created_at) VALUES ('vOne', 'standard', ?)",
+        (now,),
+    )
+    conn.execute(
+        "INSERT INTO visual_status (video_id, status, updated_at, profile) "
+        "VALUES ('vOne', 'complete', ?, 'visual')",
+        (now,),
+    )
+    conn.commit()
+    conn.close()
+    report = ph.compute_health(ctx, include_host=False, include_control_plane=False)
+    visual = report["evidence"]["visual_pipeline"]
+    assert visual["available"] is True
+    assert visual["jobs_total"] == 1
+    assert visual["jobs_open"] == 1
+    assert visual["visual_status_counts"] == {"complete": 1}
+    assert visual["promoted_profile"] == 1
+
+
+def test_visual_pipeline_block_reports_active_worker_run(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    import sqlite3 as _sq
+
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [(vid("pend", 1), "pending", now, 0, None, None)]
+    ctx = base_ctx(tmp_path, state_status="paused", rows=rows)
+    conn = _sq.connect(ctx.db_path)
+    conn.executescript(pc.Path("csf/migrations/v2_split_states.sql").read_text(encoding="utf-8"))
+    conn.commit()
+    conn.close()
+
+    fake_root = tmp_path / "visual"
+    run_dir = fake_root / "run-live"
+    run_dir.mkdir(parents=True)
+    (run_dir / "progress.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-live",
+                "jobs_done": 13,
+                "jobs_target": 31,
+                "complete": 13,
+                "partial": 0,
+                "failed": 0,
+                "last_video": "abc12345678",
+                "updated_at": now,
+            }
+        ),
+        encoding="utf-8",
+    )
+    # A finished run (summary present) must not be reported as active.
+    done_dir = fake_root / "run-done"
+    done_dir.mkdir()
+    (done_dir / "progress.json").write_text(json.dumps({"run_id": "run-done"}), encoding="utf-8")
+    (done_dir / "summary.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(pc, "_default_visual_runs_root", lambda: fake_root)
+    report = ph.compute_health(ctx, include_host=False, include_control_plane=False)
+    active = report["evidence"]["visual_pipeline"].get("active_worker_run")
+    assert active and active["run_id"] == "run-live"
+    assert active["jobs_done"] == 13 and active["jobs_target"] == 31
+
+
+def test_chunk_failures_includes_below_threshold_detail(tmp_path):
+    below_ids = [vid("below", 1), vid("below", 2)]
+    ok_ids = [vid("okx", 1)]
+    events = healthy_events(len(ok_ids), prefix="okx")
+    for i, video in enumerate(below_ids):
+        event = _below_threshold_event(video, 30 + i)
+        event["timestamp"] = f"2026-08-17T00:11:{i:02d}.000000+00:00"
+        events.append(event)
+    chunk_root = make_chunk(
+        tmp_path / "run",
+        index=1,
+        accounts={
+            "a.hominidae": {
+                "video_ids": ok_ids + below_ids,
+                "complete": len(ok_ids),
+                "events": events,
+            }
+        },
+    )
+    below_reason = (
+        "Fetch failed for 0fc556fa-21cc-416c-b624-c7d05d1cf06a: "
+        "nlm_content_below_threshold"
+    )
+    rows = [
+        (v, "failed", "2026-08-17T00:12:00+00:00", 0, "notebooklm", below_reason)
+        for v in below_ids
+    ]
+    rows += [
+        (v, "complete", "2026-08-17T00:12:00+00:00", 0, "notebooklm", None)
+        for v in ok_ids
+    ]
+    ctx = base_ctx(tmp_path, rows=rows)
+    record = pc.ChunkRecord(**chunk_record(1, chunk_root))
+    out = pch.chunk_failures(ctx, record)
+    assert out["classes"]["content_below_threshold"]["count"] == 2
+    detail = out["content_below_threshold"]
+    assert detail["videos"] == 2
+    assert detail["whisper_eligible_unrouted"] == 2
+    assert detail["nlm_content_chars_bands"]["21-50"] == 2
+
+
+# --------------------------------------------------------------------------
 # 2. evidence integrity + freshness (§8, §9)
 # --------------------------------------------------------------------------
 
@@ -1119,12 +1376,38 @@ live_run = pytest.mark.skipif(
 )
 
 
+def _ctx_referencing_live_chunk(chunk_index: int):
+    """Live ctx whose state references the ORIGINAL run's chunk (LIVE_RUN_ROOT).
+
+    A replan restarts chunk numbering on a fresh output root, so a chunk-index
+    match alone can silently read a new run's chunk. Prefer the state whose
+    chunk output_root lives under LIVE_RUN_ROOT: canonical first, then the
+    newest archived state. None when no state references the original chunk.
+    """
+    def _has_original_chunk(ctx):
+        return any(
+            r.index == chunk_index and r.output_root and str(r.output_root).startswith(str(LIVE_RUN_ROOT))
+            for r in ctx.chunk_records()
+        )
+
+    ctx = live_ctx()
+    if _has_original_chunk(ctx):
+        return ctx
+    for candidate in sorted(LIVE_STATE.parent.glob("state-stopped-*.json"), reverse=True):
+        archived = live_ctx(state_path=candidate)
+        if _has_original_chunk(archived):
+            return archived
+    return None
+
+
 @live_run
 def test_scenario_a_degraded_chunk_replay():
     """§21 A: chunk-0004 materially degraded, source-add bottleneck, RPC9
     elevated, worst account identified — recomputed by the reducer, not
     hard-coded."""
-    ctx = live_ctx()
+    ctx = _ctx_referencing_live_chunk(4)
+    if ctx is None:
+        pytest.skip("live chunk 4 no longer referenced by canonical or archived states")
     run = pch.analyze_run(ctx, include_events=True)
     by_index = {c["chunk"]: c for c in run["chunks"]}
     degraded = {c["chunk"]: c for c in run["chunks"] if c.get("degraded")}
@@ -1159,7 +1442,9 @@ def test_scenario_a_degraded_chunk_replay():
 def test_scenario_a_drill_failed_video_to_db():
     """§21 A: at least one failed video drills through events to canonical
     DB state (the packet's 1-D0JCUtl30 example)."""
-    ctx = live_ctx()
+    ctx = _ctx_referencing_live_chunk(4)
+    if ctx is None:
+        pytest.skip("live chunk 4 no longer referenced by canonical or archived states")
     result = drill_fn(ctx, chunk=4, account="brsthomson", video_id="1-D0JCUtl30")
     assert result["event_count"] >= 4
     actions = [e["action"] for e in result["events"]]
@@ -1179,6 +1464,8 @@ def test_scenario_b_live_pause_resume_ineffective():
     report = ph.compute_health(ctx, include_host=False)
     if report["state"] == "PAUSED_AWAITING_RESUME":
         pytest.skip("scheduled task re-registered against production since this test was written")
+    if report.get("supervisor_status") == "running":
+        pytest.skip("live drain active; paused-state premise of this scenario not met")
     assert report["state"] == "PAUSED_BUT_RESUME_INEFFECTIVE"
     control = report["evidence"]["control_plane"]
     assert control["resume_mechanism_effective"] is False
@@ -1200,7 +1487,14 @@ def test_scenario_c_stale_state_references_missing_root(tmp_path):
     state_path.write_text(json.dumps(state), encoding="utf-8")
     ctx = live_ctx(state_path=state_path, keepalive_log=tmp_path / "absent.log")
     report = ph.compute_health(ctx, include_host=False, include_control_plane=False)
-    assert report["state"] in {"PAUSED_AWAITING_RESUME", "EVIDENCE_INCOMPLETE", "PAUSED_EXPECTED"}
+    # BLOCKED_ORPHAN: a running-status archived state whose current chunk root
+    # is gone classifies as an orphan, not healthy (live drain era).
+    assert report["state"] in {
+        "PAUSED_AWAITING_RESUME",
+        "EVIDENCE_INCOMPLETE",
+        "PAUSED_EXPECTED",
+        "BLOCKED_ORPHAN",
+    }
     integrity = report["evidence"].get("integrity") or []
     assert integrity
     classifications = {item["classification"] for item in integrity}
@@ -1210,7 +1504,9 @@ def test_scenario_c_stale_state_references_missing_root(tmp_path):
 
 @live_run
 def test_live_work_accounting_reconciles():
-    ctx = live_ctx()
+    ctx = _ctx_referencing_live_chunk(4)
+    if ctx is None:
+        pytest.skip("live chunk 4 no longer referenced by canonical or archived states")
     records = {r.index: r for r in ctx.chunk_records()}
     accounting = pch.work_accounting(ctx, records[4])
     assert accounting["selected"] == 400

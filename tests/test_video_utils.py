@@ -121,15 +121,14 @@ class TestExtractFrames:
                     extract_frames("/fake/video.mp4")
 
     @mock.patch("subprocess.run")
-    def test_temp_dir_cleaned_on_normal_exit(self, mock_run):
-        """Temp directory is cleaned up after successful extraction."""
-        original_rmtree = __import__("shutil").rmtree
-        cleanup_called = []
+    def test_temp_dir_preserved_on_normal_exit(self, mock_run):
+        """Frames survive the call: the caller owns the output directory.
 
-        def track_rmtree(path, ignore_errors=False):
-            cleanup_called.append(path)
-            original_rmtree(path, ignore_errors=True)
-
+        Contract change (2026-08-18): the old implementation rmtree'd the
+        temp dir in a finally block, so every consumer received paths to
+        already-deleted files. Persistence is now the caller's choice via
+        ``out_dir``; the default temp dir is likewise left in place.
+        """
         mock_run.return_value = self._mock_ffmpeg_result()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -142,16 +141,16 @@ class TestExtractFrames:
                     return_value=1.0,
                 ),
                 mock.patch("tempfile.mkdtemp", return_value=str(frames_dir)),
-                mock.patch("shutil.rmtree", side_effect=track_rmtree),
             ):
-                extract_frames(frames_dir / "video.mp4")
+                result = extract_frames(frames_dir / "video.mp4")
 
-                # Cleanup should have been called for the temp dir
-                assert len(cleanup_called) >= 1
+                assert result, "no frames returned"
+                assert all(Path(f).exists() for f in result)
+                assert (frames_dir / "frame_001.jpg").exists()
 
     @mock.patch("subprocess.run")
-    def test_sigterm_handler_cleans_up(self, mock_run):
-        """SIGTERM handler calls _cleanup before exit."""
+    def test_no_process_global_sigterm_handler(self, mock_run):
+        """extract_frames must not install a process-global SIGTERM handler."""
         handler_registered = []
 
         def track_signal(signum, handler):
@@ -173,7 +172,6 @@ class TestExtractFrames:
             ):
                 extract_frames(frames_dir / "video.mp4")
 
-                # SIGTERM handler should have been registered
                 sig_handlers = [s for s, h in handler_registered if s == signal.SIGTERM]
-                assert len(sig_handlers) == 1
+                assert not sig_handlers
 

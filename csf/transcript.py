@@ -1408,7 +1408,35 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
         # one total budget; otherwise four 300-second subprocess deadlines can
         # outlive the coordinator's per-item deadline without a stage result.
         last_audio_error: str | None = None
-        js_runtime_args = ["--js-runtimes", "node"] if shutil.which("node") else []
+        # Shared machine-wide download gate: this audio path and the visual
+        # pipeline are the only two yt-dlp media downloaders, and the operator
+        # contract is ONE shared rate ceiling (single-flight lock + hourly
+        # budget + durable cooldown). JS runtime resolution is shared too.
+        from csf.visual import media_fetch as _media_fetch
+
+        resolved_js = _media_fetch.resolve_js_runtime()
+        js_runtime_args = ["--js-runtimes", resolved_js] if resolved_js else []
+        _download_lock = _media_fetch.acquire_media_download_lock(
+            timeout_s=min(_whisper_audio_download_timeout_s(), 120.0)
+        )
+        if _download_lock is None:
+            return (False, None, "audio download deferred: shared download lock busy")
+        _cooldown = _media_fetch.media_cooldown_state()
+        if _cooldown["active"]:
+            _download_lock.release()
+            return (
+                False,
+                None,
+                f"audio download deferred: shared cooldown active ({_cooldown['reason']})",
+            )
+        _budget = _media_fetch.consume_budget_slot()
+        if not _budget["allowed"]:
+            _download_lock.release()
+            return (
+                False,
+                None,
+                "audio download deferred: shared hourly download budget exhausted",
+            )
         audio_budget_s = _whisper_audio_download_timeout_s()
         remaining_s = _remaining_transcript_deadline_s()
         if remaining_s is not None:
@@ -1456,6 +1484,9 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
 
             stderr_lower = (proc.stderr or "").lower()
             if "429" in proc.stderr or "too many requests" in stderr_lower:
+                _media_fetch.set_media_cooldown(
+                    reason=f"whisper audio 429 for {video_id}"
+                )
                 return (False, None, "audio download rate limited (429)")
             if "not found" in stderr_lower or "video unavailable" in stderr_lower:
                 return (False, None, "video unavailable for audio download")
@@ -1514,6 +1545,10 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
     finally:
         import shutil as _shutil
 
+        try:
+            _download_lock.release()
+        except Exception:
+            pass
         try:
             _shutil.rmtree(tmp_dir)
         except Exception:

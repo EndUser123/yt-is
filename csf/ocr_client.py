@@ -45,15 +45,36 @@ def _is_boilerplate(text: str) -> bool:
 
 # Singleton reader — loaded once at module level
 _reader: Optional["easyocr.Reader"] = None
+_gpu_available: Optional[bool] = None
+
+
+def _detect_gpu() -> bool:
+    """Detect GPU availability for EasyOCR (cached after first call)."""
+    global _gpu_available
+    if _gpu_available is None:
+        raw = os.environ.get("YTIS_OCR_GPU", "auto")
+        if raw == "auto":
+            try:
+                import torch
+                _gpu_available = torch.cuda.is_available()
+            except ImportError:
+                _gpu_available = False
+        else:
+            _gpu_available = raw == "1"
+    return _gpu_available
 
 
 def _get_reader() -> "easyocr.Reader":
-    """Lazily create and return the EasyOCR singleton reader."""
+    """Lazily create and return the EasyOCR singleton reader.
+
+    GPU-first (review F-4, 2026-08-19): the RTX 5070 is idle while pass-1
+    OCR runs up to 240 frames/video on CPU. Env override for CPU-only hosts.
+    """
     global _reader
     if _reader is None:
         import easyocr
 
-        _reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+        _reader = easyocr.Reader(["en"], gpu=_detect_gpu(), verbose=False)
     return _reader
 
 
@@ -115,3 +136,45 @@ def extract_code_snippets(
             deduped.append(s)
 
     return deduped
+
+
+def extract_text_per_frame(image_paths: list[Path], *, max_workers: int = 4) -> list[str]:
+    """OCR each frame independently; results aligned by input index.
+
+    Unlike extract_code_snippets (deduped, order-free), this preserves the
+    frame alignment the visual pipeline needs to pick code-dense timestamps
+    for native-resolution re-capture. A failed frame yields "" rather than
+    aborting the batch; a reader-level failure yields ["", ...] alignment.
+    """
+    if not image_paths:
+        return []
+    paths = [Path(p) for p in image_paths]
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_ocr_on_image, path) for path in paths]
+            per_frame_lines: list[list[str]] = []
+            for future in futures:
+                try:
+                    per_frame_lines.append(future.result(timeout=120.0))
+                except Exception:
+                    per_frame_lines.append([])
+    except Exception:
+        return ["" for _ in paths]
+    return [
+        "\n".join(line for line in lines if line.strip()) for lines in per_frame_lines
+    ]
+
+
+def shutdown() -> None:
+    """Release the EasyOCR reader and free GPU memory."""
+    global _reader, _gpu_available
+    _reader = None
+    _gpu_available = None
+    import gc
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass

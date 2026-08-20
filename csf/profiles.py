@@ -99,3 +99,21 @@ def promote_profile(ocr_output: str, transcript_text: str = "") -> Profile:
         return Profile.visual
 
     return Profile.standard
+
+
+def is_code_dense(text: str) -> bool:
+    """Per-frame variant of the DEC-08 code-detection heuristics.
+
+    Used by the visual pipeline to pick pass-1 frames whose OCR text warrants
+    a native-resolution pass-2 re-capture. Same signals as promote_profile,
+    scoped to one frame's text.
+    """
+    if not text:
+        return False
+    if _CODE_FENCE_RE.search(text):
+        return True
+    if sum(1 for kw in _LANGUAGE_KEYWORDS if kw in text) >= 2:
+        return True
+    if any(r.search(text) for r in _TERMINAL_RES):
+        return True
+    return _compute_punctuation_density(text) > _PUNCTUATION_DENSITY_THRESHOLD

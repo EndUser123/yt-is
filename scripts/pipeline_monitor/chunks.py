@@ -465,9 +465,11 @@ def chunk_failures(
     if record.output_root:
         chunk_root = core.Path(record.output_root)
         retried_total = recovered = 0
+        scans: list[core.EventScan] = []
         if chunk_root.is_dir():
             for account in _discover_accounts(chunk_root):
                 scan = core.scan_account_events(chunk_root, account)
+                scans.append(scan)
                 retried = {
                     video
                     for video, attempts in scan.add_attempts_by_video.items()
@@ -484,6 +486,9 @@ def chunk_failures(
             "retried_videos": retried_total,
             "recovered_complete": recovered,
         }
+        detail = core.below_threshold_summary(scans)
+        if detail["videos"]:
+            out["content_below_threshold"] = detail
     return out
 
 

@@ -46,6 +46,42 @@ def _print_text_health(report: dict) -> None:
     print(f"freshness: {' '.join(classes)}  ages: {' '.join(ages)}")
     pending = report.get("backlog_pending")
     print(f"pending backlog: {pending if pending is not None else 'unknown (db unreadable)'}")
+    composition = report.get("evidence", {}).get("drain_composition") or {}
+    if composition.get("available"):
+        mix = composition.get("pending_by_caption") or {}
+        proc = composition.get("processed_in_window") or {}
+        print(
+            "drain composition (pending): "
+            + " ".join(f"{k}={v}" for k, v in mix.items())
+        )
+        for label, entry in proc.items():
+            print(
+                f"  processed {label}: {entry.get('complete')} complete / "
+                f"{entry.get('failed')} failed (rate {entry.get('completion_rate')})"
+            )
+    visual = report.get("evidence", {}).get("visual_pipeline") or {}
+    if visual.get("available"):
+        cooldown = visual.get("media_cooldown") or {}
+        budget = visual.get("media_budget_current_window") or {}
+        status_counts = " ".join(
+            f"{k}={v}" for k, v in (visual.get("visual_status_counts") or {}).items()
+        )
+        print(
+            f"visual pipeline: open={visual.get('jobs_open')}/{visual.get('jobs_total')} "
+            f"artifacts={visual.get('artifacts')} promoted={visual.get('promoted_profile')} "
+            f"downloads_24h={visual.get('media_downloads_24h')} "
+            f"budget_used={budget.get('used')} "
+            f"cooldown={'ON(' + str(cooldown.get('remaining_s')) + 's)' if cooldown.get('active') else 'off'} "
+            f"[{status_counts}]"
+        )
+        active = visual.get("active_worker_run")
+        if active:
+            print(
+                f"  active worker: {active.get('run_id')} "
+                f"{active.get('jobs_done')}/{active.get('jobs_target')} jobs "
+                f"(complete={active.get('complete')} partial={active.get('partial')} "
+                f"failed={active.get('failed')}) progress_age={active.get('progress_age_s')}s"
+            )
     if report.get("explanation"):
         print(report["explanation"])
     alerts = report.get("alerts") or []
@@ -103,6 +139,16 @@ def _print_text_failures(payload: dict) -> None:
         print(
             f"retry recovery: {retry.get('recovered_complete')}/"
             f"{retry.get('retried_videos')} retried videos ended complete"
+        )
+    below = payload.get("content_below_threshold")
+    if below:
+        bands = below.get("nlm_content_chars_bands") or {}
+        band_text = " ".join(f"{k}={v}" for k, v in bands.items() if v)
+        print(
+            f"content_below_threshold: {below.get('videos')} videos | nlm chars "
+            f"median={below.get('nlm_content_chars_median')} [{band_text}] | "
+            f"ytdlp ok={ (below.get('ytdlp_classification_counts') or {}).get('ok', 0)} | "
+            f"whisper_eligible_unrouted={below.get('whisper_eligible_unrouted')}"
         )
 
 
@@ -243,6 +289,33 @@ def main(argv: list[str] | None = None) -> int:
                 "failed_rows": len(rows),
                 "classes": classify_rows(rows),
             }
+            # Below-threshold evidence requires events, not DB strings: scan
+            # executed chunk roots whose directory mtime falls in the window.
+            import time as _time
+
+            from scripts.pipeline_monitor.chunks import _discover_accounts
+            from scripts.pipeline_monitor.core import (
+                below_threshold_summary as _bts,
+                scan_account_events,
+            )
+
+            cutoff_epoch = _time.time() - args.window_h * 3600.0
+            scans = []
+            for record in reversed(ctx.chunk_records()):
+                if not record.executed or not record.output_root:
+                    continue
+                chunk_root = Path(record.output_root)
+                try:
+                    if chunk_root.stat().st_mtime < cutoff_epoch:
+                        break
+                except OSError:
+                    continue
+                if chunk_root.is_dir():
+                    for account in _discover_accounts(chunk_root):
+                        scans.append(scan_account_events(chunk_root, account))
+            detail = _bts(scans)
+            if detail["videos"]:
+                payload["content_below_threshold"] = detail
         else:
             _print_json({"error": "specify --chunk or --window-h"})
             return 2

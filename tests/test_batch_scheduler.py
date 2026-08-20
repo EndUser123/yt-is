@@ -248,7 +248,7 @@ def test_cooldown_blocking() -> None:
     conn = sqlite3.connect(_TEST_DB)
     conn.execute(
         "INSERT OR REPLACE INTO channel_cooldown (source, cooldown_until) VALUES (?, ?)",
-        ("https://youtube.com/channel/UC_X", time.monotonic() + 300),
+        ("https://youtube.com/channel/UC_X", time.time() + 300),
     )
     conn.commit()
     conn.close()
@@ -269,11 +269,11 @@ def test_all_channels_in_cooldown() -> None:
     conn = sqlite3.connect(_TEST_DB)
     conn.execute(
         "INSERT OR REPLACE INTO channel_cooldown (source, cooldown_until) VALUES (?, ?)",
-        ("https://youtube.com/channel/UC_X", time.monotonic() + 300),
+        ("https://youtube.com/channel/UC_X", time.time() + 300),
     )
     conn.execute(
         "INSERT OR REPLACE INTO channel_cooldown (source, cooldown_until) VALUES (?, ?)",
-        ("https://youtube.com/channel/UC_Y", time.monotonic() + 300),
+        ("https://youtube.com/channel/UC_Y", time.time() + 300),
     )
     conn.commit()
     conn.close()
