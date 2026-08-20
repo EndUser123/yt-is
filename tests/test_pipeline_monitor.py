@@ -1466,6 +1466,11 @@ def test_scenario_b_live_pause_resume_ineffective():
         pytest.skip("scheduled task re-registered against production since this test was written")
     if report.get("supervisor_status") == "running":
         pytest.skip("live drain active; paused-state premise of this scenario not met")
+    if not str(report["state"]).startswith("PAUSED"):
+        # Live era moved on (e.g. COMPLETED_WITH_FAILURES after the drain);
+        # the incident presentation itself is covered deterministically by
+        # the paused-ineffective fixture tests in this file.
+        pytest.skip(f"live state {report['state']} no longer matches the paused-incident premise")
     assert report["state"] == "PAUSED_BUT_RESUME_INEFFECTIVE"
     control = report["evidence"]["control_plane"]
     assert control["resume_mechanism_effective"] is False
@@ -1478,6 +1483,12 @@ def test_scenario_c_stale_state_references_missing_root(tmp_path):
     crash, must classify the missing evidence, and must never render as
     currently healthy."""
     state = json.loads(LIVE_STATE.read_text(encoding="utf-8"))
+    # Pin the premise: this scenario is about a RUNNING archived state whose
+    # current-chunk root is gone. The live state.json status drifts with the
+    # operational era (paused → running → completed_with_failures), and a
+    # terminal status legitimately classifies without the chunk root — so
+    # inherit everything from live EXCEPT the status under test.
+    state["status"] = "running"
     for chunk in state["chunks"]:
         chunk["output_root"] = str(tmp_path / "deleted" / Path(chunk["output_root"]).name)
         chunk["summary_path"] = str(
