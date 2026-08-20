@@ -26,11 +26,46 @@ try:
 except ImportError:  # pragma: no cover
     _PW_AVAILABLE = False
 
-# Live evidence anchors (verified 2026-08-17). If these get swept by the
-# staging cleanup, tests that need them skip rather than fail.
-LIVE_CHUNK = 63
-LIVE_ACCOUNT = "a.hominidae"
-LIVE_VIDEO = "ACmFKptXc0s"
+# Live evidence anchors are selected DYNAMICALLY from the current monitor
+# payload (the original hard-coded chunk-63 anchors were swept by the 7-day
+# staging cleanup on 2026-08-20). If nothing live is selectable, the tests
+# skip rather than fail — same convention as tests/test_pipeline_monitor.py.
+def _live_anchors():
+    """(chunk, account, video|None) from the newest executed chunk, or skips."""
+    import json as _json
+
+    from scripts.pipeline_monitor import MonitorContext, analyze_run
+
+    ctx = MonitorContext.create()
+    payload = analyze_run(ctx)
+    candidates = [
+        c for c in payload.get("chunks", [])
+        if c.get("status") not in (None, "planned") and c.get("accounts")
+    ]
+    if not candidates:
+        return None
+    chunk = candidates[-1]
+    account = next(
+        (a["account"] for a in chunk["accounts"] if a.get("account")),
+        chunk["accounts"][0].get("account"),
+    )
+    video = None
+    # read one manifest video id read-only (same artifact the drill reads)
+    from pathlib import Path as _Path
+
+    for record in ctx.chunk_records():
+        if record.index == chunk.get("chunk") and record.output_root:
+            slug = (account or "").replace(".", "-")
+            manifest = _Path(record.output_root) / "manifests" / f"{slug}.json"
+            try:
+                data = _json.loads(manifest.read_text(encoding="utf-8"))
+                items = data.get("videos") or data.get("items") or []
+                if items and isinstance(items[0], dict):
+                    video = items[0].get("video_id")
+            except (OSError, ValueError):
+                pass
+            break
+    return chunk.get("chunk"), account, video
 
 
 def _free_port() -> int:
@@ -107,17 +142,11 @@ def _wait_text(page, text, timeout=30000) -> float:
 
 
 def _live_anchor_ok(console) -> bool:
-    """The deep-link anchor chunk/account must exist in live evidence."""
+    """Live chunk/account anchors must be selectable from current evidence."""
     if console.proc is None or console.proc.poll() is not None:
         return False
-    from scripts.pipeline_monitor import MonitorContext, analyze_run
-
-    ctx = MonitorContext.create()
-    payload = analyze_run(ctx)
-    return any(
-        c.get("chunk") == LIVE_CHUNK
-        for c in payload.get("chunks", [])
-    )
+    anchors = _live_anchors()
+    return bool(anchors and anchors[0] is not None and anchors[1])
 
 
 # ---- scenarios -----------------------------------------------------------------
@@ -125,7 +154,8 @@ def _live_anchor_ok(console) -> bool:
 def test_deep_link_direct_load(console, page):
     if not _live_anchor_ok(console):
         pytest.skip("live chunk evidence swept")
-    elapsed = _wait_text_after_load(page, console, f"/operations/chunk/{LIVE_CHUNK}/account/{LIVE_ACCOUNT}", "Stage latency")
+    chunk, account, _video = _live_anchors()
+    elapsed = _wait_text_after_load(page, console, f"/operations/chunk/{chunk}/account/{account}", "Stage latency")
     assert elapsed < 15
 
 
@@ -139,11 +169,12 @@ def _wait_text_after_load(page, console, path, text):
 def test_deep_link_refresh(console, page):
     if not _live_anchor_ok(console):
         pytest.skip("live chunk evidence swept")
-    page.goto(f"{console.base}/operations/chunk/{LIVE_CHUNK}/account/{LIVE_ACCOUNT}", wait_until="domcontentloaded")
+    chunk, account, _video = _live_anchors()
+    page.goto(f"{console.base}/operations/chunk/{chunk}/account/{account}", wait_until="domcontentloaded")
     _wait_text(page, "Stage latency")
     page.reload(wait_until="domcontentloaded")
     _wait_text(page, "Stage latency", timeout=30000)
-    assert f"/operations/chunk/{LIVE_CHUNK}/account/{LIVE_ACCOUNT}" in page.url
+    assert f"/operations/chunk/{chunk}/account/{account}" in page.url
 
 
 def _authoritative_state() -> str:
@@ -198,18 +229,22 @@ def test_health_renders_monitor_authoritative_state(console, page):
 
 
 def test_table_account_video_back(console, page):
-    if not _live_anchor_ok(console):
+    anchors = _live_anchors() if _live_anchor_ok(console) else None
+    if not anchors:
         pytest.skip("live chunk evidence swept")
+    chunk, account, video = anchors
     page.goto(f"{console.base}/operations/chunks", wait_until="domcontentloaded")
     page.wait_for_selector(".ag-row", timeout=30000)
-    row = page.locator(".ag-row").filter(has_text=LIVE_ACCOUNT).first
+    row = page.locator(".ag-row").filter(has_text=account).first
     if not row.count():
         pytest.skip("account rows not present in live payload")
     row.click()
     page.wait_for_selector("text=Stage latency", timeout=30000)
-    assert f"/operations/chunk/{LIVE_CHUNK}/account/{LIVE_ACCOUNT}" in page.url or "/account/" in page.url
-    # drill into the known video
-    page.get_by_placeholder("video id").fill(LIVE_VIDEO)
+    assert "/account/" in page.url
+    if not video:
+        pytest.skip("no manifest video id available for drill step")
+    # drill into a real video from the chunk manifest
+    page.get_by_placeholder("video id").fill(video)
     page.get_by_role("button").filter(has_text="Drill").click()
     page.wait_for_selector("text=events", timeout=30000)
     page.go_back(wait_until="domcontentloaded")
@@ -234,6 +269,25 @@ def test_health_refresh_retains_previous(console, page):
     assert page.locator(f"text={rendered}").count() > 0
     page.wait_for_selector("text=previous result shown below", state="detached", timeout=90000)
     assert page.locator(f"text={rendered}").count() > 0 or page.locator(_HEADLINE).inner_text().strip()
+
+
+def test_subsystem_sections_render(console, page):
+    # Slice 2 surfaces: visual pipeline, drain composition, and EF status
+    # must each render either live data or an explicit unavailable note —
+    # never silently disappear (and never invent semantics).
+    page.goto(f"{console.base}/operations", wait_until="domcontentloaded")
+    _rendered_state(page)  # wait for health render to complete
+    body = page.locator("main").inner_text()
+    for heading in (
+        "Visual pipeline & continuous ops",
+        "Drain composition",
+        "Evidence Fabric",
+    ):
+        assert heading in body, f"missing section: {heading}"
+    # each section shows data or an explicit unavailable marker
+    assert ("jobs open" in body) or ("not present" in body)
+    assert ("pending by caption class" in body) or ("not present" in body)
+    assert ("readiness" in body) or ("ef operational status unavailable" in body)
 
 
 def test_navigation_usable_while_health_computes(console, page):

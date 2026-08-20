@@ -170,6 +170,117 @@ DRILL_VIDEO_UNKNOWN = {
 }
 
 
+# ---- slice 2 subsystem surfaces ----------------------------------------------
+
+VISUAL_HEALTH = {
+    "state": "RUNNING_HEALTHY",
+    "evidence": {
+        "visual_pipeline": {
+            "available": True,
+            "jobs_total": 20562,
+            "jobs_open": 20068,
+            "visual_status_counts": {"complete": 470, "failed_terminal": 2, "failed_unavailable": 22, "running": 1},
+            "artifacts": 286,
+            "promoted_profile": 46,
+            "media_cooldown": None,
+            "media_budget_current_window": {"window_epoch": 496441, "used": 7},
+            "media_downloads_24h": 401,
+            "active_worker_run": {
+                "run_id": "continuous-20260820T010331Z",
+                "jobs_done": 6,
+                "jobs_target": 50,
+                "complete": 5,
+                "failed": 0,
+                "partial": 0,
+                "last_video": "SZiDyD4DbCg",
+                "progress_age_s": 14.4,
+            },
+        },
+        "drain_composition": {
+            "available": True,
+            "window_h": 12.0,
+            "pending_by_caption": {"no_captions": 124517, "captions": 6, "unknown_captions": 1800},
+            "processed_in_window": {
+                "unknown_captions": {"complete": 3122, "failed": 124, "completion_rate": 0.9618, "processed": 3246},
+                "no_captions": {"complete": 29821, "failed": 2046, "completion_rate": 0.9359, "processed": 31867},
+            },
+        },
+    },
+}
+
+EF_STATUS = {
+    "emitted_at": "2026-08-19T23:55:16.666631+00:00",
+    "active_generation": 1,
+    "build_state": "incremental",
+    "index_lag_count": 67991,
+    "oldest_unindexed_age_s": 93472.2,
+    "last_index_success": "2026-08-19T23:55:11.022196+00:00",
+    "last_index_error": None,
+    "incremental_worker_state": "idle",
+    "readiness": {"state": "ready", "detail": "restored"},
+    "qdrant": {"reachable": True, "url": "http://127.0.0.1:6390", "active_points": 285553},
+    "rollback_generation": 0,
+    "sealed_future_shards": ["shard04", "shard05"],
+}
+
+
+def test_visual_pipeline_view_passthrough():
+    view = vm.visual_pipeline_view(VISUAL_HEALTH)
+    assert view["available"] is True
+    assert view["jobs_total"] == 20562
+    assert view["jobs_open"] == 20068
+    counts = {row["status"]: row["count"] for row in view["status_counts"]}
+    assert counts["complete"] == 470 and counts["failed_unavailable"] == 22
+    assert view["worker"]["run_id"] == "continuous-20260820T010331Z"
+    assert view["worker"]["jobs_done"] == 6 and view["worker"]["jobs_target"] == 50
+    assert view["media_downloads_24h"] == 401
+    assert view["media_budget_used"] == 7
+
+
+def test_visual_pipeline_view_unavailable_and_malformed():
+    missing = vm.visual_pipeline_view({"evidence": {}})
+    assert missing["available"] is False
+    for bad in (None, {}, {"evidence": "junk"}, {"evidence": {"visual_pipeline": "junk"}}):
+        view = vm.visual_pipeline_view(bad)
+        assert isinstance(view, dict) and "available" in view
+
+
+def test_drain_composition_view_passthrough():
+    view = vm.drain_composition_view(VISUAL_HEALTH)
+    assert view["available"] is True
+    pending = {row["class"]: row["count"] for row in view["pending"]}
+    assert pending == {"no_captions": 124517, "captions": 6, "unknown_captions": 1800}
+    processed = {row["class"]: row for row in view["processed"]}
+    assert processed["unknown_captions"]["completion_rate"] == 0.9618
+    assert processed["no_captions"]["failed"] == 2046
+    assert view["window_h"] == 12.0
+
+
+def test_drain_composition_view_unavailable():
+    view = vm.drain_composition_view({"evidence": {}})
+    assert view["available"] is False
+
+
+def test_ef_status_view_passthrough():
+    view = vm.ef_status_view(EF_STATUS)
+    assert view["available"] is True
+    assert view["readiness_state"] == "ready"
+    assert view["qdrant_reachable"] is True
+    assert view["qdrant_points"] == 285553
+    assert view["index_lag_count"] == 67991
+    assert view["last_index_error"] is None
+    assert view["incremental_worker_state"] == "idle"
+    assert view["generation"] == 1
+
+
+def test_ef_status_view_error_and_missing():
+    err = vm.ef_status_view(EF_STATUS | {"last_index_error": "boom"})
+    assert err["last_index_error"] == "boom"
+    for bad in (None, {}, "junk"):
+        view = vm.ef_status_view(bad)
+        assert view["available"] is False
+
+
 # ---- health presentation -----------------------------------------------------
 
 def test_health_paused_but_resume_ineffective_causal_chain():

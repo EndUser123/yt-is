@@ -22,7 +22,25 @@ from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parents[2]
 
-LIVE_CHUNK, LIVE_ACCOUNT, LIVE_VIDEO = 63, "a.hominidae", "ACmFKptXc0s"
+
+def _live_anchors() -> tuple[int, str]:
+    """(chunk, account) from the newest executed chunk — never hard-coded
+    (the original chunk-63 anchors were swept by staging cleanup)."""
+    from scripts.pipeline_monitor import MonitorContext, analyze_run
+
+    payload = analyze_run(MonitorContext.create())
+    candidates = [
+        c for c in payload.get("chunks", [])
+        if c.get("status") not in (None, "planned") and c.get("accounts")
+    ]
+    if not candidates:
+        raise SystemExit("no executed chunk with accounts available to measure")
+    chunk = candidates[-1]
+    account = next(
+        (a["account"] for a in chunk["accounts"] if a.get("account")),
+        chunk["accounts"][0].get("account"),
+    )
+    return chunk["chunk"], account
 
 
 def free_port():
@@ -96,12 +114,30 @@ try:
         m["nav_while_health_computes_s"] = round(time.time() - t, 2)
 
         m["chunks_table_load_s"] = round(time.time() - t, 2)
+        live_chunk, live_account = _live_anchors()
+        m["anchors"] = f"chunk {live_chunk}/{live_account}"
         m["deep_link_account_warm_s"] = timed(
-            f"/operations/chunk/{LIVE_CHUNK}/account/{LIVE_ACCOUNT}", "Stage latency"
+            f"/operations/chunk/{live_chunk}/account/{live_account}", "Stage latency"
         )
-        m["video_drill_load_s"] = timed(
-            f"/operations/chunk/{LIVE_CHUNK}/video/{LIVE_VIDEO}?account={LIVE_ACCOUNT}", "events"
-        )
+
+        # video drill timing against a real manifest video id (read-only)
+        live_video = None
+        from scripts.pipeline_monitor import MonitorContext
+
+        for record in MonitorContext.create().chunk_records():
+            if record.index == live_chunk and record.output_root:
+                manifest = Path(record.output_root) / "manifests" / f'{live_account.replace(".", "-")}.json'
+                try:
+                    items = json.loads(manifest.read_text(encoding="utf-8")).get("videos") or []
+                    if items:
+                        live_video = items[0].get("video_id")
+                except (OSError, ValueError):
+                    pass
+                break
+        if live_video:
+            m["video_drill_load_s"] = timed(
+                f"/operations/chunk/{live_chunk}/video/{live_video}?account={live_account}", "events"
+            )
         b.close()
 finally:
     proc.terminate()

@@ -70,7 +70,7 @@ async def health_page():
     with shell("Operational health"):
         client = context.client
         box = ui.column().classes("gap-2 w-full")
-        shown: dict = {"report": None}
+        shown: dict = {"report": None, "ef_doc": None}
 
         def render(view: dict, refreshing: bool = False):
             box.clear()
@@ -122,6 +122,70 @@ async def health_page():
                         with ui.column().classes("gap-0"):
                             ui.label(str(backlog.get(key, "?"))).classes("text-xl font-mono")
                             ui.label(key).classes("text-slate-400 text-xs")
+
+                # -- slice 2 subsystem surfaces (all monitor/ef-verdict passthrough)
+                visual = vm.visual_pipeline_view(shown["report"])
+                with ui.card().classes("bg-slate-900 w-full"):
+                    ui.label("Visual pipeline & continuous ops (monitor output)").classes("font-bold text-sm")
+                    if not visual.get("available"):
+                        ui.label(visual.get("note", "unavailable")).classes("text-slate-400 text-xs")
+                    else:
+                        with ui.row().classes("gap-6 flex-wrap"):
+                            for label, value in [
+                                ("jobs open", f'{visual.get("jobs_open")}/{visual.get("jobs_total")}'),
+                                ("complete", dict((s["status"], s["count"]) for s in visual.get("status_counts", [])).get("complete")),
+                                ("failed terminal", dict((s["status"], s["count"]) for s in visual.get("status_counts", [])).get("failed_terminal")),
+                                ("artifacts", visual.get("artifacts")),
+                                ("promoted", visual.get("promoted_profile")),
+                                ("media 24h", visual.get("media_downloads_24h")),
+                            ]:
+                                with ui.column().classes("gap-0"):
+                                    ui.label(str(value)).classes("text-lg font-mono")
+                                    ui.label(label).classes("text-slate-400 text-xs")
+                        worker = visual.get("worker")
+                        if worker:
+                            ui.label(
+                                f'worker run {worker.get("run_id")} · {worker.get("jobs_done")}/{worker.get("jobs_target")} jobs · '
+                                f'last video {worker.get("last_video")} · progress age {worker.get("progress_age_s")}s'
+                            ).classes("font-mono text-xs text-slate-300")
+
+                drain = vm.drain_composition_view(shown["report"])
+                with ui.card().classes("bg-slate-900 w-full"):
+                    ui.label("Drain composition (monitor output)").classes("font-bold text-sm")
+                    if not drain.get("available"):
+                        ui.label(drain.get("note", "unavailable")).classes("text-slate-400 text-xs")
+                    else:
+                        pending = "; ".join(f'{p["class"]} {p["count"]:,}' for p in drain.get("pending", []))
+                        ui.label(f'pending by caption class: {pending}').classes("text-slate-300 text-xs font-mono")
+                        if drain.get("processed"):
+                            ui.table(
+                                columns=[
+                                    {"name": k, "label": k, "field": k, "sortable": True}
+                                    for k in ("class", "processed", "complete", "failed", "completion_rate")
+                                ],
+                                rows=drain["processed"],
+                                row_key="class",
+                            ).classes("w-full")
+
+                ef = vm.ef_status_view(shown.get("ef_doc"))
+                with ui.card().classes("bg-slate-900 w-full"):
+                    ui.label("Evidence Fabric (ef operational status)").classes("font-bold text-sm")
+                    if not ef.get("available"):
+                        ui.label(ef.get("note", "unavailable")).classes("text-slate-400 text-xs")
+                    else:
+                        tone = "green" if ef.get("readiness_state") == "ready" and ef.get("qdrant_reachable") else "orange"
+                        with ui.row().classes("gap-2 flex-wrap"):
+                            ui.badge(f'readiness {ef.get("readiness_state")}', color=tone)
+                            ui.badge(f'qdrant {"reachable" if ef.get("qdrant_reachable") else "unreachable"}', color="green" if ef.get("qdrant_reachable") else "red")
+                            ui.badge(f'gen {ef.get("generation")}')
+                            ui.badge(f'{ef.get("qdrant_points"):,} points' if isinstance(ef.get("qdrant_points"), int) else "points ?")
+                            ui.badge(f'index lag {ef.get("index_lag_count"):,}' if isinstance(ef.get("index_lag_count"), int) else "index lag ?")
+                            ui.badge(f'worker {ef.get("incremental_worker_state")}')
+                        if ef.get("readiness_detail"):
+                            ui.label(f'{ef["readiness_detail"]} · emitted {ef.get("emitted_at", "?")[:19]}').classes("text-slate-400 text-xs")
+                        if ef.get("last_index_error"):
+                            ui.label(f'last index error: {ef["last_index_error"]}').classes("text-red-300 text-xs font-mono")
+
                 freshness = view.get("freshness") or {}
                 if freshness:
                     with ui.card().classes("bg-slate-900 w-full"):
@@ -165,6 +229,7 @@ async def health_page():
             if not _client_alive(client):
                 return
             shown["report"] = report
+            shown["ef_doc"] = await get_backend().ef_status()
             render(vm.health_view(report))
 
         render({"error": "loading"})

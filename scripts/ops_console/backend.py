@@ -47,6 +47,27 @@ class Backend:
     async def drill(self, chunk, account: str | None, video_id: str | None) -> dict:
         return await run.io_bound(drill, self._ctx, chunk=chunk, account=account, video_id=video_id)
 
+    async def ef_status(self) -> dict | None:
+        """Read ef's operational-status surface (read-only file read).
+
+        Returns ``None`` when the artifact is absent so the UI can render an
+        explicit unavailable state; never raises to the page.
+        """
+        from pathlib import Path
+
+        path = Path("P:/.data/yt-is/ef/operational-status.json")
+
+        def _read():
+            import json
+
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    return json.load(fh)
+            except (OSError, ValueError):
+                return None
+
+        return await run.io_bound(_read)
+
 
 _BACKEND: Backend | None = None
 

@@ -106,6 +106,108 @@ def not_found_view(kind: str, identifier) -> dict:
     return {"error": f"{kind}_not_found", "kind": kind, "identifier": str(identifier)}
 
 
+# ---- new subsystem surfaces (slice 2) ----------------------------------------
+# All three are pure extractions of authoritative conclusions: the visual
+# pipeline and drain composition come verbatim from the monitor health
+# payload; the EF status comes verbatim from ef's operational-status surface.
+# None of these functions derive new semantics.
+
+
+def visual_pipeline_view(report: dict | None) -> dict:
+    """Shape ``evidence.visual_pipeline`` from a ``compute_health`` report."""
+    evidence = _get(report, "evidence", default={})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    raw = evidence.get("visual_pipeline")
+    if not isinstance(raw, dict):
+        return {"available": False, "note": "visual pipeline evidence not present in health payload"}
+    worker = raw.get("active_worker_run") or {}
+    budget = raw.get("media_budget_current_window") or {}
+    return {
+        "available": True,
+        "jobs_total": raw.get("jobs_total"),
+        "jobs_open": raw.get("jobs_open"),
+        "status_counts": [
+            {"status": status, "count": count}
+            for status, count in (raw.get("visual_status_counts") or {}).items()
+        ],
+        "artifacts": raw.get("artifacts"),
+        "promoted_profile": raw.get("promoted_profile"),
+        "media_cooldown": raw.get("media_cooldown"),
+        "media_budget_used": budget.get("used"),
+        "media_downloads_24h": raw.get("media_downloads_24h"),
+        "worker": {
+            "run_id": worker.get("run_id"),
+            "jobs_done": worker.get("jobs_done"),
+            "jobs_target": worker.get("jobs_target"),
+            "complete": worker.get("complete"),
+            "failed": worker.get("failed"),
+            "partial": worker.get("partial"),
+            "last_video": worker.get("last_video"),
+            "updated_at": worker.get("updated_at"),
+            "progress_age_s": worker.get("progress_age_s"),
+        }
+        or None,
+    }
+
+
+def drain_composition_view(report: dict | None) -> dict:
+    """Shape ``evidence.drain_composition`` (backlog composition + drain rates)."""
+    evidence = _get(report, "evidence", default={})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    raw = evidence.get("drain_composition")
+    if not isinstance(raw, dict):
+        return {"available": False, "note": "drain composition evidence not present in health payload"}
+    processed = []
+    for cls, stats in (raw.get("processed_in_window") or {}).items():
+        if not isinstance(stats, dict):
+            continue
+        processed.append(
+            {
+                "class": cls,
+                "processed": stats.get("processed"),
+                "complete": stats.get("complete"),
+                "failed": stats.get("failed"),
+                "completion_rate": stats.get("completion_rate"),
+            }
+        )
+    return {
+        "available": True,
+        "window_h": raw.get("window_h"),
+        "pending": [
+            {"class": cls, "count": count}
+            for cls, count in (raw.get("pending_by_caption") or {}).items()
+        ],
+        "processed": processed,
+    }
+
+
+def ef_status_view(status_doc: dict | None) -> dict:
+    """Shape ef's ``operational-status.json`` for the Evidence Fabric card."""
+    if not isinstance(status_doc, dict) or not any(
+        key in status_doc for key in ("readiness", "qdrant", "active_generation")
+    ):
+        return {"available": False, "note": "ef operational status unavailable"}
+    readiness = status_doc.get("readiness") or {}
+    qdrant = status_doc.get("qdrant") or {}
+    return {
+        "available": True,
+        "generation": status_doc.get("active_generation"),
+        "build_state": status_doc.get("build_state"),
+        "readiness_state": readiness.get("state"),
+        "readiness_detail": readiness.get("detail"),
+        "qdrant_reachable": qdrant.get("reachable"),
+        "qdrant_points": qdrant.get("active_points"),
+        "index_lag_count": status_doc.get("index_lag_count"),
+        "oldest_unindexed_age_s": status_doc.get("oldest_unindexed_age_s"),
+        "last_index_success": status_doc.get("last_index_success"),
+        "last_index_error": status_doc.get("last_index_error"),
+        "incremental_worker_state": status_doc.get("incremental_worker_state"),
+        "emitted_at": status_doc.get("emitted_at"),
+    }
+
+
 def chunks_rows(payload: dict | None) -> list[dict]:
     """Flatten an ``analyze_run`` payload into grid rows (chunk × account)."""
     if not isinstance(payload, dict):
