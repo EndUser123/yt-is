@@ -158,15 +158,12 @@ def test_channel_intake_workflow_end_to_end(tmp_path, monkeypatch):
     assert stats["channels"] == 3
     assert "review.html" in str(out) and out.stat().st_size > 1000
 
-    # Step 4: operator decisions from the page.
-    def fake_promotion_cmd(cmd, **kwargs):
-        class R:
-            returncode = 0
-            stdout = json.dumps({"mode": "dry-run", "candidates": 1, "promoted": 0})
-            stderr = ""
-        return R()
-
-    monkeypatch.setattr(apply_mod.subprocess, "run", fake_promotion_cmd)
+    # Step 4: operator decisions from the page. Policy enforcement is
+    # now automatic (see scripts/enforce_exclusion_policy.py), so
+    # apply_decisions also adds category-reason blocks for News channels.
+    # The fake_promotion_cmd fixture is no longer needed (no subprocess
+    # call), but kept commented for reference in case the implementation
+    # ever returns to a subprocess path.
     settings = tmp_path / "discovery-settings.json"
     settings.write_text(json.dumps({"excluded_categories": [], "cookies_browser": "x"}), encoding="utf-8")
     decisions = {
@@ -181,11 +178,17 @@ def test_channel_intake_workflow_end_to_end(tmp_path, monkeypatch):
     assert apply_receipt["channels_blocked"] == 1
     assert apply_receipt["settings_updated"] is True
     assert json.loads(settings.read_text(encoding="utf-8"))["excluded_categories"] == ["News"]
+    # The chokepoint automatically blocked the News channel (UCbbb) too.
+    assert apply_receipt["promotion"]["mode"] == "apply"
+    assert apply_receipt["promotion"]["promoted"] == 1
+    assert "https://www.youtube.com/channel/UCbbb" in apply_receipt["promotion"]["promoted_channel_urls"]
 
-    # Step 5: real promotion on the tmp DB (no mocking — the blocklist is the
-    # contract every enforcement point consumes).
+    # Step 5: re-running the explicit promote script is now a no-op
+    # because the blocklist is already in sync. The script itself still
+    # works (backward compatibility); it just finds nothing to do.
     promote_receipt = promote_mod.promote(db_path=db, excluded_categories=frozenset({"News"}), apply=True)
-    assert promote_receipt["promoted"] == 1
+    assert promote_receipt["promoted"] == 0
+    assert promote_receipt["already_blocked"] == 1
 
     # Final state: every channel classified, exclusions enforced.
     conn = sqlite3.connect(db)

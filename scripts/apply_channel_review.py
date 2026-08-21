@@ -8,8 +8,13 @@ Consumes the review_decisions.json exported by the channel review page
    changed channels — the page exports just the deltas).
 2. The excluded-categories list is written into
    config/discovery-settings.json so future discovery cycles honor it.
-3. Excluded categories are promoted to the blocklist through the existing
-   promotion script (dry-run receipt by default, --apply-promotion to block).
+3. The exclusion policy is enforced automatically via
+   scripts/enforce_exclusion_policy.py: every channel in an excluded
+   category (and not exempt) gets a category-reason block; stale
+   category-reason blocks (where the channel's category changed or
+   became exempt) are removed. This used to be opt-in via
+   ``--apply-promotion``; the operator's policy is now "exclusion means
+   blocked", so the policy is always enforced after every apply.
 
 Exit codes: 0 ok; 1 apply failure; 2 input/config error.
 """
@@ -185,25 +190,26 @@ def apply_decisions(
 
             _os.unlink(at_file)
 
-    promotion: dict[str, object] = {"status": "skipped", "reason": "no excluded categories"}
+    # Policy enforcement is now automatic. The "apply_promotion" flag is
+    # accepted for backward compatibility (older exports may still pass
+    # it) but is ignored: the chokepoint always runs after the apply
+    # step, because the operator's stated rule is "excluded means
+    # blocked" with no separate approval. See
+    # scripts/enforce_exclusion_policy.py for the policy contract.
+    from scripts.enforce_exclusion_policy import enforce as enforce_policy
     if excluded:
-        cmd = [
-            sys.executable,
-            str(REPO_ROOT / "scripts" / "promote_excluded_categories.py"),
-            "--exclude",
-            ",".join(excluded),
-            "--db-path",
-            str(db_path),
-        ] + (["--apply"] if apply_promotion else [])
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         try:
-            promotion = json.loads(result.stdout)
-        except json.JSONDecodeError:
+            promotion = enforce_policy(
+                db_path=db_path,
+                excluded_categories=frozenset(excluded),
+            )
+        except Exception as exc:
             promotion = {
                 "status": "error",
-                "returncode": result.returncode,
-                "stderr": result.stderr[-500:],
+                "error": f"{type(exc).__name__}: {exc}",
             }
+    else:
+        promotion = {"status": "skipped", "reason": "no excluded categories"}
 
     receipt = {
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -257,7 +263,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--apply-promotion",
         action="store_true",
-        help="Also blocklist excluded categories (default: dry-run receipt only).",
+        help="Deprecated: policy enforcement is now automatic. Excluded "
+             "categories always translate to category-reason blocks via "
+             "scripts/enforce_exclusion_policy.py. The flag is accepted "
+             "for backward compatibility and ignored.",
     )
     args = parser.parse_args(argv)
 
@@ -301,38 +310,33 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    # A2: Exclusion reconciliation — unblock channels whose block reason is
-    # a category exclusion that no longer matches their current category.
-    # (Gmail DLP pattern: rule no longer applies -> unblock.)
-    try:
-        import sqlite3 as _sq3
-
-        rconn = _sq3.connect(db_path)
-        reconciled = 0
-        for burl, reason in rconn.execute(
-            "SELECT channel_url, reason FROM channel_blocklist WHERE reason LIKE 'category:%'"
-        ).fetchall():
-            cat = (reason or "").split(":", 1)[1] if ":" in (reason or "") else ""
-            if not cat:
-                continue
-            row = rconn.execute(
-                "SELECT category FROM channel_metadata WHERE channel_url = ?", (burl,)
-            ).fetchone()
-            current = row[0] if row else None
-            if current != cat:
-                # Channel's category changed or channel was blacklisted
-                # (metadata gone) — the old exclusion reason no longer applies
-                rconn.execute(
-                    "DELETE FROM channel_blocklist WHERE channel_url = ? AND reason = ?",
-                    (burl, reason),
-                )
-                reconciled += 1
-        if reconciled:
-            rconn.commit()
-        rconn.close()
-        receipt["reconciled_blocks"] = reconciled
-    except Exception as exc:
-        receipt["reconciled_blocks"] = f"error: {type(exc).__name__}: {exc}"
+    # A2: Exclusion reconciliation is now handled by the same chokepoint
+    # that does the policy enforcement (the enforce function adds
+    # missing category-reason blocks AND removes stale ones in one
+    # idempotent pass). The chokepoint already ran above inside
+    # apply_decisions; we don't run it twice. The legacy
+    # reconciled_blocks field is preserved on the receipt for callers
+    # that still read it; its value is taken from the chokepoint's
+    # receipt.
+    if isinstance(receipt.get("promotion"), dict):
+        # The chokepoint's receipt shape: promoted, promoted_channel_urls,
+        # reconciled, reconciled_channel_urls. The legacy field name
+        # is reconciled_blocks; map it.
+        chokepoint = receipt["promotion"]
+        if "reconciled" in chokepoint:
+            receipt["reconciled_blocks"] = chokepoint["reconciled"]
+    # Defensive: if for some reason the chokepoint didn't run, run it
+    # now as a safety net so we never leave stale category blocks.
+    if "reconciled_blocks" not in receipt and excluded:
+        try:
+            from scripts.enforce_exclusion_policy import enforce as _enforce
+            _r = _enforce(
+                db_path=db_path,
+                excluded_categories=frozenset(excluded),
+            )
+            receipt["reconciled_blocks"] = _r.get("reconciled", 0)
+        except Exception as exc:
+            receipt["reconciled_blocks"] = f"error: {type(exc).__name__}: {exc}"
 
     # Success: archive the export to the audit trail and delete the original
     # so it can never be re-ingested (operator decision record survives in

@@ -15,6 +15,7 @@ Scheduled task example:
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -92,11 +93,52 @@ def main(argv=None):
     parser.add_argument("--skip-trend-alerts", action="store_true",
                         help="Skip the daily trend-alert computation "
                              "(compute_trend_alerts.py)")
+    parser.add_argument("--skip-exclusion-policy", action="store_true",
+                        help="Skip the exclusion-policy guardrail "
+                             "(enforce_exclusion_policy.py). Discouraged: "
+                             "without this, excluded-category channels "
+                             "may be re-fetched.")
     args = parser.parse_args(argv)
 
     print("ytis — Content Sync")
     print(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     results = {}
+
+    # Exclusion-policy guardrail. Runs FIRST so every connector that
+    # follows sees a blocklist that's already in sync with the operator's
+    # current excluded_categories. The script is idempotent: missing
+    # blocks get added, stale ones (channel reclassified, ★ exception
+    # added) get removed. The operator's policy is "excluded means
+    # blocked, no separate approval" — this is the line that enforces it
+    # even on days when no review export is applied.
+    if not args.skip_exclusion_policy:
+        from csf.paths import get_batch_db_path
+        from scripts.enforce_exclusion_policy import enforce as enforce_policy
+        try:
+            settings_path = REPO / "config" / "discovery-settings.json"
+            excluded: list[str] = []
+            if settings_path.is_file():
+                _s = json.loads(settings_path.read_text(encoding="utf-8"))
+                excluded = list(_s.get("excluded_categories") or [])
+            if excluded:
+                _r = enforce_policy(
+                    db_path=get_batch_db_path(),
+                    excluded_categories=frozenset(excluded),
+                )
+                results['exclusion_policy'] = {
+                    "promoted": _r.get("promoted", 0),
+                    "reconciled": _r.get("reconciled", 0),
+                    "errors": _r.get("errors", []),
+                }
+                print(f"\n  exclusion_policy: "
+                      f"promoted={results['exclusion_policy']['promoted']}, "
+                      f"reconciled={results['exclusion_policy']['reconciled']}")
+            else:
+                results['exclusion_policy'] = {"status": "skipped",
+                                               "reason": "no excluded categories"}
+        except Exception as exc:
+            results['exclusion_policy'] = {"error": f"{type(exc).__name__}: {exc}"}
+            print(f"\n  ✗ exclusion_policy: {results['exclusion_policy']['error']}")
 
     # PARALLEL PHASE 1: YouTube is the heavyweight (hours); every light
     # connector runs concurrently beside it. All connectors are
