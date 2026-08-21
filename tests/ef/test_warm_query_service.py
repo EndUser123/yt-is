@@ -3,6 +3,7 @@ import threading
 import sqlite3
 from http.client import HTTPConnection
 from urllib.parse import quote
+import json
 from http.server import ThreadingHTTPServer
 
 from ef import warm_query_service
@@ -111,6 +112,44 @@ def test_http_reopen_endpoint_returns_authoritative_span_and_fails_closed(monkey
 
         connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
         connection.request("GET", "/reopen?eu_id=C%3A%5Csecret.txt&start_char=0&end_char=2")
+        response = connection.getresponse()
+        assert response.status == 400
+        connection.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_http_extension_ingest_is_bounded_and_uses_ingest_authority(monkeypatch):
+    captured = {}
+
+    def fake_ingest(request):
+        captured.update(request)
+        return {"status": "saved", "videoId": request["videoId"], "transcriptChars": 12}
+
+    monkeypatch.setattr(warm_query_service, "ingest", fake_ingest)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), warm_query_service.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        payload = {
+            "videoId": "video-12345",
+            "title": "Saved",
+            "url": "https://www.youtube.com/watch?v=video-12345",
+            "segments": [{"startMs": 0, "text": "Transcript."}],
+        }
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        body = json.dumps(payload).encode()
+        connection.request("POST", "/ingest-extension", body=body, headers={"Content-Length": str(len(body))})
+        response = connection.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read())["status"] == "saved"
+        assert captured["videoId"] == "video-12345"
+        connection.close()
+
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request("POST", "/ingest-extension", body=b"{}", headers={"Content-Length": "2"})
         response = connection.getresponse()
         assert response.status == 400
         connection.close()

@@ -24,6 +24,7 @@ from urllib.parse import urlparse, parse_qs
 
 from .authority import reopen_span
 from .authority import TRANSCRIPTS_DB
+from .ingest_extension_transcript import ingest, validate_request
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -34,6 +35,7 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("YTIS_EF_QUERY_PORT", "6391"))
 PID_FILE = REPO / ".data" / "yt-is" / "ef" / "query-service.pid"
 MAX_REOPEN_CHARS = 64 * 1024
+MAX_INGEST_BODY_BYTES = 3 * 1024 * 1024
 
 _query_instance = None
 _query_lock = threading.Lock()
@@ -135,6 +137,34 @@ def get_query():
 
 
 class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/ingest-extension":
+            self._json(404, {"error": "not found"})
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", "-1"))
+        except ValueError:
+            content_length = -1
+        if content_length < 0 or content_length > MAX_INGEST_BODY_BYTES:
+            self._json(413, {"error": "request_too_large"})
+            return
+        try:
+            payload = json.loads(self.rfile.read(content_length))
+            request, error = validate_request(payload)
+            if error or request is None:
+                self._json(400, {"status": "rejected", "error": error or "invalid_request"})
+                return
+            result = ingest(request)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._json(400, {"status": "rejected", "error": "malformed_json"})
+            return
+        except Exception as error:
+            self._json(500, {"status": "unavailable", "error": str(error)[:160]})
+            return
+        status = 409 if result.get("status") == "conflict" else 200
+        self._json(status, result)
+
     def do_GET(self):
         parsed = urlparse(self.path)
 
