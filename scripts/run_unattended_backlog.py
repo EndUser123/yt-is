@@ -1403,7 +1403,7 @@ def _invoke_coordinator(
     if ownership is not None:
         runtime["ownership"] = ownership
     _atomic_write_json(_runtime_receipt_path(output_root), runtime)
-    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     try:
         process = subprocess.Popen(
             command,
