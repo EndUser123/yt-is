@@ -1,0 +1,655 @@
+#!/usr/bin/env python3
+"""ytis — one command for the YouTube Intelligence System.
+
+Usage:
+    ytis status          Is it working? What's the state?
+    ytis run             Scan channels + fetch new videos + extract knowledge
+    ytis search <query>  Semantic search across all transcripts and artifacts
+    ytis today           What your channels taught you recently
+    ytis topics          List discovered topic areas
+    ytis channels        List tracked channels and their status
+    ytis add <url>       Add a new YouTube channel or playlist to track
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+DB = Path("P:/.data/yt-is/batch_status.sqlite")
+TDB = Path("P:/.data/yt-is/transcripts.sqlite")
+EF_CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
+VISUAL_ROOT = Path("P:/.data/yt-is/visual")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ro(path):
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
+    conn.execute("PRAGMA busy_timeout=3000")
+    return conn
+
+
+def _fmt_n(n):
+    return f"{n:,}" if isinstance(n, int) else str(n)
+
+
+def _plural(n, word):
+    return f"{n} {word}{'s' if n != 1 else ''}"
+
+
+def _time_ago(iso_str):
+    if not iso_str:
+        return "unknown"
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        delta = datetime.now(timezone.utc) - dt
+        if delta.days > 0:
+            return f"{delta.days}d ago"
+        hours = delta.seconds // 3600
+        if hours > 0:
+            return f"{hours}h ago"
+        minutes = delta.seconds // 60
+        return f"{max(minutes, 1)}m ago"
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+def _is_process_running(script_name):
+    try:
+        import psutil
+        me = os.getpid()
+        for p in psutil.process_iter(['pid', 'cmdline']):
+            if p.info['pid'] == me:
+                continue
+            cl = p.info['cmdline'] or []
+            if len(cl) >= 2 and script_name in str(cl[1]):
+                return True
+    except ImportError:
+        pass
+    return False
+
+
+def _drain_state():
+    try:
+        state = json.loads(Path("P:/.data/yt-is/unattended-backlog/state.json").read_text(encoding="utf-8"))
+        return state.get("status", "unknown")
+    except (OSError, json.JSONDecodeError):
+        return "no state file"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Commands
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_status():
+    """Is it working? What's the state?"""
+    conn = _ro(DB)
+
+    pending = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE status='pending'").fetchone()[0]
+    complete = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE status='complete'").fetchone()[0]
+    failed = conn.execute("SELECT COUNT(*) FROM analysis_status WHERE status='failed'").fetchone()[0]
+    channels = conn.execute("SELECT COUNT(*) FROM channel_metadata").fetchone()[0]
+    conn.close()
+
+    tdb = _ro(TDB)
+    transcripts = tdb.execute("SELECT COUNT(*) FROM transcript_cache").fetchone()[0]
+    tdb.close()
+
+    artifacts = len(list(VISUAL_ROOT.glob("*/artifacts.md"))) if VISUAL_ROOT.is_dir() else 0
+    wiki_pages = len(list(VISUAL_ROOT.glob("wiki-staging/*.md"))) if (VISUAL_ROOT / "wiki-staging").is_dir() else 0
+
+    try:
+        ef_conn = _ro(EF_CATALOG)
+        topics = ef_conn.execute("SELECT COUNT(*) FROM topic_clusters WHERE member_count > 0").fetchone()[0]
+        ef_conn.close()
+    except sqlite3.OperationalError:
+        topics = 0
+
+    drain = _drain_state()
+    loop_alive = _is_process_running("run_continuous_ops.py")
+    worker_alive = _is_process_running("run_visual_worker.py")
+
+    print("ytis status")
+    print("═════════")
+    print()
+
+    # Health
+    if loop_alive:
+        print("  ● Running (continuous ops loop active)")
+    else:
+        print("  ○ Stopped (loop not running — start with: python scripts/run_continuous_ops.py --loop)")
+    print(f"    Drain: {drain} | Worker: {'active' if worker_alive else 'idle'}")
+    print()
+
+    # Numbers
+    print(f"  Transcripts: {_fmt_n(complete)} complete, {_fmt_n(pending)} pending, {_fmt_n(failed)} failed")
+    print(f"  Channels: {_fmt_n(channels)} tracked")
+    print(f"  Topics: {_fmt_n(topics)} discovered")
+    print(f"  Code artifacts: {_fmt_n(artifacts)} extracted")
+    print(f"  Wiki pages: {_fmt_n(wiki_pages)} staged")
+
+    # Recent activity
+    conn = _ro(DB)
+    recent = conn.execute("""
+        SELECT COUNT(*), MAX(updated_at) FROM analysis_status
+        WHERE status = 'complete' AND updated_at >= ?
+    """, ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),)).fetchone()
+    conn.close()
+
+    if recent[0] > 0:
+        print(f"  Last 24h: {_fmt_n(recent[0])} new transcripts ( {_time_ago(recent[1])} )")
+    else:
+        print(f"  Last 24h: no new transcripts")
+
+    print()
+
+
+def cmd_review():
+    """Build and open the channel review page in your browser."""
+    # Build the page
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "build_channel_review_page.py")],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        print(f"Failed to build review page: {result.stderr[:200]}")
+        return
+
+    # Find the generated file
+    review_page = REPO / ".logs" / "channel_review" / "review.html"
+    if not review_page.exists():
+        print(f"Review page not found at {review_page}")
+        return
+
+    # Open in browser
+    import webbrowser
+    webbrowser.open(f"file:///{review_page}")
+    print(f"Review page opened in browser")
+    print(f"  Location: {review_page}")
+    print()
+    print("Instructions:")
+    print("  1. Click category cells to classify channels")
+    print("  2. Click ✕ to block a channel")
+    print("  3. Click 'Export Decisions' to save review_decisions.json")
+    print("  4. Run 'ytis run' to apply decisions and sync")
+
+
+def cmd_run():
+    """Apply channel review decisions (if any), then scan + fetch."""
+    # Check for exported review decisions in Downloads
+    downloads = Path.home() / "Downloads"
+    decisions_file = downloads / "review_decisions.json"
+
+    if decisions_file.exists():
+        print(f"Found channel review decisions: {decisions_file}")
+        print("Applying...")
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "apply_channel_review.py"),
+             str(decisions_file)],
+            cwd=str(REPO),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            print("  Applied successfully")
+            # Move to processed to avoid re-applying
+            processed = downloads / "review_decisions.applied.json"
+            decisions_file.rename(processed)
+            print(f"  Moved to: {processed.name}")
+        else:
+            print(f"  Failed to apply: {result.stderr[:200]}")
+            print("  Continuing with sync anyway...")
+        print()
+
+    print("Starting full pipeline (scan channels → fetch transcripts)...")
+    print("This takes 30-60 min for the scan, then runs until new videos are done.")
+    print("Ctrl-C is safe — progress is saved.")
+    print()
+    try:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "run_intake_pipeline.py")],
+            cwd=str(REPO),
+        )
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print("\n\nInterrupted — progress is saved.")
+        print("Already-scanned channels and fetched videos are safe.")
+        print("Re-run 'ytis run' to continue (already-checked channels will be fast).")
+        sys.exit(130)
+
+
+def cmd_search(query, top_k=10):
+    """Semantic search across all transcripts and artifacts."""
+    # Try the warm query service first (fast)
+    try:
+        import urllib.request
+        import urllib.parse
+        params = urllib.parse.urlencode({"q": query, "top_k": top_k, "format": "text"})
+        with urllib.request.urlopen(f"http://127.0.0.1:6391/query?{params}", timeout=30) as r:
+            if r.status == 200:
+                print(r.read().decode("utf-8"))
+                return
+    except Exception:
+        pass  # warm service not running — fall through to CLI
+
+    # Fall back to ef-query CLI
+    result = subprocess.run(
+        [sys.executable, str(REPO / "bin" / "ef-query"), query,
+         "--top-k", str(top_k), "--format", "text"],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        print(result.stdout)
+    else:
+        print(f"No results for '{query}' (or search infrastructure not running)")
+        print(f"Try: python -m ef.warm_query_service  (to start the search service)")
+
+
+def cmd_reddit():
+    """Sync Reddit posts from AI subreddits."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "run_reddit_sync.py")],
+            cwd=str(REPO),
+        )
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print("\n\nInterrupted — already-synced posts are saved.")
+        print("Re-run 'ytis reddit' to continue.")
+        sys.exit(130)
+
+
+def cmd_hn():
+    """Sync Hacker News stories."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "run_hn_sync.py")],
+            cwd=str(REPO),
+        )
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print("\n\nInterrupted — already-synced stories are saved.")
+        sys.exit(130)
+
+
+def cmd_discord():
+    """Sync Discord channel messages."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "run_discord_sync.py")],
+            cwd=str(REPO),
+        )
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print("\n\nInterrupted — already-synced messages are saved.")
+        sys.exit(130)
+
+
+def cmd_rss():
+    """Sync RSS/blog feeds."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "run_rss_sync.py")],
+            cwd=str(REPO),
+        )
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print("\n\nInterrupted — already-synced entries are saved.")
+        sys.exit(130)
+
+
+def cmd_sync(argv):
+    """Run every available content connector + index the results."""
+    from csf.connectors import sync_all, list_connectors
+    names = None
+    if argv and argv[0] == "--only":
+        names = argv[1].split(",")
+    print("Connectors:")
+    for c in list_connectors():
+        mark = "✓" if c["available"] else "—"
+        print(f"  {mark} {c['name']:14s} {c['description'][:60]}")
+    print()
+    results = sync_all(names)
+    for name, out in results.items():
+        if "skipped" in out:
+            print(f"  {name}: skipped ({out['skipped']})")
+        elif "error" in out:
+            print(f"  {name}: ERROR {out['error'][:80]}")
+        else:
+            print(f"  {name}: {out.get('new', '?')} new")
+    return 0
+
+
+def cmd_github():
+    """Sync GitHub repos (READMEs + releases)."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "run_github_sync.py")] + sys.argv[2:],
+            cwd=str(REPO),
+        )
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+
+def cmd_purge():
+    """Purge channels from the knowledge base (explicit, receipted)."""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "purge_channels.py")] + sys.argv[2:],
+            cwd=str(REPO),
+        )
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+
+def cmd_digest():
+    """Generate and display the daily digest."""
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "generate_digest.py")],
+        cwd=str(REPO),
+    )
+    sys.exit(result.returncode)
+
+
+def cmd_web():
+    """Open the web search interface in the browser."""
+    import webbrowser
+    import urllib.request
+    service_up = False
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:6391/health", timeout=3) as r:
+            service_up = r.status == 200
+    except Exception:
+        pass
+
+    if service_up:
+        # Same-origin page served by the query service — file:// pages get
+        # blocked by Chromium's Local Network Access rules.
+        webbrowser.open("http://127.0.0.1:6391/")
+        print("Web search opened in browser")
+        print("  Location: http://127.0.0.1:6391/")
+    else:
+        search_page = REPO / "docs" / "search.html"
+        webbrowser.open(f"file:///{search_page}")
+        print("Search page opened from disk (query service is DOWN)")
+        print("  Start it for live results:  python -m ef.warm_query_service")
+        print("  Then use:  ytis web")
+
+
+def cmd_today():
+    """What your channels taught you recently."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    conn = _ro(DB)
+    rows = conn.execute("""
+        SELECT video_id, title, updated_at FROM analysis_status
+        WHERE status = 'complete' AND updated_at >= ?
+        ORDER BY updated_at DESC LIMIT 20
+    """, (cutoff,)).fetchall()
+    conn.close()
+
+    if not rows:
+        print("No new transcripts in the last 24 hours.")
+        print("Run 'ytis run' to scan for new content.")
+        return
+
+    print(f"Today's knowledge — {_plural(len(rows), 'new transcript')} in the last 24h")
+    print("═════════════════════════════════════════════════")
+    print()
+    for vid, title, ts in rows[:15]:
+        print(f"  • {title or vid}")
+        print(f"    {_time_ago(ts)} — https://youtube.com/watch?v={vid}")
+    if len(rows) > 15:
+        print(f"  ... and {len(rows) - 15} more")
+    print()
+
+    # Check for new artifacts
+    new_artifacts = []
+    if VISUAL_ROOT.is_dir():
+        for d in VISUAL_ROOT.iterdir():
+            art = d / "artifacts.md"
+            if art.exists():
+                try:
+                    mtime = datetime.fromtimestamp(art.stat().st_mtime, tz=timezone.utc)
+                    if mtime.isoformat() >= cutoff:
+                        title_row = _ro(DB).execute(
+                            "SELECT title FROM analysis_status WHERE video_id = ?", (d.name,)
+                        ).fetchone()
+                        new_artifacts.append((d.name, title_row[0] if title_row else d.name))
+                except OSError:
+                    pass
+
+    if new_artifacts:
+        print(f"New code artifacts extracted ({len(new_artifacts)}):")
+        for vid, title in new_artifacts[:5]:
+            print(f"  • {title}")
+            print(f"    P:/.data/yt-is/visual/{vid}/artifacts.md")
+        print()
+
+    # Check for new insights
+    insights_dir = Path("P:/.data/yt-is/insights")
+    if insights_dir.is_dir():
+        recent_insights = [f for f in insights_dir.glob("*.md") if f.stat().st_mtime > time.time() - 86400]
+        if recent_insights:
+            print("Recent insight reports:")
+            for f in recent_insights:
+                print(f"  • {f.name}")
+            print()
+
+
+def cmd_topics():
+    """List discovered topic areas."""
+    try:
+        conn = _ro(EF_CATALOG)
+        rows = conn.execute("""
+            SELECT label, member_count, video_count, top_terms
+            FROM topic_clusters WHERE member_count > 0
+            ORDER BY member_count DESC LIMIT 30
+        """).fetchall()
+        conn.close()
+    except sqlite3.OperationalError:
+        print("No topics discovered yet. Run: python -m ef.clustering")
+        return
+
+    if not rows:
+        print("No topics discovered yet. Run: python -m ef.clustering")
+        return
+
+    print(f"Discovered topics ({len(rows)} shown, largest first)")
+    print("════════════════════════════════════════════")
+    print()
+    for i, (label, chunks, videos, terms) in enumerate(rows, 1):
+        terms_str = ", ".join(json.loads(terms)[:5]) if terms else ""
+        print(f"{i:3}. {label}")
+        print(f"     {_fmt_n(videos)} videos | {terms_str}")
+    print()
+
+
+def cmd_channels():
+    """List tracked channels and their status."""
+    conn = _ro(DB)
+    rows = conn.execute("""
+        SELECT cm.channel_title, cm.channel_id,
+               (SELECT COUNT(*) FROM analysis_status WHERE channel_id = cm.channel_id AND status = 'complete') as vids,
+               (SELECT COUNT(*) FROM analysis_status WHERE channel_id = cm.channel_id AND status = 'pending') as pending
+        FROM channel_metadata cm
+        ORDER BY vids DESC LIMIT 30
+    """).fetchall()
+    conn.close()
+
+    if not rows:
+        print("No channels tracked. Add one with: ytis add <channel_url>")
+        return
+
+    print(f"Tracked channels ({len(rows)} shown, most videos first)")
+    print("═════════════════════════════════════════════")
+    print()
+    for title, cid, vids, pending in rows:
+        status = f"{_fmt_n(vids)} done"
+        if pending:
+            status += f", {_fmt_n(pending)} pending"
+        print(f"  {title or cid}: {status}")
+    print()
+
+
+def cmd_import(filepath):
+    """Import channels from a file (one URL/ID per line, or OPML)."""
+    path = Path(filepath)
+    if not path.exists():
+        print(f"File not found: {filepath}")
+        return
+
+    content = path.read_text(encoding="utf-8")
+
+    # Detect OPML (YouTube Takeout export)
+    if "<opml" in content.lower() or "<outline" in content.lower():
+        import re
+        urls = re.findall(r'xmlUrl="([^"]+)"', content)
+        if not urls:
+            # Try htmlUrl for YouTube channels
+            urls = re.findall(r'htmlUrl="([^"]+)"', content)
+        # Extract channel IDs from RSS URLs
+        ids = []
+        for url in urls:
+            match = re.search(r'channel_id=([A-Za-z0-9_-]+)', url)
+            if match:
+                ids.append(match.group(1))
+            elif 'youtube.com' in url:
+                ids.append(url)
+        entries = ids
+        print(f"Found {len(entries)} channels in OPML file")
+    else:
+        # Plain text: one URL or ID per line
+        entries = [line.strip() for line in content.splitlines() if line.strip()]
+        print(f"Found {len(entries)} channels in text file")
+
+    if not entries:
+        print("No channels found to import")
+        return
+
+    print(f"Adding {len(entries)} channels...")
+    added = 0
+    for entry in entries:
+        result = subprocess.run(
+            [sys.executable, str(REPO / "bin" / "csf-source"), "add", entry],
+            cwd=str(REPO),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            added += 1
+        else:
+            # Check if already tracked (not an error)
+            if "already" in (result.stdout + result.stderr).lower():
+                added += 1
+            else:
+                print(f"  Failed: {entry} — {(result.stderr or result.stdout)[:80]}")
+
+    print(f"\nDone: {added}/{len(entries)} channels tracked")
+    print("Run 'ytis run' to scan them for videos")
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="ytis",
+        description="YouTube Intelligence System — one command for everything",
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("status", help="Is it working? What's the state?")
+    sub.add_parser("run", help="Apply review decisions + scan channels + fetch")
+    sub.add_parser("review", help="Open channel review page in browser")
+    sub.add_parser("reddit", help="Sync Reddit posts from AI subreddits")
+    sub.add_parser("hn", help="Sync Hacker News stories")
+    sub.add_parser("rss", help="Sync RSS/blog feeds")
+    sub.add_parser("github", help="Sync GitHub repos")
+    sub.add_parser("sync", help="Run ALL content connectors + index")
+    sub.add_parser("purge", help="Purge channels (dry-run by default)")
+    sub.add_parser("discord", help="Sync Discord channel messages")
+    sub.add_parser("digest", help="Generate daily digest")
+    sub.add_parser("today", help="What's new in the last 24 hours")
+    sub.add_parser("topics", help="List discovered topic areas")
+    sub.add_parser("channels", help="List tracked channels")
+    sub.add_parser("web", help="Open web search interface in browser")
+
+    search_p = sub.add_parser("search", help="Semantic search across transcripts")
+    search_p.add_argument("query", help="What to search for")
+    search_p.add_argument("--top-k", type=int, default=10)
+
+    add_p = sub.add_parser("add", help="Add a new channel to track")
+    add_p.add_argument("url", help="Channel or playlist URL")
+
+    import_p = sub.add_parser("import", help="Import channels from a file")
+    import_p.add_argument("file", help="Text file (one URL per line) or OPML export")
+
+    args = parser.parse_args(argv)
+
+    if args.command == "status":
+        cmd_status()
+    elif args.command == "run":
+        cmd_run()
+    elif args.command == "review":
+        cmd_review()
+    elif args.command == "reddit":
+        cmd_reddit()
+    elif args.command == "hn":
+        cmd_hn()
+    elif args.command == "rss":
+        cmd_rss()
+    elif args.command == "github":
+        cmd_github()
+    elif args.command == "sync":
+        cmd_sync(sys.argv[2:])
+    elif args.command == "purge":
+        cmd_purge()
+    elif args.command == "discord":
+        cmd_discord()
+    elif args.command == "digest":
+        cmd_digest()
+    elif args.command == "web":
+        cmd_web()
+    elif args.command == "search":
+        cmd_search(args.query, args.top_k)
+    elif args.command == "today":
+        cmd_today()
+    elif args.command == "topics":
+        cmd_topics()
+    elif args.command == "channels":
+        cmd_channels()
+    elif args.command == "add":
+        cmd_add(args.url)
+    elif args.command == "import":
+        cmd_import(args.file)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
