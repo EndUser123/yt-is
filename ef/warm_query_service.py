@@ -102,7 +102,7 @@ def get_query():
 
                 _query_instance = ProductionQuery(
                     embedding.BGEM3Dual(),
-                    buildspec.read_buildspec(),
+                    buildspec.load_spec()["generation"],
                 )
     return _query_instance
 
