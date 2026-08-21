@@ -114,23 +114,60 @@ def get_cluster_videos(cluster_id: int, limit: int = MAX_VIDEOS_PER_CLUSTER) -> 
     return videos
 
 
-def query_cluster_content(cluster_label: str, top_k: int = MAX_CHUNKS_FOR_SUMMARY) -> list[dict]:
-    """Use ef-query to get the most representative content for this topic."""
+def query_cluster_content(cluster_id: int, videos: list[dict],
+                          top_k: int = MAX_CHUNKS_FOR_SUMMARY) -> list[dict]:
+    """Representative excerpts FROM the cluster's own chunks (true
+    provenance). One chunk per top contributing video, so the excerpts
+    span the cluster instead of quoting one video. Text reopens from the
+    FTS index by chunk_id."""
+    import sqlite3
+    cat = sqlite3.connect(
+        "file:P:/.data/yt-is/ef/catalog.sqlite?mode=ro", uri=True, timeout=10.0)
     try:
-        proc = subprocess.run(
-            [str(REPO_ROOT / "bin" / "ef-query"), cluster_label,
-             "--top-k", str(top_k), "--format", "json"],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if proc.returncode == 0:
-            data = json.loads(proc.stdout)
-            return data.get("results", [])
+        excerpts = []
+        for v in videos:
+            if len(excerpts) >= top_k:
+                break
+            row = cat.execute(
+                "SELECT chunk_id FROM chunk_clusters "
+                "WHERE cluster_id = ? AND video_id = ? LIMIT 1",
+                (cluster_id, v["video_id"])).fetchone()
+            if row:
+                excerpts.append({
+                    "chunk_id": row[0],
+                    "title": v.get("title") or v["video_id"],
+                    "url": v.get("url") or "",
+                })
     except Exception:
-        pass
-    return []
+        cat.close()
+        raise
+    if not excerpts:
+        return []
+    # Reopen chunk text via PK lookups only: chunk -> eu (authority_ref,
+    # start/end) -> authority transcript substr. A WHERE chunk_id=? lookup
+    # against the FTS5 table full-scans it (chunk_id is unindexed there).
+    auth = sqlite3.connect(
+        "file:P:/.data/yt-is/transcripts.sqlite?mode=ro", uri=True,
+        timeout=10.0)
+    try:
+        for e in excerpts:
+            row = cat.execute(
+                "SELECT c.start_char, c.end_char, eu.authority_ref "
+                "FROM chunk c JOIN eu ON eu.eu_id = c.eu_id "
+                "WHERE c.chunk_id = ?", (e["chunk_id"],)).fetchone()
+            if not row:
+                e["snippet"] = ""
+                continue
+            start_char, end_char, ref = row
+            tr = auth.execute(
+                "SELECT substr(transcript, ?, ?) FROM transcript_cache "
+                "WHERE cache_key = ?",
+                (start_char + 1, end_char - start_char, ref)).fetchone()
+            e["snippet"] = (tr[0] if tr else "")[:300]
+    finally:
+        auth.close()
+    cat.close()
+    return [e for e in excerpts if e.get("snippet")]
 
 
 def generate_concept_page(cluster: dict, videos: list[dict], chunks: list[dict]) -> str:
@@ -148,9 +185,11 @@ def generate_concept_page(cluster: dict, videos: list[dict], chunks: list[dict])
     # Build content summary from chunks
     chunk_summaries = []
     for c in chunks[:MAX_CHUNKS_FOR_SUMMARY]:
-        snippet = c.get("snippet", "")[:300]
-        if snippet:
-            chunk_summaries.append(f"- {snippet}")
+        snippet = c.get("snippet", "")
+        if not snippet:
+            continue
+        cite = f" — [{c['title']}]({c['url']})" if c.get("url") else ""
+        chunk_summaries.append(f"- \"{snippet}\"{cite}")
 
     # Build the page
     page = f"""---
@@ -219,7 +258,7 @@ def process_cluster(cluster_id: int) -> dict:
     cluster = clusters[0]
 
     videos = get_cluster_videos(cluster_id)
-    chunks = query_cluster_content(cluster["label"])
+    chunks = query_cluster_content(cluster_id, videos)
 
     page = generate_concept_page(cluster, videos, chunks)
     path = stage_concept_page(cluster, page)
