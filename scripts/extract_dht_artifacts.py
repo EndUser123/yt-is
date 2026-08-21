@@ -332,22 +332,96 @@ def ocr_verbatim(image_bytes: bytes) -> tuple[str, int]:
 
 # -------- vision narrative layer (agy via csf.visual.gemini_extract) --------
 
-def vision_narrative(image_path: Path, *, print_timeout_s: str = "3m") -> dict:
-    """Run agy on a single image; return {"ok": True, "markdown": ...} or
-    {"ok": False, "error": ...}.
+def _vision_via_mmx(image_path: Path, prompt: str, *, timeout_s: int = 90) -> dict:
+    """Run the operator's primary vision engine: mmx vision describe.
 
-    Reuses csf.visual.gemini_extract's machinery: the engine-order preference
-    (agy first, then API), the meta-text quality gate, and the fenced-block
-    dedup. We adapt the prompt because gemini_extract frames the request as
-    "read N JPEGs in a directory" — for DHT attachments we have one image.
+    mmx-cli (per P:/.data/wiki/concepts/mmx-cli-full-multimodal-capability-surface.md)
+    exposes image understanding via `mmx vision describe --image <path> --prompt <text>`.
+    Returns JSON with a `content` field. We treat any response that contains
+    substantive content (>= 80 chars, no meta-text tells) as a pass.
+
+    On missing binary / non-zero exit / quality-gate rejection, returns
+    {"ok": False, "error": ...} so the caller falls through to the next engine.
+    """
+    import json as _json
+    import shutil as _shutil
+    import subprocess as _sp
+
+    mmx = _shutil.which("mmx")
+    if not mmx:
+        return {"ok": False, "error": "mmx not on PATH"}
+    try:
+        proc = _sp.run(
+            [mmx, "vision", "describe",
+             "--image", str(image_path),
+             "--prompt", prompt],
+            capture_output=True, text=True, timeout=timeout_s,
+        )
+    except _sp.TimeoutExpired:
+        return {"ok": False, "error": "mmx vision describe timeout"}
+    except Exception as e:
+        return {"ok": False, "error": f"mmx exec: {type(e).__name__}: {str(e)[:200]}"}
+    if proc.returncode != 0:
+        return {"ok": False,
+                "error": f"mmx rc={proc.returncode}: {(proc.stderr or proc.stdout)[:200]}"}
+    out = (proc.stdout or "").strip()
+    if not out:
+        return {"ok": False, "error": "mmx empty output"}
+    # mmx returns JSON: {"content": "...", "base_resp": {...}}. Extract content.
+    content = ""
+    try:
+        payload = _json.loads(out)
+        content = (payload.get("content") or "").strip()
+    except _json.JSONDecodeError:
+        # Maybe stdout is plain text; treat as content if it has length.
+        content = out
+    if not content or len(content) < 80:
+        return {"ok": False, "error": f"mmx content too short ({len(content)} chars)"}
+    # Quality gate: same meta-text tells as csf.visual.gemini_extract uses for
+    # agy. mmx doesn't usually meta-answer, but defensive: any hit fails the gate.
+    from csf.visual import gemini_extract
+    if not gemini_extract._agy_output_is_task(content):
+        return {"ok": False, "error": "mmx quality gate rejected (meta-text?)"}
+    return {
+        "ok": True,
+        "engine": "mmx",
+        "markdown": gemini_extract.dedup_fenced_blocks(content),
+    }
+
+
+def vision_narrative(image_path: Path, *, print_timeout_s: str = "3m") -> dict:
+    """Run vision extraction on a single image; return {"ok": True,
+    "markdown": ...} or {"ok": False, "error": ...}.
+
+    Engine chain (operator-preferred 2026-08-21):
+      1) mmx (MiniMax CLI, operator's standard multimodal tool; fastest
+         at ~7s and JSON-structured output, verified against the
+         gemini_extract fallbacks which were OpenRouter/Gemini-2.5-flash
+         at ~14s and missing local-first accounting)
+      2) agy (Antigravity CLI, house default; was the operator's primary
+         before mmx was identified as the right tool. Hits the
+         meta-text quality gate on chart-screenshot tasks.)
+      3) OpenRouter/Gemini-2.5-flash (key-based API fallback; works
+         in this env where Gemini API keys are missing)
+      4) Gemini API direct (the csf.visual.gemini_extract chain;
+         skipped in practice because keys are absent)
     """
     from csf.visual import gemini_extract
     prompt = (
         f"Read the single image at {image_path} carefully. "
         + SINGLE_IMAGE_PROMPT
     )
-    # 1) agy first (operator preference)
-    if os.environ.get("YTIS_VISUAL_EXTRACT_ENGINE", "agy-first") == "agy-first":
+
+    # 1) mmx first (operator preferred — fastest, structured, primary)
+    import os as _os
+    mmx_engine = _os.environ.get("YTIS_DHT_MMX", "on")
+    if mmx_engine != "off":
+        mmx_result = _vision_via_mmx(image_path, prompt)
+        if mmx_result.get("ok"):
+            return mmx_result
+
+    # 2) agy (legacy primary; same quality-gate pattern as gemini_extract)
+    if _os.environ.get("YTIS_VISUAL_EXTRACT_ENGINE", "agy-first") == "agy-first":
         agy_result = gemini_extract.extract_via_agy(prompt, print_timeout_s=print_timeout_s)
         if agy_result.get("ok") and gemini_extract._agy_output_is_task(agy_result["markdown"]):
             return {
@@ -517,11 +591,17 @@ def upsert_transcript_cache_row(att: Attachment, markdown: str,
         return False
     cache_key = att.cache_key
     cached_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # Sanitize the displayed name: strip URL query string (Discord CDN URLs
+    # include `?ex=&is=&hm=`) and any other URL-garbage. Same logic as the
+    # staging-filename sanitizer; this one runs on the metadata_json name so
+    # downstream consumers don't see `Screenshot.png?ex=...&is=...&hm=...&`.
+    import re as _re_meta
+    clean_name = _re_meta.sub(r"\?.*$", "", att.name or "").strip() or "attachment"
     meta = {
         "archive": archive_label,
         "message_id": att.message_id,
         "attachment_id": att.attachment_id,
-        "name": att.name,
+        "name": clean_name,
         "url": att.url,
         "size_bytes": att.size,
         "content_hash": att.content_hash,
