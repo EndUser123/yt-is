@@ -1,0 +1,197 @@
+{
+  "unusual_whales": {
+    "total": 19745,
+    "sample": [
+      {
+        "msg": 712494997802582017,
+        "name": "image0.png",
+        "size": 333047,
+        "status": 404
+      },
+      {
+        "msg": 775092181576581160,
+        "name": "Screenshot_20201108-151914_Facebook.jpg",
+        "size": 585198,
+        "status": 404
+      },
+      {
+        "msg": 799404393736437761,
+        "name": "PXL_20210114_222617443.PORTRAIT.jpg",
+        "size": 5611937,
+        "status": 404
+      },
+      {
+        "msg": 875054016395108362,
+        "name": "unknown.png",
+        "size": 129907,
+        "status": 404
+      },
+      {
+        "msg": 904814187350458388,
+        "name": "unknown.png",
+        "size": 79743,
+        "status": 404
+      },
+      {
+        "msg": 922592714783072266,
+        "name": "2021-12-20_12-53-40.png",
+        "size": 183794,
+        "status": 404
+      },
+      {
+        "msg": 940742206212440064,
+        "name": "unknown.png",
+        "size": 103356,
+        "status": 404
+      },
+      {
+        "msg": 946883067170136074,
+        "name": "unknown.png",
+        "size": 23350,
+        "status": 404
+      },
+      {
+        "msg": 950790497125924904,
+        "name": "Image.gif",
+        "size": 772442,
+        "status": 404
+      },
+      {
+        "msg": 963859737651318825,
+        "name": "unknown.png",
+        "size": 299551,
+        "status": 404
+      }
+    ]
+  },
+  "perfect_strategy": {
+    "total": 575,
+    "sample": [
+      {
+        "msg": 1038189438351720659,
+        "name": "Screenshot_2022-11-04_133334.png",
+        "size": 19643,
+        "status": 404
+      },
+      {
+        "msg": 1038884315943145534,
+        "name": "63.png",
+        "size": 18543,
+        "status": 404
+      },
+      {
+        "msg": 1038886462504058931,
+        "name": "82.png",
+        "size": 19052,
+        "status": 404
+      },
+      {
+        "msg": 1039617329526480917,
+        "name": "Screenshot_2022-11-08_110725.png",
+        "size": 11998,
+        "status": 404
+      },
+      {
+        "msg": 1060670937319616654,
+        "name": "Screenshot_2023-01-05_132648.png",
+        "size": 19645,
+        "status": 404
+      },
+      {
+        "msg": 1088882977846603776,
+        "name": "Screenshot_2023-03-24_105154.png",
+        "size": 11618,
+        "status": 404
+      },
+      {
+        "msg": 1119000785431302174,
+        "name": "Screenshot_2023-06-15_133107.png",
+        "size": 21575,
+        "status": 404
+      },
+      {
+        "msg": 1135678816354828389,
+        "name": "Screenshot_2023-07-31_140150.png",
+        "size": 18855,
+        "status": 404
+      },
+      {
+        "msg": 1144637611873423360,
+        "name": "Screenshot_2023-08-25_072328.png",
+        "size": 9483,
+        "status": 404
+      },
+      {
+        "msg": 1178715711586189332,
+        "name": "Screenshot_2023-11-27_071528.png",
+        "size": 8784,
+        "status": 404
+      }
+    ]
+  },
+  "spx_0dte_trader": {
+    "total": 3080,
+    "sample": [
+      {
+        "msg": 698283450712719441,
+        "name": "header-logo.png",
+        "size": 3511,
+        "status": 404
+      },
+      {
+        "msg": 837016497385635931,
+        "name": "same.png",
+        "size": 18735,
+        "status": 404
+      },
+      {
+        "msg": 841692904148828230,
+        "name": "unknown.png",
+        "size": 31573,
+        "status": 404
+      },
+      {
+        "msg": 847134275781656586,
+        "name": "unknown.png",
+        "size": 28789,
+        "status": 404
+      },
+      {
+        "msg": 859086878565335061,
+        "name": "unknown.png",
+        "size": 19093,
+        "status": 404
+      },
+      {
+        "msg": 875182840424312832,
+        "name": "unknown.png",
+        "size": 13322,
+        "status": 404
+      },
+      {
+        "msg": 900369659860246568,
+        "name": "Screenshot_343.png",
+        "size": 149267,
+        "status": 404
+      },
+      {
+        "msg": 908360861565976626,
+        "name": "Screenshot_440.png",
+        "size": 122357,
+        "status": 404
+      },
+      {
+        "msg": 915613891575296030,
+        "name": "unknown.png",
+        "size": 16451,
+        "status": 404
+      },
+      {
+        "msg": 963787802384953424,
+        "name": "Screenshot_827.png",
+        "size": 152197,
+        "status": 404
+      }
+    ]
+  }
+}
