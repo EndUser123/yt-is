@@ -629,8 +629,14 @@ def process_one(att: Attachment, *, dry_run: bool, do_ocr: bool, do_vision: bool
         stage.write_bytes(image_bytes)
     # For blobs, write a tiny sidecar so vision knows the file type
     if att.blob is not None:
-        # Determine suffix from name
-        suffix = Path(att.name).suffix.lower() or ".bin"
+        # Determine suffix from name. Strip any URL query string first —
+        # Discord CDN URLs include `?ex=&is=&hm=` which would leak into the
+        # filename. Windows rejects `?` and `&` in paths (OSError 22).
+        import re as _re
+        clean_name = _re.sub(r"\?.*$", "", att.name or "")
+        suffix = Path(clean_name).suffix.lower() or ".bin"
+        # Sanitize suffix too (defensive — only allow [a-z0-9.])
+        suffix = "".join(c for c in suffix if c.isalnum() or c == ".") or ".bin"
         suffixed = stage.with_suffix(suffix)
         stage = suffixed
         stage.write_bytes(image_bytes)
