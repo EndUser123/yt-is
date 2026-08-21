@@ -112,3 +112,53 @@ agent: zcode · host: both
   readiness contract, outage isolation with watermark survival).
 - **/wiki consumer handoff**: `WIKI_INTEGRATION_HANDOFF.md` (ef-query
   CLI seam, three maintenance modes, A/B rule). No /wiki changes.
+
+## FINAL UPDATE 2026-08-21: N/O-gate closed — EXPAND EF MAINTENANCE
+
+### Blinded disposition results (agy judge, rubric frozen before review)
+
+35 claims × 5 candidates = 175 dispositions from a blinded judge
+(rank/score stripped, order shuffled, rubric committed first):
+
+| Metric | Result |
+|---|---|
+| candidate useful rate | 74/175 = **42%** |
+| candidate noise rate | 101/175 = 58% |
+| contradictions found | 0 |
+| claims with useful evidence | 29/35 = **83%** |
+| **newly-available w/ material consequence** | **17/22 = 77%** |
+| unknown-lv w/ useful evidence | 10/11 = 91% |
+| wiki modification rate | 28/35 = **80%** |
+| confirmed-unchanged rate | 7/35 = 20% |
+
+### Terminal recommendation: **EXPAND EF MAINTENANCE**
+
+The primary question — "of the 22 newly-available claims, how many
+yielded material maintenance consequences?" — answered decisively at
+77%. The corpus's value as an evidence-refresh mechanism is proven.
+The modes should become a normal `/wiki` maintenance capability.
+
+### Two-clock staleness model (O-gate)
+
+```
+published_at > last_verified  → newer_evidence_needs_review (0/35 found)
+captured_at  > last_verified  → newly_available_evidence_needs_review
+```
+
+`captured_at` is corpus-ingestion time (verified from data
+distribution); only `published_at` justifies "genuinely newer."
+
+### Integration state at close
+
+- main and evidence-fabric both at `42c098fa` (pushed to origin)
+- 100 commits merged (fast-forward; main had zero divergence)
+- Warm query service live on :6391 (~100ms per query warm)
+- Shards 04/05 remain sealed for future promotion cycles
+- Generation 1 active, 521K+ points, incremental current
+
+### Archive note
+
+The original `n_gate_run.json` (21-claim first pass) contains
+pre-correction staleness numbers superseded by
+`n_gate_run_reclassified.json` — use the reclassified file for any
+historical reference.
