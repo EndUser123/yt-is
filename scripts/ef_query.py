@@ -32,6 +32,32 @@ sys.path.insert(0, str(REPO))
 from ef import buildspec, catalog, embedding, server
 from ef.query_server import ProductionQuery
 
+# Usage telemetry (fail-open): one JSONL row per query so adoption is
+# measurable (D4 stage-1 measurement gate, 2026-09-04). Consumers may pass
+# their name via EF_CALLER for per-skill attribution.
+USAGE_LOG = Path("P:/.data/telemetry/ef-usage.jsonl")
+
+
+def _log_usage(query: str, mode: str, count: int, ok: bool) -> None:
+    import os
+    import time
+
+    try:
+        USAGE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+            "tool": "ef_query",
+            "mode": mode,
+            "query": query[:200],
+            "count": count,
+            "ok": ok,
+            "caller": os.environ.get("EF_CALLER", ""),
+        }
+        with USAGE_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
 
 def _claimed_production_generation() -> int:
     gen = buildspec.active_generation()
@@ -103,7 +129,9 @@ def main() -> int:
                              exact=True if args.exact else None)
     except Exception as e:
         print(f"ef_query: query failed: {e}", file=sys.stderr)
+        _log_usage(query, "exact" if args.exact else "semantic", 0, False)
         return 2
+    _log_usage(query, "exact" if args.exact else "semantic", len(results), True)
 
     if args.as_json:
         print(json.dumps({

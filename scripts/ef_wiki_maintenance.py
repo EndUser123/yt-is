@@ -220,6 +220,30 @@ def mode_staleness(pq, claim: str, last_verified: str,
             "candidates": newer}
 
 
+def _log_usage(mode: str, claim: str, ok: bool) -> None:
+    """Fail-open usage telemetry (D4 stage-1 measurement gate, 2026-09-04)."""
+    import os
+    import time
+    from pathlib import Path
+
+    try:
+        log = Path("P:/.data/telemetry/ef-usage.jsonl")
+        log.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+            "tool": "ef_wiki_maintenance",
+            "mode": mode,
+            "query": claim[:200],
+            "count": 0,
+            "ok": ok,
+            "caller": os.environ.get("EF_CALLER", ""),
+        }
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ef-wiki-maintenance")
     ap.add_argument("mode", choices=("evidence", "contradiction", "staleness"))
@@ -235,6 +259,7 @@ def main(argv=None) -> int:
     from ef import readiness
     st = readiness.get_state()
     if st.get("state") not in ("ready", "unknown"):
+        _log_usage(a.mode, a.claim, False)
         out = {"status": "unavailable", "readiness": st.get("state"),
                "candidates": []}
         print(json.dumps(out))
@@ -251,6 +276,7 @@ def main(argv=None) -> int:
     else:
         out = mode_staleness(pq, a.claim, a.last_verified or "", a.top_k)
     out["status"] = "ok"
+    _log_usage(a.mode, a.claim, True)
     print(json.dumps(out, ensure_ascii=False, indent=1))
     return 0
 
