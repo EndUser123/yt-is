@@ -22,8 +22,8 @@ from pathlib import Path
 
 from .contracts import EvidenceUnit, MEDIA_TRANSCRIPT
 
-TRANSCRIPTS_DB = Path("P:/.data/yt-is/transcripts.sqlite")
-STATUS_DB = Path("P:/.data/yt-is/batch_status.sqlite")
+TRANSCRIPTS_DB = Path(r"P:\.data\yt-is\transcripts.sqlite")
+STATUS_DB = Path(r"P:\.data\yt-is\batch_status.sqlite")
 
 # Test fixtures and degenerate rows discovered during discovery (receipt in
 # DECISIONS.md D005/D006 session notes): 1 test row, 48 rows <100 chars.
