@@ -1,0 +1,204 @@
+{
+  "task": "DA-01",
+  "started_at": "2026-08-21T16:03:52Z",
+  "host": "DESKTOP-70TFAGN",
+  "archives": [
+    {
+      "path": "P:\\.data\\dht\\unusual whales.dht",
+      "size_mb": 286.7,
+      "tables_present": [
+        "metadata",
+        "users",
+        "servers",
+        "channels",
+        "messages",
+        "attachments",
+        "embeds",
+        "reactions",
+        "edit_timestamps",
+        "replied_to"
+      ],
+      "attachments_cols": [
+        "message_id",
+        "attachment_id",
+        "name",
+        "type",
+        "url",
+        "size"
+      ],
+      "attachments_sample": [
+        712494997802582017,
+        712494997567701002,
+        "image0.png",
+        null,
+        "https://cdn.discordapp.com/attachments/710524669190471770/712494997567701002/image0.png",
+        333047
+      ],
+      "attachments_total": 19745,
+      "attachments_type_breakdown": {
+        "image": 19163,
+        "video-or-gif": 557,
+        "other-or-unknown": 25,
+        "missing_url": 0
+      },
+      "attachments_url_kind": {
+        "cdn_signed_url": 19745,
+        "external_url": 0,
+        "file_reference": 0,
+        "missing": 0,
+        "unknown": 0
+      },
+      "attachments_size_bytes": {
+        "sum": 13483584530,
+        "min": 280,
+        "max": 88824265,
+        "mean": 682886
+      },
+      "embeds_total": 169459,
+      "embeds_cols": [
+        "message_id",
+        "json"
+      ]
+    },
+    {
+      "path": "P:\\.data\\dht\\perfect strategy.dht",
+      "size_mb": 19.37,
+      "tables_present": [
+        "metadata",
+        "users",
+        "servers",
+        "channels",
+        "messages",
+        "attachments",
+        "embeds",
+        "reactions",
+        "edit_timestamps",
+        "replied_to",
+        "downloads"
+      ],
+      "attachments_cols": [
+        "message_id",
+        "attachment_id",
+        "name",
+        "type",
+        "url",
+        "size",
+        "width",
+        "height"
+      ],
+      "attachments_sample": [
+        1038189438351720659,
+        1038189438062301285,
+        "Screenshot_2022-11-04_133334.png",
+        "image/png",
+        "https://cdn.discordapp.com/attachments/1038151841743126628/1038189438062301285/Screenshot_2022-11-04_133334.png?ex=65737dc2&is=656108c2&hm=9317573b192fe0a930f723eac0966635fae361b67132a71ba7a39c875b4231c6&",
+        19643,
+        482,
+        252
+      ],
+      "attachments_total": 575,
+      "attachments_type_breakdown": {
+        "image": 575,
+        "video-or-gif": 0,
+        "other-or-unknown": 0,
+        "missing_url": 0
+      },
+      "attachments_url_kind": {
+        "cdn_signed_url": 575,
+        "external_url": 0,
+        "file_reference": 0,
+        "missing": 0,
+        "unknown": 0
+      },
+      "attachments_size_bytes": {
+        "sum": 15328358,
+        "min": 6667,
+        "max": 4479237,
+        "mean": 26658
+      },
+      "embeds_total": 1,
+      "embeds_cols": [
+        "message_id",
+        "json"
+      ],
+      "downloads_cols": [
+        "url",
+        "status",
+        "size",
+        "blob"
+      ],
+      "downloads_total": 732,
+      "downloads_sample": [
+        "https://cdn.discordapp.com/attachments/1038151775095635989/1038855737989935155/1.png",
+        200,
+        14547,
+        "<blob len=None>"
+      ]
+    },
+    {
+      "path": "P:\\.data\\dht\\spx 0dte trader.dht",
+      "size_mb": 8.31,
+      "tables_present": [
+        "metadata",
+        "users",
+        "servers",
+        "channels",
+        "messages",
+        "attachments",
+        "embeds",
+        "reactions",
+        "edit_timestamps",
+        "replied_to"
+      ],
+      "attachments_cols": [
+        "message_id",
+        "attachment_id",
+        "name",
+        "type",
+        "url",
+        "size"
+      ],
+      "attachments_sample": [
+        698283450712719441,
+        698283450624507954,
+        "header-logo.png",
+        null,
+        "https://cdn.discordapp.com/attachments/698282408969109524/698283450624507954/header-logo.png",
+        3511
+      ],
+      "attachments_total": 3080,
+      "attachments_type_breakdown": {
+        "image": 3014,
+        "video-or-gif": 61,
+        "other-or-unknown": 5,
+        "missing_url": 0
+      },
+      "attachments_url_kind": {
+        "cdn_signed_url": 3080,
+        "external_url": 0,
+        "file_reference": 0,
+        "missing": 0,
+        "unknown": 0
+      },
+      "attachments_size_bytes": {
+        "sum": 4369464840,
+        "min": 805,
+        "max": 103848077,
+        "mean": 1418657
+      },
+      "embeds_total": 317,
+      "embeds_cols": [
+        "message_id",
+        "json"
+      ]
+    }
+  ],
+  "totals": {
+    "attachments": 23400,
+    "image": 22752,
+    "video_or_gif": 618,
+    "other_or_unknown": 30,
+    "embed_rows": 169777,
+    "downloads_rows": 732
+  }
+}

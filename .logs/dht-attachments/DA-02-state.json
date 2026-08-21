@@ -1,0 +1,77 @@
+{
+  "processed": {
+    "cbd534e0eb59b113": {
+      "cache_key": "dht-artifact:perfect_strategy:0:175499739484251",
+      "content_hash": "cbd534e0eb59b113",
+      "name": "1.png",
+      "size": 14547,
+      "is_video": false,
+      "source": "blob",
+      "fetch_ms": 0,
+      "ocr_ms": 4451,
+      "ocr_chars": 258,
+      "vision_ms": 14051,
+      "vision_engine": "openrouter:google/gemini-2.5-flash",
+      "artifact_path": "P:\\.data\\dht-artifacts\\perfect_strategy\\ch_000000\\0_175499739484251.md",
+      "transcript_cache": true,
+      "total_ms": 18517
+    },
+    "5895d5e083ee12b7": {
+      "cache_key": "dht-artifact:perfect_strategy:0:71862824399215",
+      "content_hash": "5895d5e083ee12b7",
+      "name": "2.png",
+      "size": 18662,
+      "is_video": false,
+      "source": "blob",
+      "fetch_ms": 0,
+      "ocr_ms": 4922,
+      "ocr_chars": 328,
+      "vision_ms": 21252,
+      "vision_engine": "openrouter:google/gemini-2.5-flash",
+      "artifact_path": "P:\\.data\\dht-artifacts\\perfect_strategy\\ch_000000\\0_71862824399215.md",
+      "transcript_cache": true,
+      "total_ms": 26195
+    }
+  },
+  "errors": {},
+  "started_at": "2026-08-21T16:18:32Z",
+  "expired_cdn": {
+    "01bf7e8efc55a01e": {
+      "cache_key": "dht-artifact:unusual_whales:712494997802582017:712494997567701002",
+      "content_hash": "01bf7e8efc55a01e",
+      "name": "image0.png",
+      "size": 333047,
+      "is_video": false,
+      "source": "cdn",
+      "expired": "HEAD HTTP 404"
+    },
+    "1a78039a4480a188": {
+      "cache_key": "dht-artifact:unusual_whales:712728511344934912:712728511105859664",
+      "content_hash": "1a78039a4480a188",
+      "name": "unknown.png",
+      "size": 4952,
+      "is_video": false,
+      "source": "cdn",
+      "expired": "HEAD HTTP 404"
+    },
+    "3aecd2e87c234fd1": {
+      "cache_key": "dht-artifact:unusual_whales:712765955373268992:712765955163291648",
+      "content_hash": "3aecd2e87c234fd1",
+      "name": "image0.png",
+      "size": 231333,
+      "is_video": false,
+      "source": "cdn",
+      "expired": "HEAD HTTP 404"
+    }
+  },
+  "finished_at": "2026-08-21T16:20:12Z",
+  "totals": {
+    "considered": 2,
+    "done": 1,
+    "errors": 0,
+    "skipped_resumed": 1,
+    "expired_cdn": 3,
+    "vision_soft_failures": 0,
+    "dry_run": false
+  }
+}
