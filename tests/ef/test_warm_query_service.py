@@ -1,5 +1,6 @@
 import pytest
 import threading
+import sqlite3
 from http.client import HTTPConnection
 from urllib.parse import quote
 from http.server import ThreadingHTTPServer
@@ -67,6 +68,25 @@ def test_reopen_rejects_span_outside_authority(monkeypatch):
     monkeypatch.setattr(warm_query_service, "reopen_span", lambda *_: "short")
     with pytest.raises(ValueError, match="out_of_authority"):
         warm_query_service.reopen_result("video-A:transcript", 0, 10)
+
+
+def test_library_lookup_reads_transcript_cache_without_writes(tmp_path, monkeypatch):
+    db = tmp_path / "transcripts.sqlite"
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "create table transcript_cache (cache_key text, video_id text, transcript text, source text, cached_at text)"
+        )
+        connection.execute(
+            "insert into transcript_cache values (?, ?, ?, ?, ?)",
+            ("video-A:transcript", "video-A", "authoritative text", "timedtext", "2026-08-21T00:00:00Z"),
+        )
+    monkeypatch.setattr(warm_query_service, "TRANSCRIPTS_DB", db)
+    found = warm_query_service.library_result("video-A")
+    missing = warm_query_service.library_result("video-B")
+    assert found["status"] == "in_library"
+    assert found["eu_id"] == "video-A:transcript"
+    assert found["transcript_chars"] == len("authoritative text")
+    assert missing == {"video_id": "video-B", "status": "not_found"}
 
 
 def test_http_reopen_endpoint_returns_authoritative_span_and_fails_closed(monkeypatch):

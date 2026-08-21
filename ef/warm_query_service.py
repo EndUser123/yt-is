@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from .authority import reopen_span
+from .authority import TRANSCRIPTS_DB
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -87,6 +88,31 @@ def reopen_result(eu_id: str, start_char: int, end_char: int) -> dict:
         "start_char": start_char,
         "end_char": end_char,
         "text": text,
+    }
+
+
+def library_result(video_id: str) -> dict:
+    """Read the canonical transcript cache without exposing a write API."""
+    if not isinstance(video_id, str) or not video_id or len(video_id) > 64:
+        raise ValueError("invalid_video_id")
+    if any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in video_id):
+        raise ValueError("invalid_video_id")
+    import sqlite3
+    with sqlite3.connect(f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True) as conn:
+        row = conn.execute(
+            "select cache_key, length(transcript), source, cached_at "
+            "from transcript_cache where video_id=? "
+            "order by cached_at desc limit 1", (video_id,)
+        ).fetchone()
+    if row is None or not row[1]:
+        return {"video_id": video_id, "status": "not_found"}
+    return {
+        "video_id": video_id,
+        "status": "in_library",
+        "eu_id": f"{video_id}:transcript",
+        "transcript_chars": int(row[1]),
+        "transcript_source": row[2] or "unknown",
+        "cached_at": row[3] or None,
     }
 
 
@@ -159,6 +185,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(error)})
             except LookupError as error:
                 self._json(404, {"error": str(error)[:200]})
+            else:
+                self._json(200, payload)
+
+        elif parsed.path == "/library":
+            params = parse_qs(parsed.query)
+            try:
+                payload = library_result(params.get("video_id", [""])[0])
+            except ValueError as error:
+                self._json(400, {"error": str(error)})
             else:
                 self._json(200, payload)
 
