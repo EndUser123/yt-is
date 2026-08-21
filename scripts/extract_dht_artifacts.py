@@ -382,7 +382,10 @@ def _vision_via_openrouter(image_path: Path, prompt: str, *, timeout_s: int = 12
         text = ((choice.get("message") or {}).get("content") or "").strip()
         if text:
             from csf.visual import gemini_extract
-            if gemini_extract._agy_output_is_task(text):
+            # DHT-tuned gate (looser than gemini_extract's default; the
+            # "flag" meta-marker false-positives on "Bull Iron Flag" and
+            # similar option-strategy names — see _dht_vision_quality_gate)
+            if _dht_vision_quality_gate(text):
                 return {
                     "ok": True,
                     "engine": f"openrouter:{or_model}",
@@ -443,16 +446,48 @@ def _vision_via_mmx(image_path: Path, prompt: str, *, timeout_s: int = 90) -> di
         content = out
     if not content or len(content) < 80:
         return {"ok": False, "error": f"mmx content too short ({len(content)} chars)"}
-    # Quality gate: same meta-text tells as csf.visual.gemini_extract uses for
-    # agy. mmx doesn't usually meta-answer, but defensive: any hit fails the gate.
-    from csf.visual import gemini_extract
-    if not gemini_extract._agy_output_is_task(content):
+    # DHT-specific quality gate (looser than the gemini_extract one; the
+    # default "flag" meta-marker false-positives on "Bull Iron Flag" and
+    # other option-strategy names — verified 2026-08-21 by replaying
+    # OpenRouter on a soft-failure image and confirming the response
+    # was valid task output)
+    if not _dht_vision_quality_gate(content):
         return {"ok": False, "error": "mmx quality gate rejected (meta-text?)"}
     return {
         "ok": True,
         "engine": "mmx",
         "markdown": gemini_extract.dedup_fenced_blocks(content),
     }
+
+
+def _dht_vision_quality_gate(text: str) -> bool:
+    """DHT-specific quality gate. Rejects obvious meta-text (CLI discussion,
+    error wrappers) without false-positiving on chart-strategy names.
+
+    Pass conditions (all must hold):
+      - length >= 200 chars (a real description is usually longer)
+      - contains at least one number (the whole point of OCR)
+      - doesn't start with the canonical error wrapper
+    Fail conditions:
+      - "antigravity cli" (mmx/agy meta-tell)
+      - "--print-timeout" / "--dangerously-skip" (CLI flag discussion)
+      - starts with "Certainly" / "Here is" (lazy preamble)
+    """
+    if not text or len(text) < 200:
+        return False
+    if not any(c.isdigit() for c in text):
+        return False
+    lowered = text.lower()
+    if any(m in lowered for m in (
+        "antigravity cli", "--print-timeout", "--dangerously-skip",
+        "pytest", "argparse",  # from the original gemini_extract gate
+    )):
+        return False
+    if text.lstrip().lower().startswith(("certainly", "here is", "i'd be happy")):
+        return False
+    if text.lstrip().lower().startswith(("error:", "error ")):
+        return False
+    return True
 
 
 def vision_narrative(image_path: Path, *, print_timeout_s: str = "3m") -> dict:
