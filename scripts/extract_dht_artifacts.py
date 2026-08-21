@@ -332,6 +332,72 @@ def ocr_verbatim(image_bytes: bytes) -> tuple[str, int]:
 
 # -------- vision narrative layer (agy via csf.visual.gemini_extract) --------
 
+def _vision_via_openrouter(image_path: Path, prompt: str, *, timeout_s: int = 120) -> dict:
+    """OpenRouter/Gemini-2.5-flash vision call.
+
+    Per the QA evidence in scripts/test_ocr_quality.py (n=20, 2026-08-21),
+    OpenRouter achieves 7.35 OCR-key mentions per image on chart screenshots,
+    vs mmx's 1.0. This is the primary engine for chart OCR.
+
+    The OpenRouter API uses the standard OpenAI Chat Completions format with
+    the image as a data URL. The default model is google/gemini-2.5-flash
+    (operator's primary). Override with YTIS_VISUAL_OPENROUTER_MODEL.
+    """
+    import base64 as _b64
+    import json as _json
+    import os as _os
+    import urllib.request as _ur
+    or_key = _os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not or_key:
+        return {"ok": False, "error": "OPENROUTER_API_KEY not set"}
+    try:
+        or_model = _os.environ.get("YTIS_VISUAL_OPENROUTER_MODEL",
+                                   "google/gemini-2.5-flash")
+        img_bytes = image_path.read_bytes()
+        b64 = _b64.b64encode(img_bytes).decode("ascii")
+        data_url = f"data:{_guess_mime(image_path)};base64,{b64}"
+        body = _json.dumps({
+            "model": or_model,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            }],
+            "max_tokens": 4000,
+        }).encode("utf-8")
+        req = _ur.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {or_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://yt-is.local/da02",
+            },
+        )
+        with _ur.urlopen(req, timeout=timeout_s) as resp:
+            payload = _json.loads(resp.read().decode("utf-8"))
+        choice = (payload.get("choices") or [{}])[0]
+        text = ((choice.get("message") or {}).get("content") or "").strip()
+        if text:
+            from csf.visual import gemini_extract
+            if gemini_extract._agy_output_is_task(text):
+                return {
+                    "ok": True,
+                    "engine": f"openrouter:{or_model}",
+                    "model": or_model,
+                    "markdown": gemini_extract.dedup_fenced_blocks(text),
+                }
+            return {"ok": False,
+                    "error": f"openrouter quality gate rejected ({or_model})"}
+        return {"ok": False,
+                "error": f"openrouter empty response ({or_model})"}
+    except Exception as exc:
+        return {"ok": False,
+                "error": f"openrouter: {type(exc).__name__}: {str(exc)[:200]}"}
+
+
 def _vision_via_mmx(image_path: Path, prompt: str, *, timeout_s: int = 90) -> dict:
     """Run the operator's primary vision engine: mmx vision describe.
 
@@ -347,7 +413,7 @@ def _vision_via_mmx(image_path: Path, prompt: str, *, timeout_s: int = 90) -> di
     import shutil as _shutil
     import subprocess as _sp
 
-    mmx = _shutil.which("mmx")
+    mmx = _shutil.which("mmx") or _shutil.which("mmx.cmd")
     if not mmx:
         return {"ok": False, "error": "mmx not on PATH"}
     try:
@@ -393,18 +459,21 @@ def vision_narrative(image_path: Path, *, print_timeout_s: str = "3m") -> dict:
     """Run vision extraction on a single image; return {"ok": True,
     "markdown": ...} or {"ok": False, "error": ...}.
 
-    Engine chain (operator-preferred 2026-08-21):
-      1) mmx (MiniMax CLI, operator's standard multimodal tool; fastest
-         at ~7s and JSON-structured output, verified against the
-         gemini_extract fallbacks which were OpenRouter/Gemini-2.5-flash
-         at ~14s and missing local-first accounting)
-      2) agy (Antigravity CLI, house default; was the operator's primary
-         before mmx was identified as the right tool. Hits the
-         meta-text quality gate on chart-screenshot tasks.)
-      3) OpenRouter/Gemini-2.5-flash (key-based API fallback; works
-         in this env where Gemini API keys are missing)
+    Engine chain (operator-validated 2026-08-21 via test_ocr_quality.py,
+    n=20 chart-screenshot artifacts):
+      1) OpenRouter / Gemini-2.5-flash (primary; 7.35 OCR-key mentions
+         per image; 18/20 coverage; 5-15s). Best for chart OCR.
+      2) agy (Antigravity CLI; falls back here if OpenRouter fails;
+         same quality-gate pattern as gemini_extract).
+      3) mmx (MiniMax CLI; general image understanding at ~7s; 1.0
+         OCR-key mentions per image; 12/20 coverage. Good for
+         non-chart screenshots, weaker for chart OCR. mmx is the
+         operator's preferred tool per
+         wiki/concepts/mmx-cli-full-multimodal-capability-surface.md
+         but the QA evidence shows OpenRouter is the better fit for
+         this specific domain.)
       4) Gemini API direct (the csf.visual.gemini_extract chain;
-         skipped in practice because keys are absent)
+         skipped in practice because keys are absent in this env)
     """
     from csf.visual import gemini_extract
     prompt = (
@@ -412,15 +481,14 @@ def vision_narrative(image_path: Path, *, print_timeout_s: str = "3m") -> dict:
         + SINGLE_IMAGE_PROMPT
     )
 
-    # 1) mmx first (operator preferred — fastest, structured, primary)
-    import os as _os
-    mmx_engine = _os.environ.get("YTIS_DHT_MMX", "on")
-    if mmx_engine != "off":
-        mmx_result = _vision_via_mmx(image_path, prompt)
-        if mmx_result.get("ok"):
-            return mmx_result
+    # 1) OpenRouter (proven best for chart OCR; the agy-first path used
+    #    to live here but the QA evidence flipped the order)
+    or_result = _vision_via_openrouter(image_path, prompt)
+    if or_result.get("ok"):
+        return or_result
 
     # 2) agy (legacy primary; same quality-gate pattern as gemini_extract)
+    import os as _os
     if _os.environ.get("YTIS_VISUAL_EXTRACT_ENGINE", "agy-first") == "agy-first":
         agy_result = gemini_extract.extract_via_agy(prompt, print_timeout_s=print_timeout_s)
         if agy_result.get("ok") and gemini_extract._agy_output_is_task(agy_result["markdown"]):
@@ -429,8 +497,9 @@ def vision_narrative(image_path: Path, *, print_timeout_s: str = "3m") -> dict:
                 "engine": "agy",
                 "markdown": gemini_extract.dedup_fenced_blocks(agy_result["markdown"]),
             }
-    # 2) API fallback (Gemini keys, same chain as gemini_extract)
-    import os as _os
+
+    # 3) Gemini API direct (csf.visual.gemini_extract chain; keys absent
+    #    in this env but kept for completeness)
     model = _os.environ.get("YTIS_VISUAL_MODEL", "gemini-2.5-flash")
     last_error = "no usable key"
     for client, key_name in gemini_extract.iter_clients():
@@ -459,60 +528,12 @@ def vision_narrative(image_path: Path, *, print_timeout_s: str = "3m") -> dict:
             last_error = f"{key_name}: {type(exc).__name__}: {str(exc)[:200]}"
             continue
 
-    # 3) OpenRouter fallback (works with image_url content parts). Sends the
-    #    image as a data URL so OpenRouter's vision-capable models can read it.
-    #    Model default: google/gemini-2.5-flash (matches the operator's primary).
-    #    Override with YTIS_VISUAL_OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
-    #    etc. for higher-quality chart interpretation at higher cost.
-    or_key = _os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if or_key:
-        try:
-            import base64 as _b64
-            import json as _json
-            import urllib.request as _ur
-            or_model = _os.environ.get("YTIS_VISUAL_OPENROUTER_MODEL",
-                                       "google/gemini-2.5-flash")
-            img_bytes = image_path.read_bytes()
-            b64 = _b64.b64encode(img_bytes).decode("ascii")
-            data_url = f"data:{_guess_mime(image_path)};base64,{b64}"
-            body = _json.dumps({
-                "model": or_model,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                }],
-                "max_tokens": 4000,
-            }).encode("utf-8")
-            req = _ur.Request(
-                "https://openrouter.ai/api/v1/chat/completions",
-                data=body,
-                headers={
-                    "Authorization": f"Bearer {or_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://yt-is.local/da02",
-                },
-            )
-            with _ur.urlopen(req, timeout=120) as resp:
-                payload = _json.loads(resp.read().decode("utf-8"))
-            choice = (payload.get("choices") or [{}])[0]
-            text = ((choice.get("message") or {}).get("content") or "").strip()
-            if text:
-                # Same quality gate as agy: real task output, not meta-text
-                if gemini_extract._agy_output_is_task(text):
-                    return {
-                        "ok": True,
-                        "engine": f"openrouter:{or_model}",
-                        "model": or_model,
-                        "markdown": gemini_extract.dedup_fenced_blocks(text),
-                    }
-                last_error = f"openrouter quality gate rejected ({or_model})"
-            else:
-                last_error = f"openrouter empty response ({or_model})"
-        except Exception as exc:
-            last_error = f"openrouter: {type(exc).__name__}: {str(exc)[:200]}"
+    # 4) mmx (general image understanding; weaker on chart OCR but
+    #    well-suited for non-chart screenshots). Operator's preferred
+    #    tool per wiki/concepts/mmx-cli-full-multimodal-capability-surface.md.
+    mmx_result = _vision_via_mmx(image_path, prompt)
+    if mmx_result.get("ok"):
+        return mmx_result
 
     return {"ok": False, "error": last_error}
 
