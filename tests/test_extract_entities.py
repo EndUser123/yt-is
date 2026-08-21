@@ -487,3 +487,37 @@ def test_refresh_counts_handles_fts_error_gracefully(ee, tmp_path):
     rows = sqlite3.connect(tmp_path / "catalog.sqlite").execute(
         "SELECT entity FROM entity_corpus").fetchall()
     assert rows == []
+
+
+def test_refresh_counts_fts_operator_chars_returns_zero_count(ee, tmp_path):
+    """An entity name containing FTS5 operator tokens (OR, AND, NOT, NEAR)
+    is wrapped in a phrase query, returning 0 matches. The entity is still
+    recorded in entity_corpus with chunk_count=0 (not silently skipped).
+    This is the FTS5-operator case, distinct from the FTS5-syntax-error
+    case covered by test_refresh_counts_handles_fts_error_gracefully.
+    """
+    _build_fts(tmp_path, rows=[
+        ("Node.js is great for server-side JavaScript", "ck1"),
+        ("TensorFlow competes with PyTorch", "ck2"),
+    ])
+    cat = _build_catalog(tmp_path, cluster_rows=[(1, "ai", 0)])
+    conn = sqlite3.connect(cat)
+    ee._ensure_tables(conn)
+    # Entity name with FTS5 operator tokens. FTS5 phrase search for
+    # "Node.js OR thing" matches only chunks containing that exact phrase
+    # (literal OR is part of the phrase, not a boolean operator).
+    conn.execute(
+        "INSERT INTO entities (entity, label, cluster_id, mentions, "
+        "extracted_at) VALUES (?, ?, ?, ?, ?)",
+        ("Node.js OR thing", "TECH", 1, 5, "2026-08-21T00:00:00Z"),
+    )
+    conn.commit()
+    n = ee.refresh_counts(conn)
+    conn.close()
+    # Entity IS recorded, with chunk_count=0 (not skipped).
+    assert n == 1
+    row = sqlite3.connect(tmp_path / "catalog.sqlite").execute(
+        "SELECT chunk_count FROM entity_corpus WHERE entity=?",
+        ("Node.js OR thing",),
+    ).fetchone()
+    assert row == (0,)
