@@ -117,6 +117,20 @@ _TEMPLATE = """<!DOCTYPE html>
   #pager { margin: 10px 0; display: flex; gap: 6px; align-items: center; }
   #stats { margin-top: 10px; font-size: 12px; color: var(--stat); }
   .changed { outline: 2px solid #e37400; }
+  #chancard {
+    position: fixed; z-index: 999; display: none;
+    max-width: 380px; padding: 10px 12px;
+    background: var(--input-bg); color: var(--input-fg);
+    border: 1px solid var(--sel-bg); border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+    font-size: 12.5px; line-height: 1.45; pointer-events: none;
+  }
+  #chancard img.thumb {
+    float: left; width: 88px; height: 88px; object-fit: cover;
+    border-radius: 10px; margin: 0 10px 4px 0; background: var(--filter-bg);
+  }
+  #chancard .url { color: var(--stat); font-size: 11px; word-break: break-all;
+                   display: block; margin-top: 6px; }
   tr.touched td { background: var(--touched-bg); }
   tr.touched td.name { background: var(--touched-bg); }  /* overrides Other tint */
   tr.touched td:first-child { box-shadow: inset 5px 0 0 #e37400; }  /* used-row bar */
@@ -199,6 +213,35 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 const BUILT_AT = __BUILT_AT__;
 const DATA = __DATA__;
+// ---- channel hover card: thumbnail + description, offset right of cursor
+const byUrl = new Map(DATA.map(r => [r.u, r]));
+const chanCard = document.createElement('div');
+chanCard.id = 'chancard';
+document.body.appendChild(chanCard);
+document.addEventListener('mouseover', e => {
+  const td = e.target.closest && e.target.closest('td.name[data-u]');
+  if (!td) { chanCard.style.display = 'none'; return; }
+  const row = byUrl.get(td.dataset.u);
+  if (!row) { chanCard.style.display = 'none'; return; }
+  const thumb = row.th
+    ? `<img class="thumb" src="${row.th}" alt="" onerror="this.style.display='none'">` : '';
+  chanCard.innerHTML = `${thumb}<div><strong>${row.t || row.u}</strong><br>` +
+    `${(row.d || 'No description.').replace(/</g, '&lt;')}</div>` +
+    `<span class="url">${row.u}</span>`;
+  chanCard.style.display = 'block';
+  // offset right of the cursor; clamp to viewport
+  const pad = 24, w = chanCard.offsetWidth, h = chanCard.offsetHeight;
+  let x = e.clientX + pad;
+  if (x + w > window.innerWidth - 8) x = Math.max(8, e.clientX - w - pad);
+  let y = e.clientY + 12;
+  if (y + h > window.innerHeight - 8) y = Math.max(8, window.innerHeight - h - 8);
+  chanCard.style.left = x + 'px';
+  chanCard.style.top = y + 'px';
+});
+document.addEventListener('mouseout', e => {
+  if (e.target.closest && e.target.closest('td.name[data-u]'))
+    chanCard.style.display = 'none';
+});
 const CATS = __CATS__;
 const INIT_BLOCKED = new Set(__BLOCKED__);
 const INIT_EXEMPT = new Set(__EXEMPT__);
@@ -489,7 +532,7 @@ function renderBody() {
     a.rel = 'noopener';
     a.textContent = row.t || row.u;
     td.appendChild(a);
-    td.title = (row.d || '') + ' — ' + row.u;
+    td.dataset.u = row.u;   // custom hover card key (see chanCard)
     tr.appendChild(td);
     // Per-column semantics: Shorts/Lists distinguish NULL ('…' = backfill
     // pending) from a real 0 (no such tab). Subs shows 0 only if measured.
@@ -558,21 +601,34 @@ function renderBody() {
       + (willBlock ? ' on' : '')
       + (!perChannelBlocked && willBlock ? ' viaexcluded' : '');
     bc.textContent = willBlock ? '✕' : '';
-    if (perChannelBlocked) {
+    if (perChannelBlocked && !catExcluded) {
       bc.title = 'Blocked specifically — click to unblock';
+    } else if (perChannelBlocked && catExcluded) {
+      bc.title = 'Blocked both specifically and via the '
+        + effectiveCategory(row) + ' exclusion — click to unblock and un-exclude';
     } else if (willBlock) {
       bc.title = 'Blocked via the ' + effectiveCategory(row)
-        + ' exclusion (dashed = inherited) — click ★ to keep this one channel';
+        + ' exclusion (dashed = inherited) — click to un-exclude this channel';
     } else {
-      bc.title = 'Toggle block for this channel';
+      bc.title = 'Click to block this channel from sync';
     }
     bc.onclick = () => {
-      if (!perChannelBlocked && catExcluded) {
-        // The only per-channel escape from a category exclusion is the
-        // star exception — clicking ✕ here grants it (what the user means).
-        exemptions[row.u] = !isExempt(row);
+      // The X is a one-way "un-red" toggle, not a state flipper:
+      //   red X (currently excluded)  -> click to un-exclude / unblock
+      //   empty X (not excluded)      -> click to block (per-channel)
+      // The star button is the per-channel exception toggle; the category
+      // chips at the top are the per-category toggle. The X never
+      // re-applies a block once cleared, so a confused second click
+      // can't accidentally re-exclude a channel the operator just freed.
+      if (willBlock) {
+        if (perChannelBlocked) {
+          blocked[row.u] = false;
+        }
+        if (catExcluded && !isExempt(row)) {
+          exemptions[row.u] = true;
+        }
       } else {
-        blocked[row.u] = !isBlocked(row);
+        blocked[row.u] = true;
       }
       saveLocal(); renderBody(); renderPageInfo();
     };
@@ -842,7 +898,7 @@ def build_page(db_path: Path, output: Path, excluded: list[str]) -> dict[str, ob
     rows = conn.execute(
         "SELECT channel_url, channel_title, description, category, "
         "subscriber_count, video_count_estimate, shorts_count, playlists_count, "
-        "channel_status "
+        "channel_status, thumbnail_url "
         "FROM channel_metadata"
     ).fetchall()
     blocked = {
@@ -873,6 +929,7 @@ def build_page(db_path: Path, output: Path, excluded: list[str]) -> dict[str, ob
             "sh": r[6],
             "pl": r[7],
             "dead": r[8],
+            "th": r[9] or "",
         }
         for r in rows
     ]
