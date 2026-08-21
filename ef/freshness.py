@@ -264,7 +264,7 @@ def incremental_update(batch_limit: int = 2000) -> dict:
 
 def models_ids(chunk_ids: list[str]):
     from qdrant_client import models
-    return models.PointsIdsList(points=[ps.point_id(c) for c in chunk_ids])
+    return models.PointIdsList(points=[ps.point_id(c) for c in chunk_ids])
 
 
 def _eu_missing_from_authority(eu_id: str) -> bool:
