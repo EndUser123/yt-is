@@ -22,6 +22,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
@@ -32,6 +33,26 @@ PID_FILE = REPO / ".data" / "yt-is" / "ef" / "query-service.pid"
 
 _query_instance = None
 _query_lock = threading.Lock()
+
+
+def serialize_result(result) -> dict:
+    """Serialize the existing EvidenceResult without dropping reopen data."""
+    return {
+        "chunk_id": result.chunk_id,
+        "eu_id": result.eu_id,
+        "video_id": result.video_id,
+        "title": result.title,
+        "channel_id": result.channel_id,
+        "channel_title": result.channel_title,
+        "snippet": result.snippet,
+        "score": result.score,
+        "retrieval_paths": list(result.retrieval_paths),
+        "start_char": result.start_char,
+        "end_char": result.end_char,
+        "url": result.url,
+    }
+
+
 
 
 def get_query():
@@ -84,18 +105,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._text(200, "\n".join(lines))
                 else:
                     self._json(200, {
-                        "results": [
-                            {
-                                "chunk_id": r.chunk_id,
-                                "video_id": r.video_id,
-                                "title": r.title,
-                                "snippet": r.snippet,
-                                "score": r.score,
-                                "retrieval_paths": r.retrieval_paths,
-                                "url": f"https://youtu.be/{r.video_id}",
-                            }
-                            for r in results
-                        ]
+                        "results": [serialize_result(r) for r in results]
                     })
             except Exception as e:
                 self._json(500, {"error": str(e)[:200]})
