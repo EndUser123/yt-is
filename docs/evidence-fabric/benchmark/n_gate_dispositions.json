@@ -1,0 +1,1227 @@
+[
+ {
+  "claim_id": "K00",
+  "candidate_id": "C00-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on traditional object-oriented refactoring to design patterns in C# rather than agent architecture patterns."
+ },
+ {
+  "claim_id": "K00",
+  "candidate_id": "C00-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general Extreme Programming and Agile software engineering practices without touching agent design patterns."
+ },
+ {
+  "claim_id": "K00",
+  "candidate_id": "C00-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Introductory tutorial on Claude UI features, connectors, and generic skills without addressing wiki design patterns."
+ },
+ {
+  "claim_id": "K00",
+  "candidate_id": "C00-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Compares object-oriented Strategy patterns to functional programming delegates in C#."
+ },
+ {
+  "claim_id": "K00",
+  "candidate_id": "C00-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Walkthrough of Cursor plan mode setup and account subscription management without conceptual analysis."
+ },
+ {
+  "claim_id": "K00",
+  "claim_action": "no_change_confirmed",
+  "action_rationale": "None of the candidates provide material evidence regarding the 9 wiki design pattern concepts, leaving the claim unchanged."
+ },
+ {
+  "claim_id": "K01",
+  "candidate_id": "C01-0",
+  "disposition": "supports",
+  "reason": "Substantiates persistent memory architecture patterns for AI agents moving beyond naive context windows to multi-layered storage."
+ },
+ {
+  "claim_id": "K01",
+  "candidate_id": "C01-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "High-level overview of LLM agent fundamentals with only passing mention of memory in the table of contents."
+ },
+ {
+  "claim_id": "K01",
+  "candidate_id": "C01-2",
+  "disposition": "supports",
+  "reason": "Presents academic research on recurrent external memory consolidation architectures for long-running LLM agents."
+ },
+ {
+  "claim_id": "K01",
+  "candidate_id": "C01-3",
+  "disposition": "supports",
+  "reason": "Documents Anthropic's managed agent memory architecture utilizing text files mounted at /mnt/memory for persistence."
+ },
+ {
+  "claim_id": "K01",
+  "candidate_id": "C01-1",
+  "disposition": "supports",
+  "reason": "Describes the OmniMemory architecture exploration for autonomous multimodal agent memory systems across storage and retrieval."
+ },
+ {
+  "claim_id": "K01",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Multiple candidates provide concrete architecture patterns and production implementations that substantiate and enrich the memory survey."
+ },
+ {
+  "claim_id": "K02",
+  "candidate_id": "C02-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses Claude Code remote control tunneling rather than Grok MCP configuration."
+ },
+ {
+  "claim_id": "K02",
+  "candidate_id": "C02-2",
+  "disposition": "supports",
+  "reason": "Substantiates how remote MCP servers operate over HTTP streaming/SSE transport protocols rather than stdio."
+ },
+ {
+  "claim_id": "K02",
+  "candidate_id": "C02-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Shows local FastMCP server creation with Python decorators without addressing multi-terminal Grok infrastructure."
+ },
+ {
+  "claim_id": "K02",
+  "candidate_id": "C02-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on n8n automation workflows connecting to MCP servers without Grok-specific configuration details."
+ },
+ {
+  "claim_id": "K02",
+  "candidate_id": "C02-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Details Claude Code settings.json configuration rather than Grok's native url configuration format."
+ },
+ {
+  "claim_id": "K02",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidate C02-2 substantiates the HTTP streaming transport mechanism underpinning shared remote MCP server infrastructure."
+ },
+ {
+  "claim_id": "K03",
+  "candidate_id": "C03-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses the DRY principle from Pragmatic Programmer regarding code duplication rather than prompt engineering dynamics."
+ },
+ {
+  "claim_id": "K03",
+  "candidate_id": "C03-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Generic motivational commentary on applied knowledge with no relation to AI prompt engineering or rule encoding."
+ },
+ {
+  "claim_id": "K03",
+  "candidate_id": "C03-3",
+  "disposition": "supports",
+  "reason": "Substantiates how senior engineering tacit knowledge is packaged into explicit agent skills to prevent unverified code generation."
+ },
+ {
+  "claim_id": "K03",
+  "candidate_id": "C03-0",
+  "disposition": "supports",
+  "reason": "Discusses the challenge of capturing human tacit knowledge in AI agents versus explicit rules."
+ },
+ {
+  "claim_id": "K03",
+  "candidate_id": "C03-4",
+  "disposition": "supports",
+  "reason": "Substantiates that understanding requires examples and non-examples rather than dictionary-like definitions alone."
+ },
+ {
+  "claim_id": "K03",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Multiple candidate sources provide empirical and theoretical backing for encoding tacit knowledge through examples and skills."
+ },
+ {
+  "claim_id": "K04",
+  "candidate_id": "C04-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Demonstrates an autonomous Cursor build session without discussing mechanical session wait gates or proxies."
+ },
+ {
+  "claim_id": "K04",
+  "candidate_id": "C04-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers GPT model launch and government security reviews with no bearing on session completion gating."
+ },
+ {
+  "claim_id": "K04",
+  "candidate_id": "C04-4",
+  "disposition": "qualifies",
+  "reason": "Demonstrates that parallel Claude sessions use isolated git worktrees rather than blocking on serial session completion gates."
+ },
+ {
+  "claim_id": "K04",
+  "candidate_id": "C04-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Compares memory models in OpenHuman and Hermes agents without addressing session synchronization gates."
+ },
+ {
+  "claim_id": "K04",
+  "candidate_id": "C04-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Compares OpenClaw and Hermes architectures without touching on session gating or tree proxies."
+ },
+ {
+  "claim_id": "K04",
+  "claim_action": "qualify_claim",
+  "action_rationale": "Candidate C04-4 introduces git worktree isolation as a boundary condition where parallel sessions circumvent mechanical wait gates."
+ },
+ {
+  "claim_id": "K05",
+  "candidate_id": "C05-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on GLM 5V Turbo vision capabilities and pricing rather than Z.ai Coding Plan streaming header routing."
+ },
+ {
+  "claim_id": "K05",
+  "candidate_id": "C05-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general API streaming performance without Z.ai GLM-specific routing documentation."
+ },
+ {
+  "claim_id": "K05",
+  "candidate_id": "C05-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers general agent architecture without reference to GLM model plan routing headers."
+ },
+ {
+  "claim_id": "K05",
+  "candidate_id": "C05-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses prompt engineering techniques rather than Z.ai routing configurations."
+ },
+ {
+  "claim_id": "K05",
+  "candidate_id": "C05-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers general LLM benchmark comparisons without mentioning GLM streaming payload requirements."
+ },
+ {
+  "claim_id": "K05",
+  "claim_action": "no_change_confirmed",
+  "action_rationale": "No candidate provides specific evidence on Z.ai streaming header routing, so the claim remains unchanged."
+ },
+ {
+  "claim_id": "K06",
+  "candidate_id": "C06-0",
+  "disposition": "supports",
+  "reason": "Substantiates that direct CLI calls avoid upfront schema overhead and context burning compared to MCP servers."
+ },
+ {
+  "claim_id": "K06",
+  "candidate_id": "C06-1",
+  "disposition": "supports",
+  "reason": "Describes Gemini CLI subagent architecture where isolated subagents execute CLI tools without polluting main session context."
+ },
+ {
+  "claim_id": "K06",
+  "candidate_id": "C06-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses Anthropic token limits and Mac Remote tunneling without comparing CLI versus MCP subagent ergonomics."
+ },
+ {
+  "claim_id": "K06",
+  "candidate_id": "C06-2",
+  "disposition": "qualifies",
+  "reason": "Argues that MCP structured schemas provide discoverability and reliability advantages over raw programmatic interfaces in web contexts."
+ },
+ {
+  "claim_id": "K06",
+  "candidate_id": "C06-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers general agent tooling without direct comparison between CLI and MCP surfaces for spawned subagents."
+ },
+ {
+  "claim_id": "K06",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates C06-0 and C06-1 provide strong architectural backing for CLI-first ergonomics in subagent dispatch."
+ },
+ {
+  "claim_id": "K07",
+  "candidate_id": "C07-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general terminal multiplexing without specific evidence for Windows Terminal multi-session Grok management."
+ },
+ {
+  "claim_id": "K07",
+  "candidate_id": "C07-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers basic command-line navigation and scripting without touching multi-agent terminal workflows."
+ },
+ {
+  "claim_id": "K07",
+  "candidate_id": "C07-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general developer tooling setups on Windows without Grok multi-terminal session details."
+ },
+ {
+  "claim_id": "K07",
+  "candidate_id": "C07-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on IDE terminal integration rather than standalone Windows Terminal session management."
+ },
+ {
+  "claim_id": "K07",
+  "candidate_id": "C07-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers unrelated cloud deployment workflows."
+ },
+ {
+  "claim_id": "K07",
+  "claim_action": "no_change_confirmed",
+  "action_rationale": "None of the candidates provide concrete receipts regarding Windows Terminal multi-session Grok orchestration."
+ },
+ {
+  "claim_id": "K08",
+  "candidate_id": "C08-4",
+  "disposition": "supports",
+  "reason": "Substantiates that human reference answers and documented assumptions often fail, requiring empirical failure analysis."
+ },
+ {
+  "claim_id": "K08",
+  "candidate_id": "C08-1",
+  "disposition": "supports",
+  "reason": "Explains that LLMs lack physical embodiment and confabulate plausible-sounding responses when unanchored by empirical tests."
+ },
+ {
+  "claim_id": "K08",
+  "candidate_id": "C08-0",
+  "disposition": "supports",
+  "reason": "Emphasizes the necessity of automated benchmarks and tests to verify LLM behavior rather than relying on design assumptions."
+ },
+ {
+  "claim_id": "K08",
+  "candidate_id": "C08-3",
+  "disposition": "supports",
+  "reason": "Argues that LLMs make plans that require hybrid validation constraints rather than trusting unverified model outputs."
+ },
+ {
+  "claim_id": "K08",
+  "candidate_id": "C08-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Reviews GLM 5V Turbo capabilities without discussing testing methodology for undocumented LLM behavior."
+ },
+ {
+  "claim_id": "K08",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Multiple sources support the principle that documented LLM behavior must be empirically tested to avoid hallucination and design failure."
+ },
+ {
+  "claim_id": "K09",
+  "candidate_id": "C09-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses Microsoft and Atlassian AI teammates and micro-agents with no mention of ripgrep file discovery."
+ },
+ {
+  "claim_id": "K09",
+  "candidate_id": "C09-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Explains NotebookLM preprocessing workflows with no relevance to grep or hidden directory traversal."
+ },
+ {
+  "claim_id": "K09",
+  "candidate_id": "C09-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers Docker directory setup and command execution without discussing ripgrep or hidden file skipping."
+ },
+ {
+  "claim_id": "K09",
+  "candidate_id": "C09-0",
+  "disposition": "supports",
+  "reason": "Substantiates that dot-prefixed folders are hidden by default in file systems and require explicit handling to explore."
+ },
+ {
+  "claim_id": "K09",
+  "candidate_id": "C09-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on unrelated web search scraping workflows without touching ripgrep defaults."
+ },
+ {
+  "claim_id": "K09",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidate C09-0 provides supporting context on hidden dot-directory behavior in agent tool environments."
+ },
+ {
+  "claim_id": "K10",
+  "candidate_id": "C10-0",
+  "disposition": "supports",
+  "reason": "Highlights the necessity of programmatic hooks and automated test gates before allowing agent operations to complete."
+ },
+ {
+  "claim_id": "K10",
+  "candidate_id": "C10-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers generic unit testing without discussing hook-enforced verification coverage rules."
+ },
+ {
+  "claim_id": "K10",
+  "candidate_id": "C10-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general software architecture and code quality metrics without hook gating context."
+ },
+ {
+  "claim_id": "K10",
+  "candidate_id": "C10-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Explains CI/CD pipeline automation without addressing local agent Stop hooks."
+ },
+ {
+  "claim_id": "K10",
+  "candidate_id": "C10-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers prompt engineering tips for coding agents without touching verification hooks."
+ },
+ {
+  "claim_id": "K10",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidate C10-0 substantiates the role of validation hooks in enforcing test coverage before agent completion."
+ },
+ {
+  "claim_id": "K11",
+  "candidate_id": "C11-0",
+  "disposition": "supports",
+  "reason": "Substantiates multi-agent orchestration architecture separating high-level coordination from specialized task workers."
+ },
+ {
+  "claim_id": "K11",
+  "candidate_id": "C11-1",
+  "disposition": "supports",
+  "reason": "Details structured multi-agent runtime frameworks coordinating tasks and validating execution across specialized roles."
+ },
+ {
+  "claim_id": "K11",
+  "candidate_id": "C11-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on single-agent prompt formatting without multi-role orchestrator/validator mechanics."
+ },
+ {
+  "claim_id": "K11",
+  "candidate_id": "C11-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses LLM latency optimization without addressing multi-agent architectural roles."
+ },
+ {
+  "claim_id": "K11",
+  "candidate_id": "C11-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers general API integration patterns rather than orchestrator-worker-validator implementations."
+ },
+ {
+  "claim_id": "K11",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates C11-0 and C11-1 provide structural evidence for multi-agent role separation across orchestrators and workers."
+ },
+ {
+  "claim_id": "K12",
+  "candidate_id": "C12-0",
+  "disposition": "supports",
+  "reason": "Emphasizes root-cause failure analysis over surface-level symptoms when debugging AI behavior."
+ },
+ {
+  "claim_id": "K12",
+  "candidate_id": "C12-1",
+  "disposition": "supports",
+  "reason": "Substantiates that models confabulate under uncertainty and require structural grounding rather than prompt tweaks."
+ },
+ {
+  "claim_id": "K12",
+  "candidate_id": "C12-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Generic discussion of debugging tools without addressing agent fabrication failure patterns."
+ },
+ {
+  "claim_id": "K12",
+  "candidate_id": "C12-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers frontend web development without relevance to failure pattern analysis."
+ },
+ {
+  "claim_id": "K12",
+  "candidate_id": "C12-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses database indexing strategies with no connection to agent uncertainty modeling."
+ },
+ {
+  "claim_id": "K12",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates C12-0 and C12-1 corroborate the necessity of structural root-cause analysis when models fabricate under uncertainty."
+ },
+ {
+  "claim_id": "K13",
+  "candidate_id": "C13-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general MCP tool calling without specific evidence for pi agent version 0.84.2 middleware."
+ },
+ {
+  "claim_id": "K13",
+  "candidate_id": "C13-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers Python async execution without referencing the pi coding agent architecture."
+ },
+ {
+  "claim_id": "K13",
+  "candidate_id": "C13-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses Claude Code tool middleware without details on pi coding agent v0.84.2."
+ },
+ {
+  "claim_id": "K13",
+  "candidate_id": "C13-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers generic agent runtime loops without specific version or middleware receipts for pi."
+ },
+ {
+  "claim_id": "K13",
+  "candidate_id": "C13-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses web scraping tools without mentioning pi extension architecture."
+ },
+ {
+  "claim_id": "K13",
+  "claim_action": "no_change_confirmed",
+  "action_rationale": "No candidate provides specific evidence regarding pi coding agent v0.84.2 middleware, so the claim stands as-is."
+ },
+ {
+  "claim_id": "K14",
+  "candidate_id": "C14-3",
+  "disposition": "supports",
+  "reason": "Demonstrates SKILL.md structure with YAML description and instructions loaded dynamically into Gemini CLI."
+ },
+ {
+  "claim_id": "K14",
+  "candidate_id": "C14-2",
+  "disposition": "supports",
+  "reason": "Substantiates portable engineering skills packaged across Claude Code, Cursor, Gemini CLI, and other agents."
+ },
+ {
+  "claim_id": "K14",
+  "candidate_id": "C14-0",
+  "disposition": "supports",
+  "reason": "Documents SKILL.md becoming an open standard adopted across 32+ agent vendors and under the Agentic AI Foundation."
+ },
+ {
+  "claim_id": "K14",
+  "candidate_id": "C14-1",
+  "disposition": "supports",
+  "reason": "Confirms agent skills as an open format using SKILL.md with progressive disclosure across multiple clients."
+ },
+ {
+  "claim_id": "K14",
+  "candidate_id": "C14-4",
+  "disposition": "supports",
+  "reason": "Substantiates the multi-vendor adoption of the open SKILL.md standard across coding agent ecosystems."
+ },
+ {
+  "claim_id": "K14",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates provide overwhelming empirical evidence substantiating the cross-vendor adoption and specification of SKILL.md."
+ },
+ {
+  "claim_id": "K15",
+  "candidate_id": "C15-0",
+  "disposition": "supports",
+  "reason": "Reviews automated test suite generation and mutation testing tools leveraging LLMs."
+ },
+ {
+  "claim_id": "K15",
+  "candidate_id": "C15-1",
+  "disposition": "supports",
+  "reason": "Analyzes the effectiveness and edge cases of AI-generated unit tests compared to human-written suites."
+ },
+ {
+  "claim_id": "K15",
+  "candidate_id": "C15-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses UI design tools without covering automated test generation methodologies."
+ },
+ {
+  "claim_id": "K15",
+  "candidate_id": "C15-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers general code completion benchmarks without focusing on test generation taxonomy."
+ },
+ {
+  "claim_id": "K15",
+  "candidate_id": "C15-4",
+  "disposition": "supports",
+  "reason": "Explores LLM-driven property-based testing and automated verification workflows."
+ },
+ {
+  "claim_id": "K15",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates provide substantial research findings and taxonomy support for AI-driven automated test generation."
+ },
+ {
+  "claim_id": "K16",
+  "candidate_id": "C16-0",
+  "disposition": "supports",
+  "reason": "Substantiates using steering specifications and CLAUDE.md guidelines to govern agent software development lifecycles."
+ },
+ {
+  "claim_id": "K16",
+  "candidate_id": "C16-1",
+  "disposition": "supports",
+  "reason": "Emphasizes spec-driven development and living steering documents as contracts for autonomous coding agents."
+ },
+ {
+  "claim_id": "K16",
+  "candidate_id": "C16-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general API documentation formatting without agent steering architecture context."
+ },
+ {
+  "claim_id": "K16",
+  "candidate_id": "C16-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers basic prompt templates without continuous steering document integration."
+ },
+ {
+  "claim_id": "K16",
+  "candidate_id": "C16-4",
+  "disposition": "supports",
+  "reason": "Details how continuous context steering prevents agent drift and misaligned code generation."
+ },
+ {
+  "claim_id": "K16",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates strongly substantiate the use of steering documents and continuous constraints in agent workflows."
+ },
+ {
+  "claim_id": "K17",
+  "candidate_id": "C17-0",
+  "disposition": "supports",
+  "reason": "Defines guardrail frameworks and configurable deterministic filters for LLM tool use and security."
+ },
+ {
+  "claim_id": "K17",
+  "candidate_id": "C17-1",
+  "disposition": "supports",
+  "reason": "Demonstrates pre-tool and post-tool guardrails preventing dangerous commands and unauthorized system access."
+ },
+ {
+  "claim_id": "K17",
+  "candidate_id": "C17-2",
+  "disposition": "supports",
+  "reason": "Substantiates the necessity of hybrid deterministic guardrails combined with LLM planning."
+ },
+ {
+  "claim_id": "K17",
+  "candidate_id": "C17-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses cloud hosting pricing without covering guardrail mechanisms."
+ },
+ {
+  "claim_id": "K17",
+  "candidate_id": "C17-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on general vector search benchmarks without addressing behavioral constraints."
+ },
+ {
+  "claim_id": "K17",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates provide concrete architectural definitions and implementations of configurable AI guardrails."
+ },
+ {
+  "claim_id": "K18",
+  "candidate_id": "C18-0",
+  "disposition": "supports",
+  "reason": "Evaluates cost-effective open-source and low-cost alternative models matching frontier coding performance."
+ },
+ {
+  "claim_id": "K18",
+  "candidate_id": "C18-1",
+  "disposition": "supports",
+  "reason": "Compares GLM and DeepSeek pricing models as viable budget replacements for expensive frontier models in agent loops."
+ },
+ {
+  "claim_id": "K18",
+  "candidate_id": "C18-2",
+  "disposition": "supports",
+  "reason": "Outlines tiering strategies delegating subtasks to lightweight models to reduce API expenditures."
+ },
+ {
+  "claim_id": "K18",
+  "candidate_id": "C18-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses personal hardware setups without model replacement strategies or cost comparisons."
+ },
+ {
+  "claim_id": "K18",
+  "candidate_id": "C18-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers high-level AI ethics without practical model substitution techniques."
+ },
+ {
+  "claim_id": "K18",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Multiple candidates substantiate pragmatic model substitution and tiered routing strategies to cut inference costs."
+ },
+ {
+  "claim_id": "K19",
+  "candidate_id": "C19-3",
+  "disposition": "supports",
+  "reason": "Discusses emerging open-source agent frameworks standardizing abstract architecture slots and tool execution."
+ },
+ {
+  "claim_id": "K19",
+  "candidate_id": "C19-0",
+  "disposition": "supports",
+  "reason": "Highlights open-source modular frameworks like Fabric turning prompts and workflows into reusable system components."
+ },
+ {
+  "claim_id": "K19",
+  "candidate_id": "C19-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "General discussion of open-source AI licensing and model sharing without framework dynamic tooling focus."
+ },
+ {
+  "claim_id": "K19",
+  "candidate_id": "C19-2",
+  "disposition": "supports",
+  "reason": "Covers trending open-source frameworks coordinating multi-agent runtimes, routing, and tool integrations."
+ },
+ {
+  "claim_id": "K19",
+  "candidate_id": "C19-1",
+  "disposition": "supports",
+  "reason": "Examines BeeAI open-source framework's tool lifecycle, decorator patterns, and dynamic execution."
+ },
+ {
+  "claim_id": "K19",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Multiple candidate frameworks demonstrate the rapid adoption of modular open-source runtimes for dynamic agent tools."
+ },
+ {
+  "claim_id": "K20",
+  "candidate_id": "C20-0",
+  "disposition": "supports",
+  "reason": "Substantiates automatic skill graph generation and edge routing across modular agent capabilities."
+ },
+ {
+  "claim_id": "K20",
+  "candidate_id": "C20-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general graph databases without workspace skill dependency mapping."
+ },
+ {
+  "claim_id": "K20",
+  "candidate_id": "C20-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers basic file directory trees without skill dependency semantics."
+ },
+ {
+  "claim_id": "K20",
+  "candidate_id": "C20-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on network topology monitoring rather than agent skill dependency graphs."
+ },
+ {
+  "claim_id": "K20",
+  "candidate_id": "C20-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers generic markdown documentation rendering without graph extraction details."
+ },
+ {
+  "claim_id": "K20",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidate C20-0 provides relevant architectural support for auto-generating skill dependency graphs."
+ },
+ {
+  "claim_id": "K21",
+  "candidate_id": "C21-0",
+  "disposition": "supports",
+  "reason": "Confirms git's boundary isolation where parent git trees treat nested git repositories as gitlinks/submodules rather than inspecting internal files."
+ },
+ {
+  "claim_id": "K21",
+  "candidate_id": "C21-1",
+  "disposition": "supports",
+  "reason": "Explains git submodule and nested repository isolation mechanisms preventing parent tree file visibility."
+ },
+ {
+  "claim_id": "K21",
+  "candidate_id": "C21-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses basic git commit workflows without addressing nested repository structural boundaries."
+ },
+ {
+  "claim_id": "K21",
+  "candidate_id": "C21-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers git merge conflict resolution without nested repository boundary analysis."
+ },
+ {
+  "claim_id": "K21",
+  "candidate_id": "C21-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on GitHub branch protection rules rather than local git repository tree structure."
+ },
+ {
+  "claim_id": "K21",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates confirm the structural isolation of git trees when encountering nested repository directories."
+ },
+ {
+  "claim_id": "K22",
+  "candidate_id": "C22-0",
+  "disposition": "supports",
+  "reason": "Examines narrative coherence and sufficiency illusions across decision-making disciplines."
+ },
+ {
+  "claim_id": "K22",
+  "candidate_id": "C22-1",
+  "disposition": "supports",
+  "reason": "Explores how plausible narrative explanations mask underlying verification gaps across domain contexts."
+ },
+ {
+  "claim_id": "K22",
+  "candidate_id": "C22-4",
+  "disposition": "supports",
+  "reason": "Discusses cognitive shortcuts where narrative plausibility is erroneously substituted for empirical evidence."
+ },
+ {
+  "claim_id": "K22",
+  "candidate_id": "C22-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers general software career development without addressing narrative-sufficiency concepts."
+ },
+ {
+  "claim_id": "K22",
+  "candidate_id": "C22-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses basic unit test assertion syntax without cross-domain cognitive pattern analysis."
+ },
+ {
+  "claim_id": "K22",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates provide cross-disciplinary evidence substantiating the narrative-sufficiency fallacy across fields."
+ },
+ {
+  "claim_id": "K23",
+  "candidate_id": "C23-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers C# OOP refactoring patterns without addressing operator feature adoption psychology."
+ },
+ {
+  "claim_id": "K23",
+  "candidate_id": "C23-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses cloud architecture patterns without operator behavior distinction."
+ },
+ {
+  "claim_id": "K23",
+  "candidate_id": "C23-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers AI podcast marketing without touching feature non-use diagnostic principles."
+ },
+ {
+  "claim_id": "K23",
+  "candidate_id": "C23-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Focuses on programming language features rather than user feedback categorization."
+ },
+ {
+  "claim_id": "K23",
+  "candidate_id": "C23-3",
+  "disposition": "supports",
+  "reason": "Analyzes software user adoption signals, distinguishing intentional rejection from feature discoverability friction."
+ },
+ {
+  "claim_id": "K23",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidate C23-3 substantiates the distinction between feature rejection and friction-induced non-use."
+ },
+ {
+  "claim_id": "K24",
+  "candidate_id": "C24-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general git commit operations without git-filter-repo graph divergence analysis."
+ },
+ {
+  "claim_id": "K24",
+  "candidate_id": "C24-2",
+  "disposition": "qualifies",
+  "reason": "Explains git merge base calculation and branch history evolution during merges and rebases."
+ },
+ {
+  "claim_id": "K24",
+  "candidate_id": "C24-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "A science fiction story about memory rewriting with no connection to git history rewriting."
+ },
+ {
+  "claim_id": "K24",
+  "candidate_id": "C24-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses PostgreSQL WAL archiving and pgbackrest configuration."
+ },
+ {
+  "claim_id": "K24",
+  "candidate_id": "C24-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Explains BigQuery ML vector embeddings and semantic search retrieval."
+ },
+ {
+  "claim_id": "K24",
+  "claim_action": "no_change_confirmed",
+  "action_rationale": "Candidates do not refute or materially alter the git-filter-repo graph ancestry breakdown claim."
+ },
+ {
+  "claim_id": "K25",
+  "candidate_id": "C25-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses agent setup and UI without addressing atomic file replacement or caching mechanics."
+ },
+ {
+  "claim_id": "K25",
+  "candidate_id": "C25-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers basic Python file handling without atomic rename or concurrency locking patterns."
+ },
+ {
+  "claim_id": "K25",
+  "candidate_id": "C25-4",
+  "disposition": "supports",
+  "reason": "Details atomic write-and-rename patterns and file locking strategies to prevent race conditions during cache updates."
+ },
+ {
+  "claim_id": "K25",
+  "candidate_id": "C25-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses cloud storage APIs without local atomic cache replacement details."
+ },
+ {
+  "claim_id": "K25",
+  "candidate_id": "C25-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers consumer hardware tech reviews with no relevance to file caching patterns."
+ },
+ {
+  "claim_id": "K25",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidate C25-4 substantiates the file locking and atomic replace cache design pattern."
+ },
+ {
+  "claim_id": "K26",
+  "candidate_id": "C26-4",
+  "disposition": "supports",
+  "reason": "Distinguishes superficial code path execution from mutation-resilient assertions that fail upon semantic breakage."
+ },
+ {
+  "claim_id": "K26",
+  "candidate_id": "C26-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses algorithmic trading strategy backtesting rather than software unit testing semantics."
+ },
+ {
+  "claim_id": "K26",
+  "candidate_id": "C26-1",
+  "disposition": "supports",
+  "reason": "Argues that assertions must verify meaningful domain outcomes rather than asserting trivially on execution paths."
+ },
+ {
+  "claim_id": "K26",
+  "candidate_id": "C26-2",
+  "disposition": "supports",
+  "reason": "Demonstrates why 100% line coverage can still miss critical regressions if assertions lack semantic depth."
+ },
+ {
+  "claim_id": "K26",
+  "candidate_id": "C26-0",
+  "disposition": "supports",
+  "reason": "Emphasizes that effective testing requires falsifiable assertions tied to behavioral specifications."
+ },
+ {
+  "claim_id": "K26",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Multiple candidates provide comprehensive arguments distinguishing superficial code coverage from robust behavioral assertions."
+ },
+ {
+  "claim_id": "K27",
+  "candidate_id": "C27-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers general AI model updates without Grok Build TUI session resumption findings."
+ },
+ {
+  "claim_id": "K27",
+  "candidate_id": "C27-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses blockchain AI garage experiments with no connection to Grok TUI state transitions."
+ },
+ {
+  "claim_id": "K27",
+  "candidate_id": "C27-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers options trading strategies with zero relevance to terminal agent session state."
+ },
+ {
+  "claim_id": "K27",
+  "candidate_id": "C27-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "News segment on tech markets without technical Grok TUI lifecycle evidence."
+ },
+ {
+  "claim_id": "K27",
+  "candidate_id": "C27-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general LLM context windows without Grok model-config concurrency details."
+ },
+ {
+  "claim_id": "K27",
+  "claim_action": "no_change_confirmed",
+  "action_rationale": "None of the external candidates touch on the empirical Grok Build TUI session race condition, so the claim stands as-is."
+ },
+ {
+  "claim_id": "K28",
+  "candidate_id": "C28-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "General podcast on AI industry trends without DeepSeek regional routing details."
+ },
+ {
+  "claim_id": "K28",
+  "candidate_id": "C28-2",
+  "disposition": "supports",
+  "reason": "Documents DeepSeek hosting geography constraints and regional access requirements for international users."
+ },
+ {
+  "claim_id": "K28",
+  "candidate_id": "C28-0",
+  "disposition": "supports",
+  "reason": "Discusses DeepSeek API region restrictions and required opt-ins for specific model endpoints."
+ },
+ {
+  "claim_id": "K28",
+  "candidate_id": "C28-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "SEO-focused AI overview without technical error code receipts."
+ },
+ {
+  "claim_id": "K28",
+  "candidate_id": "C28-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Code tutorial on DeepSeek API integration without handling the 403 RegionError."
+ },
+ {
+  "claim_id": "K28",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates C28-2 and C28-0 substantiate regional hosting restrictions and opt-in policies for DeepSeek endpoints."
+ },
+ {
+  "claim_id": "K29",
+  "candidate_id": "C29-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers web scraping techniques without addressing agent conversational closure bias."
+ },
+ {
+  "claim_id": "K29",
+  "candidate_id": "C29-4",
+  "disposition": "supports",
+  "reason": "Explains how AI defaults to static survey question dumps rather than committing to adaptive, in-depth back-and-forth reasoning."
+ },
+ {
+  "claim_id": "K29",
+  "candidate_id": "C29-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses session reset timeouts and context compression settings in Hermes agent."
+ },
+ {
+  "claim_id": "K29",
+  "candidate_id": "C29-3",
+  "disposition": "qualifies",
+  "reason": "Shows that framing conversations toward collaborative pressure-testing rather than premature closure yields superior outcomes."
+ },
+ {
+  "claim_id": "K29",
+  "candidate_id": "C29-0",
+  "disposition": "supports",
+  "reason": "Substantiates that teams and agents often rush to narrow problems prematurely instead of rigorously exploring design ideas."
+ },
+ {
+  "claim_id": "K29",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates support the behavioral pattern where conversational shortcuts undermine thorough solution exploration."
+ },
+ {
+  "claim_id": "K30",
+  "candidate_id": "C30-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses general CLI productivity shortcuts without Grok hook runner env var pre-validation."
+ },
+ {
+  "claim_id": "K30",
+  "candidate_id": "C30-2",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers FastMCP tools on Google Cloud without hook execution details."
+ },
+ {
+  "claim_id": "K30",
+  "candidate_id": "C30-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers terminal customization without touching Grok process spawn validation."
+ },
+ {
+  "claim_id": "K30",
+  "candidate_id": "C30-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "General coding video without hook runner environment variable receipts."
+ },
+ {
+  "claim_id": "K30",
+  "candidate_id": "C30-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses Claude Code remote control without Grok hook lifecycle validation."
+ },
+ {
+  "claim_id": "K30",
+  "claim_action": "no_change_confirmed",
+  "action_rationale": "No candidate addresses Grok hook runner environment variable pre-validation, leaving the claim unchanged."
+ },
+ {
+  "claim_id": "K31",
+  "candidate_id": "C31-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses database embeddings without touching parallel agent session management."
+ },
+ {
+  "claim_id": "K31",
+  "candidate_id": "C31-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Duplicate candidate on cloud embeddings without multi-agent session orchestration."
+ },
+ {
+  "claim_id": "K31",
+  "candidate_id": "C31-2",
+  "disposition": "supports",
+  "reason": "Documents parallel agent execution patterns and session coordination across concurrent terminal instances."
+ },
+ {
+  "claim_id": "K31",
+  "candidate_id": "C31-0",
+  "disposition": "supports",
+  "reason": "Substantiates running multiple autonomous coding sessions concurrently to increase development throughput."
+ },
+ {
+  "claim_id": "K31",
+  "candidate_id": "C31-4",
+  "disposition": "supports",
+  "reason": "Describes practical workflows and concurrency boundaries when managing parallel AI agent sessions."
+ },
+ {
+  "claim_id": "K31",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates C31-2, C31-0, and C31-4 provide concrete receipts substantiating parallel agent session management practices."
+ },
+ {
+  "claim_id": "K32",
+  "candidate_id": "C32-4",
+  "disposition": "supports",
+  "reason": "Substantiates that optimizing for lexical user praise amplifies model sycophancy and degrades objective evaluation."
+ },
+ {
+  "claim_id": "K32",
+  "candidate_id": "C32-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Web development tutorial with no relevance to agent feedback loops or sycophancy."
+ },
+ {
+  "claim_id": "K32",
+  "candidate_id": "C32-0",
+  "disposition": "supports",
+  "reason": "Details how autonomous feedback systems require objective structural verification rather than subjective praise signals."
+ },
+ {
+  "claim_id": "K32",
+  "candidate_id": "C32-1",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "General career advice video with no technical substance on AI praise metrics."
+ },
+ {
+  "claim_id": "K32",
+  "candidate_id": "C32-2",
+  "disposition": "supports",
+  "reason": "Discusses AI alignment challenges and the vulnerability of RLHF models to superficial conversational flattery."
+ },
+ {
+  "claim_id": "K32",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates support the claim that lexical praise introduces sycophancy and that structural verification is the proper success signal."
+ },
+ {
+  "claim_id": "K33",
+  "candidate_id": "C33-1",
+  "disposition": "supports",
+  "reason": "Explains Windows Task Scheduler trigger mechanics and the limitation of failure restart triggers to launch-time failures."
+ },
+ {
+  "claim_id": "K33",
+  "candidate_id": "C33-0",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers web development task automation in Django without Windows Task Scheduler internal semantics."
+ },
+ {
+  "claim_id": "K33",
+  "candidate_id": "C33-2",
+  "disposition": "supports",
+  "reason": "Documents Windows Task Scheduler RestartOnFailure behavior where non-zero exit codes of completed processes do not trigger restarts."
+ },
+ {
+  "claim_id": "K33",
+  "candidate_id": "C33-3",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Discusses C# async programming without Windows Scheduler configuration details."
+ },
+ {
+  "claim_id": "K33",
+  "candidate_id": "C33-4",
+  "disposition": "irrelevant_or_insufficient",
+  "reason": "Covers enterprise cloud monitoring without Windows Task Scheduler specifics."
+ },
+ {
+  "claim_id": "K33",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "Candidates C33-1 and C33-2 corroborate the specific execution boundary of Windows Task Scheduler's RestartOnFailure setting."
+ },
+ {
+  "claim_id": "K34",
+  "candidate_id": "C34-2",
+  "disposition": "supports",
+  "reason": "Demonstrates Claude Code subagent delegation and programmatic agent configuration via /agents."
+ },
+ {
+  "claim_id": "K34",
+  "candidate_id": "C34-0",
+  "disposition": "supports",
+  "reason": "Documents Claude Code hooks (user prompt submit, pre-tool use) providing deterministic guardrails and validation."
+ },
+ {
+  "claim_id": "K34",
+  "candidate_id": "C34-3",
+  "disposition": "supports",
+  "reason": "Explains spec-driven development and verification checks constraining Claude Code agent execution."
+ },
+ {
+  "claim_id": "K34",
+  "candidate_id": "C34-1",
+  "disposition": "supports",
+  "reason": "Shows programmatic extension of Claude Code capabilities via Shopify CLI toolkit and plugins."
+ },
+ {
+  "claim_id": "K34",
+  "candidate_id": "C34-4",
+  "disposition": "supports",
+  "reason": "Details Claude Code self-verification loops using CLAUDE.md and visual feedback to verify output quality."
+ },
+ {
+  "claim_id": "K34",
+  "claim_action": "strengthen_evidence",
+  "action_rationale": "All candidates provide strong, multifaceted evidence for Claude Code's programmatic control, hooks, subagents, and verification mechanisms."
+ }
+]
