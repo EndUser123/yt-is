@@ -36,6 +36,7 @@ MAX_REOPEN_CHARS = 64 * 1024
 
 _query_instance = None
 _query_lock = threading.Lock()
+_query_request_lock = threading.RLock()
 
 
 def serialize_result(result) -> dict:
@@ -129,8 +130,9 @@ class Handler(BaseHTTPRequestHandler):
             fmt = params.get("format", ["json"])[0]
 
             try:
-                q = get_query()
-                results = q.relevant(query_text, limit=top_k, channel_id=channel_id)
+                with _query_request_lock:
+                    q = get_query()
+                    results = q.relevant(query_text, limit=top_k, channel_id=channel_id)
                 if fmt == "text":
                     lines = []
                     for r in results:

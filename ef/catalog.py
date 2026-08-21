@@ -125,9 +125,9 @@ def check_write(conn: sqlite3.Connection, build_id: str,
             f"matching production claim")
 
 
-def connect(db_path: Path = CATALOG_DB) -> sqlite3.Connection:
+def connect(db_path: Path = CATALOG_DB, *, check_same_thread: bool = True) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=check_same_thread)
     conn.executescript(_SCHEMA)
     # migrate pre-isolation catalogs: eu.build_id column
     cols = {r[1] for r in conn.execute("pragma table_info(eu)").fetchall()}

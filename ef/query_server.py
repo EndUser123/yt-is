@@ -68,7 +68,8 @@ class ProductionQuery:
 
     def _fts_lane(self, query_text: str, top: int = 100) -> list[str]:
         if self._fts is None:
-            self._fts = sqlite3.connect(f"file:{FTS_DB}?mode=ro", uri=True)
+            self._fts = sqlite3.connect(
+                f"file:{FTS_DB}?mode=ro", uri=True, check_same_thread=False)
         match = routing.sanitize_fts_query(query_text)
         if not match:
             return []
@@ -84,11 +85,12 @@ class ProductionQuery:
         import sqlite3
         from . import catalog as _catalog
         if self._cat_conn is None:
-            self._cat_conn = _catalog.connect()
+            self._cat_conn = _catalog.connect(check_same_thread=False)
         if self._ro_conn is None:
             from .authority import TRANSCRIPTS_DB
             self._ro_conn = sqlite3.connect(
-                f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True)
+                f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True,
+                check_same_thread=False)
         cache_key = self._cat_conn.execute(
             "select authority_ref from eu where eu_id=?", (eu_id,)).fetchone()
         if cache_key is None:
