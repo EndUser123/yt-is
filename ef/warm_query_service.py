@@ -22,6 +22,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+from .authority import reopen_span
+
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -30,6 +32,7 @@ if str(REPO) not in sys.path:
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("YTIS_EF_QUERY_PORT", "6391"))
 PID_FILE = REPO / ".data" / "yt-is" / "ef" / "query-service.pid"
+MAX_REOPEN_CHARS = 64 * 1024
 
 _query_instance = None
 _query_lock = threading.Lock()
@@ -50,6 +53,39 @@ def serialize_result(result) -> dict:
         "start_char": result.start_char,
         "end_char": result.end_char,
         "url": result.url,
+    }
+
+
+def reopen_result(eu_id: str, start_char: int, end_char: int) -> dict:
+    """Reopen one returned EvidenceResult through the authority layer."""
+    if (
+        not isinstance(eu_id, str)
+        or len(eu_id) > 256
+        or ":" not in eu_id
+        or not isinstance(start_char, int)
+        or isinstance(start_char, bool)
+        or not isinstance(end_char, int)
+        or isinstance(end_char, bool)
+        or start_char < 0
+        or end_char <= start_char
+        or end_char - start_char > MAX_REOPEN_CHARS
+    ):
+        raise ValueError("invalid_reopen_range")
+    video_id, media_kind = eu_id.rsplit(":", 1)
+    if not video_id or media_kind != "transcript" or any(
+        character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        for character in video_id
+    ):
+        raise ValueError("invalid_reopen_identity")
+    text = reopen_span(video_id, start_char, end_char)
+    if len(text) != end_char - start_char:
+        raise ValueError("reopen_range_out_of_authority")
+    return {
+        "eu_id": eu_id,
+        "video_id": video_id,
+        "start_char": start_char,
+        "end_char": end_char,
+        "text": text,
     }
 
 
@@ -109,6 +145,20 @@ class Handler(BaseHTTPRequestHandler):
                     })
             except Exception as e:
                 self._json(500, {"error": str(e)[:200]})
+
+        elif parsed.path == "/reopen":
+            params = parse_qs(parsed.query)
+            eu_id = params.get("eu_id", [""])[0]
+            start_raw = params.get("start_char", [""])[0]
+            end_raw = params.get("end_char", [""])[0]
+            try:
+                payload = reopen_result(eu_id, int(start_raw), int(end_raw))
+            except (TypeError, ValueError) as error:
+                self._json(400, {"error": str(error)})
+            except LookupError as error:
+                self._json(404, {"error": str(error)[:200]})
+            else:
+                self._json(200, payload)
 
         else:
             self._json(404, {"error": "not found"})
