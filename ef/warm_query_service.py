@@ -290,6 +290,19 @@ class Handler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         import sqlite3
         try:
+            if parsed.path == "/ingest-extension":
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if length <= 0 or length > 8 * 1024 * 1024:
+                    return self._json(400, {"error": "malformed ingest request"})
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                except Exception:
+                    return self._json(400, {"error": "malformed ingest request"})
+                status, body = ingest_extension(payload)
+                return self._json(status, body)
             if parsed.path == "/sources/rss/add":
                 url = params.get("url", [""])[0].strip()
                 if not url.startswith("http"):
@@ -1304,6 +1317,56 @@ def library_lookup(video_id: str, catalog_db=None) -> dict:
         "transcript_source": source,
         "cached_at": captured_at or None,
     }
+
+
+def ingest_extension(payload: dict, transcripts_db=None):
+    """Idempotent single-video ingestion into the transcript authority.
+
+    One source authority per video: an existing authority row for the video
+    (any provider) answers already_present; only the same cache_key with
+    different content is a 409 conflict. New rows land in transcript_cache
+    and the incremental EF indexer projects them into catalog/chunks/qdrant
+    on its next cycle. Returns (http_status, body)."""
+    import re
+    import sqlite3
+    import time as _time
+    from ef.authority import TRANSCRIPTS_DB
+    video_id = payload.get("videoId") or ""
+    provider = (payload.get("provider") or "extension").strip() or "extension"
+    title = (payload.get("title") or "").strip()
+    url = (payload.get("url") or "").strip()
+    segments = payload.get("segments")
+    if (not isinstance(video_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", video_id)
+            or not isinstance(segments, list) or not segments or len(segments) > 20000
+            or any(not isinstance(s, dict) for s in segments[:100])):
+        return 400, {"error": "malformed ingest request"}
+    transcript = "\n".join(str(s.get("text") or "") for s in segments)
+    if not transcript.strip() or len(transcript) > 2_000_000:
+        return 400, {"error": "malformed ingest request"}
+    lang = "en"
+    cache_key = f"{video_id}:{lang}:{provider}"
+    conn = sqlite3.connect(str(transcripts_db or TRANSCRIPTS_DB), timeout=30.0)
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        existing = conn.execute(
+            "select cache_key, transcript from transcript_cache "
+            "where video_id = ? order by cached_at desc limit 1",
+            (video_id,)).fetchone()
+        if existing:
+            if existing[0] == cache_key and existing[1] != transcript:
+                return 409, {"error": "existing_transcript_differs"}
+            return 200, {"status": "already_present", "transcriptChars": len(existing[1])}
+        metadata = json.dumps({"title": title, "url": url, "origin": "extension"})
+        conn.execute(
+            "insert into transcript_cache "
+            "(cache_key, video_id, lang, source, transcript, metadata_json, "
+            "cached_at, terminal_id) values (?,?,?,?,?,?,?,NULL)",
+            (cache_key, video_id, lang, provider, transcript, metadata,
+             _time.strftime("%Y-%m-%dT%H:%M:%S")))
+        conn.commit()
+    finally:
+        conn.close()
+    return 200, {"status": "saved", "transcriptChars": len(transcript)}
 
 
 def reopen_exact(eu_id: str, start_char: int, end_char: int,

@@ -110,3 +110,48 @@ def test_reopen_exact_span_past_authority_fails_closed(dbs):
     assert reopen_exact(
         "vidA:transcript", 90, 5000,
         catalog_db=catalog, transcripts_db=transcripts) is None
+
+
+def _transcripts_db(tmp_path):
+    import sqlite3
+    db = tmp_path / "transcripts.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE transcript_cache (cache_key TEXT PRIMARY KEY, "
+        "video_id TEXT, lang TEXT, source TEXT, transcript TEXT, "
+        "metadata_json TEXT, cached_at TEXT, terminal_id TEXT)")
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_ingest_extension_is_idempotent_per_video(tmp_path):
+    from ef.warm_query_service import ingest_extension
+    db = _transcripts_db(tmp_path)
+    payload = {"videoId": "vidNEW", "provider": "timedtext", "title": "T",
+               "url": "https://youtu.be/vidNEW",
+               "segments": [{"text": "hello world"}, {"text": "second line"}]}
+    assert ingest_extension(payload, transcripts_db=db) == (
+        200, {"status": "saved", "transcriptChars": 23})
+    # same save twice -> one source authority
+    assert ingest_extension(payload, transcripts_db=db)[1]["status"] == "already_present"
+    # another provider for the same video never duplicates the authority
+    other = dict(payload, provider="notebooklm")
+    assert ingest_extension(other, transcripts_db=db)[1]["status"] == "already_present"
+    # same cache_key with different content is a conflict, not a rewrite
+    conflict = dict(payload, segments=[{"text": "different"}])
+    assert ingest_extension(conflict, transcripts_db=db) == (
+        409, {"error": "existing_transcript_differs"})
+
+
+def test_ingest_extension_rejects_malformed_payloads(tmp_path):
+    from ef.warm_query_service import ingest_extension
+    db = _transcripts_db(tmp_path)
+    good_segments = [{"text": "x"}]
+    for bad in [
+        {"videoId": "../evil", "segments": good_segments},
+        {"videoId": "ok", "segments": []},
+        {"videoId": "ok", "segments": [{"text": "   "}]},
+        {"videoId": "", "segments": good_segments},
+    ]:
+        assert ingest_extension(bad, transcripts_db=db)[0] == 400
