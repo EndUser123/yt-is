@@ -112,7 +112,12 @@ class Handler(BaseHTTPRequestHandler):
                         "title": r.title,
                         "channel_id": r.channel_id,
                         "channel_title": r.channel_title,
-                        "snippet": r.snippet,
+                        # Snippets are presentation, never authority (reopen
+                        # uses eu_id + char offsets). Bound well under the
+                        # strictest consumer cap so one long span cannot fail
+                        # a whole response; the model only ever quotes from
+                        # the same bounded text.
+                        "snippet": r.snippet[:8000],
                         "score": float(r.score),
                         "retrieval_paths": list(r.retrieval_paths),
                         "url": r.url,
