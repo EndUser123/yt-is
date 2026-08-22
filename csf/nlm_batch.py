@@ -416,10 +416,10 @@ def _refresh_family_nlm_auth_session(
     timeout_s: float = 120.0,
     check_count: int | None = None,
 ) -> bool:
-    """Refresh a mapped worker family through the canonical source profile path."""
+    """Refresh a mapped account family through the canonical source profile path."""
     # Compatibility-only CLI family auth is not part of the canonical account
     # path and must not be imported by active workers at module load time.
-    from csf.nlm_worker_auth import refresh_source_profile, sync_worker_profiles
+    from csf.nlm_worker_auth import profile_session_matches_expected, refresh_source_profile
 
     started = time.perf_counter()
     log_action(
@@ -441,16 +441,12 @@ def _refresh_family_nlm_auth_session(
         )
         if not refresh_source_profile(family, timeout_s=timeout_s):
             return False
-        # Live session check (no `lambda: True`): the default checker
-        # invokes profile_session_matches_expected against the source
-        # profile and refuses to copy credentials to siblings if the
-        # source session is not live and bound to the expected account.
-        # See C4-B / review COR-009 (family refresh live session check).
-        sync_worker_profiles(
-            families=(family,),
-            backup=False,
-            source_session_checker=None,
-        )
+        # Live session check before trusting the refreshed credentials: the
+        # profile session must be bound to the expected account. Per-account
+        # families have no siblings to fan out to (worker sync retired
+        # 2026-08-22). See C4-B / review COR-009.
+        if not profile_session_matches_expected(family.source_profile, family.expected_email):
+            return False
         # The source profile is bound to family.expected_email by
         # construction; use that as the verified fingerprint so the
         # cache hit later cannot authorize a different account.

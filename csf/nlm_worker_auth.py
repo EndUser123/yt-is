@@ -37,25 +37,29 @@ class AuthFamily:
 
 
 DEFAULT_FAMILIES = (
+    # One family per canonical account (2026-08-22): pipeline lanes bind
+    # per-account profiles directly, so each family is a single source
+    # profile with no siblings. The worker-fleet generations
+    # (ytis-*-worker-*) were retired with the sibling fan-out sync.
     AuthFamily(
-        source_profile="ytis-pro-worker-01",
-        sibling_profiles=("ytis-pro-worker-02", "ytis-pro-worker-03", "ytis-pro-worker-04", "ytis-pro-worker-05"),
+        source_profile="a.hominidae",
+        sibling_profiles=(),
         expected_email="a.hominidae@gmail.com",
         cdp_browser_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-pro",
         cdp_browser_profile_directory="Profile",
         cdp_port=18870,
     ),
     AuthFamily(
-        source_profile="ytis-free1-worker-01",
-        sibling_profiles=("ytis-free1-worker-02", "ytis-free1-worker-03", "ytis-free1-worker-04", "ytis-free1-worker-05"),
+        source_profile="troup.hominidae",
+        sibling_profiles=(),
         expected_email="troup.hominidae@gmail.com",
         cdp_browser_root=r"P:\\\\\\.data\yt-is\browser\notebooklm-free",
         cdp_browser_profile_directory="Default",
         cdp_port=18871,
     ),
     AuthFamily(
-        source_profile="ytis-free2-worker-01",
-        sibling_profiles=("ytis-free2-worker-02", "ytis-free2-worker-03", "ytis-free2-worker-04"),
+        source_profile="brsthomson",
+        sibling_profiles=(),
         expected_email="brsthomson@hotmail.com",
         # Reuse the verified account-owned browser root instead of creating a
         # fresh blank sign-in profile for this account.
@@ -65,16 +69,6 @@ DEFAULT_FAMILIES = (
     ),
 )
 
-# Active configs use these descriptive worker labels. The legacy family above
-# remains part of the compatibility surface for historical configs and tests.
-_CANONICAL_FREE_FAMILY = AuthFamily(
-    source_profile="ytis-free-worker-01",
-    sibling_profiles=("ytis-free-worker-02", "ytis-free-worker-03", "ytis-free-worker-04", "ytis-free-worker-05"),
-    expected_email="troup.hominidae@gmail.com",
-    cdp_browser_root=DEFAULT_FAMILIES[1].cdp_browser_root,
-    cdp_browser_profile_directory=DEFAULT_FAMILIES[1].cdp_browser_profile_directory,
-    cdp_port=DEFAULT_FAMILIES[1].cdp_port,
-)
 _ACCOUNT_PROFILE_EXPECTED_EMAILS = {
     "a.hominidae": "a.hominidae@gmail.com",
     "troup.hominidae": "troup.hominidae@gmail.com",
@@ -130,8 +124,6 @@ def expected_email_for_profile(profile: str, families: tuple[AuthFamily, ...] = 
     mapped = _ACCOUNT_PROFILE_EXPECTED_EMAILS.get(profile, "")
     if not mapped:
         mapped = _expected_email_by_profile(_validate_auth_families(families)).get(profile, "")
-    if not mapped:
-        mapped = _expected_email_by_profile((_CANONICAL_FREE_FAMILY,)).get(profile, "")
     return mapped or os.getenv("YTIS_NLM_EXPECTED_EMAIL", "").strip().lower()
 
 
@@ -146,8 +138,6 @@ def family_for_profile(
     for family in _validate_auth_families(families):
         if profile == family.source_profile or profile in family.sibling_profiles:
             return family
-    if profile in _expected_email_by_profile((_CANONICAL_FREE_FAMILY,)):
-        return _CANONICAL_FREE_FAMILY
     return None
 
 
@@ -737,182 +727,6 @@ def refresh_source_profile(family: AuthFamily, *, timeout_s: float = 120.0) -> b
     return False if noninteractive else refresh_profile_session(family.source_profile, timeout_s=timeout_s)
 
 
-def _refresh_with_callable(
-    family: AuthFamily,
-    refresher: Callable[[str], bool] | None,
-) -> bool:
-    if refresher is not None:
-        return refresher(family.source_profile)
-    return refresh_source_profile(family)
-
-
-def _source_session_ok(
-    family: AuthFamily,
-    checker: Callable[[str], bool] | None,
-) -> bool:
-    if checker is not None:
-        return checker(family.source_profile)
-    return profile_session_matches_expected(family.source_profile, family.expected_email)
-
-
-def _source_profile_recovery_error(
-    family: AuthFamily,
-    *,
-    stage: str,
-    detail: str,
-) -> RuntimeError:
-    return RuntimeError(
-        f"{family.source_profile} auth recovery failed: {stage}; {detail}; expected {family.expected_email}"
-    )
-
-
-def _default_profile_guard_blocks_recovery() -> bool:
-    if not _is_noninteractive_auth():
-        return False
-    return bool(_chrome_pids_for_root(DEFAULT_NLM_CHROME_PROFILE_ROOT))
-
-
-def _ensure_source_profile_ready(
-    profile_root: Path,
-    family: AuthFamily,
-    *,
-    checker: Callable[[str], bool] | None,
-    refresher: Callable[[str], bool] | None,
-) -> None:
-    profile_error: Exception | None = None
-    try:
-        _validate_source_profile(profile_root, family)
-    except (FileNotFoundError, ValueError) as exc:
-        profile_error = exc
-
-    if profile_error is not None:
-        if _default_profile_guard_blocks_recovery():
-            raise _source_profile_recovery_error(
-                family,
-                stage="metadata validation failed",
-                detail=f"{profile_error}; default profile guard blocked recovery",
-            ) from profile_error
-        if not _refresh_with_callable(family, refresher):
-            raise _source_profile_recovery_error(
-                family,
-                stage="metadata validation failed",
-                detail=f"{profile_error}; dedicated-profile refresh attempt failed",
-            ) from profile_error
-        try:
-            _validate_source_profile(profile_root, family)
-        except (FileNotFoundError, ValueError) as exc:
-            raise _source_profile_recovery_error(
-                family,
-                stage="post-refresh metadata validation failed",
-                detail=f"{exc}; dedicated-profile refresh completed but the profile still did not match",
-            ) from exc
-
-    if _source_session_ok(family, checker):
-        return
-
-    if _default_profile_guard_blocks_recovery():
-        raise _source_profile_recovery_error(
-            family,
-            stage="live session check failed",
-            detail="default profile guard blocked recovery before a refresh could be attempted",
-        )
-
-    if not _refresh_with_callable(family, refresher):
-        raise _source_profile_recovery_error(
-            family,
-            stage="live session check failed",
-            detail="live session check failed; dedicated-profile refresh attempt failed",
-        )
-    try:
-        _validate_source_profile(profile_root, family)
-    except (FileNotFoundError, ValueError) as exc:
-        raise _source_profile_recovery_error(
-            family,
-            stage="post-refresh metadata validation failed",
-            detail=f"{exc}; dedicated-profile refresh completed but the profile still did not match",
-        ) from exc
-    if not _source_session_ok(family, checker):
-        raise _source_profile_recovery_error(
-            family,
-            stage="post-refresh live session check failed",
-            detail="dedicated-profile refresh completed but the live session still did not match",
-        )
-
-
-def sync_worker_profiles(
-    profile_root: Path = DEFAULT_PROFILE_ROOT,
-    families: tuple[AuthFamily, ...] = DEFAULT_FAMILIES,
-    *,
-    backup: bool = True,
-    source_session_checker: Callable[[str], bool] | None = None,
-    source_session_refresher: Callable[[str], bool] | None = None,
-) -> Path | None:
-    """Copy each valid worker-01 credential to sibling workers in the same account family."""
-    profile_root = Path(profile_root)
-    for family in families:
-        _ensure_source_profile_ready(
-            profile_root,
-            family,
-            checker=source_session_checker,
-            refresher=source_session_refresher,
-        )
-
-    backup_root: Path | None = None
-    if backup:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_root = profile_root / f"backup-before-worker-auth-sync-{stamp}"
-        backup_root.mkdir(parents=True, exist_ok=False)
-
-    for family in families:
-        src_dir = profile_root / family.source_profile
-        for sibling in family.sibling_profiles:
-            dst_dir = profile_root / sibling
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            if backup:
-                assert backup_root is not None
-                backup_dst = backup_root / sibling
-                if dst_dir.exists():
-                    shutil.copytree(dst_dir, backup_dst)
-            shutil.copy2(src_dir / "cookies.json", dst_dir / "cookies.json")
-            shutil.copy2(src_dir / "metadata.json", dst_dir / "metadata.json")
-
-    if backup and backup_root is not None:
-        _prune_sync_backups(profile_root, _SYNC_BACKUP_RETENTION, keep_path=backup_root)
-
-    return backup_root
-
-
-_SYNC_BACKUP_PREFIX = "backup-before-worker-auth-sync-"
-_SYNC_BACKUP_RETENTION = 5
-
-
-def _prune_sync_backups(profile_root: Path, keep: int, *, keep_path: Path) -> None:
-    """Bound backup-before-worker-auth-sync-* dirs to the newest ``keep``.
-
-    Each ``backup=True`` sync writes one safety-copy directory; unbounded
-    accumulation turned every historical sync into a phantom CLI profile
-    (200+ piled up 2026-04..07 before the batch path switched to
-    ``backup=False``). Timestamped names sort chronologically. Mirrors
-    ``_prune_profile_snapshots`` so any future ``backup=True`` caller cannot
-    regress to unbounded growth.
-    """
-    if keep <= 0 or not profile_root.exists():
-        return
-    backups = [
-        path
-        for path in profile_root.iterdir()
-        if path.is_dir() and path.name.startswith(_SYNC_BACKUP_PREFIX)
-    ]
-    backups.sort(key=lambda path: path.name, reverse=True)
-    retained = 0
-    for path in backups:
-        retained += 1
-        if path == keep_path:
-            continue
-        if retained > keep:
-            shutil.rmtree(path, ignore_errors=True)
-
-
 def iter_worker_profiles(families: tuple[AuthFamily, ...] = DEFAULT_FAMILIES) -> list[str]:
     profiles: list[str] = []
     for family in _validate_auth_families(families):
@@ -1051,9 +865,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "action",
-        choices=("sync", "check", "snapshot", "restore", "doctor"),
+        choices=("check", "snapshot", "restore", "doctor"),
         help=(
-            "sync copies worker-01 credentials to sibling workers; check validates all workers; "
+            "check validates all account profiles; "
             "snapshot stores verified profiles; restore rolls back from a verified snapshot; "
             "doctor validates lane auth and run-root readiness."
         ),
@@ -1111,20 +925,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[auth] doctor=ok lanes={lane_names} run_root={args.run_root}")
         return 0
 
-    with _noninteractive_auth_default():
-        try:
-            families = _sync_families_from_lane_config(args.lane_config) if args.lane_config is not None else DEFAULT_FAMILIES
-            backup_root = sync_worker_profiles(args.profile_root, families=families, backup=not args.no_backup)
-        except (FileNotFoundError, RuntimeError, ValueError) as exc:
-            print(f"[auth] ERROR: {exc}")
-            return 1
-    if backup_root:
-        print(f"[auth] backup={backup_root}")
-    print("[auth] synced worker auth profiles from worker-01 account families")
-    if args.skip_check:
-        return 0
-    failed = check_worker_profiles()
-    return 1 if failed else 0
+    print("[auth] ERROR: sync was removed 2026-08-22 with the worker-fleet retirement; per-account profiles need no fan-out")
+    return 2
 
 
 if __name__ == "__main__":
