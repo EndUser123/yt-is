@@ -168,6 +168,8 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         left join status.channel_metadata cm on cm.channel_id = a.channel_id
         where t.cached_at > ? and length(t.transcript) >= 100
           and t.terminal_id not like 'test%'
+          and t.source not in ('reddit','hackernews','discord','rss',
+                               'github','podcast','dht-artifact')
         order by t.cached_at asc limit ?
     """, (iw, batch_limit)).fetchall()]
     conn.close()
@@ -176,7 +178,8 @@ def incremental_update(batch_limit: int = 2000) -> dict:
     cat = catalog.connect()
     enc = embedding.BGEM3Dual()
     qc = server.client()
-    fts = sqlite3.connect(str(EF_DATA / "fts5.sqlite"))
+    fts = sqlite3.connect(str(EF_DATA / "fts5.sqlite"), timeout=30.0)
+    fts.execute("PRAGMA busy_timeout=30000")
     added = updated = deleted = 0
     new_wm = iw
     try:
