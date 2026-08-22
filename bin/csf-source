@@ -1099,7 +1099,7 @@ def _print_block_signals(info, channel_id: str, canonical_url: str) -> bool:
         False otherwise.
     """
     signals = analyze_channel_filter_signals(
-        channel_title=info.title,
+        channel_title=info.channel_title,
         description=info.description,
         keywords=info.keywords,
         custom_url=info.custom_url,
@@ -1155,7 +1155,16 @@ def _print_block_signals(info, channel_id: str, canonical_url: str) -> bool:
             print(f"  • {s}")
 
     print()
-    response = input("[signals] Block this channel? [y/N] ").strip().lower()
+    import sys as _sys
+    if not _sys.stdin.isatty():
+        print("[signals] non-interactive stdin — defaulting to N (do not block)")
+        response = "n"
+    else:
+        try:
+            response = input("[signals] Block this channel? [y/N] ").strip().lower()
+        except (EOFError, OSError):
+            print("[signals] no stdin available — defaulting to N (do not block)")
+            response = "n"
     if response == "y":
         block_channel(canonical_url)
         print(f"[source] Blocked: {canonical_url}")
@@ -1574,6 +1583,9 @@ def cmd_check(source_id_or_url: str) -> None:
         channel_id = uc_channel_id
 
     # Step 2: RSS check (now with UC channel ID)
+    # Pacing delay: prevent YouTube RSS rate-limiting (full IP block observed
+    # on 2026-08-19 after ~1,400 rapid requests with 5 workers)
+    time.sleep(float(os.getenv("YTIS_SYNC_RSS_DELAY_S", "0.5")))
     rss_ids = check_rss(channel_id)
     print(f"[source] RSS returned {len(rss_ids)} recent videos")
 
@@ -1963,8 +1975,11 @@ def cmd_check_all(verbose: bool = False) -> None:
             },
         )
 
-    # Parallel discovery using 5 workers (conservative to avoid YouTube API thundering herd)
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    # Parallel discovery — 2 workers to avoid YouTube RSS rate-limiting
+    # (5 workers triggered a full IP block on 2026-08-19: even known-active
+    # channels returned 404 after ~1,400 rapid requests)
+    rss_workers = int(os.getenv("YTIS_SYNC_WORKERS", "2"))
+    with ThreadPoolExecutor(max_workers=rss_workers) as executor:
         futures = {
             executor.submit(_process_channel_check, url, pl, count, last, verbose): url
             for url, pl, count, last in rows
@@ -4094,6 +4109,7 @@ def _cmd_fetch_unlocked(
         nonlocal industrial_batches_processed, success_count, fail_count, transcript_fallback_queue, transcript_fallback_processed_count
         if not batch_items:
             return
+        batch_started_at = time.perf_counter()
         industrial_batches_processed += 1
         batch = [vid for vid, _ in batch_items]
         source_map = {vid: source_url for vid, source_url in batch_items}

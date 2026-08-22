@@ -503,7 +503,11 @@ def get_upload_playlist_id(channel_id: str) -> ChannelInfo | None:
         id_param_val = channel_id
     elif channel_id.startswith("@"):
         id_param_key = "forHandle"
-        id_param_val = channel_id
+        # The API's forHandle returns 0 items for many real channels when
+        # the value carries the leading '@' (observed 2026-08-22: @Fireship,
+        # @ThePrimeagen etc. all empty). The bare handle is the reliable
+        # form; keep the '@' only as the search-fallback query below.
+        id_param_val = channel_id.lstrip("@")
     elif channel_id.startswith("c/") or channel_id.startswith("user/"):
         name = channel_id.split("/", 1)[1]
         id_param_key = "forUsername"
@@ -516,7 +520,26 @@ def get_upload_playlist_id(channel_id: str) -> ChannelInfo | None:
     tier1_params = {id_param_key: id_param_val, "part": "snippet,brandingSettings,topicDetails"}
     result_t1 = _api_request("channels", tier1_params, unit_cost=1)
     if not result_t1 or "items" not in result_t1 or len(result_t1["items"]) == 0:
-        return None
+        # Fallback (future-proofing, 2026-08-22): resolve via search when the
+        # direct lookup misses (forHandle flakiness, renamed handles), then
+        # retry the channels call by canonical UC id. 100 search units are
+        # costly, so this only fires on a miss.
+        if id_param_key == "forHandle":
+            try:
+                search = _api_request("search", {
+                    "part": "snippet", "type": "channel",
+                    "q": channel_id.lstrip("@"), "maxResults": 1,
+                }, unit_cost=100)
+                cid = (search.get("items") or [{}])[0].get("snippet", {}).get("channelId", "")
+                if cid:
+                    id_param_key, id_param_val = "id", cid
+                    tier1_params = {id_param_key: id_param_val,
+                                    "part": "snippet,brandingSettings,topicDetails"}
+                    result_t1 = _api_request("channels", tier1_params, unit_cost=1)
+            except Exception:
+                pass
+        if not result_t1 or "items" not in result_t1 or len(result_t1["items"]) == 0:
+            return None
 
     try:
         item_t1 = result_t1["items"][0]
