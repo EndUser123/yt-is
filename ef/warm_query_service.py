@@ -20,7 +20,7 @@ import signal
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote_plus
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -62,7 +62,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(503, {"status": "warming", "error": str(e)[:100]})
 
         elif parsed.path == "/candidates/approve":
-            from urllib.parse import parse_qs, quote_plus
+            # parse_qs/quote_plus come from the module import: a local
+            # import here would shadow them for the whole of do_GET and
+            # crash every earlier route with UnboundLocalError.
             params = parse_qs(parsed.query)
             name = (params.get("name") or [""])[0]
             try:
