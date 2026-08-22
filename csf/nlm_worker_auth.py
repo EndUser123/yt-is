@@ -876,7 +876,41 @@ def sync_worker_profiles(
             shutil.copy2(src_dir / "cookies.json", dst_dir / "cookies.json")
             shutil.copy2(src_dir / "metadata.json", dst_dir / "metadata.json")
 
+    if backup and backup_root is not None:
+        _prune_sync_backups(profile_root, _SYNC_BACKUP_RETENTION, keep_path=backup_root)
+
     return backup_root
+
+
+_SYNC_BACKUP_PREFIX = "backup-before-worker-auth-sync-"
+_SYNC_BACKUP_RETENTION = 5
+
+
+def _prune_sync_backups(profile_root: Path, keep: int, *, keep_path: Path) -> None:
+    """Bound backup-before-worker-auth-sync-* dirs to the newest ``keep``.
+
+    Each ``backup=True`` sync writes one safety-copy directory; unbounded
+    accumulation turned every historical sync into a phantom CLI profile
+    (200+ piled up 2026-04..07 before the batch path switched to
+    ``backup=False``). Timestamped names sort chronologically. Mirrors
+    ``_prune_profile_snapshots`` so any future ``backup=True`` caller cannot
+    regress to unbounded growth.
+    """
+    if keep <= 0 or not profile_root.exists():
+        return
+    backups = [
+        path
+        for path in profile_root.iterdir()
+        if path.is_dir() and path.name.startswith(_SYNC_BACKUP_PREFIX)
+    ]
+    backups.sort(key=lambda path: path.name, reverse=True)
+    retained = 0
+    for path in backups:
+        retained += 1
+        if path == keep_path:
+            continue
+        if retained > keep:
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def iter_worker_profiles(families: tuple[AuthFamily, ...] = DEFAULT_FAMILIES) -> list[str]:

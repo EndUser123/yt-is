@@ -141,6 +141,36 @@ def test_sync_worker_profiles_copies_by_account_family_and_backs_up(tmp_path):
     )
 
 
+def test_sync_worker_profiles_prunes_backup_dirs_to_retention(tmp_path):
+    root = tmp_path / "profiles"
+    _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh")
+    _write_profile(root, "ytis-pro-worker-02", "a.hominidae@gmail.com", "stale")
+    families = (
+        nlm_worker_auth.AuthFamily(
+            "ytis-pro-worker-01",
+            ("ytis-pro-worker-02",),
+            "a.hominidae@gmail.com",
+        ),
+    )
+    # 7 stale backup dirs from prior syncs (receipt: 200+ accumulated in the
+    # real profile root 2026-04..07 because syncs had no retention).
+    for stamp in [f"20260401-{i:06d}" for i in range(1, 8)]:
+        stale = root / f"backup-before-worker-auth-sync-{stamp}"
+        (stale / "ytis-pro-worker-02").mkdir(parents=True)
+        (stale / "ytis-pro-worker-02" / "cookies.json").write_text("[]", encoding="utf-8")
+
+    backup = nlm_worker_auth.sync_worker_profiles(
+        root, families, source_session_checker=lambda profile: True
+    )
+
+    assert backup is not None and backup.exists()
+    remaining = sorted(p.name for p in root.iterdir() if p.name.startswith("backup-before-"))
+    assert len(remaining) == nlm_worker_auth._SYNC_BACKUP_RETENTION
+    # newest stale backups survive alongside the fresh one
+    assert "backup-before-worker-auth-sync-20260401-000007" in remaining
+    assert "backup-before-worker-auth-sync-20260401-000001" not in remaining
+
+
 def test_snapshot_worker_profiles_copies_source_and_sibling_profiles_with_manifest(tmp_path):
     root = tmp_path / "profiles"
     _write_profile(root, "ytis-pro-worker-01", "a.hominidae@gmail.com", "fresh-pro")
