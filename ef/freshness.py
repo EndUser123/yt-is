@@ -168,7 +168,6 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         left join status.channel_metadata cm on cm.channel_id = a.channel_id
         where t.cached_at > ? and length(t.transcript) >= 100
           and t.terminal_id not like 'test%'
-          and a.channel_id is not null
         order by t.cached_at asc limit ?
     """, (iw, batch_limit)).fetchall()]
     conn.close()
