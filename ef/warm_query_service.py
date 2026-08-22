@@ -105,26 +105,29 @@ class Handler(BaseHTTPRequestHandler):
                         lines.append("")
                     self._text(200, "\n".join(lines))
                 else:
-                    payload = [{
-                        "chunk_id": r.chunk_id,
-                        "eu_id": r.eu_id,
-                        "video_id": r.video_id,
-                        "title": r.title,
-                        "channel_id": r.channel_id,
-                        "channel_title": r.channel_title,
-                        # Snippets are presentation, never authority (reopen
-                        # uses eu_id + char offsets). Bound well under the
-                        # strictest consumer cap so one long span cannot fail
-                        # a whole response; the model only ever quotes from
-                        # the same bounded text.
-                        "snippet": r.snippet[:8000],
-                        "score": float(r.score),
-                        "retrieval_paths": list(r.retrieval_paths),
-                        "url": r.url,
-                        "start_char": r.start_char,
-                        "end_char": r.end_char,
-                        "source_type": "corpus",
-                    } for r in results]
+                    payload = []
+                    for r in results:
+                        row = {
+                            "chunk_id": r.chunk_id,
+                            "video_id": r.video_id,
+                            "title": r.title,
+                            "snippet": r.snippet[:8000],
+                            "score": float(r.score),
+                            "retrieval_paths": list(r.retrieval_paths),
+                            "url": r.url,
+                            "source_type": "corpus",
+                        }
+                        # Reopen provenance only for reopen-safe spans: a
+                        # chunk larger than the strictest consumer's 64K cap
+                        # stays citable but non-reopenable rather than
+                        # failing the whole strict-validated response.
+                        if 0 <= r.start_char < r.end_char and r.end_char - r.start_char <= 64 * 1024:
+                            row["eu_id"] = r.eu_id
+                            row["channel_id"] = r.channel_id
+                            row["channel_title"] = r.channel_title
+                            row["start_char"] = r.start_char
+                            row["end_char"] = r.end_char
+                        payload.append(row)
                     # CHS federation: conversation history as a search leg.
                     # Federated rows carry no reopen provenance, so strict
                     # authority consumers (YT Workspace) opt out with
