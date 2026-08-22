@@ -1,8 +1,9 @@
 """Qdrant server lifecycle (PID-owned, dedicated yt-is ports).
 
 C-gate decision 2: native Windows binary, dedicated config/storage under
-P:/.data/yt-is/ef/server/, ports 6390/6391, PID-owned lifecycle. Never
-touch another Qdrant instance, never kill by image name (D013/D014).
+P:/.data/yt-is/ef/server/, ports 6390 (HTTP) / 6392 (gRPC), loopback only,
+PID-owned lifecycle. Never touch another Qdrant instance, never kill by
+image name (D013/D014).
 """
 
 from __future__ import annotations
@@ -20,7 +21,12 @@ CONFIG = SERVER_DIR / "config.yaml"
 PIDFILE = SERVER_DIR / "qdrant.pid"
 START_LOCK_STALE_S = 120.0
 HTTP_PORT = 6390
-GRPC_PORT = 6391
+# gRPC moved off 6391: with host pinned to loopback, a specific 127.0.0.1
+# gRPC bind on 6391 collides with the warm query HTTP service that owns
+# that address. The old wildcard bind coexisted with it only by socket
+# accident. No consumer uses qdrant gRPC; HTTP on 6390 is the only client
+# surface.
+GRPC_PORT = 6392
 URL = f"http://127.0.0.1:{HTTP_PORT}"
 
 _CONFIG_BODY = f"""storage:
