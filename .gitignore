@@ -83,3 +83,9 @@ config/discovery-settings.json
 # Runtime lock files (empty artifacts of the lock machinery)
 .data/yt-is/locks/
 docs/evidence-fabric/benchmark/corpus.json
+.logs/chrome_free2_launch.log
+
+# DHT capture browser profile (holds live Discord session — never track)
+scripts/dht-capture/profile/
+# DHT tracking script (contains app local-server token — never track)
+scripts/dht-capture/tracking-script.js

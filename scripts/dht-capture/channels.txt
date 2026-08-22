@@ -1,0 +1,6 @@
+# Discord channels to capture, one URL per line.
+# Format: https://discord.com/channels/<server-id>/<channel-id>
+# To get a URL: in Discord (browser or app), right-click the channel ->
+# Copy Link. Only channels listed here get captured.
+# Example:
+# https://discord.com/channels/123456789/987654321

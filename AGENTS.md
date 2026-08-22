@@ -67,8 +67,10 @@ service only as localhost ports; EF server config is authoritative).
 
 **Dependencies outside the repo.** RSSHub at `P:/tools/rsshub`
 (launcher start.cmd; Node >=22.12 required, no experimental flag),
-DHT desktop app `P:/tools/dht/`, DHT capture browser tooling
-`P:/tools/dht-capture/` (playwright profile + tracking-script.js).
+DHT desktop app `P:/tools/dht/` (external binary — stays in tools).
+DHT capture automation lives IN this repo at `scripts/dht-capture/`
+(playwright login profile + tracking-script.js + channels.txt; the
+profile and tracking-script.js are gitignored — they hold credentials).
 DHT archives are COLD ORIGINALS at `G:/backups/dht/` (canonical since
 2026-08-22; discovery order G: → P:/.data/dht → P:/.data/yt-is/dht →
 Documents → Downloads; unchanged archives fingerprint-skip, never prune).
