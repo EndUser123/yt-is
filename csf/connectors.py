@@ -65,7 +65,7 @@ def _dht_available() -> bool:
     sys.path.insert(0, str(REPO / "scripts"))
     try:
         import run_dht_ingest
-        return run_dht_ingest.discover_archive() is not None
+        return len(run_dht_ingest.discover_archives()) > 0
     except Exception:
         return False
 

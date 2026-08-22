@@ -126,6 +126,11 @@ def build_connector_eu(row: dict) -> EvidenceUnit:
         channel_title = meta.get("guild_name") or "Discord"
         title = f"#{meta.get('channel_name', 'channel')} ({channel_title})"
         published = ""
+    elif src == "podcast":
+        channel_id = f"podcast:{meta.get('feed', 'unknown')}"[:80]
+        channel_title = meta.get("feed", "Podcast")
+        title = (meta.get("title") or "")[:300]
+        published = _date_only(meta.get("published"))
     elif src == "github":
         channel_id = f"github:{meta.get('repo', 'unknown')}"[:80]
         channel_title = meta.get("repo", "GitHub")
@@ -198,7 +203,8 @@ def ingest(sources: tuple[str, ...] = SOURCES, limit: int | None = None,
 
     cat = catalog.connect()
     qc = server.client()
-    fts = sqlite3.connect(str(FTS_DB))
+    fts = sqlite3.connect(str(FTS_DB), timeout=30.0)
+    fts.execute("PRAGMA busy_timeout=30000")
     enc = None  # lazy: load BGE-M3 only when there is work for it
     new_wm = since
     try:

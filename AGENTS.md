@@ -7,6 +7,62 @@ an account-scoped multi-worker path. Current backlog size and readiness must be
 read from the authoritative `P:/.data/yt-is/batch_status.sqlite` receipt; do
 not rely on the older 140,000-video estimate.
 
+### Platform surface (2026-08-21 — supersedes nothing below; the drain contracts remain in force)
+
+yt-is is now a multi-source intelligence platform, not only a transcript
+pipeline. Every subsystem below is shipped and runtime-verified.
+
+**Sources & connectors.** YouTube (NLM drain + Whisper fallback) plus
+connectors: Reddit, Hacker News, RSS blogs (full-text via trafilatura),
+Twitter/X (RSSHub routes, token TWITTER_AUTH_TOKEN in P:/.env), GitHub
+(gh CLI, READMEs+releases), Discord (DHT archive ingest; bot API parked).
+One registry drives them all: `csf/connectors.py`; `ytis sync` runs every
+available connector and indexes what's new. Connector docs land in
+transcript_cache with source tags and are embedded into the Evidence
+Fabric by `ef/ingest_connectors.py` (watermark `connector_indexed_watermark`
+in `P:/.data/yt-is/ef/state.json`; source aliases incl. rss/github/chs).
+
+**Web service.** `python -m ef.warm_query_service` on 127.0.0.1:6391
+serves: / (search; idle state with suggestions + topic momentum),
+/home, /digest (daily brief + 7-day), /sources (add/remove feeds and
+subreddits via POST), /review (channel enable/disable), /reddit, /discord,
+/entities, /ask (NL Q&A), /status (health), /trends, /topics. Search
+federates CHS conversation history (`_chs_search`). Pages are same-origin
+by design — never link them as file:// (Chromium local-network rules).
+Q&A provider chain: `ef/qa.py`, env-orderable via YTIS_QA_PROVIDERS
+(default codex,agy,openrouter,gemini); CLIs need node dirs on PATH
+(per-user install at ~/AppData/Local/Programs/nodejs).
+
+**Automation (Task Scheduler, all windowless pythonw — no .cmd wrappers,
+operator constraint: console windows steal focus).** 03:00 YtisDhtCapture
+(DHT app + capture browser + ingest), 05:00 YtisIndexIncremental (paced
+daemon, single-instance pid guard), 06:00 YtisContentSync (YouTube phase
+runs in PARALLEL with all light connectors via run_script_threaded; then
+EF ingest, topic assignment, metadata + title self-healers, digest).
+Twitter routes are paced 75s apart with 900s backoff (per-token limits).
+
+**Self-healers.** Title backfill (oEmbed + API fallback, terminal
+unavailables marked), channel metadata backfill (50 IDs/call), topic
+assignment (nearest-centroid, assigned_at = transcript capture time).
+
+**Destructive ops.** `scripts/purge_channels.py` — dry-run by default,
+receipts under `.logs/purge/`, execute only on explicit operator
+instruction; never coupled to the review-page block toggle.
+
+**DB conventions.** Shared SQLite stores have many concurrent writers:
+every write path uses busy_timeout=30000 and a retry-on-locked wrapper
+(see `_retry_locked` in any connector sync). Qdrant runs as a PID-owned
+HTTP server (ports 6390/6391 grpc/http — 6391 is shared with the query
+service only as localhost ports; EF server config is authoritative).
+
+**Dependencies outside the repo.** RSSHub at `P:/tools/rsshub`
+(launcher start.cmd; Node >=22.12 required, no experimental flag),
+DHT desktop app `P:/tools/dht/`, DHT capture browser tooling
+`P:/tools/dht-capture/` (playwright profile + tracking-script.js).
+DHT archives are COLD ORIGINALS at `G:/backups/dht/` (canonical since
+2026-08-22; discovery order G: → P:/.data/dht → P:/.data/yt-is/dht →
+Documents → Downloads; unchanged archives fingerprint-skip, never prune).
+
 ### Runtime log-root contract
 
 New direct, supervised, and throughput runs must write under the package-owned
