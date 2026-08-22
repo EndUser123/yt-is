@@ -524,7 +524,10 @@ def _channel_side_published(days: int) -> int:
     """New videos actually PUBLISHED by tracked YouTube channels in the
     window — upstream channel activity, not our ingestion volume.
     channel_id IS NOT NULL excludes connector docs (reddit/hn/rss rows
-    carry no channel and get published_at stamped at ingest time)."""
+    carry no channel and get published_at stamped at ingest time), and
+    the blocklist exclusion keeps BLOCKED (excluded-category) channels
+    out — otherwise the headline is dominated by excluded news channels
+    publishing around the clock."""
     import sqlite3
     from ef import authority
     conn = sqlite3.connect(f"file:{authority.STATUS_DB}?mode=ro", uri=True)
@@ -532,6 +535,7 @@ def _channel_side_published(days: int) -> int:
         n = conn.execute(
             "select count(*) from analysis_status "
             "where channel_id is not null and published_at is not null "
+            "and channel_id not in (select channel_id from channel_blocklist) "
             "and julianday(published_at) > julianday('now', ?)",
             (f"-{days} days",)).fetchone()[0]
     finally:
@@ -676,7 +680,7 @@ def _render_home_page() -> str:
 <p class="dim">{now.strftime('%A, %Y-%m-%d %H:%M')} UTC</p>
 
 <div class="cards">
-  <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on channels (24h)</div>
+  <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on active channels (24h)</div>
   <div class="card"><div class="v">{today['total']:,}</div>transcripts ingested (24h)</div>
   <div class="card"><div class="v">{len(today['channels'])}</div>active channels</div>
   <div class="card"><div class="v">{stats.get('complete', 0):,}</div>total in corpus</div>
@@ -1247,8 +1251,8 @@ def _render_digest_page() -> str:
 <p class="dim">{now.strftime('%A, %Y-%m-%d %H:%M')} UTC — computed live</p>
 
 <div class="cards">
-  <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on channels (24h)</div>
-  <div class="card"><div class="v">{_channel_side_published(7):,}</div>new on channels (7d)</div>
+  <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on active channels (24h)</div>
+  <div class="card"><div class="v">{_channel_side_published(7):,}</div>new on active channels (7d)</div>
   <div class="card"><div class="v">{len(today['channels'])}</div>channels active</div>
   <div class="card"><div class="v">{len(reddit_week)}</div>Reddit posts (7d)</div>
   <div class="card"><div class="v">{len(artifacts_week)}</div>code artifacts (7d)</div>

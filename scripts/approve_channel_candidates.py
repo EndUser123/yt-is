@@ -157,13 +157,17 @@ def main() -> int:
                   f"| {res['title'][:34]} | cat={cat}")
         rec["apply"] = args.apply
         if args.apply and rec["action"] in ("existing", "added"):
-            upsert_channel(
-                rec["url"], db_path=db,
+            # Never overwrite a stored channel_title for channels that
+            # already exist — the DB title is authoritative (defect fix
+            # 2026-08-22: candidate names degraded stored titles).
+            kwargs = dict(
                 channel_id=rec.get("channel_id"),
-                channel_title=rec.get("resolved_title") or name,
                 category=rec["category"],
                 category_source="operator-candidates-20260822",
             )
+            if rec["action"] == "added":
+                kwargs["channel_title"] = rec.get("resolved_title") or name
+            upsert_channel(rec["url"], db_path=db, **kwargs)
         results.append(rec)
 
     conn.close()

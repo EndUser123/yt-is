@@ -49,6 +49,40 @@ from scripts.pipeline_monitor import MonitorContext, compute_health  # noqa: E40
 ALERT_FILE = Path("P:/.data/yt-is/pipeline-alert.txt")
 STATE_FILE = Path("P:/.data/yt-is/unattended-backlog/state.json")
 
+# Nightly Task Scheduler jobs whose exit codes gate pipeline health.
+# 2026-08-22: both morning tasks ran red for hours before anyone looked
+# while this watcher reported "all checks passed" — task results are now
+# first-class. 267009 (0x41301) = still running, not a failure.
+SCHEDULED_TASKS = {
+    "YtisUnattendedBacklog": "04:00 backlog drain",
+    "YtisIndexIncremental": "05:00 EF incremental",
+    "YtisContentSync": "06:00 content sync",
+    "chs-reindex": "chat-history reindex",
+    "YtisCandidateApply": "06:30 candidate apply",
+}
+
+
+def check_scheduled_tasks() -> tuple[str | None, str | None]:
+    """LastTaskResult of the nightly tasks, as (alert, warning)."""
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "; ".join(
+                 f"(Get-ScheduledTaskInfo -TaskName '{t}').LastTaskResult"
+                 for t in SCHEDULED_TASKS)],
+            capture_output=True, text=True, timeout=60,
+        ).stdout.split()
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return None, f"task-status probe failed: {e}"
+    bad = [
+        f"{name}={code}"
+        for (name, code) in zip(SCHEDULED_TASKS, out)
+        if code not in ("0", "267009")
+    ]
+    if bad:
+        return "nightly task failure: " + ", ".join(bad), None
+    return None, None
+
 # Model states that justify an alert file entry (everything the unified
 # health model marks alertable except informational unknowns handled below).
 ALERT_STATES = {
@@ -117,6 +151,12 @@ def run_once(
             lines.append(f"[auth] {auth_alert}")
         elif auth_warning:
             lines.append(f"[auth-warning] {auth_warning}")
+
+    task_alert, task_warning = check_scheduled_tasks()
+    if task_alert:
+        lines.append(f"[tasks] {task_alert}")
+    elif task_warning:
+        lines.append(f"[tasks-warning] {task_warning}")
 
     if lines:
         content = (
