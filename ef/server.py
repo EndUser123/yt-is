@@ -26,6 +26,7 @@ URL = f"http://127.0.0.1:{HTTP_PORT}"
 _CONFIG_BODY = f"""storage:
   storage_path: {SERVER_DIR.as_posix()}/storage
 service:
+  host: 127.0.0.1
   http_port: {HTTP_PORT}
   grpc_port: {GRPC_PORT}
 telemetry: false

@@ -61,6 +61,25 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json(503, {"status": "warming", "error": str(e)[:100]})
 
+        elif parsed.path == "/candidates/approve":
+            from urllib.parse import parse_qs, quote_plus
+            params = parse_qs(parsed.query)
+            name = (params.get("name") or [""])[0]
+            try:
+                cj = Path("P:/.data/yt-is/ef/channel-candidates.json")
+                cd = json.loads(cj.read_text(encoding="utf-8"))
+                hits = 0
+                for c in cd.get("candidates", []):
+                    if not name or c["name"] == name:
+                        c["status"] = "approved"; hits += 1
+                cd["approved_by"] = f"home-page click {time.strftime('%Y-%m-%d')} name={name or 'ALL'}"
+                cj.write_text(json.dumps(cd, indent=1, ensure_ascii=False), encoding="utf-8")
+            except Exception as e:
+                self._text(500, f"approve failed: {e}"); return
+            self.send_response(302)
+            self.send_header("Location", "/home")
+            self.end_headers()
+            return
         elif parsed.path == "/query":
             params = parse_qs(parsed.query)
             query_text = params.get("q", [""])[0]
@@ -86,24 +105,72 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     payload = [{
                         "chunk_id": r.chunk_id,
+                        "eu_id": r.eu_id,
                         "video_id": r.video_id,
                         "title": r.title,
+                        "channel_id": r.channel_id,
+                        "channel_title": r.channel_title,
                         "snippet": r.snippet,
-                        "score": r.score,
-                        "retrieval_paths": r.retrieval_paths,
+                        "score": float(r.score),
+                        "retrieval_paths": list(r.retrieval_paths),
                         "url": r.url,
+                        "start_char": r.start_char,
+                        "end_char": r.end_char,
                         "source_type": "corpus",
                     } for r in results]
-                    # CHS federation: conversation history as a search leg
-                    try:
-                        payload.extend(_chs_search(query_text, 3))
-                    except Exception:
-                        pass
+                    # CHS federation: conversation history as a search leg.
+                    # Federated rows carry no reopen provenance, so strict
+                    # authority consumers (YT Workspace) opt out with
+                    # federation=off instead of filtering client-side.
+                    if params.get("federation", ["on"])[0] != "off":
+                        try:
+                            payload.extend(_chs_search(query_text, 3))
+                        except Exception:
+                            pass
                     self._json(200, {
                         "results": payload
                     })
             except Exception as e:
                 self._json(500, {"error": str(e)[:200]})
+
+        elif parsed.path == "/library":
+            # Read-only library membership for the extension header state.
+            # Presence only: never returns transcript content.
+            params = parse_qs(parsed.query)
+            video_id = (params.get("video_id") or [""])[0]
+            if not video_id or len(video_id) > 64:
+                self._json(400, {"error": "missing or invalid video_id"})
+                return
+            try:
+                self._json(200, library_lookup(video_id))
+            except Exception as e:
+                self._json(500, {"error": str(e)[:200]})
+
+        elif parsed.path == "/reopen":
+            # Exact authoritative span reopen from provenance. Malformed
+            # requests are 400; unknown evidence is 404. The text length is
+            # exactly end_char - start_char or the reopen fails closed.
+            params = parse_qs(parsed.query)
+            eu_id = (params.get("eu_id") or [""])[0]
+            try:
+                start = int((params.get("start_char") or ["-1"])[0])
+                end = int((params.get("end_char") or ["-1"])[0])
+            except ValueError:
+                start, end = -1, -1
+            if (not eu_id or len(eu_id) > 256 or start < 0 or end <= start
+                    or end - start > 64 * 1024):
+                self._json(400, {"error": "malformed reopen request"})
+                return
+            try:
+                result = reopen_exact(eu_id, start, end)
+            except Exception as e:
+                self._json(500, {"error": str(e)[:200]})
+                return
+            if result is None:
+                self._json(404, {"error": "evidence unit or authority span not found"})
+                return
+            self._json(200, result)
+
 
         elif parsed.path == "/" or parsed.path == "/search":
             # Serve the search page from the same origin as the API:
@@ -239,6 +306,29 @@ class Handler(BaseHTTPRequestHandler):
                     str(Path("P:/.data/yt-is/batch_status.sqlite")),
                     timeout=30.0)
                 conn.execute("DELETE FROM rss_feeds WHERE url = ?", (url,))
+                conn.commit(); conn.close()
+                return self._json(200, {"ok": True})
+            if parsed.path == "/sources/podcast/add":
+                url = params.get("url", [""])[0].strip()
+                name = params.get("name", [""])[0].strip() or url
+                if not url.startswith("http"):
+                    return self._json(400, {"error": "feed url required"})
+                conn = sqlite3.connect(
+                    str(Path("P:/.data/yt-is/batch_status.sqlite")), timeout=30.0)
+                conn.execute("PRAGMA busy_timeout=30000")
+                conn.execute("""CREATE TABLE IF NOT EXISTS podcast_feeds (
+                    url TEXT PRIMARY KEY, name TEXT,
+                    added_at TEXT NOT NULL, last_synced TEXT)""")
+                conn.execute(
+                    "INSERT OR IGNORE INTO podcast_feeds (url, name, added_at) "
+                    "VALUES (?, ?, datetime('now'))", (url, name))
+                conn.commit(); conn.close()
+                return self._json(200, {"ok": True})
+            if parsed.path == "/sources/podcast/remove":
+                url = params.get("url", [""])[0]
+                conn = sqlite3.connect(
+                    str(Path("P:/.data/yt-is/batch_status.sqlite")), timeout=30.0)
+                conn.execute("DELETE FROM podcast_feeds WHERE url = ?", (url,))
                 conn.commit(); conn.close()
                 return self._json(200, {"ok": True})
             if parsed.path == "/sources/reddit/add":
@@ -423,6 +513,25 @@ async function ask() {
 </body></html>"""
 
 
+def _channel_side_published(days: int) -> int:
+    """New videos actually PUBLISHED by tracked YouTube channels in the
+    window — upstream channel activity, not our ingestion volume.
+    channel_id IS NOT NULL excludes connector docs (reddit/hn/rss rows
+    carry no channel and get published_at stamped at ingest time)."""
+    import sqlite3
+    from ef import authority
+    conn = sqlite3.connect(f"file:{authority.STATUS_DB}?mode=ro", uri=True)
+    try:
+        n = conn.execute(
+            "select count(*) from analysis_status "
+            "where channel_id is not null and published_at is not null "
+            "and julianday(published_at) > julianday('now', ?)",
+            (f"-{days} days",)).fetchone()[0]
+    finally:
+        conn.close()
+    return n or 0
+
+
 def _render_home_page() -> str:
     """The unified glance dashboard: brief numbers + topic momentum +
     source cards + health, one screen."""
@@ -500,6 +609,37 @@ def _render_home_page() -> str:
         conn.close()
 
     now = datetime.now(timezone.utc)
+
+    # Corpus-breadth candidate panel (D4 corpus lever): the operator's
+    # always-visible "what to add next" list. Collapses when no candidates.
+    candidates_html = ""
+    try:
+        cc = json.loads(
+            Path("P:/.data/yt-is/ef/channel-candidates.json").read_text(
+                encoding="utf-8"))
+        rows_html = "".join(
+            f"<tr><td>{c['name']}</td><td class='dim'>{c['domain']}</td>"
+            f"<td class='dim'>{c.get('why', '')[:70]}</td>"
+            f"<td class='num'>{'&#9989;' if c.get('status') == 'approved' else "<a href='/candidates/approve?name=" + c['name'] + "'>&#9744; approve</a>"}</td></tr>"
+            for c in cc.get("candidates", []))
+        cov_rows = "".join(
+            f"<tr><td>{d}</td><td class='num'>{v['videos']:,}</td>"
+            f"<td class='num'>{v['channels']:,}</td></tr>"
+            for d, v in list(cc.get("coverage", {}).items())[:7])
+        if rows_html:
+            candidates_html = (
+                '<div class="panel" style="flex-basis:100%"><h3>Corpus '
+                'coverage &mdash; and candidate channels to add (approve by '
+                'editing P:/.data/yt-is/ef/channel-candidates.json: '
+                'status &rarr; approved)</h3><div class="grid">'
+                '<div style="flex:1;min-width:280px"><table>'
+                f"{rows_html}</table></div>"
+                '<div style="flex:1;min-width:220px"><h3 class="dim">'
+                'current coverage by domain</h3>'
+                f"<table>{cov_rows}</table></div></div></div>")
+    except Exception:
+        candidates_html = ""
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ytis — Home</title>
 <style>
@@ -529,7 +669,8 @@ def _render_home_page() -> str:
 <p class="dim">{now.strftime('%A, %Y-%m-%d %H:%M')} UTC</p>
 
 <div class="cards">
-  <div class="card"><div class="v">{today['total']:,}</div>transcripts today</div>
+  <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on channels (24h)</div>
+  <div class="card"><div class="v">{today['total']:,}</div>transcripts ingested (24h)</div>
   <div class="card"><div class="v">{len(today['channels'])}</div>active channels</div>
   <div class="card"><div class="v">{stats.get('complete', 0):,}</div>total in corpus</div>
   <div class="card"><div class="v">{docs.get('reddit', 0) + docs.get('hackernews', 0) + docs.get('rss', 0):,}</div>community docs</div>
@@ -552,6 +693,8 @@ def _render_home_page() -> str:
     </table>
     <p class="dim"><a href="/sources">manage sources →</a></p></div>
 </div>
+
+{candidates_html}
 
 <p class="dim">Full brief: <a href="/digest">daily brief + 7-day view</a> ·
 momentum over 72h/7d: <a href="/">search page</a></p>
@@ -642,6 +785,12 @@ def _render_sources_page() -> str:
     subs = conn.execute(
         "SELECT subreddit FROM reddit_subreddits ORDER BY added_at"
     ).fetchall()
+    try:
+        pods = conn.execute(
+            "SELECT url, COALESCE(name, url) FROM podcast_feeds "
+            "ORDER BY added_at").fetchall()
+    except sqlite3.OperationalError:
+        pods = []
     conn.close()
 
     feed_rows = "".join(
@@ -653,6 +802,10 @@ def _render_sources_page() -> str:
         f"<tr><td>r/{s[0]}</td>"
         f"<td><button onclick=\"rmSub('{s[0]}')\">remove</button></td></tr>"
         for s in subs)
+    pod_rows = "".join(
+        f"<tr><td>{pf[1]}</td><td class='dim'>{pf[0][:70]}</td>"
+        f"<td><button onclick=\"rmPod('{pf[0]}')\">remove</button></td></tr>"
+        for pf in pods)
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ytis — Sources</title>
@@ -683,6 +836,13 @@ def _render_sources_page() -> str:
 <button onclick="addFeed()">Add feed</button>
 <span class="dim"> — synced daily at 06:00, or run <code>ytis rss</code></span></p>
 
+<h2>Podcasts</h2>
+<table><tr><th>Show</th><th>Feed URL</th><th></th></tr>{pod_rows}</table>
+<p><input id="podname" placeholder="Show name" style="width:22%">
+<input id="podurl" placeholder="RSS feed URL" style="width:45%">
+<button onclick="addPod()">Add podcast</button>
+<span class="dim"> — episodes transcribed locally (Whisper)</span></p>
+
 <h2>Reddit subreddits</h2>
 <table><tr><th>Subreddit</th><th></th></tr>{sub_rows}</table>
 <p><input id="subname" placeholder="LocalLLaMA" style="width:30%">
@@ -707,6 +867,18 @@ async function addSub() {{
 }}
 async function rmSub(name) {{
   await fetch('/sources/reddit/remove?name=' + encodeURIComponent(name), {{method: 'POST'}});
+  location.reload();
+}}
+async function addPod() {{
+  const url = document.getElementById('podurl').value.trim();
+  const name = document.getElementById('podname').value.trim();
+  if (!url) return;
+  await fetch('/sources/podcast/add?url=' + encodeURIComponent(url) +
+              '&name=' + encodeURIComponent(name), {{method: 'POST'}});
+  location.reload();
+}}
+async function rmPod(url) {{
+  await fetch('/sources/podcast/remove?url=' + encodeURIComponent(url), {{method: 'POST'}});
   location.reload();
 }}
 </script>
@@ -822,7 +994,7 @@ def _render_status_page() -> str:
   .card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: .9rem 1.3rem; }}
   .card .v {{ font-size: 1.5rem; font-weight: 700; color: #58a6ff; }}
 </style></head><body>
-<nav><a href="/">&larr; Search</a> · <a href="/digest">Daily brief</a> ·
+<nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> · <a href="/digest">Daily brief</a> ·
 <a href="/review">YouTube channels</a> · <a href="/reddit">Reddit</a> ·
 <a href="/discord">Discord</a> · <a href="/status">Status</a></nav>
 <h1>Status</h1>
@@ -936,7 +1108,7 @@ def _render_source_page(kind: str) -> str:
   .dim {{ color: #8b949e; }}
   code {{ background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: .1rem .4rem; }}
 </style></head><body>
-<nav><a href="/">&larr; Search</a> · <a href="/digest">Daily brief</a> ·
+<nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> · <a href="/digest">Daily brief</a> ·
 <a href="/review">YouTube channels</a> · <a href="/reddit">Reddit</a> ·
 <a href="/discord">Discord</a></nav>
 <h1>{title}</h1>
@@ -1062,15 +1234,15 @@ def _render_digest_page() -> str:
   .card .v {{ font-size: 1.6rem; font-weight: 700; color: #58a6ff; }}
   nav {{ margin-bottom: 1.5rem; }}
 </style></head><body>
-<nav><a href="/">&larr; Search</a> · <a href="/review">YouTube channels</a> ·
+<nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> · <a href="/review">YouTube channels</a> ·
 <a href="/reddit">Reddit</a> · <a href="/discord">Discord</a> · <a href="/status">Status</a></nav>
 <h1>Daily Brief</h1>
 <p class="dim">{now.strftime('%A, %Y-%m-%d %H:%M')} UTC — computed live</p>
 
 <div class="cards">
-  <div class="card"><div class="v">{today_total:,}</div>transcripts today</div>
+  <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on channels (24h)</div>
+  <div class="card"><div class="v">{_channel_side_published(7):,}</div>new on channels (7d)</div>
   <div class="card"><div class="v">{len(today['channels'])}</div>channels active</div>
-  <div class="card"><div class="v">{week_total:,}</div>transcripts last 7 days</div>
   <div class="card"><div class="v">{len(reddit_week)}</div>Reddit posts (7d)</div>
   <div class="card"><div class="v">{len(artifacts_week)}</div>code artifacts (7d)</div>
 </div>
@@ -1094,6 +1266,73 @@ def _render_digest_page() -> str:
 <p class="dim">{stats['complete']:,} transcripts complete · {stats['channels']:,} channels ·
 {stats['pending']:,} pending · {stats['failed']:,} failed</p>
 </body></html>"""
+
+
+def library_lookup(video_id: str, catalog_db=None) -> dict:
+    """Read-only library membership: exact EU identity from the fabric
+    catalog (eu_id = video_id:transcript). Presence and provenance only,
+    never transcript content."""
+    import sqlite3
+    from ef.catalog import CATALOG_DB
+    db = catalog_db or CATALOG_DB
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10.0)
+    try:
+        row = conn.execute(
+            "select eu_id, source, char_length, captured_at from eu "
+            "where eu_id = ?", (f"{video_id}:transcript",)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return {"video_id": video_id, "status": "not_found"}
+    eu_id, source, char_length, captured_at = row
+    return {
+        "video_id": video_id,
+        "status": "in_library",
+        "eu_id": eu_id,
+        "transcript_chars": char_length,
+        "transcript_source": source,
+        "cached_at": captured_at or None,
+    }
+
+
+def reopen_exact(eu_id: str, start_char: int, end_char: int,
+                 catalog_db=None, transcripts_db=None):
+    """Exact authoritative span reopen: catalog eu_id -> authority_ref ->
+    transcript_cache substr. The returned text length is exactly
+    end_char - start_char; anything short of that fails closed (None)."""
+    import sqlite3
+    from ef.authority import TRANSCRIPTS_DB
+    from ef.catalog import CATALOG_DB
+    cat = sqlite3.connect(
+        f"file:{catalog_db or CATALOG_DB}?mode=ro", uri=True, timeout=10.0)
+    try:
+        row = cat.execute(
+            "select authority_ref, video_id from eu where eu_id = ?",
+            (eu_id,)).fetchone()
+    finally:
+        cat.close()
+    if row is None:
+        return None
+    authority_ref, video_id = row
+    ro = sqlite3.connect(
+        f"file:{transcripts_db or TRANSCRIPTS_DB}?mode=ro", uri=True,
+        timeout=10.0)
+    try:
+        span = ro.execute(
+            "select substr(transcript, ?, ?) from transcript_cache "
+            "where cache_key = ?",
+            (start_char + 1, end_char - start_char, authority_ref)).fetchone()
+    finally:
+        ro.close()
+    if span is None or span[0] is None or len(span[0]) != end_char - start_char:
+        return None
+    return {
+        "eu_id": eu_id,
+        "video_id": video_id,
+        "start_char": start_char,
+        "end_char": end_char,
+        "text": span[0],
+    }
 
 
 def _chs_search(query: str, top_k: int = 3) -> list[dict]:
