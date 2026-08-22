@@ -33,6 +33,16 @@ Q&A provider chain: `ef/qa.py`, env-orderable via YTIS_QA_PROVIDERS
 (default codex,agy,openrouter,gemini); CLIs need node dirs on PATH
 (per-user install at ~/AppData/Local/Programs/nodejs).
 
+**Agent service restarts (standard, 2026-08-22).** `ef_warm_query` and
+`ef_qdrant` carry a scoped SDDL grant giving the user account exactly
+start/stop/query rights (`(A;;SWRPWPRC;;;<user-sid>)` appended to the
+service DACL), so agent shells on this machine may restart these two
+services directly, no UAC. Any NEW NSSM/LocalSystem service installed
+for this workspace must add the same grant in its install procedure —
+see the wiki concept `windows-scoped-service-restart-delegation`.
+Machine-wide operations (firewall rules, HKLM, other services) still
+require an operator elevated terminal.
+
 **Automation (Task Scheduler, all windowless pythonw — no .cmd wrappers,
 operator constraint: console windows steal focus).** 03:00 YtisDhtCapture
 (DHT app + capture browser + ingest), 05:00 YtisIndexIncremental (paced
