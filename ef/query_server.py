@@ -18,6 +18,7 @@ from . import projection_server as ps
 from . import routing, server
 from .authority import reopen_span
 from .contracts import EvidenceResult
+from .query import external_url
 
 DEFAULT_LIMIT = 8
 FTS_DB = routing.FTS_DB
@@ -35,11 +36,26 @@ class ProductionQuery:
         self.snippet_context = snippet_context
         self.collection = ps.collection_name(generation)
         self.policy = policy or DEFAULT_POLICY
-        self._fts = None
-        self._ro_conn = None   # persistent authority reader: per-call
-        self._cat_conn = None  # persistent catalog reader
-        # connects cost ~1.4s against the 1.4GB WAL db (measured,
-        # same_corpus_baselines.json hydration_reopen_ms)
+        # Per-THREAD readers: the warm service is a ThreadingHTTPServer, so
+        # cached sqlite connections must never cross threads (SQLite
+        # thread-affinity). Each worker thread pays the connect cost once
+        # (~1.4s against the 1.4GB WAL db, measured,
+        # same_corpus_baselines.json hydration_reopen_ms).
+        import threading
+        self._tls = threading.local()
+
+    def _thread_state(self):
+        st = self._tls.__dict__
+        if "fts" not in st:
+            st["fts"] = sqlite3.connect(f"file:{FTS_DB}?mode=ro", uri=True)
+        if "cat" not in st:
+            from . import catalog as _catalog
+            st["cat"] = _catalog.connect()
+        if "ro" not in st:
+            from .authority import TRANSCRIPTS_DB
+            st["ro"] = sqlite3.connect(
+                f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True)
+        return st
 
     # ---- leg builders -------------------------------------------------
 
@@ -67,12 +83,11 @@ class ProductionQuery:
         return dense[0], lex[0]
 
     def _fts_lane(self, query_text: str, top: int = 100) -> list[str]:
-        if self._fts is None:
-            self._fts = sqlite3.connect(f"file:{FTS_DB}?mode=ro", uri=True)
+        fts = self._thread_state()["fts"]
         match = routing.sanitize_fts_query(query_text)
         if not match:
             return []
-        rows = self._fts.execute(
+        rows = fts.execute(
             "select chunk_id from chunks where chunks match ? "
             "order by bm25(chunks) limit ?", (match, top)).fetchall()
         return [r[0] for r in rows]
@@ -81,20 +96,13 @@ class ProductionQuery:
         """Snippet via PK lookups only: catalog eu_id -> authority_ref
         (== transcripts.sqlite cache_key PK) -> substr. A video_id lookup
         would full-scan the 1.4GB authority (no index on video_id)."""
-        import sqlite3
-        from . import catalog as _catalog
-        if self._cat_conn is None:
-            self._cat_conn = _catalog.connect()
-        if self._ro_conn is None:
-            from .authority import TRANSCRIPTS_DB
-            self._ro_conn = sqlite3.connect(
-                f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True)
-        cache_key = self._cat_conn.execute(
+        st = self._thread_state()
+        cache_key = st["cat"].execute(
             "select authority_ref from eu where eu_id=?", (eu_id,)).fetchone()
         if cache_key is None:
             raise LookupError(f"eu {eu_id} not in catalog")
         lo = max(0, start - self.snippet_context)
-        row = self._ro_conn.execute(
+        row = st["ro"].execute(
             "select substr(transcript, ?, ?) from transcript_cache "
             "where cache_key = ?",
             (lo + 1, (end + self.snippet_context) - lo, cache_key[0])).fetchone()
@@ -208,14 +216,21 @@ class ProductionQuery:
                 continue   # exact-lane hits respect filters too
             paths = ("fused", "dense", "sparse") + \
                 (("exact_fts5",) if exact_hit else ())
-            snippet = self._reopen(pl["eu_id"], pl["start_char"],
-                                   pl["end_char"])
+            try:
+                snippet = self._reopen(pl["eu_id"], pl["start_char"],
+                                       pl["end_char"])
+            except LookupError:
+                # Non-transcript sources (reddit/RSS/HN/discord) have EU
+                # entries + chunks in the catalog but their content lives
+                # outside transcript_cache (connector ingest path). Return
+                # metadata-only snippet; the result is still valid.
+                snippet = f"[{pl.get('source', 'non-transcript')}] {pl.get('title', '')[:200]}"
             out.append(EvidenceResult(
                 chunk_id=pl["chunk_id"], eu_id=pl["eu_id"],
                 video_id=pl["video_id"], title=pl["title"] or "",
                 channel_id=pl["channel_id"],
                 channel_title=pl["channel_title"] or "",
-                url=f"https://youtu.be/{pl['video_id']}",
+                url=external_url(pl["video_id"], pl["channel_id"]),
                 start_char=pl["start_char"], end_char=pl["end_char"],
                 score=float(_s), retrieval_paths=paths, snippet=snippet))
         return out
