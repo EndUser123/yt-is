@@ -1,0 +1,84 @@
+{
+ "queries": [
+  {
+   "q": "why spans avoid heap allocation in C#",
+   "lane": "semantic"
+  },
+  {
+   "q": "evidence that a newly released reasoning model beats prior frontier",
+   "lane": "semantic"
+  },
+  {
+   "q": "debug assertions in complex functions",
+   "lane": "semantic"
+  },
+  {
+   "q": "building MCP servers in python",
+   "lane": "semantic"
+  },
+  {
+   "q": "rest api design from scratch",
+   "lane": "semantic"
+  },
+  {
+   "q": "spec-driven frameworks versus plain planning",
+   "lane": "comparison"
+  },
+  {
+   "q": "sequential coding versus parallel agents",
+   "lane": "comparison"
+  },
+  {
+   "q": "verbose ai output versus minimal tokens",
+   "lane": "comparison"
+  },
+  {
+   "q": "iterating lists with spans versus plain arrays",
+   "lane": "comparison"
+  },
+  {
+   "q": "gpu versus cpu instances for model serving",
+   "lane": "comparison"
+  },
+  {
+   "q": "GLM-4.7",
+   "lane": "identifier"
+  },
+  {
+   "q": "DeepSeek V4",
+   "lane": "identifier"
+  },
+  {
+   "q": "GPT-5.6 Sol",
+   "lane": "identifier"
+  },
+  {
+   "q": "MiniMax M3",
+   "lane": "identifier"
+  },
+  {
+   "q": "qdrant server",
+   "lane": "identifier"
+  },
+  {
+   "q": "build mcp server python",
+   "lane": "telegraphic"
+  },
+  {
+   "q": "django background task queue",
+   "lane": "telegraphic"
+  },
+  {
+   "q": "c# fastest list modification",
+   "lane": "telegraphic"
+  },
+  {
+   "q": "vpn setup phone",
+   "lane": "telegraphic"
+  },
+  {
+   "q": "figma parallax prototype",
+   "lane": "telegraphic"
+  }
+ ]
+}

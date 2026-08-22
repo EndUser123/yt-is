@@ -1,0 +1,61 @@
+{
+ "schema": "version-contract/1",
+ "updated": "2026-08-22",
+ "components": {
+  "qdrant-server": {
+   "version": "1.19.0",
+   "coupled": "stored collections",
+   "policy": "laddered-minors (snapshot restore = same-or-next minor)",
+   "restart": [
+    "qdrant",
+    "ef-warm-svc",
+    "ytis-pipeline"
+   ]
+  },
+  "qdrant-client": {
+   "version": "1.19.0",
+   "coupled": "qdrant-server",
+   "policy": "track-pm1 (guarantee \u00b11 minor; tested vs latest 3)",
+   "upgrade_trigger": "client warning OR scheduled bump",
+   "restart": [
+    "ef-warm-svc",
+    "ytis-pipeline"
+   ]
+  },
+  "encoder-stack": {
+   "version": {
+    "sentence-transformers": "5.2.3",
+    "transformers": "4.57.6",
+    "torch": "2.11.0.dev20251215+cu128"
+   },
+   "model": "BGE-M3 (dual dense+sparse)",
+   "coupled": "EF index vectors (gen1)",
+   "policy": "strict-pin + golden-query behavioral gate",
+   "gate": "scripts/ef_golden_gate.py"
+  },
+  "sqlite-ft5": {
+   "version": "system sqlite3",
+   "policy": "pin runtime per service; low risk"
+  },
+  "kuzu": {
+   "version": null,
+   "policy": "verify-format-policy-before-adopt (design M5)"
+  },
+  "lightrag": {
+   "version": null,
+   "policy": "not adopted; bake-off packet P2"
+  },
+  "python-runtime": {
+   "version": "3.14 primary (services), 3.13 residual",
+   "policy": "one-interpreter-per-service, named in restart maps"
+  },
+  "ytis-pipeline-svc": {
+   "version": "NSSM service ytis-pipeline",
+   "policy": "auto-start; health = pipeline-status.json fresher than 2x next_cycle_s and ok"
+  }
+ },
+ "restart_map": {
+  "ef-warm-svc": "http://127.0.0.1:6391 \u2014 restart after any qdrant/client/encoder change",
+  "ytis-pipeline": "services.msc or 'nssm restart ytis-pipeline'"
+ }
+}
