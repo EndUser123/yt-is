@@ -229,7 +229,7 @@ def incremental_update(batch_limit: int = 2000) -> dict:
             auth.close()
         gone = [r[0] for r in cat.execute(
             "select eu_id from eu where build_generation=?", (gen,)).fetchall()
-            if r[0].split(":")[0] not in auth_vids]
+            if r[0].rsplit(":", 1)[0] not in auth_vids]
         for eu_id in gone:
             old = [r[0] for r in cat.execute(
                 "select chunk_id from chunk where eu_id=?", (eu_id,)).fetchall()]

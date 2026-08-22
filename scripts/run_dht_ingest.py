@@ -186,19 +186,23 @@ def ingest_archive(archive: Path, tdb: sqlite3.Connection) -> dict:
         channels: dict = {}
         server_of: dict = {}
         try:
+            # DHT stores ids as INTEGER; message rows are normalized to
+            # str() in the streaming loop, so every lookup key must be
+            # str() too or every name lookup silently misses (the bug
+            # behind raw-id channel names in the 2026-08-21 ingest).
             if "users" in src_tables:
-                users = dict(src.execute(
-                    "SELECT id, name FROM users").fetchall())
+                users = {str(k): v for k, v in src.execute(
+                    "SELECT id, name FROM users").fetchall()}
             if "channels" in src_tables:
-                channels = dict(src.execute(
-                    "SELECT c.id, c.name FROM channels c").fetchall())
+                channels = {str(k): v for k, v in src.execute(
+                    "SELECT c.id, c.name FROM channels c").fetchall()}
                 servers: dict = {}
                 if "servers" in src_tables:
-                    servers = dict(src.execute(
-                        "SELECT s.id, s.name FROM servers s").fetchall())
+                    servers = {str(k): v for k, v in src.execute(
+                        "SELECT s.id, s.name FROM servers s").fetchall()}
                 for cid, sid in src.execute(
                         "SELECT id, server FROM channels").fetchall():
-                    server_of[cid] = servers.get(sid, "")
+                    server_of[str(cid)] = servers.get(str(sid), "")
         except sqlite3.Error:
             pass  # names are cosmetic; ids still disambiguate
 
