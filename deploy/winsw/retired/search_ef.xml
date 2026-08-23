@@ -1,0 +1,17 @@
+<service>
+  <id>search_ef</id>
+  <name>search_ef</name>
+  <description>Fleet MCP: Evidence Fabric corpus search (:8324)</description>
+  <executable>C:\Python314\python.exe</executable>
+  <arguments>-m ef.mcp_server</arguments>
+  <workingdirectory>P:\packages\yt-is</workingdirectory>
+  <env name="MCP_HTTP_PORT" value="8324"/>
+  <env name="PYTHONUNBUFFERED" value="1"/>
+  <env name="PYTHONPATH" value="C:\Users\brsth\AppData\Roaming\Python\Python314\site-packages;C:\Users\brsth\AppData\Roaming\Python\Python314\site-packages\win32;C:\Users\brsth\AppData\Roaming\Python\Python314\site-packages\win32\lib;C:\Users\brsth\AppData\Roaming\Python\Python314\site-packages\Pythonwin"/>
+  <depend>ef_qdrant</depend>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="5 sec"/>
+  <log mode="roll-by-size" sizeBytes="10485760" keepFiles="8"><logpath>P:\.data\logs\nssm</logpath></log>
+</service>
