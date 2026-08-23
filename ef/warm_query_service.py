@@ -644,7 +644,10 @@ document.addEventListener('click', e => {{
     if (!r.ok && r.status !== 302) throw new Error('save failed (' + r.status + ')');
     if (href.includes('all=')) {{
       const gid = new URLSearchParams(href.split('?')[1]).get('g');
-      location.href = '/dht#g-' + gid;      // reload, scroll to server
+      // hash-only location.href change is a same-page jump — the page
+      // would NOT reload and the new state would never render; force it
+      location.hash = 'g-' + gid;
+      location.reload();
     }} else {{
       a.innerHTML = a.innerHTML.includes('☐') ? '✅' : '☐';
       a.style.opacity = '1';
