@@ -584,7 +584,8 @@ def _render_dht_page() -> str:
         hook = (f" <a href='/dht/webhook?g={g['id']}' class='dim'>"
                 "[digest webhook]</a>") if g.get("webhook_eligible") else ""
         rows.append(
-            f"<h2>{g['name']} <span class='dim'>({len(cap)} capturable, "
+            f"<h2 id='g-{g['id']}'>{g['name']} "
+            f"<span class='dim'>({len(cap)} capturable, "
             f"~{g.get('approx_members') or '?'} members)</span>"
             f"<a href='/dht/toggle?g={g['id']}&all="
             f"{'0' if all_on else '1'}'>"
@@ -612,7 +613,7 @@ def _render_dht_page() -> str:
   body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
         background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }}
   h1 {{ color: #58a6ff; }} a {{ color: #58a6ff; text-decoration: none; }}
-  h2 {{ margin-top: 2rem; font-size: 1.1rem; }}
+  h2 {{ margin-top: 2rem; font-size: 1.1rem; scroll-margin-top: 1.5rem; }}
   h2 a {{ font-size: .8rem; margin-left: .8rem; }}
   table {{ border-collapse: collapse; max-width: 900px; }}
   td {{ padding: .15rem .9rem .15rem 0; font-size: .92rem; }}
@@ -626,6 +627,25 @@ def _render_dht_page() -> str:
 {cat.get('captured_at', '?')} (account: {cat.get('me', {}).get('name', '?')})
 · checked channels are visited nightly at 03:00 by the capture browser</p>
 {''.join(rows)}
+<script>
+// Toggles without the jump: per-channel flips happen in place (no
+// reload, scroll untouched); enable/disable-all reloads but returns to
+// the same server's heading via its #g-<id> anchor.
+document.addEventListener('click', e => {{
+  const a = e.target.closest('a[href*="/dht/toggle"]');
+  if (!a) return;
+  e.preventDefault();
+  const href = a.getAttribute('href');
+  fetch(href).then(() => {{
+    if (href.includes('all=')) {{
+      const gid = new URLSearchParams(href.split('?')[1]).get('g');
+      location.href = '/dht#g-' + gid;      // reload, scroll to server
+    }} else {{
+      a.innerHTML = a.innerHTML.includes('☐') ? '✅' : '☐';
+    }}
+  }});
+}});
+</script>
 </body></html>"""
 
 
