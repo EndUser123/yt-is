@@ -259,6 +259,16 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._text(500, f"home unavailable: {e}")
 
+        elif parsed.path == "/graph":
+            try:
+                from urllib.parse import parse_qs as _pq
+                q = (_pq(parsed.query).get("q") or [""])[0]
+                self._bytes(200,
+                            _render_graph_page(q).encode("utf-8"),
+                            "text/html; charset=utf-8")
+            except Exception as e:
+                self._text(500, f"graph page unavailable: {e}")
+
         elif parsed.path == "/dht":
             try:
                 self._bytes(200, _render_dht_page().encode("utf-8"),
@@ -661,6 +671,126 @@ document.addEventListener('click', e => {{
 </body></html>"""
 
 
+def _render_graph_page(q: str = "") -> str:
+    from ef import graph_query as gq
+    import html as _html
+    q = (q or "").strip()
+    matches = gq.search_nodes(q, 15) if q else []
+    body: list[str] = []
+    if matches:
+        top = matches[0]
+        if top["kind"] == "entity":
+            v = gq.entity_view(top["node_id"])
+        else:
+            v = gq.channel_view(top["node_id"])
+        if "error" in v:
+            body.append(f"<p class='dim'>{v['error']}</p>")
+            matches = []
+        else:
+            srcs = " · ".join(f"{s['source']} <b>{s['docs']:,}</b>"
+                              for s in v["sources"])
+            body.append(
+                f"<h2>{_html.escape(v['label'])} "
+                f"<span class='dim'>({v['kind']}, "
+                f"{v['total_docs']:,} documents)</span></h2>"
+                f"<p class='srcs'>{srcs}</p>")
+            if matches[1:]:
+                alts = " · ".join(
+                    f"<a href='/graph?q={_html.escape(m['display'].lstrip('#'))}'>"
+                    f"{_html.escape(m['display'])}</a>"
+                    for m in matches[1:7])
+                body.append(f"<p class='dim'>also matching: {alts}</p>")
+            if v["kind"] == "entity":
+                body.append("<h3>Top documents</h3><table>")
+                for d in v["docs"]:
+                    body.append(
+                        f"<tr><td class='dim'>{d['hits']:.0f}</td>"
+                        f"<td>{_html.escape(str(d['title'])[:80])}</td>"
+                        f"<td class='dim'>{_html.escape(str(d['channel'])[:28])}"
+                        f"</td><td class='dim'>{d['source']}</td></tr>")
+                body.append("</table><h3>Where it appears</h3><table>")
+                for ch in v["channels"]:
+                    body.append(
+                        f"<tr><td class='dim'>{ch['docs']:,}</td>"
+                        f"<td>{_html.escape(str(ch['channel'])[:60])}</td>"
+                        f"<td class='dim'>{ch['hits']:.0f} hits</td></tr>")
+                body.append("</table><h3>Co-mentioned entities</h3><p>")
+                for r in v["related"]:
+                    body.append(
+                        f"<a class='chip' href='/graph?q="
+                        f"{_html.escape(r['label'])}'>"
+                        f"{_html.escape(r['label'])} "
+                        f"<span class='dim'>{r['shared_docs']:,}</span></a> ")
+                body.append("</p>")
+            else:
+                body.append("<h3>Top entities in this channel</h3><table>")
+                for e in v.get("entities", []):
+                    body.append(
+                        f"<tr><td class='dim'>{e['hits']:.0f}</td>"
+                        f"<td><a href='/graph?q={_html.escape(e['label'])}'>"
+                        f"{_html.escape(e['label'])}</a></td>"
+                        f"<td class='dim'>{e['docs']} docs</td></tr>")
+                body.append("</table>")
+    elif q:
+        body.append(f"<p class='dim'>no entity or channel matches "
+                    f"“{_html.escape(q)}”</p>")
+    if not matches:
+        import sqlite3
+        try:
+            conn = sqlite3.connect(
+                "file:P:/.data/yt-is/ef/catalog.sqlite?mode=ro", uri=True)
+            top = conn.execute(
+                "SELECT label, weight FROM kg_nodes WHERE kind='entity' "
+                "ORDER BY weight DESC LIMIT 24").fetchall()
+            conn.close()
+        except sqlite3.Error:
+            top = []
+        chips = " ".join(
+            f"<a class='chip' href='/graph?q={_html.escape(l)}'>"
+            f"{_html.escape(l)} <span class='dim'>{w:,.0f}</span></a>"
+            for l, w in top)
+        body.append("<h3>Most-mentioned entities</h3><p>" + chips + "</p>")
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ytis — Knowledge graph</title>
+<style>
+  body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }}
+  h1 {{ color: #58a6ff; }} h2 {{ color: #e6edf3; margin-bottom: .2rem; }}
+  h3 {{ margin-top: 1.6rem; }}
+  a {{ color: #58a6ff; text-decoration: none; }}
+  input {{ width: 50%; background: #161b22; color: #e6edf3;
+         border: 1px solid #30363d; border-radius: 8px;
+         padding: .7rem 1rem; font-size: 1.05rem; }}
+  button {{ background: #1f6feb; color: #fff; border: none;
+          border-radius: 8px; padding: .7rem 1.4rem; font-size: 1.05rem;
+          cursor: pointer; }}
+  table {{ border-collapse: collapse; max-width: 980px; }}
+  td {{ padding: .18rem 1rem .18rem 0; font-size: .92rem; }}
+  .dim {{ color: #8b949e; }}
+  .chip {{ display: inline-block; background: #161b22;
+         border: 1px solid #30363d; border-radius: 999px;
+         padding: .18rem .7rem; margin: .18rem .18rem .18rem 0;
+         font-size: .88rem; }}
+  .srcs {{ color: #8b949e; }} .srcs b {{ color: #e6edf3; }}
+</style></head><body>
+<nav><a href="/">Search</a> · <a href="/home">Home</a> ·
+<a href="/digest">Daily brief</a> · <a href="/sources">Sources</a> ·
+<a href="/dht">Discord capture</a> · <a href="/status">Status</a></nav>
+<h1>Knowledge graph</h1>
+<p><input id="q" placeholder="entity or channel — e.g. 0DTE, Whisper, Google"
+        value="{_html.escape(q)}" autofocus>
+<button onclick="go()">Explore</button></p>
+<script>function go() {{
+  location.href = '/graph?q=' + encodeURIComponent(
+      document.getElementById('q').value);
+}}
+document.getElementById('q').addEventListener('keyup', e => {{
+  if (e.key === 'Enter') go();
+}});</script>
+{''.join(body)}
+</body></html>"""
+
+
 def _render_ask_page() -> str:
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ytis — Ask</title>
@@ -866,7 +996,7 @@ def _render_home_page() -> str:
 </style></head><body>
 <nav><a href="/">Search</a> · <b>Home</b> · <a href="/digest">Daily brief</a> ·
 <a href="/sources">Sources</a> · <a href="/review">YouTube channels</a> ·
-<a href="/dht">Discord capture</a> ·
+<a href="/dht">Discord capture</a> · <a href="/graph">Graph</a> ·
 <a href="/ask">Ask</a> · <a href="/status">Status</a></nav>
 <h1>Good {('morning' if now.hour < 12 else 'afternoon' if now.hour < 18 else 'evening')}</h1>
 <p class="dim">{now.strftime('%A, %Y-%m-%d %H:%M')} UTC</p>

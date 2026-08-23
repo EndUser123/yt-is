@@ -22,7 +22,8 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from ef.warm_query_service import (  # noqa: E402
-    DHT_CATALOG, _dht_selection, _dht_save_selection, _render_dht_page)
+    DHT_CATALOG, _dht_selection, _dht_save_selection, _render_dht_page,
+    _render_graph_page)
 
 import json  # noqa: E402
 
@@ -33,7 +34,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path in ("/", "/dht"):
+        if parsed.path == "/graph":
+            q = (parse_qs(parsed.query).get("q") or [""])[0]
+            body = _render_graph_page(q).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path in ("/", "/dht"):
             body = _render_dht_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
