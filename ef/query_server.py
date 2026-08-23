@@ -43,6 +43,14 @@ class ProductionQuery:
         # same_corpus_baselines.json hydration_reopen_ms).
         import threading
         self._tls = threading.local()
+        # Encoder lock: BGE-M3 (PyTorch) is not documented thread-safe for
+        # concurrent inference. In the merged service (MCP face daemon
+        # thread + ThreadingHTTPServer worker threads), unsynchronized
+        # concurrent encode calls corrupt the output vectors (observed as
+        # Qdrant 400 "expected some form of vector" at a fixed column —
+        # the first NaN/garbage position in the dense vector). Serialize
+        # all encode access behind one lock.
+        self._encode_lock = threading.Lock()
 
     def _thread_state(self):
         st = self._tls.__dict__
@@ -79,7 +87,8 @@ class ProductionQuery:
         return list(res.points), None
 
     def _encode(self, text: str):
-        dense, lex = self.encoder.encode([text])
+        with self._encode_lock:
+            dense, lex = self.encoder.encode([text])
         return dense[0], lex[0]
 
     def _fts_lane(self, query_text: str, top: int = 100) -> list[str]:
