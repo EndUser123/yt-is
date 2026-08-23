@@ -20,6 +20,7 @@ import signal
 import sys
 import threading
 import time
+import math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote_plus
 
@@ -33,6 +34,11 @@ PID_FILE = REPO / ".data" / "yt-is" / "ef" / "query-service.pid"
 
 _query_instance = None
 _query_lock = threading.Lock()
+# Set only after a canary encode proves the encoder actually works.
+# Before this, /query refuses with 503 instead of sending empty vectors
+# to Qdrant (the 2026-08-23 incident: model silently broken in-process,
+# every query 500ed behind "ready" health).
+_warm_ok = threading.Event()
 
 
 def get_query():
@@ -93,6 +99,9 @@ class Handler(BaseHTTPRequestHandler):
             channel_id = params.get("channel_id", [None])[0]
             fmt = params.get("format", ["json"])[0]
 
+            if not _warm_ok.is_set():
+                self._json(503, {"error": "warming: encoder canary has not passed yet"})
+                return
             try:
                 q = get_query()
                 results = q.relevant(query_text, limit=top_k, channel_id=channel_id)
@@ -1788,10 +1797,19 @@ def main():
     # connections immediately (health returns 503 until warm)
     def warm():
         try:
-            get_query()
-            print("  model warm — ready for queries")
+            q = get_query()
+            dense, _lex = q.encoder.encode(["warmup canary query"])
+            row = list(dense[0]) if hasattr(dense, "__getitem__" ) else []
+            if len(row) == 0 or not all(math.isfinite(v) for v in row):
+                raise RuntimeError(f"encoder canary produced a bad vector (len={len(row)})")
+            _warm_ok.set()
+            print("  model warm — encoder canary passed")
         except Exception as e:
-            print(f"  model load failed: {e}")
+            # FATAL, not degrade-and-serve-garbage: exit so the service
+            # wrapper's failure/restart semantics engage loudly instead
+            # of answering every query with an empty-vector 500.
+            print(f"  FATAL: model load/canary failed: {e}", flush=True)
+            os._exit(1)
 
     threading.Thread(target=warm, daemon=True).start()
 
