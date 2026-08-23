@@ -32,18 +32,27 @@ _query_lock = threading.Lock()
 
 
 def get_query():
-    """Lazy singleton for the warm ProductionQuery (mirrors warm_query_service)."""
+    """Shared warm ProductionQuery — ONE model instance per process.
+
+    When this module runs inside ef.warm_query_service (the merged
+    single-model host), this returns the warm service's own singleton so
+    the MCP face and the :6391 renderers share one BGE-M3. Standalone
+    (stdio debugging) falls back to creating its own instance."""
     global _query_instance
     if _query_instance is None:
         with _query_lock:
             if _query_instance is None:
-                from ef import embedding, buildspec
-                from ef.query_server import ProductionQuery
+                try:
+                    from ef.warm_query_service import get_query as _warm_get_query
+                    _query_instance = _warm_get_query()
+                except Exception:
+                    from ef import embedding, buildspec
+                    from ef.query_server import ProductionQuery
 
-                _query_instance = ProductionQuery(
-                    embedding.BGEM3Dual(),
-                    buildspec.load_spec()["generation"],
-                )
+                    _query_instance = ProductionQuery(
+                        embedding.BGEM3Dual(),
+                        buildspec.load_spec()["generation"],
+                    )
     return _query_instance
 
 

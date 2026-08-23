@@ -1490,6 +1490,22 @@ def main():
 
     threading.Thread(target=warm, daemon=True).start()
 
+    # Merged MCP face (2026-08-22): when MCP_HTTP_PORT is set, serve the
+    # search_ef MCP on a second face from THIS process — one BGE-M3 for
+    # both :6391 renderers and :8324 MCP. Replaces the separate
+    # search_ef service (retired the same day; ~2.4-3.4 GB saved).
+    mcp_port = os.environ.get("MCP_HTTP_PORT", "")
+    if mcp_port:
+        from ef.mcp_server import mcp as _mcp
+
+        _mcp.settings.host = HOST
+        _mcp.settings.port = int(mcp_port)
+        threading.Thread(
+            target=_mcp.run, kwargs={"transport": "streamable-http"},
+            daemon=True, name="mcp-face",
+        ).start()
+        print(f"  MCP face starting on {HOST}:{mcp_port}")
+
     server.serve_forever()
     return 0
 
