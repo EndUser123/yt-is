@@ -74,13 +74,37 @@ def login_mode():
         ctx.close()
 
 
+def _selected_urls():
+    """Nightly capture list: the /dht page's selection (catalog-backed)
+    when it has enabled entries, else the legacy channels.txt lines."""
+    import json
+    sel_path = Path("P:/.data/yt-is/dht-capture-selection.json")
+    cat_path = Path("P:/.data/yt-is/dht-capture-catalog.json")
+    try:
+        sel = json.loads(sel_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        sel = {}
+    urls = [f"https://discord.com/channels/{key}"
+            for key, on in sel.items() if on]
+    if urls:
+        servers = len({k.split("/")[0] for k, v in sel.items() if v})
+        print(f"[capture] using /dht page selection: "
+              f"{len(urls)} channel(s) across {servers} server(s)")
+        return urls
+    if not CHANNELS.exists():
+        sys.exit("No capture selection: enable channels on "
+                 "http://127.0.0.1:6391/dht (or fill channels.txt)")
+    return [l.strip() for l in CHANNELS.read_text().splitlines()
+            if l.strip() and not l.startswith("#")]
+
+
 def capture_mode():
     if not TRACKING_JS.exists():
         sys.exit("No tracking-script.js — run setup_tracking.py first")
-    if not CHANNELS.exists():
-        sys.exit("No channels.txt — add discord.com/channels/<server>/<channel> URLs")
-    urls = [l.strip() for l in CHANNELS.read_text().splitlines()
-            if l.strip() and not l.startswith("#")]
+    urls = _selected_urls()
+    if not urls:
+        sys.exit("capture selection is empty — enable channels on "
+                 "http://127.0.0.1:6391/dht")
     script = TRACKING_JS.read_text(encoding="utf-8")
 
     with sync_playwright() as pw:

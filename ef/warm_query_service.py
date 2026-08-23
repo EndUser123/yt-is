@@ -259,6 +259,73 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._text(500, f"home unavailable: {e}")
 
+        elif parsed.path == "/dht":
+            try:
+                self._bytes(200, _render_dht_page().encode("utf-8"),
+                            "text/html; charset=utf-8")
+            except Exception as e:
+                self._text(500, f"dht page unavailable: {e}")
+
+        elif parsed.path == "/dht/toggle":
+            params = parse_qs(parsed.query)
+            gid = (params.get("g") or [""])[0]
+            cid = (params.get("c") or [""])[0]
+            mode = (params.get("all") or [""])[0]
+            try:
+                cat = json.loads(DHT_CATALOG.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                cat = {"guilds": []}
+            guild = next((g for g in cat.get("guilds", [])
+                          if g.get("id") == gid), None)
+            sel = _dht_selection()
+            if guild and mode in ("0", "1"):
+                for c in guild.get("channels", []):
+                    if c.get("capturable"):
+                        sel[f"{gid}/{c['id']}"] = mode == "1"
+            elif guild and cid:
+                key = f"{gid}/{cid}"
+                sel[key] = not sel.get(key)
+            _dht_save_selection(sel)
+            self.send_response(302)
+            self.send_header("Location", "/dht")
+            self.end_headers()
+
+        elif parsed.path == "/dht/webhook":
+            # one-click digest webhook in a webhook-eligible guild; the
+            # script drives the logged-in capture profile briefly
+            params = parse_qs(parsed.query)
+            gid = (params.get("g") or [""])[0]
+            try:
+                cat = json.loads(DHT_CATALOG.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                cat = {"guilds": []}
+            guild = next((g for g in cat.get("guilds", [])
+                          if g.get("id") == gid), None)
+            if not guild:
+                self._text(400, "unknown guild"); return
+            target = next((c for c in guild["channels"]
+                           if c.get("type") == 0 and
+                           any(k in (c.get("name") or "").lower()
+                               for k in ("general", "digest", "announce"))),
+                          None) or next((c for c in guild["channels"]
+                                         if c.get("type") == 0), None)
+            if not target:
+                self._text(400, "guild has no text channel"); return
+            import subprocess
+            r = subprocess.run(
+                [sys.executable,
+                 str(Path("P:/packages/yt-is/scripts/dht-capture/"
+                          "enumerate_dht.py")),
+                 "--create-webhook", gid, target["id"]],
+                capture_output=True, text=True, timeout=300, cwd="P:/")
+            if r.returncode == 0:
+                self.send_response(302)
+                self.send_header("Location", "/dht")
+                self.end_headers()
+            else:
+                self._text(500, "webhook create failed — "
+                           f"{(r.stdout + r.stderr)[-400:]}")
+
         elif parsed.path == "/entities":
             try:
                 self._bytes(200, _render_entities_page().encode("utf-8"),
@@ -487,6 +554,81 @@ def _topic_trends() -> dict:
         conn.close()
 
 
+DHT_CATALOG = Path("P:/.data/yt-is/dht-capture-catalog.json")
+DHT_SELECTION = Path("P:/.data/yt-is/dht-capture-selection.json")
+
+
+def _dht_selection() -> dict:
+    try:
+        return json.loads(DHT_SELECTION.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _dht_save_selection(sel: dict) -> None:
+    DHT_SELECTION.write_text(
+        json.dumps(sel, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _render_dht_page() -> str:
+    try:
+        cat = json.loads(DHT_CATALOG.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        cat = {"guilds": [], "me": {}, "captured_at": "?"}
+    sel = _dht_selection()
+    enabled = sum(1 for v in sel.values() if v)
+    rows = []
+    for g in cat.get("guilds", []):
+        cap = [c for c in g["channels"] if c.get("capturable")]
+        all_on = bool(cap) and all(sel.get(f"{g['id']}/{c['id']}") for c in cap)
+        hook = (f" <a href='/dht/webhook?g={g['id']}' class='dim'>"
+                "[digest webhook]</a>") if g.get("webhook_eligible") else ""
+        rows.append(
+            f"<h2>{g['name']} <span class='dim'>({len(cap)} capturable, "
+            f"~{g.get('approx_members') or '?'} members)</span>"
+            f"<a href='/dht/toggle?g={g['id']}&all="
+            f"{'0' if all_on else '1'}'>"
+            f"[{'disable all' if all_on else 'enable all'}]</a>{hook}</h2>")
+        rows.append("<table>")
+        for c in g["channels"]:
+            key = f"{g['id']}/{c['id']}"
+            on = bool(sel.get(key))
+            if c.get("capturable"):
+                box = (f"<a href='/dht/toggle?g={g['id']}&c={c['id']}'>"
+                       f"{'&#9989;' if on else '&#9744;'}</a>")
+                name = c["name"]
+            else:
+                box = "<span class='dim'>—</span>"
+                name = f"<span class='dim'>{c['name']}</span>"
+            thr = (f", {c['thread_count']} thread(s)" if c.get("thread_count")
+                   else "")
+            rows.append(
+                f"<tr><td>{box}</td><td>{name}</td>"
+                f"<td class='dim'>{c['type_name']}{thr}</td></tr>")
+        rows.append("</table>")
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ytis — Discord capture</title>
+<style>
+  body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }}
+  h1 {{ color: #58a6ff; }} a {{ color: #58a6ff; text-decoration: none; }}
+  h2 {{ margin-top: 2rem; font-size: 1.1rem; }}
+  h2 a {{ font-size: .8rem; margin-left: .8rem; }}
+  table {{ border-collapse: collapse; max-width: 900px; }}
+  td {{ padding: .15rem .9rem .15rem 0; font-size: .92rem; }}
+  .dim {{ color: #8b949e; }}
+</style></head><body>
+<nav><a href="/">Search</a> · <a href="/home">Home</a> ·
+<a href="/digest">Daily brief</a> · <a href="/status">Status</a></nav>
+<h1>Discord capture</h1>
+<p class="dim">{len(cat.get('guilds', []))} servers ·
+{enabled} channel(s) enabled · catalog refreshed
+{cat.get('captured_at', '?')} (account: {cat.get('me', {}).get('name', '?')})
+· checked channels are visited nightly at 03:00 by the capture browser</p>
+{''.join(rows)}
+</body></html>"""
+
+
 def _render_ask_page() -> str:
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ytis — Ask</title>
@@ -692,6 +834,7 @@ def _render_home_page() -> str:
 </style></head><body>
 <nav><a href="/">Search</a> · <b>Home</b> · <a href="/digest">Daily brief</a> ·
 <a href="/sources">Sources</a> · <a href="/review">YouTube channels</a> ·
+<a href="/dht">Discord capture</a> ·
 <a href="/ask">Ask</a> · <a href="/status">Status</a></nav>
 <h1>Good {('morning' if now.hour < 12 else 'afternoon' if now.hour < 18 else 'evening')}</h1>
 <p class="dim">{now.strftime('%A, %Y-%m-%d %H:%M')} UTC</p>
