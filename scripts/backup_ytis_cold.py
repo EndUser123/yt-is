@@ -99,6 +99,48 @@ def mirror_wiki(dry_run: bool) -> tuple[int, int]:
     return copied, deleted
 
 
+def backup_capture_state(dry_run: bool) -> int:
+    """The DHT live archive (incremental-capture state) + capture
+    selection/catalog. Losing these means the nightly capture restarts
+    from full history grabs and the /dht page loses its selections."""
+    from datetime import datetime
+    copied = 0
+    live = Path("P:/.data/yt-is/dht/live.dht")
+    if live.exists():
+        dest_dir = BACKUP_ROOT / "ytis" / "dht-live"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d")
+        dest = dest_dir / f"live-{stamp}.dht"
+        if not dest.exists():
+            if dry_run:
+                print(json.dumps({"action": "copy", "src": str(live),
+                                  "dest": str(dest)}))
+            else:
+                shutil.copy2(live, dest)
+                copied += 1
+        versions = sorted(dest_dir.glob("live-*.dht"),
+                          key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in versions[3:]:
+            if dry_run:
+                print(json.dumps({"action": "prune", "path": str(old)}))
+            else:
+                old.unlink()
+    for name in ("dht-capture-selection.json",
+                 "dht-capture-catalog.json"):
+        src = Path("P:/.data/yt-is") / name
+        if not src.exists():
+            continue
+        dest_dir = BACKUP_ROOT / "ytis" / "dht-live"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        if dry_run:
+            print(json.dumps({"action": "copy", "src": str(src),
+                              "dest": str(dest_dir / name)}))
+            continue
+        shutil.copy2(src, dest_dir / name)
+        copied += 1
+    return copied
+
+
 def main(argv=None) -> int:
     started = time.time()
     parser = argparse.ArgumentParser(
@@ -114,10 +156,12 @@ def main(argv=None) -> int:
 
     db_copied, pruned = copy_db_snapshots(args.dry_run)
     wiki_copied, wiki_deleted = mirror_wiki(args.dry_run)
+    capture_copied = backup_capture_state(args.dry_run)
     print(json.dumps({
         "status": "ok",
         "db_copied": db_copied, "pruned": pruned,
         "wiki_copied": wiki_copied, "wiki_deleted": wiki_deleted,
+        "capture_copied": capture_copied,
         "seconds": round(time.time() - started, 1)}))
     return 0
 

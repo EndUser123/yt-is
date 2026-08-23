@@ -1,21 +1,29 @@
 """DHT capture automation — a dedicated browser profile does the work.
 
-Manual steps, ONCE each:
-  1. python capture.py login        -> log into Discord in the window that
-                                       opens (the profile remembers it)
-  2. python setup_tracking.py       -> open the DHT desktop app, click
-                                       "Copy Tracking Script", come back and
-                                       press Enter (saves the script)
+Setup (DONE 2026-08-22): capture.py login once; the tracking script is
+fetched fresh each run by fetch_tracking_script.py (the app token
+rotates per session). Channel selection: http://127.0.0.1:6393/dht.
 
-After that, everything is scheduled:
-  nightly: DHT app starts -> capture browser opens discord.com with the
-  tracking script auto-injected -> visits each channel in channels.txt,
-  dwelling long enough for auto-scroll history capture -> closes ->
-  run_dht_ingest pulls the archive into the knowledge base.
+Nightly chain (nightly.cmd): DHT app opens WITH the live archive ->
+fresh tracking script -> this capture loop -> graceful app close ->
+run_dht_ingest.
+
+Rate discipline (red team 2026-08-22): Discord anti-abuse watches
+rapid channel-hopping with hard scrolling on the ACCOUNT, so the loop
+paces between channels and caps work per run:
+  DHT_MAX_CHANNELS  max channels per run (default 150; rotation cursor
+                    wraps through the selection over successive nights)
+  DHT_MAX_RUNTIME_S hard wall-clock budget (default 14400 = 4h)
+  DHT_PAUSE_MIN_S / DHT_PAUSE_MAX_S  inter-channel pause jitter
+                    (default 6-14s)
 """
 
 from __future__ import annotations
 
+import json
+import os
+import random
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -24,12 +32,38 @@ from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).resolve().parent
 PROFILE_DIR = HERE / "profile"
-TRACKING_JS = Path(__import__("os").environ.get(
+TRACKING_JS = Path(os.environ.get(
     "DHT_TRACKING_JS", str(HERE / "tracking-script.js")))
 CHANNELS = HERE / "channels.txt"
-DWELL_S = int(__import__("os").environ.get("DHT_DWELL_S", "180"))
+SELECTION = Path("P:/.data/yt-is/dht-capture-selection.json")
+CURSOR = Path("P:/.data/yt-is/dht-capture-cursor.json")
+LOCK = Path("P:/.data/yt-is/dht-capture.lock")
+DWELL_S = int(os.environ.get("DHT_DWELL_S", "180"))
+MAX_CHANNELS = int(os.environ.get("DHT_MAX_CHANNELS", "150"))
+MAX_RUNTIME_S = int(os.environ.get("DHT_MAX_RUNTIME_S", "14400"))
+PAUSE_MIN_S = float(os.environ.get("DHT_PAUSE_MIN_S", "6"))
+PAUSE_MAX_S = float(os.environ.get("DHT_PAUSE_MAX_S", "14"))
 
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+
+def _acquire_lock() -> None:
+    """Single instance: two captures would fight over the one profile."""
+    if LOCK.exists():
+        try:
+            old_pid = int(LOCK.read_text().strip() or 0)
+        except ValueError:
+            old_pid = 0
+        if old_pid:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-Process -Id {old_pid} -ErrorAction SilentlyContinue)"
+                 ".ProcessName"],
+                capture_output=True, text=True, timeout=20).stdout.strip()
+            if r in ("python", "pythonw"):
+                sys.exit(f"another capture is running (pid {old_pid}); "
+                         "refusing to double-drive the browser profile")
+    LOCK.write_text(str(os.getpid()))
 
 
 def _context(pw, headless: bool):
@@ -75,41 +109,68 @@ def login_mode():
         ctx.close()
 
 
-def _selected_urls():
+def _selected_urls(limit=None):
     """Nightly capture list: the /dht page's selection (catalog-backed)
-    when it has enabled entries, else the legacy channels.txt lines."""
-    import json
-    sel_path = Path("P:/.data/yt-is/dht-capture-selection.json")
-    cat_path = Path("P:/.data/yt-is/dht-capture-catalog.json")
+    when it has enabled entries, else the legacy channels.txt lines.
+    Applies the rotation cursor + per-run cap: successive runs walk the
+    selection in order and wrap, so a large selection is covered over
+    several nights instead of one giant run. --limit bypasses the
+    cursor (test mode takes the head of the selection)."""
     try:
-        sel = json.loads(sel_path.read_text(encoding="utf-8"))
+        sel = json.loads(SELECTION.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         sel = {}
     urls = [f"https://discord.com/channels/{key}"
             for key, on in sel.items() if on]
-    if urls:
-        servers = len({k.split("/")[0] for k, v in sel.items() if v})
-        print(f"[capture] using /dht page selection: "
-              f"{len(urls)} channel(s) across {servers} server(s)")
-        return urls
-    if not CHANNELS.exists():
-        sys.exit("No capture selection: enable channels on "
-                 "http://127.0.0.1:6391/dht (or fill channels.txt)")
-    return [l.strip() for l in CHANNELS.read_text().splitlines()
-            if l.strip() and not l.startswith("#")]
+    if not urls:
+        if not CHANNELS.exists():
+            sys.exit("No capture selection: enable channels on "
+                     "http://127.0.0.1:6393/dht (or fill channels.txt)")
+        return [l.strip() for l in CHANNELS.read_text().splitlines()
+                if l.strip() and not l.startswith("#")]
+    servers = len({u.split("/")[-2] for u in urls})
+    if limit:
+        print(f"[capture] test mode: first {min(limit, len(urls))} "
+              f"of the selection")
+        return urls[:limit]
+    try:
+        cursor = int(json.loads(CURSOR.read_text())["cursor"])
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        cursor = 0
+    cursor %= len(urls)
+    take = min(MAX_CHANNELS, len(urls))
+    batch = urls[cursor:cursor + take]
+    if len(batch) < take:               # wrap around the end
+        batch += urls[:take - len(batch)]
+    CURSOR.parent.mkdir(parents=True, exist_ok=True)
+    CURSOR.write_text(json.dumps({"cursor": (cursor + take) % len(urls),
+                                  "advanced_from": cursor,
+                                  "took": len(batch)}))
+    print(f"[capture] selection: {len(urls)} channel(s) across {servers} "
+          f"server(s); this run: {len(batch)} (rotation from #{cursor + 1}, "
+          f"cap {MAX_CHANNELS}, budget {MAX_RUNTIME_S // 3600}h)")
+    return batch
 
 
 def capture_mode(limit=None):
     if not TRACKING_JS.exists():
-        sys.exit("No tracking-script.js — run setup_tracking.py first")
-    urls = _selected_urls()
+        sys.exit("No tracking script — nightly runs fetch it via "
+                 "fetch_tracking_script.py; manual: run that first")
+    _acquire_lock()
+    try:
+        _run_capture(limit)
+    finally:
+        LOCK.unlink(missing_ok=True)
+
+
+def _run_capture(limit):
+    urls = _selected_urls(limit)
     if not urls:
         sys.exit("capture selection is empty — enable channels on "
-                 "http://127.0.0.1:6391/dht")
-    if limit:
-        urls = urls[:limit]
-        print(f"[capture] test mode: first {len(urls)} of the selection")
+                 "http://127.0.0.1:6393/dht")
     script = TRACKING_JS.read_text(encoding="utf-8")
+    started = time.monotonic()
+    done = 0
 
     with sync_playwright() as pw:
         ctx = _context(pw, headless=False)  # visible: Discord behaves better
@@ -119,6 +180,17 @@ def capture_mode(limit=None):
         page.on("pageerror", lambda e: print(f"  [pageerror] "
                                              f"{str(e)[:160]}", flush=True))
         for url in urls:
+            if time.monotonic() - started > MAX_RUNTIME_S:
+                print(f"[capture] wall-clock budget "
+                       f"({MAX_RUNTIME_S // 3600}h) reached at "
+                       f"{done} channel(s) — stopping for tonight",
+                      flush=True)
+                break
+            if done:
+                pause = random.uniform(PAUSE_MIN_S, PAUSE_MAX_S)
+                print(f"[capture] pacing {pause:.0f}s before next channel",
+                      flush=True)
+                time.sleep(pause)
             print(f"[capture] {url} — dwelling {DWELL_S}s", flush=True)
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -167,8 +239,9 @@ def capture_mode(limit=None):
                 if "Reached End" in st:
                     print("  [dht] channel caught up early", flush=True)
                     break
+            done += 1
         ctx.close()
-    print("[capture] done")
+    print(f"[capture] done: {done}/{len(urls)} channel(s) this run")
 
 
 if __name__ == "__main__":
