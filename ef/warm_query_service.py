@@ -268,6 +268,27 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._text(500, f"home unavailable: {e}")
 
+        elif parsed.path == "/graph/data":
+            # P6.9 extension surface: typed JSON for the workspace Graph tab
+            try:
+                from urllib.parse import parse_qs as _pq
+                from ef import graph_query as _gq
+                q = (_pq(parsed.query).get("q") or [""])[0].strip()
+                view = None
+                matches = []
+                if q:
+                    matches = _gq.search_nodes(q, 15)
+                    top = matches[0] if matches else None
+                    if top:
+                        view = _gq.entity_view(top["node_id"]) if top["kind"] == "entity" else _gq.channel_view(top["node_id"])
+                if view is None:
+                    self._json(200, {"matches": []})
+                    return
+                view["matches"] = matches
+                self._json(200, view)
+            except Exception as e:
+                self._json(500, {"error": f"graph data unavailable: {e}"})
+
         elif parsed.path == "/graph":
             try:
                 from urllib.parse import parse_qs as _pq
