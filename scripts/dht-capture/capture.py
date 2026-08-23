@@ -24,7 +24,8 @@ from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).resolve().parent
 PROFILE_DIR = HERE / "profile"
-TRACKING_JS = HERE / "tracking-script.js"
+TRACKING_JS = Path(__import__("os").environ.get(
+    "DHT_TRACKING_JS", str(HERE / "tracking-script.js")))
 CHANNELS = HERE / "channels.txt"
 DWELL_S = int(__import__("os").environ.get("DHT_DWELL_S", "180"))
 
@@ -98,19 +99,25 @@ def _selected_urls():
             if l.strip() and not l.startswith("#")]
 
 
-def capture_mode():
+def capture_mode(limit=None):
     if not TRACKING_JS.exists():
         sys.exit("No tracking-script.js — run setup_tracking.py first")
     urls = _selected_urls()
     if not urls:
         sys.exit("capture selection is empty — enable channels on "
                  "http://127.0.0.1:6391/dht")
+    if limit:
+        urls = urls[:limit]
+        print(f"[capture] test mode: first {len(urls)} of the selection")
     script = TRACKING_JS.read_text(encoding="utf-8")
 
     with sync_playwright() as pw:
         ctx = _context(pw, headless=False)  # visible: Discord behaves better
-        ctx.add_init_script(script)
         page = ctx.new_page()
+        page.on("console", lambda m: print(f"  [console:{m.type}] "
+                                           f"{m.text[:160]}", flush=True))
+        page.on("pageerror", lambda e: print(f"  [pageerror] "
+                                             f"{str(e)[:160]}", flush=True))
         for url in urls:
             print(f"[capture] {url} — dwelling {DWELL_S}s", flush=True)
             try:
@@ -118,16 +125,62 @@ def capture_mode():
             except Exception as e:
                 print(f"  nav error: {str(e)[:80]}")
                 continue
-            page.wait_for_timeout(DWELL_S * 1000)
+            # NOTE: add_init_script does NOT reliably execute this script
+            # (verified 2026-08-22: init injection never sets DHT_LOADED;
+            # page.evaluate of the same script works). Each goto() is a
+            # full navigation, so (re)inject per channel via evaluate.
+            page.wait_for_timeout(4000)
+            if not page.evaluate("() => window.DHT_LOADED"):
+                try:
+                    page.evaluate(script)
+                    print("  [dht] script injected", flush=True)
+                except Exception as e:
+                    print(f"  [dht] inject failed: {str(e)[:100]}",
+                          flush=True)
+                    continue
+                page.wait_for_timeout(2500)
+            # DHT has NO autostart: click its Start button (tolerate
+            # already-tracking — the label flips to "Pause Tracking")
+            try:
+                page.click("#dht-ctrl-track", timeout=8000)
+                print("  [dht] tracking started", flush=True)
+            except Exception:
+                print("  [dht] track button not clickable (already on?)",
+                      flush=True)
+            # access check: no message list = gated/empty channel
+            if page.locator("li[id^='chat-messages']").count() == 0:
+                page.wait_for_timeout(5000)
+                if page.locator("li[id^='chat-messages']").count() == 0:
+                    print("  [dht] WARNING: no messages visible — channel "
+                          "gated or empty", flush=True)
+            # Dwell, but move on early once DHT says the channel is fully
+            # caught up ("Reached End") — already-captured channels finish
+            # in seconds instead of burning the whole dwell.
+            import time as _time
+            deadline = _time.monotonic() + DWELL_S
+            while _time.monotonic() < deadline:
+                page.wait_for_timeout(5000)
+                try:
+                    st = page.locator("#dht-ctrl-status").first.text_content() or ""
+                except Exception:
+                    st = ""
+                if "Reached End" in st:
+                    print("  [dht] channel caught up early", flush=True)
+                    break
         ctx.close()
     print("[capture] done")
 
 
 if __name__ == "__main__":
-    mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    if mode == "login":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("mode", nargs="?", default="")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="capture only the first N enabled channels (tests)")
+    a = ap.parse_args()
+    if a.mode == "login":
         login_mode()
-    elif mode == "capture":
-        capture_mode()
+    elif a.mode == "capture":
+        capture_mode(limit=a.limit)
     else:
         print(__doc__)

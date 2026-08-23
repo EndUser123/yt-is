@@ -86,6 +86,8 @@ docs/evidence-fabric/benchmark/corpus.json
 .logs/chrome_free2_launch.log
 
 # DHT capture browser profile (holds live Discord session — never track)
-scripts/dht-capture/profile/
+scripts/dht-capture/profile*/
 # DHT tracking script (contains app local-server token — never track)
 scripts/dht-capture/tracking-script.js
+# DHT fresh tracking script (per-session token — never track)
+scripts/dht-capture/tracking-script-fresh.js
