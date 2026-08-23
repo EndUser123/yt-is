@@ -630,19 +630,28 @@ def _render_dht_page() -> str:
 <script>
 // Toggles without the jump: per-channel flips happen in place (no
 // reload, scroll untouched); enable/disable-all reloads but returns to
-// the same server's heading via its #g-<id> anchor.
+// the same server's heading via its #g-<id> anchor. The click IS the
+// save — every toggle writes dht-capture-selection.json server-side;
+// the checkbox only flips after the write is confirmed (response.ok),
+// so a failed write never shows a false check.
 document.addEventListener('click', e => {{
   const a = e.target.closest('a[href*="/dht/toggle"]');
   if (!a) return;
   e.preventDefault();
   const href = a.getAttribute('href');
-  fetch(href).then(() => {{
+  a.style.opacity = '.4';
+  fetch(href).then(r => {{
+    if (!r.ok && r.status !== 302) throw new Error('save failed (' + r.status + ')');
     if (href.includes('all=')) {{
       const gid = new URLSearchParams(href.split('?')[1]).get('g');
       location.href = '/dht#g-' + gid;      // reload, scroll to server
     }} else {{
       a.innerHTML = a.innerHTML.includes('☐') ? '✅' : '☐';
+      a.style.opacity = '1';
     }}
+  }}).catch(err => {{
+    a.style.opacity = '1';
+    alert('Not saved: ' + err.message);
   }});
 }});
 </script>
