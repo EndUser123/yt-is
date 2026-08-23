@@ -43,6 +43,18 @@ see the wiki concept `windows-scoped-service-restart-delegation`.
 Machine-wide operations (firewall rules, HKLM, other services) still
 require an operator elevated terminal.
 
+**Service-definition durability (2026-08-23).** The live WinSW install at
+`P:\.data\winsw\` is invisible to Git (blanket `.data/*` ignore). Durable
+copies of both service XMLs live at `deploy/winsw/`, and the idempotent
+admin repair script (squatter kill + DACL re-grant + real-row verify) at
+`scripts/ytws-warm-fix.ps1`. After any service reinstall or live-XML edit,
+update the durable copy in the same change, and re-run the repair script
+from an admin terminal (a WinSW reinstall wipes the DACL grant above).
+General rule: anything needed to rebuild production — service definitions,
+admin/repair scripts, install procedures — is committed to this repo at
+creation time; `%TEMP%`, Downloads, and chat-session artifacts are not
+durable homes.
+
 **Automation (Task Scheduler, all windowless pythonw — no .cmd wrappers,
 operator constraint: console windows steal focus).** 03:00 YtisDhtCapture
 (DHT app + capture browser + ingest), 05:00 YtisIndexIncremental (paced
@@ -62,8 +74,9 @@ instruction; never coupled to the review-page block toggle.
 **DB conventions.** Shared SQLite stores have many concurrent writers:
 every write path uses busy_timeout=30000 and a retry-on-locked wrapper
 (see `_retry_locked` in any connector sync). Qdrant runs as a PID-owned
-HTTP server (ports 6390/6391 grpc/http — 6391 is shared with the query
-service only as localhost ports; EF server config is authoritative).
+HTTP server (:6390 HTTP, :6392 gRPC since 2026-08-23 — gRPC on 6391
+crash-looped ef_warm_query at bind after the loopback change; the warm
+query service owns :6391 HTTP; EF server config is authoritative).
 
 **Dependencies outside the repo.** RSSHub at `P:/tools/rsshub`
 (launcher start.cmd; Node >=22.12 required, no experimental flag),
