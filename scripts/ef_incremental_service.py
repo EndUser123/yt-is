@@ -12,7 +12,8 @@ transcript-fetch critical path. Ctrl-C or --once for single pass.
 from __future__ import annotations
 
 import argparse
-import json
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -20,10 +21,31 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+# Canonical data root is P:/.data/yt-is (shared across all tools), NOT
+# REPO/.data — the old REPO-relative path silently created a phantom
+# directory and the singleton guard could never find its own PID file.
+PID_FILE = Path("P:/.data/yt-is/ef/incremental-service.pid")
+
 from ef import freshness  # noqa: E402
 
 BATCH = 1000
 PAUSE_S = 8.0          # port-exhaustion pacing
+
+
+def _already_running() -> bool:
+    """Single-instance guard: a scheduled task may try to start this
+    daemon while a healthy one is alive; the new one must exit."""
+    try:
+        pid = int(PID_FILE.read_text().strip())
+        if pid == 0:
+            return False
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"(Get-Process -Id {pid}).ProcessName"],
+            capture_output=True, text=True, timeout=20).stdout.strip()
+        return out in ("python", "pythonw")
+    except Exception:
+        return False
 
 
 def main() -> int:
@@ -32,6 +54,12 @@ def main() -> int:
     ap.add_argument("--batch", type=int, default=BATCH)
     ap.add_argument("--pause", type=float, default=PAUSE_S)
     a = ap.parse_args()
+
+    if _already_running():
+        print("[incr] another instance is running; exiting", flush=True)
+        return 0
+    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PID_FILE.write_text(str(os.getpid()))
 
     rounds = 1 if a.once else 10**9
     for i in range(rounds):
