@@ -289,6 +289,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json(500, {"error": f"graph data unavailable: {e}"})
 
+        elif parsed.path == "/interests":
+            try:
+                self._bytes(200, _render_interests_page().encode("utf-8"),
+                            "text/html; charset=utf-8")
+            except Exception as e:
+                self._text(500, f"interests page unavailable: {e}")
+
         elif parsed.path == "/graph":
             try:
                 from urllib.parse import parse_qs as _pq
@@ -698,6 +705,71 @@ document.addEventListener('click', e => {{
   }});
 }});
 </script>
+</body></html>"""
+
+
+def _render_interests_page() -> str:
+    from ef import interest_stats as ist
+    import html as _html
+    try:
+        ents = ist.observed_entities(60)
+        summary = ist.corpus_summary()
+    except Exception:
+        ents, summary = [], {"entities": 0, "channels": 0, "documents": 0}
+    rows = []
+    for e in ents:
+        srcs = " · ".join(f"{s} <b>{n:,}</b>" for s, n in e["sources"][:4])
+        phase = ""
+        if e.get("phase"):
+            phase = (f"<span class='ph {e['phase']}'>"
+                     f"{e['phase']}</span>")
+        rows.append(
+            f"<tr><td><a href='/graph?q={_html.escape(e['label'])}'>"
+            f"{_html.escape(e['label'])}</a>{phase}</td>"
+            f"<td class='num'>{e['breadth']}</td>"
+            f"<td class='num'>{e['depth']:,}</td>"
+            f"<td class='num'>{e['active_months']}</td>"
+            f"<td class='dim'>{e['first_month'] or '?'} → "
+            f"{e['last_month'] or '?'}</td>"
+            f"<td class='dim srcs'>{srcs}</td></tr>")
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ytis — Interests</title>
+<style>
+  body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }}
+  h1 {{ color: #58a6ff; }} a {{ color: #58a6ff; text-decoration: none; }}
+  .banner {{ background: #161b22; border: 1px solid #30363d;
+           border-radius: 8px; padding: .8rem 1.1rem; margin: 1rem 0;
+           max-width: 980px; }}
+  .banner b {{ color: #f0b72f; }}
+  table {{ border-collapse: collapse; max-width: 1080px; }}
+  td, th {{ padding: .25rem .9rem .25rem 0; font-size: .92rem;
+          text-align: left; }}
+  th {{ border-bottom: 1px solid #30363d; color: #8b949e; }}
+  td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  .dim {{ color: #8b949e; }} .srcs {{ font-size: .85rem; }}
+  .ph {{ display: inline-block; border-radius: 999px; padding: 0 .5rem;
+       margin-left: .5rem; font-size: .75rem; }}
+  .ph.emerging {{ background: #1f4d2b; color: #7ee2a8; }}
+  .ph.dormant {{ background: #4d3a1f; color: #e2c07e; }}
+</style></head><body>
+<nav><a href="/">Search</a> · <a href="/home">Home</a> ·
+<a href="/digest">Daily brief</a> · <a href="/graph">Graph</a> ·
+<a href="/status">Status</a></nav>
+<h1>Interests</h1>
+<div class="banner"><b>Observed layer (v1)</b> — breadth / depth /
+persistence / recency computed mechanically from
+{summary['entities']} entities across {summary['channels']:,} channels
+and {summary['documents']:,} documents. <b>No inference yet</b>:
+stances, latent goals, cross-domain themes, negative evidence, and the
+regret analysis arrive with the v2 LLM interpretation layer
+(docs/design/interest-graph-2026-08-24.md). Breadth-weighted ranking —
+frequency is not importance.</div>
+<table><tr><th>entity</th><th>breadth<br>(channels)</th>
+<th>depth<br>(hits)</th><th>active<br>(months)</th>
+<th>span</th><th>sources</th></tr>
+{''.join(rows)}
+</table>
 </body></html>"""
 
 
