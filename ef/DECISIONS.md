@@ -79,3 +79,40 @@ Format: `D### YYYY-MM-DD decision — rationale — evidence/falsifier`
   guard — guard granularity finer than stratum resolution is a
   preregistration design flaw; reported, not rewritten. Learned-sparse
   R-B1.2 PASSED (+0.0223 W-nDCG, config D).
+
+- D016 2026-08-21 Non-YouTube sources enter the index as **connector
+  EUs** via `ef/ingest_connectors.py` rather than extending the authority
+  join. — The authority build/freshness join `analysis_status` with
+  `channel_id not null`, structurally excluding connector batches; a
+  separate watermark (`connector_indexed_watermark`) keeps them paced
+  independently. — Evidence: 369 reddit+hn batches indexed and searchable
+  2026-08-20; falsifier: a connector batch that freshness ever drops or
+  duplicates.
+- D017 2026-08-21 ProductionQuery SQLite readers are **thread-local**.
+  — ThreadingHTTPServer serves each request on a new thread; cached shared
+  connections raised SQLite thread-affinity 500s on any non-first thread.
+  — Evidence: 6 concurrent queries all 200 post-fix; falsifier: cross-thread
+  500 recurrence.
+- D018 2026-08-21 Result URLs are **source-routed**
+  (`ef/query.py external_url`). — Connector hits fabricated youtu.be links;
+  discord/rss have no public URL and render linkless. — Evidence: reddit hit
+  shows redd.it link, tweets show none; falsifier: any fabricated youtu.be
+  link on a non-YouTube result.
+- D019 2026-08-21 Clusters >60% one-channel are flagged **is_series**
+  and excluded from /trends. — Daily-show clusters (e.g. Bloomberg) are
+  source-shaped, not topics; they dominated % change without thematic
+  meaning. — Evidence: 34 flagged; 24h risers became thematic; falsifier:
+  a series cluster appearing in trend output.
+- D020 2026-08-21 Incremental topic assignment via **nearest-centroid**
+  with assigned_at = transcript captured_at (`scripts/run_topic_assignment.py`).
+  — Original clustering was a frozen snapshot (ef/clustering.py's incremental
+  path targeted a nonexistent schema); nearest-centroid over stored
+  centroids makes assignment daily and time-windowable. — Evidence: 134K
+  backlog chunks assigned; trends windows populate; falsifier: assignments
+  drifting from HDBSCAN semantics beyond noise.
+- D021 2026-08-21 Entity layer = **cluster-representative LLM
+  extraction + FTS corpus counts** (`scripts/extract_entities.py`, tables
+  entities/entity_corpus). — spaCy is broken on Python 3.14 (pydantic v1);
+  full-corpus LLM passes are unbounded; cluster-reps bound cost and match
+  browse behavior. — Evidence: 6,292 entities, sensible counts (AI 93K,
+  YouTube 47K chunks); falsifier: entity counts diverging from FTS reality.

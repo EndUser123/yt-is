@@ -44,6 +44,9 @@ MIN_CLUSTER_SIZE = 15       # minimum videos per topic
 MIN_SAMPLES = 5             # conservative core-point definition
 SAMPLE_SIZE = 50_000        # cluster on a sample, then assign the rest
 BATCH_FETCH = 1000          # Qdrant scroll batch size
+UMAP_N_COMPONENTS = 15      # reduce 1024-dim to this before HDBSCAN
+UMAP_N_NEIGHBORS = 30       # UMAP local structure parameter
+UMAP_MIN_DIST = 0.0         # tighter clusters (standard for clustering)
 
 
 def _utcnow() -> str:
@@ -124,13 +127,15 @@ def fetch_dense_vectors(client: QdrantClient) -> tuple[np.ndarray, list[dict]]:
 
 
 def run_clustering(vectors: np.ndarray) -> np.ndarray:
-    """Run HDBSCAN on a sample, then assign remaining points to nearest cluster.
+    """UMAP-reduce then HDBSCAN, then assign remaining points.
 
-    Vectors are L2-normalized first so euclidean distance approximates cosine
-    distance (standard approach — sklearn's BallTree doesn't support 'cosine'
-    directly).
+    The 1024-dim BGE-M3 embeddings are too high-dimensional for HDBSCAN to
+    find fine-grained topics without dimensionality reduction (the first run
+    without UMAP produced 4 clusters with 96% in one mega-cluster). UMAP to
+    15 dims is the standard BERTopic approach.
     """
     import hdbscan
+    import umap
 
     n = len(vectors)
     print(f"  clustering {n:,} vectors (sample={min(n, SAMPLE_SIZE):,})...", flush=True)
@@ -139,61 +144,78 @@ def run_clustering(vectors: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
     normalized = vectors / (norms + 1e-10)
 
-    if n <= SAMPLE_SIZE:
-        # Full dataset fits — cluster everything directly
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=MIN_CLUSTER_SIZE,
-            min_samples=MIN_SAMPLES,
-            metric="euclidean",
-            core_dist_n_jobs=-1,
-        )
-        labels = clusterer.fit_predict(normalized)
-    else:
-        # Sample-based: cluster the sample, then assign the rest
-        rng = np.random.default_rng(42)
-        sample_idx = rng.choice(n, size=SAMPLE_SIZE, replace=False)
-        sample_vecs = normalized[sample_idx]
+    # Sample for UMAP fitting + HDBSCAN
+    rng = np.random.default_rng(42)
+    sample_idx = rng.choice(n, size=min(n, SAMPLE_SIZE), replace=False)
+    sample_vecs = normalized[sample_idx]
 
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=MIN_CLUSTER_SIZE,
-            min_samples=MIN_SAMPLES,
-            metric="euclidean",
-            core_dist_n_jobs=-1,
-        )
-        sample_labels = clusterer.fit_predict(sample_vecs)
+    # UMAP dimensionality reduction — the key fix for high-dim embeddings
+    print(f"  UMAP: {sample_vecs.shape[1]}d → {UMAP_N_COMPONENTS}d "
+          f"(n_neighbors={UMAP_N_NEIGHBORS}, min_dist={UMAP_MIN_DIST})...", flush=True)
+    reducer = umap.UMAP(
+        n_components=UMAP_N_COMPONENTS,
+        n_neighbors=UMAP_N_NEIGHBORS,
+        min_dist=UMAP_MIN_DIST,
+        metric="cosine",
+        random_state=42,
+        verbose=True,
+    )
+    sample_reduced = reducer.fit_transform(sample_vecs)
+    print(f"  UMAP done: {sample_reduced.shape}", flush=True)
 
-        # Get cluster centroids from the sample (in normalized space)
-        unique_labels = np.array(sorted(set(sample_labels) - {-1}))
-        if len(unique_labels) == 0:
-            print("  WARNING: HDBSCAN found no clusters — all noise. "
-                  "Try lower min_cluster_size.", flush=True)
-            return np.full(n, -1, dtype=np.int64)
+    # HDBSCAN on the reduced space
+    print(f"  HDBSCAN on {len(sample_reduced):,} reduced vectors...", flush=True)
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=MIN_CLUSTER_SIZE,
+        min_samples=MIN_SAMPLES,
+        metric="euclidean",
+        core_dist_n_jobs=-1,
+    )
+    sample_labels = clusterer.fit_predict(sample_reduced)
 
-        centroids = np.array([
-            normalized[sample_idx][sample_labels == lbl].mean(axis=0)
-            for lbl in unique_labels
-        ])
-        # Re-normalize centroids
-        cnorms = np.linalg.norm(centroids, axis=1, keepdims=True)
-        centroids = centroids / (cnorms + 1e-10)
+    unique_labels = np.array(sorted(set(sample_labels) - {-1}))
+    if len(unique_labels) == 0:
+        print("  WARNING: HDBSCAN found no clusters — all noise. "
+              "Try lower min_cluster_size.", flush=True)
+        return np.full(n, -1, dtype=np.int64)
 
-        # Assign all points to nearest centroid (dot product = cosine sim on unit vectors)
-        labels = np.full(n, -1, dtype=np.int64)
-        batch = 5000
-        for i in range(0, n, batch):
-            sims = normalized[i:i + batch] @ centroids.T
-            best = sims.argmax(axis=1)
-            best_sim = sims[np.arange(len(best)), best]
-            # Only assign if similarity is positive (same general direction)
-            assigned = np.where(best_sim > 0.3, unique_labels[best], -1)
-            labels[i:i + batch] = assigned
+    print(f"  HDBSCAN found {len(unique_labels)} clusters", flush=True)
 
-        # Overwrite sample points with their HDBSCAN labels (more accurate)
-        labels[sample_idx] = sample_labels
+    # Get cluster centroids in the reduced space
+    centroids = np.array([
+        sample_reduced[sample_labels == lbl].mean(axis=0)
+        for lbl in unique_labels
+    ])
+
+    # Transform ALL vectors through the fitted UMAP model
+    print(f"  transforming all {n:,} vectors through UMAP...", flush=True)
+    all_reduced = reducer.transform(normalized)
+
+    # Assign all points to nearest centroid in reduced space
+    from sklearn.metrics import pairwise_distances
+    dists = pairwise_distances(all_reduced, centroids, metric="euclidean")
+    best = dists.argmin(axis=1)
+    best_dist = dists[np.arange(len(best)), best]
+
+    # Only assign if reasonably close (less than the 90th percentile of
+    # sample-member distances to their own centroid)
+    sample_dists = []
+    for lbl in unique_labels:
+        mask = sample_labels == lbl
+        if mask.sum() > 1:
+            center = centroids[list(unique_labels).index(lbl)]
+            d = np.linalg.norm(sample_reduced[mask] - center, axis=1)
+            sample_dists.extend(d.tolist())
+    threshold = np.percentile(sample_dists, 90) if sample_dists else float("inf")
+
+    labels = np.where(best_dist < threshold, unique_labels[best], -1)
+
+    # Overwrite sample points with their HDBSCAN labels (more accurate)
+    labels[sample_idx] = sample_labels
 
     n_clusters = len(set(labels) - {-1})
     n_noise = int((labels == -1).sum())
-    print(f"  found {n_clusters} clusters, {n_noise:,} noise points "
+    print(f"  result: {n_clusters} clusters, {n_noise:,} noise points "
           f"({100 * n_noise / n:.1f}%)", flush=True)
     return labels
 

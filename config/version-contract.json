@@ -42,8 +42,12 @@
    "policy": "verify-format-policy-before-adopt (design M5)"
   },
   "lightrag": {
-   "version": null,
-   "policy": "not adopted; bake-off packet P2"
+   "version": "1.5.6 (lightrag-hku)",
+   "policy": "evaluation install for bake-off P2 NL arm; isolated venv, not in any service path",
+   "venv": "P:/.data/scout/graph-bakeoff/lightrag-venv (Python 3.12.10)",
+   "lock": "P:/.data/scout/graph-bakeoff/lightrag-lock.txt",
+   "restart": [],
+   "scope": "no coupling to M1-M8 EF stack; removal = delete venv + lightrag-wd"
   },
   "python-runtime": {
    "version": "3.14 primary (services), 3.13 residual",

@@ -1,75 +1,151 @@
 #!/usr/bin/env python3
-"""Backfill channel metadata (description, published_at, country) for existing channels.
+"""Backfill missing channel metadata (thumbnail, description, etc.) via
+the YouTube Data API — quota-efficient by design.
+
+Root cause: some channel-add paths write metadata with thumbnail_url=None
+or without description, and the RSS scan path never backfills channel
+metadata. channels.list costs 1 quota unit per call and accepts up to 50
+channel IDs, so refreshing every affected channel is ~32 units for the
+whole 2,865-channel universe — negligible against the 10,000/day default.
+
+Self-healing: only channels still missing fields are queried, and updates
+fill ONLY missing fields (never overwrite existing values), so re-runs
+cost nothing once complete. Wired into the daily 06:00 sync; /status
+surfaces the remaining gap count.
+
+Credentials come from the environment, never from source. (An earlier
+revision of this script embedded a credential inline; that value also
+exists in git history — rotate it if still active.)
 
 Usage:
-    python3 scripts/backfill_channel_metadata.py [--batch=100]
+    python scripts/backfill_channel_metadata.py           # up to 60 calls
+    python scripts/backfill_channel_metadata.py --dry-run
 """
 
-import os
+from __future__ import annotations
+
+import argparse
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 
-# Set the new key 3 BEFORE importing the module (it caches keys on first call)
-os.environ["YT_API_KEY_3"] = "AIzaSyAIpCVh8oamSk8-637T08ru0P4mNwv-VL0"
+from csf.paths import load_workspace_env
 
-# Force reload with fresh key state
-import csf.source_enumerator as se  # noqa: E402
-se._YOUTUBE_API_KEYS = None
-se._key_state = {}
+DB = Path("P:/.data/yt-is/batch_status.sqlite")
+PER_CALL = 50          # channels.list accepts up to 50 IDs per call
+PAUSE_S = 1.0
+MAX_CALLS = 60         # bounded per invocation (covers ~3000 channels)
 
-from csf.source_enumerator import get_upload_playlist_id, parse_channel_url  # noqa: E402
-from csf.batch_status import upsert_channel  # noqa: E402
-from csf.paths import get_batch_db_path  # noqa: E402
 
-conn = sqlite3.connect(str(get_batch_db_path()))
-c = conn.cursor()
-c.execute("""
-    SELECT cm.channel_url
-    FROM channel_metadata cm
-    WHERE (cm.description IS NULL OR cm.description = '')
-    AND cm.channel_url NOT IN (SELECT channel_url FROM channel_blocklist)
-    ORDER BY cm.video_count_estimate DESC
-    LIMIT 100
-""")
-rows = c.fetchall()
-conn.close()
+def affected_channels(conn) -> list[str]:
+    rows = conn.execute("""
+        SELECT channel_id FROM channel_metadata
+        WHERE channel_id LIKE 'UC%'
+          AND ((thumbnail_url IS NULL OR thumbnail_url = '')
+               OR (description IS NULL OR description = ''))
+        ORDER BY channel_url
+    """).fetchall()
+    return [r[0] for r in rows]
 
-print(f"Backfilling {len(rows)} channels...")
-success = 0
-fail = 0
-for i, (channel_url,) in enumerate(rows):
-    # parse_channel_url extracts the channel ID (@handle, UC..., c/name, user/name)
-    # from a full URL or bare identifier
-    channel_id = parse_channel_url(channel_url)
-    if not channel_id:
-        print(f"  [{i+1}/{len(rows)}] UNPARSEABLE {channel_url[:60]}")
-        fail += 1
-        continue
 
-    info = get_upload_playlist_id(channel_id)
-    if info and (info.description or info.topic_categories):
-        upsert_channel(
-            channel_url=channel_url,
-            playlist_id=info.playlist_id,
-            video_count_estimate=info.video_count,
-            channel_title=info.channel_title,
-            thumbnail_url=info.thumbnail_url,
-            subscriber_count=info.subscriber_count,
-            view_count=info.view_count,
-            description=info.description,
-            published_at=info.published_at,
-            country=info.country,
-            keywords=info.keywords,
-            custom_url=info.custom_url,
-            topic_categories=info.topic_categories,
-        )
-        print(f"  [{i+1}/{len(rows)}] OK {info.channel_title[:40]}")
-        success += 1
-    else:
-        print(f"  [{i+1}/{len(rows)}] FAIL {channel_url[:60]}")
-        fail += 1
+def fetch_metadata(channel_ids: list[str]) -> list[dict]:
+    """One channels.list call (1 quota unit, up to 50 IDs)."""
+    from csf.source_enumerator import _api_request
+    resp = _api_request("channels", {
+        "part": "snippet,statistics",
+        "id": ",".join(channel_ids),
+    }, unit_cost=1)
+    if resp is None:
+        return []
+    out = []
+    for item in resp.get("items", []):
+        snippet = item.get("snippet", {})
+        thumbs = snippet.get("thumbnails", {})
+        thumb = (thumbs.get("high") or thumbs.get("medium")
+                 or thumbs.get("default") or {}).get("url", "")
+        out.append({
+            "channel_id": item["id"],
+            "title": snippet.get("title", ""),
+            "description": snippet.get("description", ""),
+            "thumbnail_url": thumb,
+            "subscriber_count": (item.get("statistics", {})
+                                 .get("subscriberCount")),
+            "custom_url": snippet.get("customUrl", ""),
+            "country": snippet.get("country", ""),
+            "published_at": snippet.get("publishedAt", ""),
+        })
+    return out
 
-print(f"\nDone: {success} ok, {fail} failed")
+
+def apply_metadata(conn, items: list[dict]) -> int:
+    """Fill ONLY missing fields — never overwrite existing values."""
+    n = 0
+    for m in items:
+        cur = conn.execute(
+            """UPDATE channel_metadata SET
+                 thumbnail_url = COALESCE(NULLIF(thumbnail_url, ''), ?),
+                 description = COALESCE(NULLIF(description, ''), ?),
+                 channel_title = COALESCE(NULLIF(channel_title, ''), ?),
+                 subscriber_count = COALESCE(subscriber_count, ?),
+                 custom_url = COALESCE(NULLIF(custom_url, ''), ?),
+                 country = COALESCE(NULLIF(country, ''), ?),
+                 published_at = COALESCE(NULLIF(published_at, ''), ?)
+               WHERE channel_id = ?""",
+            (m["thumbnail_url"], m["description"], m["title"],
+             m["subscriber_count"], m["custom_url"], m["country"],
+             m["published_at"], m["channel_id"]))
+        n += cur.rowcount if cur.rowcount > 0 else 0
+    conn.commit()
+    return n
+
+
+def main(argv=None):
+    load_workspace_env()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+
+    from csf.source_enumerator import set_spend_authorized, spend_used
+    set_spend_authorized(True)
+
+    conn = sqlite3.connect(str(DB), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
+    ids = affected_channels(conn)
+    print(f"channels missing metadata: {len(ids)}")
+
+    if args.dry_run:
+        conn.close()
+        print(f"would use ~{-(-len(ids) // PER_CALL)} quota units")
+        return 0
+
+    calls = updated = 0
+    for i in range(0, len(ids), PER_CALL):
+        if calls >= MAX_CALLS:
+            print(f"  call cap reached ({MAX_CALLS}); re-run to continue")
+            break
+        batch = ids[i:i + PER_CALL]
+        try:
+            items = fetch_metadata(batch)
+        except Exception as e:
+            print(f"  batch error: {e}")
+            break
+        updated += apply_metadata(conn, items)
+        calls += 1
+        print(f"  call {calls}: {len(items)} channels returned "
+              f"({updated} rows updated so far)", flush=True)
+        time.sleep(PAUSE_S)
+
+    remaining = len(affected_channels(conn))
+    conn.close()
+    print(f"done: {updated} channels updated, {remaining} still missing, "
+          f"{calls} quota units used (session spend: {spend_used()})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

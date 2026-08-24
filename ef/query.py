@@ -18,6 +18,20 @@ from .projection import COLLECTION, DENSE_NAME, SPARSE_NAME
 DEFAULT_LIMIT = 8
 
 
+def external_url(video_id: str, channel_id: str) -> str:
+    """Source-appropriate link for a result. Connector batches are not
+    YouTube videos; a fabricated youtu.be URL would be a dead link."""
+    if channel_id.startswith("r/"):
+        return f"https://redd.it/{video_id}"       # redirects to the post
+    if channel_id == "hn":
+        return f"https://news.ycombinator.com/item?id={video_id}"
+    if video_id.startswith("discord_"):
+        return ""                                    # Discord has no public URL
+    if video_id.startswith("rss_"):
+        return ""   # feed items: the source link lives in metadata_json,
+    return f"https://youtu.be/{video_id}"
+
+
 class HybridQuery:
     def __init__(self, client: QdrantClient, bm25: BM25Encoder,
                  dense_encode, snippet_context: int = 120):
@@ -80,7 +94,7 @@ class HybridQuery:
                 title=pl["title"],
                 channel_id=pl["channel_id"],
                 channel_title=pl["channel_title"],
-                url=f"https://youtu.be/{pl['video_id']}",
+                url=external_url(pl["video_id"], pl["channel_id"]),
                 start_char=pl["start_char"],
                 end_char=pl["end_char"],
                 score=float(p.score),

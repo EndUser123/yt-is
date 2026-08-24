@@ -61,3 +61,7 @@
 :generic-api-key:519693
 :generic-api-key:519958
 :generic-api-key:536256
+# chrome_free2_launch.log: Chrome embedded googleapis keys in captured network traffic (public browser keys, not operator secrets)
+P:/packages/yt-is/.logs/chrome_free2_launch.log:gcp-api-key:136
+P:/packages/yt-is/.logs/chrome_free2_launch.log:gcp-api-key:1573
+P:/packages/yt-is/.logs/chrome_free2_launch.log:gcp-api-key:2227
