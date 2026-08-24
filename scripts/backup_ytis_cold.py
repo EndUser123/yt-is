@@ -100,31 +100,13 @@ def mirror_wiki(dry_run: bool) -> tuple[int, int]:
 
 
 def backup_capture_state(dry_run: bool) -> int:
-    """The DHT live archive (incremental-capture state) + capture
-    selection/catalog. Losing these means the nightly capture restarts
-    from full history grabs and the /dht page loses its selections."""
-    from datetime import datetime
+    """Capture selection/catalog (small, static). The live.dht ARCHIVE
+    is deliberately NOT copied here anymore: 03:35 is always mid-capture
+    (03:00-07:00) and a raw copy2 is WAL-blind — it captured none of the
+    night's data (84,755 messages over two nights, verified 2026-08-24).
+    The archive is backed up by scripts/dht-capture/backup_live.py AFTER
+    the nightly chain's graceful app close (WAL checkpointed, verified)."""
     copied = 0
-    live = Path("P:/.data/yt-is/dht/live.dht")
-    if live.exists():
-        dest_dir = BACKUP_ROOT / "ytis" / "dht-live"
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d")
-        dest = dest_dir / f"live-{stamp}.dht"
-        if not dest.exists():
-            if dry_run:
-                print(json.dumps({"action": "copy", "src": str(live),
-                                  "dest": str(dest)}))
-            else:
-                shutil.copy2(live, dest)
-                copied += 1
-        versions = sorted(dest_dir.glob("live-*.dht"),
-                          key=lambda p: p.stat().st_mtime, reverse=True)
-        for old in versions[3:]:
-            if dry_run:
-                print(json.dumps({"action": "prune", "path": str(old)}))
-            else:
-                old.unlink()
     for name in ("dht-capture-selection.json",
                  "dht-capture-catalog.json"):
         src = Path("P:/.data/yt-is") / name

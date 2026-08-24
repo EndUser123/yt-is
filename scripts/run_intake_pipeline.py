@@ -63,26 +63,130 @@ def _blocked_pending(db_path: Path) -> int:
 
 
 def phase_sync(db_path: Path, log_dir: Path) -> dict:
-    """Run channel sync (check-all). Returns receipt."""
+    """Run channel sync (check-all), with smart API fallback. Returns receipt."""
     print("[pipeline] Phase 1: SYNC — checking all active channels for new videos...")
+    print("[pipeline]   Using RSS first, YouTube Data API fallback for empty feeds")
+    print("[pipeline]   Ctrl-C is safe — progress is saved")
+    print()
     started = time.monotonic()
-    result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "bin" / "csf-source"), "check-all", "--verbose"],
-        capture_output=True,
+
+    process = subprocess.Popen(
+        [sys.executable, str(REPO_ROOT / "bin" / "csf-source"),
+         "--allow-spend", "check-all", "--verbose"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
         cwd=str(REPO_ROOT),
-        timeout=7200,  # 2 hours max
     )
+
+    stdout_lines = []
+    channels_checked = 0
+    channels_rss_empty = 0
+    channels_api_used = 0
+    channels_errored = 0
+    channels_with_new = 0
+    new_videos = 0
+    interrupted = False
+    last_display = 0.0
+    total_channels = 0
+
+    # Get total channel count for the progress bar
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        total_channels = conn.execute(
+            "SELECT COUNT(*) FROM channel_metadata"
+        ).fetchone()[0]
+        conn.close()
+    except Exception:
+        total_channels = 0
+
+    print(f"  Scanning {total_channels} channels...")
+    print()
+
+    from tqdm import tqdm
+    pbar = tqdm(total=total_channels or None, desc="  Scanning", unit="ch",
+                bar_format="  {desc}: {bar:30} {n_fmt}/{total_fmt} | {postfix}",
+                postfix="0 new videos", leave=True)
+
+    try:
+        for line in process.stdout:
+            line = line.rstrip()
+            stdout_lines.append(line)
+            line_lower = line.lower()
+
+            # Count outcomes
+            if "rss for" in line_lower and "returned" in line_lower:
+                channels_checked += 1
+                if "returned 0" in line_lower:
+                    channels_rss_empty += 1
+            elif "skipping" in line_lower:
+                channels_checked += 1
+            elif "error checking" in line_lower:
+                channels_errored += 1
+                channels_checked += 1
+
+            if "gap detected" in line_lower:
+                channels_api_used += 1
+
+            # Track new videos
+            import re
+            match = re.search(r'new=(\d+)', line)
+            if match:
+                new_videos = int(match.group(1))
+
+            # Extract channels_complete from sync status lines
+            match = re.search(r'(\d+)/(\d+) channels complete', line)
+            if match:
+                channels_checked = max(channels_checked, int(match.group(1)))
+                total_channels = int(match.group(2))
+                pbar.total = total_channels
+
+            # Update progress bar
+            pbar.n = channels_checked
+            pbar.set_postfix_str(f"{new_videos} new, {channels_rss_empty} empty, {channels_errored} err")
+            pbar.refresh()
+
+        process.wait(timeout=7200)
+        pbar.close()
+
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n\n  ── INTERRUPTED — progress saved ──")
+        print(f"  {channels_checked} channels checked, {new_videos} new videos found")
+        print(f"  Already-synced videos are safe. Re-run to continue.")
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
     elapsed = time.monotonic() - started
-    (log_dir / "sync.stdout.log").write_text(result.stdout, encoding="utf-8")
-    if result.stderr:
-        (log_dir / "sync.stderr.log").write_text(result.stderr, encoding="utf-8")
+
+    # Save full log
+    full_stdout = "\n".join(stdout_lines)
+    (log_dir / "sync.stdout.log").write_text(full_stdout, encoding="utf-8")
+
+    if not interrupted:
+        print(f"\n  ── sync complete in {elapsed/60:.0f} min ──")
+    print(f"  Channels processed: {channels_checked}")
+    print(f"  RSS empty (API used): {channels_rss_empty}")
+    print(f"  API fallbacks: {channels_api_used}")
+    print(f"  Errors: {channels_errored}")
+    print(f"  New videos found: {new_videos}")
+    if not interrupted:
+        print()
+
     return {
         "phase": "sync",
-        "returncode": result.returncode,
+        "returncode": process.returncode,
         "elapsed_s": round(elapsed, 1),
-        "stdout_tail": result.stdout[-500:] if result.stdout else "",
-        "stderr_tail": result.stderr[-300:] if result.stderr else "",
+        "channels_processed": channels_checked,
+        "channels_rss_empty": channels_rss_empty,
+        "channels_api_fallback": channels_api_used,
+        "channels_errored": channels_errored,
+        "new_videos_found": new_videos,
+        "interrupted": interrupted,
     }
 
 
@@ -188,6 +292,16 @@ def phase_fetch(db_path: Path, log_dir: Path, state_path: Path, chunk_size: int,
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows pipes default to cp1252; the channel-scan progress bar
+    # writes channel names containing emoji (Discord renames etc.) and
+    # died inside the cp1252 encoding_table ~91s into every pipeline
+    # cycle for two days (2026-08-22..24). Force UTF-8 on ourselves and
+    # on every child we spawn.
+    for _s in (sys.stdout, sys.stderr):
+        if hasattr(_s, "reconfigure"):
+            _s.reconfigure(encoding="utf-8", errors="replace")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB)
     parser.add_argument("--state-path", type=Path, default=DEFAULT_STATE)
@@ -283,14 +397,21 @@ def main(argv: list[str] | None = None) -> int:
 
     # Concurrent-session guard: if another supervisor is running, exit
     # with a clear message rather than competing for the DB lock and
-    # potentially interfering with active workers.
+    # potentially interfering with active workers. Match only python
+    # interpreters actually RUNNING this script — a bare substring match
+    # false-positives on any shell wrapper whose command text merely
+    # mentions the script name (agent shells, grep commands; verified
+    # 2026-08-24: manual runs were refused by the caller's own wrapper).
     def _another_pipeline_running() -> bool:
         try:
             import psutil
-            for p in psutil.process_iter(["cmdline"]):
+            for p in psutil.process_iter(["cmdline", "name"]):
                 try:
                     cl = " ".join(p.info["cmdline"] or [])
-                    if "run_intake_pipeline" in cl and p.pid != os.getpid():
+                    name = (p.info["name"] or "").lower()
+                    is_python = name.startswith("python")
+                    if is_python and "run_intake_pipeline.py" in cl \
+                            and p.pid != os.getpid():
                         return True
                 except Exception:
                     pass
@@ -339,6 +460,13 @@ def main(argv: list[str] | None = None) -> int:
         else:
             receipt["sync"] = phase_sync(args.db_path, log_dir)
             sync_rc = receipt["sync"]["returncode"]
+            if receipt["sync"].get("interrupted"):
+                print(f"\n[pipeline] Sync was interrupted — partial results saved.")
+                print(f"[pipeline] Already-synced videos are safe. Re-run to continue.")
+                receipt["status"] = "sync_interrupted"
+                (log_dir / "pipeline_receipt.json").write_text(
+                    json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+                return 130  # 130 = SIGINT convention
             if sync_rc != 0:
                 print(f"[pipeline] SYNC FAILED (exit {sync_rc}) — aborting before fetch")
                 receipt["status"] = "sync_failed"

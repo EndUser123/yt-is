@@ -120,8 +120,8 @@ def _selected_urls(limit=None):
         sel = json.loads(SELECTION.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         sel = {}
-    urls = [f"https://discord.com/channels/{key}"
-            for key, on in sel.items() if on]
+    urls = sorted(f"https://discord.com/channels/{key}"
+                  for key, on in sel.items() if on)
     if not urls:
         if not CHANNELS.exists():
             sys.exit("No capture selection: enable channels on "
