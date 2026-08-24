@@ -154,6 +154,20 @@ def run_inference(provider: str = "codex") -> dict:
                        timeout=580, cwd="P:/")
     raw = r.stdout.strip()
 
+    # codex CLI emits JSONL events; extract the agent_message content
+    agent_text = ""
+    for line in raw.splitlines():
+        try:
+            event = json.loads(line)
+            if event.get("type") == "item.completed":
+                item = event.get("item", {})
+                if item.get("type") == "agent_message":
+                    agent_text = item.get("text", "")
+        except json.JSONDecodeError:
+            continue
+    if agent_text:
+        raw = agent_text
+
     # extract JSON from possible wrapper text
     for opener, closer in (("{", "}"), ("```json", "```")):
         start = raw.find(opener)

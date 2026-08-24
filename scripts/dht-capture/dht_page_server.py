@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO))
 
 from ef.warm_query_service import (  # noqa: E402
     DHT_CATALOG, _dht_selection, _dht_save_selection, _render_dht_page,
-    _render_graph_page, _render_interests_page)
+    _render_graph_page, _render_interests_page, _render_today_page)
 
 import json  # noqa: E402
 
@@ -32,15 +32,43 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def _serve_html(self, html: str) -> None:
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_json(self, obj: dict, code: int = 200) -> None:
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/interests":
-            body = _render_interests_page().encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._serve_html(_render_interests_page())
+        elif parsed.path == "/today":
+            self._serve_html(_render_today_page())
+        elif parsed.path == "/feedback":
+            params = parse_qs(parsed.query)
+            try:
+                from ef.personal_graph import record_feedback
+                ok = record_feedback(
+                    (params.get("surface") or [""])[0],
+                    (params.get("kind") or [""])[0],
+                    (params.get("id") or [""])[0],
+                    (params.get("v") or [""])[0],
+                    (params.get("note") or [""])[0])
+                self._serve_json({"ok": ok} if ok
+                                 else {"error": "invalid verdict"},
+                                 200 if ok else 400)
+            except Exception as e:
+                self._serve_json({"error": str(e)[:200]}, 500)
         elif parsed.path == "/graph":
             q = (parse_qs(parsed.query).get("q") or [""])[0]
             body = _render_graph_page(q).encode("utf-8")
