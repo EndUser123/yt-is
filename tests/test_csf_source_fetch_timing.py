@@ -846,25 +846,35 @@ def test_adaptive_scheduler_exhaustion_emits_recoverable_failure_receipt(tmp_pat
     monkeypatch.setattr(mod, "cleanup_stale_worker_notebooks", lambda **kwargs: (0, 0))
     monkeypatch.setattr(mod, "close_reusable_ingestor", lambda: None)
 
+    # Deterministic exhaustion: the first three worker invocations write a
+    # (failing) result — their videos get attributed outcomes — and every
+    # later invocation writes NO result, simulating a crashed worker whose
+    # queued video must remain attributable via the recoverable receipt.
+    # Without the call cap this scenario races queue-drain against slot
+    # quarantine and flakes under machine load.
+    popen_calls = {"n": 0}
+
     def fake_worker_process(command, **kwargs):
+        popen_calls["n"] += 1
         result_path = Path(command[command.index("--result-path") + 1])
-        result_path.write_text(
-            json.dumps(
-                {
-                    "batch_count": 1,
-                    "video_count": 1,
-                    "succeeded": 0,
-                    "failed": 1,
-                    "elapsed_s": 0.1,
-                    "content_fetch_status_counts_total": {"source_add_failed": 1},
-                    "failure_reason_counts": {"source_add_failed": 1},
-                }
-            ),
-            encoding="utf-8",
-        )
+        if popen_calls["n"] <= 3:
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "batch_count": 1,
+                        "video_count": 1,
+                        "succeeded": 0,
+                        "failed": 1,
+                        "elapsed_s": 0.1,
+                        "content_fetch_status_counts_total": {"source_add_failed": 1},
+                        "failure_reason_counts": {"source_add_failed": 1},
+                    }
+                ),
+                encoding="utf-8",
+            )
         class FailedWorkerProcess:
             pid = 12346
-            returncode = 0
+            returncode = 0 if popen_calls["n"] <= 3 else 1
 
             def communicate(self, timeout=None):
                 return "", ""

@@ -224,10 +224,21 @@ def _state_output_root(path: Path) -> Path | None:
 
 
 def _resolve_output_root(output_root: Path | None, state_path: Path) -> Path:
-    """Choose an explicit root, a state-owned root, or the package default."""
+    """Choose an explicit root, a state-owned root, or a unique fresh root.
+
+    A truly fresh plan (no state, no explicit root) gets a per-launch
+    timestamped root: the old shared default (``unattended``) accumulated
+    chunk history across sessions, and a later fresh plan could silently
+    adopt those directories as its own chunk records (incident
+    2026-08-18: ghost state after a concurrent session's run died there).
+    """
     if output_root is not None:
         return output_root
-    return _state_output_root(state_path) or DEFAULT_OUTPUT_ROOT
+    state_root = _state_output_root(state_path)
+    if state_root is not None:
+        return state_root
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return DEFAULT_OUTPUT_ROOT.parent / f"unattended-{stamp}"
 
 
 def _config_payload(config: SupervisorConfig) -> dict[str, object]:

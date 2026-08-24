@@ -20,6 +20,14 @@ def test_incremental_idempotent_no_new_rows():
     st = freshness.load_state()
     if not st.get("indexed_watermark"):
         pytest.skip("watermark not bootstrapped")
+    # The test's own idempotency premise requires the index to be caught
+    # up: with a live backlog > batch_limit, run 2 legitimately processes
+    # the NEXT 50 rows. Skip while the incremental service is draining.
+    lag = freshness.compute_lag(
+        st.get("indexed_watermark", ""))["index_lag_count"]
+    if lag > 50:
+        pytest.skip(f"live index lag {lag} > batch_limit 50 — idempotence "
+                    "premise (caught-up authority) does not hold")
     r1 = freshness.incremental_update(batch_limit=50)
     r2 = freshness.incremental_update(batch_limit=50)
     # second pass must not duplicate: any rows it re-sees are hash-skips

@@ -166,7 +166,15 @@ def enforce(
                 reconciled.append(url)
                 continue
             current_category, exempt = row[0], row[1]
-            if cat not in excluded_categories or exempt:
+            # Stale iff the channel moved out of the blocked category, the
+            # category left the excluded set, or the channel became exempt.
+            # (Checking only `cat not in excluded_categories` kept blocks
+            # forever for channels whose category CHANGED — e.g. a channel
+            # reclassified from Gaming to Software Engineering kept its
+            # Gaming block because Gaming remained excluded.)
+            if (current_category != cat
+                    or cat not in excluded_categories
+                    or exempt):
                 _delete_category_block(conn, url, reason)
                 reconciled.append(url)
 

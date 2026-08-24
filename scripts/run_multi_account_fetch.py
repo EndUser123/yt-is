@@ -747,7 +747,7 @@ def read_pending_rows(
     uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
     with sqlite3.connect(uri, uri=True) as conn:
         rows = conn.execute(
-            "SELECT video_id, status, source, updated_at, has_captions "
+            "SELECT video_id, status, source, updated_at, has_captions, channel_id "
             "FROM analysis_status WHERE status = 'pending' "
             "ORDER BY updated_at ASC, video_id ASC"
         ).fetchall()
@@ -765,15 +765,42 @@ def read_pending_rows(
         except sqlite3.OperationalError:
             pass  # no blocklist table yet — nothing is blocked
 
+        # Channel pre-filter: skip channels with >=80% historical failure
+        # (>=10 attempts). These waste NLM quota on doomed source-adds.
+        high_failure_channels = set()
+        try:
+            for (cid,) in conn.execute(
+                """
+                SELECT channel_id FROM analysis_status
+                WHERE channel_id IS NOT NULL AND status IN ('complete', 'failed')
+                GROUP BY channel_id
+                HAVING COUNT(*) >= 10
+                   AND CAST(SUM(status = 'failed') AS REAL) / COUNT(*) >= 0.80
+                """
+            ).fetchall():
+                high_failure_channels.add(str(cid))
+        except sqlite3.OperationalError:
+            pass
+
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=recent_days)
         if recent_days is not None
         else None
     )
     result: list[PendingRow] = []
-    for video_id, status, source, updated_at, has_captions in rows:
+    for video_id, status, source, updated_at, has_captions, channel_id in rows:
         if source and str(source) in blocked_urls:
             continue  # blocked channel (category exclusion / per-channel block)
+        if channel_id and str(channel_id) in blocked_ids:
+            # Same exclusion by channel id: blocklist url formats drift
+            # (handles vs /channel/ ids), so the id is the stable key.
+            continue
+        if channel_id and str(channel_id) in high_failure_channels:
+            # Channel pre-filter (operator-approved 2026-08-19): channels with
+            # >=10 attempts and >=80% failure rate are skipped by drain
+            # selection — history says the NLM source-add will fail. These
+            # rows stay pending for the audio-only recovery path instead.
+            continue
         if caption_state == "unknown" and has_captions is not None:
             continue
         if caption_state == "captioned" and has_captions != 1:

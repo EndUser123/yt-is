@@ -10,24 +10,16 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
 
-class _FR:
-    def __init__(self, lag):
-        self._lag = lag
-
-    def compute_lag(self, wm):
-        return {"index_lag_count": self._lag}
-
-    def load_state(self):
-        return {"indexed_watermark": "x"}
-
-
 def _patch_freshness(monkeypatch, lag):
-    import types
+    """Patch the REAL ef.freshness module attributes: mode_staleness does
+    `from ef import freshness` at call time, which resolves the attribute
+    off the already-imported ef package — a sys.modules swap is a no-op."""
+    import ef.freshness as real_fr
+    monkeypatch.setattr(real_fr, "load_state",
+                        lambda: {"indexed_watermark": "x"})
+    monkeypatch.setattr(real_fr, "compute_lag",
+                        lambda wm: {"index_lag_count": lag})
     import ef_wiki_maintenance as m
-    fake = types.SimpleNamespace(
-        load_state=lambda: {"indexed_watermark": "x"},
-        compute_lag=lambda wm: {"index_lag_count": lag})
-    monkeypatch.setitem(sys.modules, "ef.freshness", fake)
     return m
 
 

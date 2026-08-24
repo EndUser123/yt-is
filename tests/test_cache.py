@@ -279,7 +279,11 @@ class TestTranscriptMetadataRoundTrip:
     """Test that cache entries preserve arbitrary metadata payloads."""
 
     def test_metadata_round_trip_preserves_payload(self):
-        """Metadata should survive a SQLite write/read round trip unchanged."""
+        """Caller metadata should survive a SQLite write/read round trip.
+
+        set_cached_transcript also records derived quality metrics
+        (transcript_chars/words, quality_band) into the stored metadata —
+        the caller's payload must survive unchanged beside them."""
         video_id = "ZyX98765432"
         lang = "en"
         source = "notebooklm"
@@ -307,7 +311,12 @@ class TestTranscriptMetadataRoundTrip:
 
         assert cached is not None
         assert cached.transcript == "Complete transcript text"
-        assert cached.metadata == metadata
+        # caller payload preserved verbatim...
+        for key, value in metadata.items():
+            assert cached.metadata[key] == value
+        # ...plus the derived quality metrics
+        for key in ("transcript_chars", "transcript_words", "quality_band"):
+            assert key in cached.metadata
 
 
 class TestCacheDeletion:

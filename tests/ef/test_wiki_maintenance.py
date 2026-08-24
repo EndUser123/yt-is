@@ -14,6 +14,19 @@ from ef_wiki_maintenance import (  # noqa: E402
     mode_contradiction, mode_evidence, mode_staleness)
 
 
+@pytest.fixture(autouse=True)
+def _fresh_index(monkeypatch):
+    """mode_staleness's freshness gate (M-gate #7) reads the LIVE EF lag;
+    pin it so these tests exercise the staleness logic, not the machine
+    state. (Patching sys.modules['ef.freshness'] is a no-op — the function
+    resolves the attribute off the imported ef package.)"""
+    import ef.freshness as real_fr
+    monkeypatch.setattr(real_fr, "load_state",
+                        lambda: {"indexed_watermark": "x"})
+    monkeypatch.setattr(real_fr, "compute_lag",
+                        lambda wm: {"index_lag_count": 0})
+
+
 class _FakeR:
     def __init__(self, chunk_id, channel, title="t", score=0.5,
                  video_id=None):
@@ -74,7 +87,9 @@ def test_high_rank_not_auto_contradiction():
 def test_staleness_no_timestamps_no_auto_stale():
     pq = _FakePQ([_FakeR("v1:transcript", "chan")])
     out = mode_staleness(pq, "claim", "2026-08-01T00:00:00Z", 5)
-    assert out["signal"] == "newer_material_candidate_needs_review"
+    # Candidate exists but carries no timestamps: no newer-evidence signal,
+    # and the signal vocabulary is review eligibility, never auto-stale.
+    assert out["signal"] == "no_new_evidence"
     assert "NOT staleness judgment" in out["note"]
 
 
