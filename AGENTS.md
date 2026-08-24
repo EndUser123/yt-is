@@ -62,6 +62,11 @@ daemon, single-instance pid guard), 06:00 YtisContentSync (YouTube phase
 runs in PARALLEL with all light connectors via run_script_threaded; then
 EF ingest, topic assignment, metadata + title self-healers, digest).
 Twitter routes are paced 75s apart with 900s backoff (per-token limits).
+Exclusion is enforced at BOTH ends (2026-08-24): the channel scan skips
+`channel_blocklist` entries entirely (1,045 of 2,865 channels were being
+scanned daily for videos nobody would fetch), and pending-on-blocked is
+zero by invariant (`_blocked_pending` in run_intake_pipeline warns if
+not). Pending counts therefore mean ELIGIBLE work only.
 
 **Self-healers.** Title backfill (oEmbed + API fallback, terminal
 unavailables marked), channel metadata backfill (50 IDs/call), topic

@@ -1937,8 +1937,16 @@ def cmd_check_all(verbose: bool = False) -> None:
     storage = _get_batch_status_storage()
     storage._ensure_channel_metadata()
     conn = storage._get_conn()
+    # Blocked (excluded) channels are not scanned at all — the same
+    # filter the fetch-side enumeration already uses (line ~1362).
+    # Before 2026-08-24 this scanned all 2,865 channels including 1,045
+    # blocked ones: ~36% of every scan cycle spent on channels that are
+    # never fetched, cataloging 128K+ videos nobody will drain.
     cursor = conn.execute(
-        "SELECT channel_url, playlist_id, video_count_estimate, last_checked FROM channel_metadata ORDER BY last_checked ASC"
+        """SELECT channel_url, playlist_id, video_count_estimate, last_checked
+           FROM channel_metadata
+           WHERE channel_url NOT IN (SELECT channel_url FROM channel_blocklist)
+           ORDER BY last_checked ASC"""
     )
     rows = cursor.fetchall()
     conn.close()
