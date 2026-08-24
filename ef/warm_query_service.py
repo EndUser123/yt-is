@@ -296,6 +296,29 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._text(500, f"interests page unavailable: {e}")
 
+        elif parsed.path == "/today":
+            try:
+                self._bytes(200, _render_today_page().encode("utf-8"),
+                            "text/html; charset=utf-8")
+            except Exception as e:
+                self._text(500, f"today page unavailable: {e}")
+
+        elif parsed.path == "/feedback":
+            params = parse_qs(parsed.query)
+            try:
+                from ef.personal_graph import record_feedback
+                ok = record_feedback(
+                    (params.get("surface") or [""])[0],
+                    (params.get("kind") or [""])[0],
+                    (params.get("id") or [""])[0],
+                    (params.get("v") or [""])[0],
+                    (params.get("note") or [""])[0])
+                self._json(200 if ok else 400,
+                           {"ok": ok} if ok
+                           else {"error": "invalid verdict"})
+            except Exception as e:
+                self._json(500, {"error": str(e)[:200]})
+
         elif parsed.path == "/graph":
             try:
                 from urllib.parse import parse_qs as _pq
@@ -704,6 +727,120 @@ document.addEventListener('click', e => {{
     alert('Not saved: ' + err.message);
   }});
 }});
+</script>
+</body></html>"""
+
+
+def _render_today_page() -> str:
+    from ef.evidence_clusters import cached_clusters
+    from urllib.parse import parse_qs as _pq
+    import html as _html
+    import sqlite3 as _sq
+    import time as _t
+
+    clusters, coverage = cached_clusters()
+    emerging = [c for c in clusters if c.get("phase") == "emerging"]
+    dormant = [c for c in clusters if c.get("phase") == "dormant"]
+
+    # recent documents in the strongest clusters (mechanical attention
+    # candidates — the LLM scoring layer upgrades this to utility-ranked)
+    recent = []
+    try:
+        conn = _sq.connect(
+            "file:P:/.data/yt-is/ef/catalog.sqlite?mode=ro", uri=True,
+            timeout=15)
+        for c in clusters[:6]:
+            rows = conn.execute(r"""
+                SELECT eu.title, eu.channel_title, eu.source,
+                       substr(COALESCE(NULLIF(eu.published_at,''),
+                                       eu.captured_at), 1, 10) day
+                FROM eu
+                JOIN chunk_clusters cc ON cc.video_id = eu.video_id
+                WHERE cc.cluster_id = ? AND eu.title IS NOT NULL
+                  AND length(eu.title) > 12
+                ORDER BY day DESC LIMIT 3""", (c["cluster_id"],)).fetchall()
+            for t, ch_t, src, day in rows:
+                recent.append({"title": (t or "")[:80], "cluster": c["label"],
+                               "channel": (ch_t or "")[:30], "source": src,
+                               "day": day, "cluster_id": c["cluster_id"]})
+        conn.close()
+    except _sq.Error:
+        pass
+
+    def fb(kind, id_, label):
+        return (" ".join(
+            f"<a class='fb' href='#' onclick=\"fb('{kind}','{id_}','{v}')\""
+            f">{v.replace('_',' ')}</a>"
+            for v in ("useful", "known_already", "investigate")))
+
+    emerging_html = "".join(
+        f"<div class='item'><b>{_html.escape(c['label'])}</b> "
+        f"<span class='dim'>{c['channels']} channels, "
+        f"{c['active_months']} months, since {c['first_month']}</span> "
+        f"{fb('cluster', c['cluster_id'], '')}</div>"
+        for c in emerging[:5])
+    dormant_html = "".join(
+        f"<div class='item dim'><b>{_html.escape(c['label'])}</b> "
+        f"<span class='dim'>last active {c['last_month']}, "
+        f"{c['active_months']} months total</span></div>"
+        for c in dormant[:3])
+    recent_html = "".join(
+        f"<div class='item'>{_html.escape(r['title'])} "
+        f"<span class='dim'>— {_html.escape(r['cluster'][:28])} "
+        f"({r['day']})</span> {fb('doc', r['title'][:40], '')}</div>"
+        for r in recent[:12])
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ytis — Today</title>
+<style>
+  body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }}
+  h1 {{ color: #58a6ff; }} h2 {{ margin-top: 2rem; font-size: 1.1rem; }}
+  a {{ color: #58a6ff; text-decoration: none; }}
+  .dim {{ color: #8b949e; }}
+  .item {{ padding: .3rem 0; border-bottom: 1px solid #21262d; }}
+  .fb {{ font-size: .75rem; border: 1px solid #30363d; border-radius: 4px;
+       padding: 0 .4rem; margin-left: .3rem; color: #8b949e; }}
+  .fb:hover {{ color: #e6edf3; border-color: #58a6ff; }}
+  .banner {{ background: #161b22; border: 1px solid #30363d;
+           border-radius: 8px; padding: .6rem 1rem; margin: .8rem 0;
+           font-size: .88rem; max-width: 980px; }}
+  .banner b {{ color: #f0b72f; }}
+</style></head><body>
+<nav><a href="/today">Today</a> · <a href="/interests">Interests</a> ·
+<a href="/graph">Graph</a> · <a href="/">Search</a> ·
+<a href="/home">Home</a> · <a href="/status">Status</a></nav>
+<h1>Intelligence Home</h1>
+<div class='banner'><b>Mechanical layer</b> — emerging/dormant detection
+and recent-doc attention candidates computed from evidence clusters.
+The utility-ranked layer (goal relevance × novelty × information gain)
+arrives with the v2 inference run.</div>
+
+<h2>Emerging interests</h2>
+{emerging_html or "<p class='dim'>none detected in top clusters</p>"}
+
+<h2>Recently active (attention candidates)</h2>
+{recent_html or "<p class='dim'>no recent docs in top clusters</p>"}
+
+<h2>Dormant (formerly active)</h2>
+{dormant_html or "<p class='dim'>none in top clusters</p>"}
+
+<h2>Corpus</h2>
+<p class='dim'>{coverage.get('documents_indexed_ef', 0):,} documents ·
+{coverage.get('semantic_clusters', 0)} clusters ·
+{coverage.get('tracked_channels', 0):,} channels tracked</p>
+
+<script>
+function fb(kind, id, v) {{
+  fetch('/feedback?surface=today&kind=' + kind + '&id=' +
+        encodeURIComponent(id) + '&v=' + v)
+    .then(r => r.json())
+    .then(d => {{ if (d.ok) {{
+      event.target.style.color = '#7ee2a8';
+      event.target.textContent = '✓ ' + v.replace('_',' ');
+    }} }});
+  return false;
+}}
 </script>
 </body></html>"""
 
