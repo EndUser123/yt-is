@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ytis — Search Everything</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117; color: #e6edf3; min-height: 100vh;
+        }
+        .container { max-width: 1220px; margin: 0 auto; padding: 1.5rem 1.5rem; }
+
+        header { text-align: center; padding: 3rem 0 2rem; }
+        header h1 { font-size: 2.5rem; font-weight: 700; color: #58a6ff; }
+        header p { color: #8b949e; margin-top: 0.5rem; }
+
+        .search-box {
+            display: flex; gap: 0.75rem; margin: 2rem 0;
+        }
+        .search-box input {
+            flex: 1; padding: 0.9rem 1.2rem; font-size: 1.1rem;
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            color: #e6edf3; outline: none; transition: border-color 0.2s;
+        }
+        .search-box input:focus { border-color: #58a6ff; }
+        .search-box input::placeholder { color: #484f58; }
+        .search-box button {
+            padding: 0.9rem 1.8rem; font-size: 1rem; font-weight: 600;
+            background: #238636; color: #fff; border: none; border-radius: 8px;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .search-box button:hover { background: #2ea043; }
+        .search-box button:disabled { background: #30363d; cursor: wait; }
+
+        .stats { text-align: center; color: #8b949e; font-size: 0.9rem; margin-bottom: 2rem; }
+        .stats span { color: #58a6ff; font-weight: 600; }
+
+        .results { display: flex; flex-direction: column; gap: 1rem; }
+        .result {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            padding: 1.2rem 1.5rem; transition: border-color 0.2s;
+        }
+        .result:hover { border-color: #484f58; }
+        .result h3 { font-size: 1.05rem; margin-bottom: 0.5rem; }
+        .result h3 a { color: #58a6ff; text-decoration: none; }
+        .result h3 a:hover { text-decoration: underline; }
+        .result .snippet {
+            color: #8b949e; font-size: 0.92rem; line-height: 1.5; margin-bottom: 0.5rem;
+        }
+        .result .meta { font-size: 0.8rem; color: #484f58; display: flex; gap: 1rem; }
+        .result .meta .source { color: #d29922; }
+        .result .meta .score { color: #3fb950; }
+        .result mark { background: #1f6feb33; color: #79c0ff; padding: 0 0.1em; border-radius: 2px; }
+
+        .loading { text-align: center; padding: 3rem; color: #8b949e; }
+        .loading .spinner {
+            display: inline-block; width: 2rem; height: 2rem;
+            border: 3px solid #30363d; border-top-color: #58a6ff;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty { text-align: center; padding: 3rem; color: #8b949e; }
+        .topics-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-bottom: 1.5rem; }
+        .topics-bar button {
+            padding: 0.3rem 0.8rem; font-size: 0.82rem;
+            background: #21262d; color: #8b949e; border: 1px solid #30363d;
+            border-radius: 16px; cursor: pointer; transition: all 0.2s;
+        }
+        .topics-bar button:hover { color: #e6edf3; border-color: #58a6ff; }
+
+        .suggestions { margin-bottom: 1.5rem; }
+        .suggestions h3, .trends h3 {
+            color: #8b949e; font-size: 0.85rem; text-transform: uppercase;
+            letter-spacing: 0.05em; margin-bottom: 0.6rem;
+        }
+        .suggestions button {
+            display: block; width: 100%; text-align: left; margin-bottom: 0.4rem;
+            padding: 0.55rem 0.9rem; font-size: 0.95rem;
+            background: #161b22; color: #e6edf3; border: 1px solid #30363d;
+            border-radius: 8px; cursor: pointer; transition: all 0.2s;
+        }
+        .suggestions button:hover { border-color: #58a6ff; }
+        .suggestions button .dim { color: #8b949e; font-size: 0.8rem; }
+
+        .idle-row { display: flex; gap: 1.2rem; align-items: stretch; margin-bottom: 1.5rem; }
+        .idle-row .suggestions, .idle-row .trends {
+            display: flex; flex-direction: column; margin-bottom: 0;
+        }
+        .idle-row .suggestions { flex: 0 0 330px; }
+        .idle-row .trends { flex: 1; }
+        .trend-row { display: flex; gap: 1rem; flex: 1; }
+        .trend-card { flex: 1; min-width: 0; }
+        .trend-card {
+            background: #161b22;
+            border: 1px solid #30363d; border-radius: 8px; padding: 1rem;
+        }
+        .trend-card h4 { color: #58a6ff; margin: 0 0 0.6rem; font-size: 1rem; }
+        .trend-card table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .trend-card td { padding: 0.25rem 0.3rem; border-bottom: 1px solid #21262d; }
+        .trend-card td.num { text-align: right; color: #8b949e; font-variant-numeric: tabular-nums; }
+        .trend-card .up { color: #3fb950; } .trend-card .down { color: #f85149; }
+        .trend-card .topic-link { color: #e6edf3; cursor: pointer; }
+        .trend-card .topic-link:hover { color: #58a6ff; text-decoration: underline; }
+        .trend-sub { color: #8b949e; font-size: 0.75rem; margin: 0.5rem 0 0.3rem;
+                     text-transform: uppercase; letter-spacing: 0.04em; }
+
+        .fetching { color: #8b949e; font-size: 0.9rem;
+                    display: inline-block; margin-top: 0.5rem;
+                    animation: pulse 1.2s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
+        .error { text-align: center; padding: 2rem; color: #f85149; }
+
+        footer { text-align: center; padding: 3rem 0; color: #484f58; font-size: 0.8rem; }
+        footer a { color: #58a6ff; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 style="cursor:pointer" onclick="home()" title="Back to home">ytis</h1>
+            <p>Search everything you've watched, read, and saved</p>
+            <p style="margin-top:.6rem; font-size:.95rem">
+                <a href="/home" style="color:#58a6ff">Home</a> <span style="color:#30363d">·</span>
+                <a href="/digest" style="color:#58a6ff">Daily brief</a> <span style="color:#30363d">·</span>
+                <a href="/sources" style="color:#58a6ff">Sources</a> <span style="color:#30363d">·</span>
+                <a href="/review" style="color:#58a6ff">YouTube channels</a> <span style="color:#30363d">·</span>
+                <a href="/ask" style="color:#58a6ff">Ask</a> <span style="color:#30363d">·</span>
+                <a href="/status" style="color:#58a6ff">Status</a>
+            </p>
+        </header>
+
+        <div class="search-box">
+            <input type="text" id="query" placeholder="Ask anything... (e.g., React hooks, AI agents, database design)"
+                   autocomplete="off" autofocus>
+            <button onclick="search()" id="btn">Search</button>
+        </div>
+
+        <div id="idle">
+            <div class="topics-bar" id="topics"><span class="fetching">Fetching topics…</span></div>
+            <div class="idle-row">
+                <div class="suggestions" id="suggestions"><h3>Try asking</h3><span class="fetching">Fetching suggestions…</span></div>
+                <div class="trends" id="trends"><h3>Topic momentum</h3><span class="fetching">Fetching trends…</span></div>
+            </div>
+        </div>
+        <div class="stats" id="stats"></div>
+        <div class="results" id="results"></div>
+        <div class="loading" id="loading" style="display:none">
+            <div class="spinner"></div>
+            <p style="margin-top:1rem">Searching...</p>
+        </div>
+
+        <footer>
+            Powered by <a href="#" onclick="showStatus()">ytis</a> —
+            <span id="footer-stats"></span>
+        </footer>
+    </div>
+
+    <script>
+        const API = 'http://127.0.0.1:6391';
+        const input = document.getElementById('query');
+        const btn = document.getElementById('btn');
+        const resultsDiv = document.getElementById('results');
+        const loadingDiv = document.getElementById('loading');
+        const statsDiv = document.getElementById('stats');
+        const topicsDiv = document.getElementById('topics');
+        const footerStats = document.getElementById('footer-stats');
+
+        const idleDiv = document.getElementById('idle');
+
+        function home() {
+            input.value = '';
+            idleDiv.style.display = '';
+            resultsDiv.innerHTML = '';
+            statsDiv.innerHTML = '';
+            if (location.hash) history.replaceState(null, '', location.pathname);
+        }
+
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') search();
+            if (e.key === 'Escape') home();
+        });
+
+        async function search() {
+            const q = input.value.trim();
+            if (!q) { home(); return; }
+            idleDiv.style.display = 'none';   // idle chrome collapses; results own the page
+            location.hash = encodeURIComponent(q);
+            btn.disabled = true;
+            loadingDiv.style.display = 'block';
+            resultsDiv.innerHTML = '';
+            statsDiv.innerHTML = '';
+            topicsDiv.innerHTML = '';
+            try {
+                const resp = await fetch(`${API}/query?q=${encodeURIComponent(q)}&top_k=10&format=json`);
+                if (!resp.ok) throw new Error(`Search service returned ${resp.status}`);
+                const data = await resp.json();
+                displayResults(q, data.results || []);
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="error">
+                    <p><strong>Search failed:</strong> ${err.message}</p>
+                    <p style="margin-top:0.5rem; color:#8b949e; font-size:0.9rem">
+                        Make sure the search service is running:<br>
+                        <code style="color:#58a6ff">python -m ef.warm_query_service</code>
+                    </p>
+                </div>`;
+            } finally {
+                btn.disabled = false;
+                loadingDiv.style.display = 'none';
+            }
+        }
+
+        function displayResults(query, results) {
+            statsDiv.innerHTML = `<span>${results.length}</span> results for "<span>${query}</span>"`;
+            if (!results.length) {
+                resultsDiv.innerHTML = '<div class="empty"><p>No results found. Try different terms.</p></div>';
+                return;
+            }
+            resultsDiv.innerHTML = results.map(r => {
+                const title = r.title || r.video_id || 'Untitled';
+                const url = r.url || `https://youtube.com/watch?v=${r.video_id}`;
+                const snippet = (r.snippet || '').substring(0, 300);
+                const score = r.score ? r.score.toFixed(3) : '';
+                return `<div class="result">
+                    <h3><a href="${url}" target="_blank">${title}</a></h3>
+                    <div class="snippet">${snippet}...</div>
+                    <div class="meta">
+                        ${score ? `<span class="score">score: ${score}</span>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function loadStatus() {
+            try {
+                const resp = await fetch(`${API}/health`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    footerStats.textContent = 'search service: ready';
+                } else {
+                    footerStats.textContent = 'search service: warming up';
+                }
+            } catch {
+                footerStats.textContent = 'search service: offline (run python -m ef.warm_query_service)';
+            }
+        }
+
+        async function loadTopics() {
+            // Load top topics for quick-search buttons
+            try {
+                const resp = await fetch('/topics');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const topics = (data.topics || []).slice(0, 10);
+                topicsDiv.innerHTML = topics.map(t =>
+                    `<button onclick="input.value='${t.label}';search()">${t.label} (${t.videos})</button>`
+                ).join('');
+            } catch { /* topics endpoint may not exist yet */ }
+        }
+
+        function ask(q) { input.value = q; search(); }
+
+        async function loadSuggestions() {
+            // ≥5 suggested questions: dynamic where possible (topics +
+            // rising trends), evergreen fallbacks to guarantee five.
+            let topicLabels = [], rising = [];
+            try {
+                const t = await (await fetch('/topics')).json();
+                topicLabels = (t.topics || []).map(x => x.label);
+            } catch {}
+            try {
+                const tr = await (await fetch('/trends')).json();
+                rising = (tr['24h']?.biggest_change || [])
+                    .filter(x => x.pct > 0).map(x => x.topic);
+            } catch {}
+            const pool = [];
+            if (topicLabels[0]) pool.push([`What is the state of ${topicLabels[0]}?`, 'biggest topic in your corpus']);
+            if (topicLabels[1]) pool.push([`Best techniques for ${topicLabels[1]}`, 'second-largest topic']);
+            if (rising[0]) pool.push([`What is new in ${rising[0]}?`, 'fastest-rising topic today']);
+            if (rising[1]) pool.push([`Why is ${rising[1]} trending in my sources?`, 'second-fastest riser']);
+            const evergreen = [
+                ['What are people saying about AI agents?', 'across YouTube + Reddit'],
+                ['What tools do people actually recommend?', 'community picks'],
+                ['What are the most common mistakes with local LLMs?', 'lessons from transcripts'],
+                ['What changed in the last week?', 'recent content'],
+            ];
+            for (const q of evergreen) { if (pool.length >= 6) break; pool.push(q); }
+            const el = document.getElementById('suggestions');
+            el.innerHTML = '<h3>Try asking</h3>' + pool.slice(0, 6).map(([q, why]) =>
+                `<button onclick="ask('${q.replace(/'/g, "\\'")}')">${q}
+                 <span class="dim"> — ${why}</span></button>`).join('');
+        }
+
+        async function loadTrends() {
+            const el = document.getElementById('trends');
+            let data;
+            try { data = await (await fetch('/trends')).json(); }
+            catch { el.innerHTML = ''; return; }
+            if (data.error) { el.innerHTML = ''; return; }
+            const windows = [['24h', '24 hours'], ['72h', '72 hours'], ['7d', '7 days']];
+            el.innerHTML = '<h3>Topic momentum</h3><div class="trend-row">' + windows.map(([key, label]) => {
+                const w = data[key] || {most_new: [], biggest_change: []};
+                const newRows = (w.most_new || []).map(x =>
+                    `<tr><td class="topic-link" onclick="ask('${x.topic.replace(/'/g, "\\'")}')">${x.topic}</td>
+                     <td class="num">${x.new_chunks}</td></tr>`).join('');
+                const chgRows = (w.biggest_change || []).map(x => {
+                    const cls = x.pct >= 0 ? 'up' : 'down';
+                    const pct = x.pct === 999 ? 'new' : (x.pct > 0 ? '+' : '') + x.pct + '%';
+                    return `<tr><td class="topic-link" onclick="ask('${x.topic.replace(/'/g, "\\'")}')">${x.topic}</td>
+                            <td class="num ${cls}">${pct}</td></tr>`;
+                }).join('');
+                return `<div class="trend-card"><h4>${label}</h4>
+                    <div class="trend-sub">Most new content</div>
+                    <table>${newRows}</table>
+                    <div class="trend-sub">Biggest change vs prior window</div>
+                    <table>${chgRows}</table></div>`;
+            }).join('') + '</div>';
+        }
+
+        function showStatus() {
+            input.value = '';
+            resultsDiv.innerHTML = `<div class="empty">
+                <h2 style="margin-bottom:1rem">ytis — YouTube Intelligence System</h2>
+                <div style="text-align:left; max-width:500px; margin:0 auto; line-height:2; color:#8b949e">
+                    <p>📊 <strong style="color:#e6edf3">206,606</strong> transcripts indexed</p>
+                    <p>📺 <strong style="color:#e6edf3">2,865</strong> channels tracked</p>
+                    <p>🧩 <strong style="color:#e6edf3">351</strong> topics discovered</p>
+                    <p>💻 <strong style="color:#e6edf3">46</strong> code artifacts extracted</p>
+                    <p>📝 <strong style="color:#e6edf3">250</strong> Reddit posts indexed</p>
+                </div>
+            </div>`;
+        }
+
+        loadStatus();
+        loadSuggestions();
+        loadTrends();
+        if (location.hash.length > 1) {
+            input.value = decodeURIComponent(location.hash.slice(1));
+            search();
+        }
+    </script>
+</body>
+</html>

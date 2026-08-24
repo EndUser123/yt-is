@@ -1,0 +1,145 @@
+{
+  "description": "Natural-language retrieval-quality query set for the graph bake-off (P2 reopened arm). Categories: vocab = vocabulary mismatch (question shares few/no content words with the answer page); hop = answer requires link/source metadata rather than topic words; direct = topic words overlap the page. gold_fact verified against page content 2026-08-22.",
+  "queries": [
+    {
+      "id": "q01", "category": "vocab",
+      "question": "What is the risk of judging how fresh a cached fact is by when we downloaded it?",
+      "keywords_fts": "ingestion time evidence recency",
+      "gold_slugs": ["two-clock-model-ingestion-vs-evidence-time"],
+      "gold_fact": "Using ingestion time as a proxy for evidence recency produces false positives; ingestion time and evidence-effective time are two distinct clocks, only equivalent when data is created at ingestion."
+    },
+    {
+      "id": "q02", "category": "vocab",
+      "question": "Why is waiting for something to break before acting a bad default?",
+      "keywords_fts": "deferral asymmetry unchecked state",
+      "gold_slugs": ["deferral-asymmetry-unchecked-state-claims"],
+      "gold_fact": "Deferral asymmetry: unchecked state claims win by default when gating on 'wait for an incident to demonstrate need' (operator correction 2026-08-14)."
+    },
+    {
+      "id": "q03", "category": "vocab",
+      "question": "How should you choose which model grades another model's answers?",
+      "keywords_fts": "verification judge selection probe",
+      "gold_slugs": ["measurement-derived-judge-selection"],
+      "gold_fact": "Rank verification judges on a labeled entailment probe set (ground truth known by construction, with negation, version-mismatch, and scope-overreach traps), not intuition; instrument: verifier_probe.py."
+    },
+    {
+      "id": "q04", "category": "vocab",
+      "question": "Where does the rule that one failed test cannot end a multi-capability comparison come from?",
+      "keywords_fts": "falsifier scope multi-axis",
+      "gold_slugs": ["falsifier-scope-discipline-multi-axis-evaluations"],
+      "gold_fact": "One-axis falsifiers cannot terminate multi-axis evaluations; the concept originated from the LightRAG bake-off premature termination incident (2026-08-22)."
+    },
+    {
+      "id": "q05", "category": "vocab",
+      "question": "A single sentence of user feedback produced the most valuable fix of the session. What principle captures this?",
+      "keywords_fts": "operator correction signal",
+      "gold_slugs": ["operator-correction-as-highest-density-signal"],
+      "gold_fact": "Operator corrections are the highest-density signal in any session; the agent's job is to make corrections structurally permanent as fast as possible."
+    },
+    {
+      "id": "q06", "category": "vocab",
+      "question": "Why did running the unit test suite start polluting production telemetry with fake rows?",
+      "keywords_fts": "telemetry mock tests production",
+      "gold_slugs": ["telemetry-wired-into-mock-tested-code-pollutes-production-logs"],
+      "gold_fact": "Wiring jsonl telemetry into a function that mock-based tests already invoke turns every pytest run into a producer of fake production rows; signal: telemetry rows with elapsed/latency exactly 0.0."
+    },
+    {
+      "id": "q07", "category": "vocab",
+      "question": "Under time pressure the agent lists options instead of committing to one answer. What failure mode is this?",
+      "keywords_fts": "closure pressure framing",
+      "gold_slugs": ["closure-pressure-assumes-framing-is-right"],
+      "gold_fact": "Closure pressure: defaulting to framings that close the conversation rather than framings committing to the best answer; surface forms include trusting prior-session entries as current fact without re-probing."
+    },
+    {
+      "id": "q08", "category": "vocab",
+      "question": "An agent wrote an architectural retirement decision into a wiki page that the operator never made. What is this called?",
+      "keywords_fts": "fabricated architectural decisions wiki",
+      "gold_slugs": ["agent-fabricated-architectural-decisions-in-wiki-concepts"],
+      "gold_fact": "Agent-fabricated architectural decisions: agents write Decision sections presenting operator-level choices (retire X, replace Y, adopt Z) as established fact, promoting inference to authority."
+    },
+    {
+      "id": "q09", "category": "vocab",
+      "question": "Repeated re-verification of the same task keeps happening. What gap does this indicate?",
+      "keywords_fts": "instruction state closure gap",
+      "gold_slugs": ["instruction-to-state-closure-gap-obligation-ledger"],
+      "gold_fact": "Instruction-to-state closure gap: the runtime records actions and some evidence but keeps no durable, task-scoped contract connecting the instruction, expected end state, and evidence."
+    },
+    {
+      "id": "q10", "category": "vocab",
+      "question": "A monitoring plugin had 117 passing tests but produced zero detections in production its whole life. What was the failure class?",
+      "keywords_fts": "silently dead hooks payload",
+      "gold_slugs": ["silently-dead-hooks-pgm-payload-bug-fleet-monitoring-gap"],
+      "gold_fact": "The PGM plugin read the wrong payload field name in stop_detect.py, so every real session hit an empty-text guard and produced zero detections; no telemetry surfaced this."
+    },
+    {
+      "id": "q11", "category": "vocab",
+      "question": "Why do several terminals independently retrying against the same provider quota make the outage worse?",
+      "keywords_fts": "quota contention coordination fleet",
+      "gold_slugs": ["model-quota-contention-coordination-fleet-rate-limiting"],
+      "gold_fact": "Independent per-session retry/failover logic creates a thundering herd on recovery; the solution is a shared coordination layer that tracks quota consumption centrally and admits dispatches before they hit 429s."
+    },
+    {
+      "id": "q12", "category": "vocab",
+      "question": "Why is grepping the codebase the wrong receipt for claiming a script is unused and safe to delete?",
+      "keywords_fts": "usage claims transcript receipts",
+      "gold_slugs": ["usage-claims-require-transcript-receipts"],
+      "gold_fact": "A claim that an artifact, tool, or config is 'unused' or 'safe to delete' requires a session-transcript search as its receipt; source-code grep alone is the wrong receipt type because scripts are invoked from sessions, not imported by code."
+    },
+    {
+      "id": "q13", "category": "hop",
+      "question": "Which investigation produced the two-clock model?",
+      "keywords_fts": "two-clock model source",
+      "gold_slugs": ["two-clock-model-ingestion-vs-evidence-time"],
+      "gold_fact": "The two-clock model came from the yt-is Evidence Fabric O-gate investigation (source field of the concept)."
+    },
+    {
+      "id": "q14", "category": "hop",
+      "question": "What evidence standard must a claim that X causes Y meet before it is written into durable storage?",
+      "keywords_fts": "causal mechanism claims receipts",
+      "gold_slugs": ["causal-mechanism-claims-require-source-receipts-before-durable-write"],
+      "gold_fact": "Causal mechanism claims require source receipts before durable write; a specific high-risk form of the general claims-require-receipts rule."
+    },
+    {
+      "id": "q15", "category": "direct",
+      "question": "What are the failure modes of Cohere trial API keys?",
+      "keywords_fts": "cohere trial quota",
+      "gold_slugs": ["cohere-trial-api-quota-signals-and-failure-modes"],
+      "gold_fact": "Cohere trial keys are limited to 1000 calls/month; the limit is only in the 429 body text, not headers; the UUID-looking {\"id\":\"...\"} JSON is actually a rate-limit error body."
+    },
+    {
+      "id": "q16", "category": "direct",
+      "question": "What are the three rules of the model pool selection policy?",
+      "keywords_fts": "model pool selection policy",
+      "gold_slugs": ["model-pool-selection-policy-speed-quota-diversity"],
+      "gold_fact": "(1) Speed + adequate quota wins over free-but-slow; (2) free is a tiebreaker, not a gate; (3) model diversity overrides both for adversarial review or cross-checking."
+    },
+    {
+      "id": "q17", "category": "direct",
+      "question": "In what order should dispatch try providers with dedicated keys versus shared pools?",
+      "keywords_fts": "dedicated quota dispatch routing",
+      "gold_slugs": ["dedicated-quota-first-dispatch-routing"],
+      "gold_fact": "Fleet models with dedicated API keys (Cohere, Z.ai, MiniMax, NIM, Groq, Google, Mistral) dispatch through their dedicated provider first, falling back to shared/subscription pools (OpenCode Zen/Go, OpenRouter) only when needed."
+    },
+    {
+      "id": "q18", "category": "direct",
+      "question": "Which hook stops malformed python one-liners before the shell mangles them, and why was a hook needed at all?",
+      "keywords_fts": "class c shell quoting guard",
+      "gold_slugs": ["class-c-shell-quoting-guard-structural-enforcement"],
+      "gold_fact": "A PreToolUse hook blocks multi-line/nested-quote python -c payloads; structural enforcement was needed because the AGENTS.md Class C prose rule has a ~50% compliance ceiling."
+    },
+    {
+      "id": "q19", "category": "direct",
+      "question": "What happened when an agent claimed a review lens was fired but the transcript showed it never ran?",
+      "keywords_fts": "behavioral compliance gap skipped",
+      "gold_slugs": ["behavioral-compliance-gap-agent-skips-instructed-steps-without-verifying"],
+      "gold_fact": "The /tp skill said fire all 3 lenses in parallel but the agent skipped agy, rationalizing with an unverified narrative ('we don't have a Gemini model configured') without ever running agy --version."
+    },
+    {
+      "id": "q20", "category": "direct",
+      "question": "How should a session close-out orchestrator skill be designed?",
+      "keywords_fts": "session close out skill",
+      "gold_slugs": ["session-close-out-skill-design"],
+      "gold_fact": "Six external-sourced improvements plus five multi-terminal/stale-data invariants for a /close skill; improvements sourced from Hermes (handoff fields) and Cognizant (orchestration loop safety)."
+    }
+  ]
+}
