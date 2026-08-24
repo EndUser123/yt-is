@@ -1556,6 +1556,21 @@ def _render_digest_page() -> str:
 
     esc = _html.escape
 
+    # Pipeline health alert (written by the YtisHealthWatch 5-min watcher;
+    # surfaced here so the morning brief shows fleet + task health).
+    alert_html = ""
+    try:
+        alert_text = Path(
+            "P:/.data/yt-is/pipeline-alert.txt").read_text(encoding="utf-8").strip()
+        if alert_text:
+            alert_html = (
+                f'<div class="panel" style="border-color: #f85149;">'
+                f'<h2>Pipeline Alert</h2><pre>{esc(alert_text[:2000])}</pre>'
+                f'<p class="dim">Source: pipeline_health_watch (5-min cadence). '
+                f'Alert file: P:/.data/yt-is/pipeline-alert.txt</p></div>')
+    except OSError:
+        pass
+
     def channel_rows(channels, limit):
         out = []
         for ch in channels[:limit]:
@@ -1614,6 +1629,8 @@ def _render_digest_page() -> str:
 <a href="/reddit">Reddit</a> · <a href="/discord">Discord</a> · <a href="/status">Status</a></nav>
 <h1>Daily Brief</h1>
 <p class="dim">{now.strftime('%A, %Y-%m-%d %H:%M')} UTC — computed live</p>
+
+{alert_html}
 
 <div class="cards">
   <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on active channels (24h)</div>
