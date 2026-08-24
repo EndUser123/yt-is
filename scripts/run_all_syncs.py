@@ -98,6 +98,18 @@ def run_script_threaded(name, script_path, timeout, results, prefix=""):
 
 
 def main(argv=None):
+    # Same two-worlds fix as run_intake_pipeline: the NSSM service runs
+    # as LocalSystem (cp1252 pipes); this script prints U+2713/U+2717
+    # status glyphs and crashed the whole sync inside the cp1252
+    # encoding_table under the service env while running CLEAN from any
+    # user shell (user scope has PYTHONUTF8=1). Force UTF-8 both ways
+    # and for every connector child we spawn.
+    import os as _os
+    for _s in (sys.stdout, sys.stderr):
+        if hasattr(_s, "reconfigure"):
+            _s.reconfigure(encoding="utf-8", errors="replace")
+    _os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
     parser = argparse.ArgumentParser(description="Run all content syncs")
     parser.add_argument("--quick", action="store_true",
                         help="Skip YouTube scan (just Reddit + HN + digest)")
