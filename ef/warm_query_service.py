@@ -710,12 +710,102 @@ document.addEventListener('click', e => {{
 
 def _render_interests_page() -> str:
     from ef import interest_stats as ist
+    from ef.evidence_clusters import cached_clusters
+    from urllib.parse import parse_qs as _pq
     import html as _html
+    refresh = "refresh=1" in (self_query := "")
     try:
-        ents = ist.observed_entities(60)
-        summary = ist.corpus_summary()
+        clusters, coverage = cached_clusters(refresh=refresh)
     except Exception:
-        ents, summary = [], {"entities": 0, "channels": 0, "documents": 0}
+        clusters, coverage = [], {}
+    try:
+        ents = ist.observed_entities(40)
+    except Exception:
+        ents = []
+    cov = " → ".join(
+        f"{k.replace('_',' ')}: <b>{v:,}</b>"
+        for k, v in coverage.items())
+    cards = []
+    for c in clusters[:24]:
+        srcs = " · ".join(f"{s} {n:,}" for s, n in c["sources"][:4])
+        phase = (f"<span class='ph {c['phase']}'>{c['phase']}</span>"
+                 if c.get("phase") else "")
+        ents_html = " ".join(
+            f"<a class='chip' href='/graph?q={_html.escape(e['entity'])}'>"
+            f"{_html.escape(e['entity'])}</a>"
+            for e in c["entities"][:8])
+        reps = "<br>".join(
+            f"<span class='dim'>·</span> {_html.escape(r['title'][:76])} "
+            f"<span class='dim'>({r['month']}, {r['source']})</span>"
+            for r in c["representative"][:3])
+        cards.append(f"""
+<div class='card'><h3>{_html.escape(c['label'])}{phase}</h3>
+<p class='dim'>{c['channels']:,} channels · {c['documents']:,} docs ·
+{c['active_months']} active months ({c['first_month']} → {c['last_month']})
+· {srcs}</p>
+<p class='terms'>{_html.escape(', '.join(c['terms'][:8]))}</p>
+<p class='ents'>{ents_html}</p>
+<p class='reps'>{reps}</p></div>""")
+    rows = []
+    for e in ents:
+        phase2 = (f"<span class='ph {e['phase']}'>{e['phase']}</span>"
+                  if e.get("phase") else "")
+        rows.append(
+            f"<tr><td><a href='/graph?q={_html.escape(e['label'])}'>"
+            f"{_html.escape(e['label'])}</a>{phase2}</td>"
+            f"<td class='num'>{e['breadth']}</td>"
+            f"<td class='num'>{e['depth']:,}</td>"
+            f"<td class='num'>{e['active_months']}</td></tr>")
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ytis — Interests</title>
+<style>
+  body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }}
+  h1 {{ color: #58a6ff; }} h3 {{ margin: .4rem 0 .2rem; }}
+  a {{ color: #58a6ff; text-decoration: none; }}
+  .banner {{ background: #161b22; border: 1px solid #30363d;
+           border-radius: 8px; padding: .8rem 1.1rem; margin: 1rem 0;
+           max-width: 1080px; font-size: .92rem; }}
+  .banner b {{ color: #f0b72f; }}
+  .cov {{ color: #8b949e; font-size: .85rem; }}
+  .card {{ background: #161b22; border: 1px solid #30363d;
+         border-radius: 8px; padding: .7rem 1rem; margin: .8rem 0;
+         max-width: 1080px; }}
+  .dim {{ color: #8b949e; }} .terms {{ color: #8b949e; font-size: .88rem; }}
+  .reps {{ font-size: .85rem; }}
+  .chip {{ display: inline-block; background: #0d1117;
+         border: 1px solid #30363d; border-radius: 999px;
+         padding: .1rem .6rem; margin: .1rem .15rem 0 0; font-size: .82rem; }}
+  .ph {{ display: inline-block; border-radius: 999px; padding: 0 .5rem;
+       margin-left: .5rem; font-size: .75rem; }}
+  .ph.emerging {{ background: #1f4d2b; color: #7ee2a8; }}
+  .ph.dormant {{ background: #4d3a1f; color: #e2c07e; }}
+  table {{ border-collapse: collapse; }}
+  td, th {{ padding: .2rem .8rem .2rem 0; font-size: .9rem; }}
+  th {{ border-bottom: 1px solid #30363d; color: #8b949e; }}
+  td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  details {{ margin-top: 1.5rem; }}
+</style></head><body>
+<nav><a href="/">Search</a> · <a href="/home">Home</a> ·
+<a href="/digest">Daily brief</a> · <a href="/graph">Graph</a> ·
+<a href="/status">Status</a></nav>
+<h1>Interests</h1>
+<div class='banner'><b>Evidence clusters (v1.5)</b> — semantic topic
+clusters fused with specificity-weighted entities, representative
+documents, and cluster-level temporal stats. Entities are features of
+clusters, not the ontology (operator-directed revision). The v2 LLM
+interpretation layer (stances, latent goals, cross-domain themes,
+negative evidence, regret analysis) consumes these packets —
+<a href='/interests?refresh=1'>rebuild</a>.</div>
+<div class='banner cov'><b>Coverage chain</b> (an absent interest may be
+missing data, not absent interest):<br>{cov}</div>
+{''.join(cards)}
+<details><summary>Observed entity layer (v1) — breadth-weighted</summary>
+<table><tr><th>entity</th><th>breadth</th><th>depth</th>
+<th>months</th></tr>
+{''.join(rows)}
+</table></details>
+</body></html>"""
     rows = []
     for e in ents:
         srcs = " · ".join(f"{s} <b>{n:,}</b>" for s, n in e["sources"][:4])
