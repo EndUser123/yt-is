@@ -91,3 +91,4 @@ scripts/dht-capture/profile*/
 scripts/dht-capture/tracking-script.js
 # DHT fresh tracking script (per-session token — never track)
 scripts/dht-capture/tracking-script-fresh.js
+.logs/sharded_lane_series/
