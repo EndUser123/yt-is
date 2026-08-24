@@ -88,6 +88,33 @@ def _run(step: str, cmd: list[str]) -> tuple[bool, str]:
         return False, f"{step}: {e}"
 
 
+def _alert(healthy_before: bool, ok: bool, cycle: int, detail: str) -> None:
+    """Post ok→not-ok transitions to the Discord webhook when one is
+    configured. Two nights of red ok=false went unread (2026-08-22..24);
+    a health file with no consumer is an autopsy report. No-op silently
+    when DISCORD_DIGEST_WEBHOOK_URL is unset — the alerting loop closes
+    the moment the webhook exists. Debounce by transition: one post per
+    failure onset, one recovery post."""
+    import os as _os
+    import urllib.request as _rq
+    url = _os.environ.get("DISCORD_DIGEST_WEBHOOK_URL", "")
+    if not url:
+        return
+    if healthy_before == (not ok):
+        return  # no transition (failure onset or recovery only)
+    kind = "recovered" if ok else "FAILED"
+    body = json.dumps({"content":
+                       f"ytis-pipeline cycle {cycle}: {kind}. "
+                       f"{detail[:350]}"}).encode()
+    try:
+        req = _rq.Request(url, data=body,
+                          headers={"Content-Type": "application/json"})
+        _rq.urlopen(req, timeout=8)
+    except Exception as e:
+        # the alerter must never break the pipeline — log to status detail
+        print(f"alert post failed: {e}", file=sys.stderr)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true", help="single cycle, then exit")
@@ -100,6 +127,7 @@ def main() -> int:
     PID_FILE.write_text(str(0))  # placeholder; set after guard passes
 
     cycle, backoff = 0, float(CYCLE_S)
+    healthy = True
     while True:
         cycle += 1
         _write_status(cycle, "sync", True, "starting", backoff)
@@ -110,6 +138,9 @@ def main() -> int:
         ok = ok_sync and ok_idx
         backoff = CYCLE_S if ok else min(backoff * 2, BACKOFF_MAX_S)
         _write_status(cycle, "idle", ok, f"sync: {d1} || index: {d2}", backoff)
+        if healthy != ok:
+            _alert(healthy, ok, cycle, f"sync: {d1} || index: {d2}")
+            healthy = ok
         if a.once:
             return 0 if ok else 1
         time.sleep(backoff)

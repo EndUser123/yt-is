@@ -75,7 +75,7 @@ def phase_sync(db_path: Path, log_dir: Path) -> dict:
          "--allow-spend", "check-all", "--verbose"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         cwd=str(REPO_ROOT),
     )
 
@@ -262,7 +262,7 @@ def phase_fetch(db_path: Path, log_dir: Path, state_path: Path, chunk_size: int,
     result = subprocess.run(
         cmd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         cwd=str(REPO_ROOT),
         timeout=86400,  # 24 hours max for a full session
     )
@@ -384,7 +384,8 @@ def main(argv: list[str] | None = None) -> int:
             cleanup_result = subprocess.run(
                 [sys.executable, str(REPO_ROOT / "bin" / "csf-source"),
                  "cleanup-worker-notebooks", "--delete"],
-                capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=300,
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", cwd=str(REPO_ROOT), timeout=300,
             )
             cleanup_output = (cleanup_result.stdout or "").strip()
             if "deleted=0" not in cleanup_output:
@@ -443,7 +444,10 @@ def main(argv: list[str] | None = None) -> int:
                 receipt["status"] = "preflight_blocked"
                 (log_dir / "pipeline_receipt.json").write_text(
                     json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
-                return 2
+                # exit 3, NOT 2: run_all_syncs treats intake exit-2 as a
+                # healthy "already running elsewhere" defer — a preflight
+                # blocker is a real failure and must stay red
+                return 3
             elif severity == "warn":
                 print(f"[pipeline] warning — {label}: {detail}")
         receipt["preflight"] = pf_results

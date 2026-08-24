@@ -733,9 +733,12 @@ def _render_graph_page(q: str = "") -> str:
             if v["kind"] == "entity":
                 body.append("<h3>Top documents</h3><table>")
                 for d in v["docs"]:
+                    qlink = _html.escape(
+                        f"/query?q={str(d['title'])[:60]}", quote=True)
                     body.append(
                         f"<tr><td class='dim'>{d['hits']:.0f}</td>"
-                        f"<td>{_html.escape(str(d['title'])[:80])}</td>"
+                        f"<td><a href='{qlink}'>"
+                        f"{_html.escape(str(d['title'])[:80])}</a></td>"
                         f"<td class='dim'>{_html.escape(str(d['channel'])[:28])}"
                         f"</td><td class='dim'>{d['source']}</td></tr>")
                 body.append("</table><h3>Where it appears</h3><table>")
@@ -744,7 +747,17 @@ def _render_graph_page(q: str = "") -> str:
                         f"<tr><td class='dim'>{ch['docs']:,}</td>"
                         f"<td>{_html.escape(str(ch['channel'])[:60])}</td>"
                         f"<td class='dim'>{ch['hits']:.0f} hits</td></tr>")
-                body.append("</table><h3>Co-mentioned entities</h3><p>")
+                body.append("</table><h3>Distinctive co-mentions "
+                            "<span class='dim'>(lift — what specifically "
+                            "travels with this entity)</span></h3><p>")
+                for r in v.get("distinctive", []):
+                    body.append(
+                        f"<a class='chip' href='/graph?q="
+                        f"{_html.escape(r['label'])}'>"
+                        f"{_html.escape(r['label'])} "
+                        f"<span class='dim'>{r['shared_docs']:,}</span></a> ")
+                body.append("</p><h3>Most-shared co-mentions "
+                            "<span class='dim'>(raw volume)</span></h3><p>")
                 for r in v["related"]:
                     body.append(
                         f"<a class='chip' href='/graph?q="

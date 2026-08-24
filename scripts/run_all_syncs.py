@@ -43,7 +43,17 @@ def run_script(name, script_path, timeout=3600):
             timeout=timeout,
         )
         elapsed = time.monotonic() - start
-        status = "✓" if result.returncode == 0 else f"✗ (exit {result.returncode})"
+        if result.returncode == 0:
+            status = "✓"
+        elif result.returncode == 2 and "YouTube" in name:
+            # intake guard exit-2: another pipeline instance owns the run
+            # (a detached drain, or the 06:00 task) — the work IS being
+            # done, not failing. Healthy defer, not a red flag.
+            status = "⏭ (already running elsewhere — deferred)"
+            print(f"\n  {status} {name} — {elapsed:.0f}s")
+            return True
+        else:
+            status = f"✗ (exit {result.returncode})"
         print(f"\n  {status} {name} — {elapsed:.0f}s")
         return result.returncode == 0
     except subprocess.TimeoutExpired:
@@ -69,6 +79,12 @@ def run_script_threaded(name, script_path, timeout, results, prefix=""):
             cwd=str(REPO), timeout=timeout,
         )
         elapsed = _time.monotonic() - start
+        if result.returncode == 2 and "YouTube" in name:
+            # intake guard: another instance owns the run — healthy defer
+            print("\n  [%s] DEFERRED (already running elsewhere) — %.0fs"
+                  % (name, elapsed), flush=True)
+            results[name] = True
+            return
         mark = "OK" if result.returncode == 0 else ("exit %d" % result.returncode)
         print("\n  [%s] %s — %.0fs" % (name, mark, elapsed), flush=True)
         results[name] = result.returncode == 0

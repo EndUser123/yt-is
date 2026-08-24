@@ -100,6 +100,27 @@ def entity_view(node_id: str, doc_limit: int = 12) -> dict:
                GROUP BY other.node_id ORDER BY shared_docs DESC LIMIT 12""",
             (node_id,)).fetchall()
 
+        # lift-ranked co-mentions: raw shared_docs mostly recovers global
+        # popularity (7 of AI's top-12 raw co-mentions ARE the corpus
+        # top-12, measured 2026-08-24); lift = shared relative to both
+        # entities' document counts surfaces DISTINCTIVE associates.
+        # Floor of 5 shared docs keeps small-denominator noise out.
+        lift_rows = c.execute(
+            """SELECT other.node_id, other.label,
+                      COUNT(DISTINCT m1.dst_id) shared_docs,
+                      other.weight other_docs
+               FROM kg_edges m1
+               JOIN kg_edges m2 ON m1.dst_id = m2.dst_id
+                    AND m2.relation = 'mentioned_in'
+                    AND m2.src_id != m1.src_id
+               JOIN kg_nodes other ON other.node_id = m2.src_id
+               WHERE m1.src_id = ?
+               GROUP BY other.node_id
+               HAVING shared_docs >= 5
+               ORDER BY (shared_docs * 1.0)
+                        / (other.weight * ? + 1) DESC LIMIT 12""",
+            (node_id, max(weight, 1))).fetchall()
+
     total_docs = sum(r[1] for r in sources) or len(docs)
     # several pipeline tags map to one display name (notebooklm/ytdlp ->
     # youtube): merge after labeling
@@ -121,6 +142,8 @@ def entity_view(node_id: str, doc_limit: int = 12) -> dict:
                      for l, n, h in channels],
         "related": [{"node_id": nid, "label": l, "shared_docs": d}
                     for nid, l, d in related],
+        "distinctive": [{"node_id": nid, "label": l, "shared_docs": d}
+                        for nid, l, d, _w in lift_rows],
     }
 
 
