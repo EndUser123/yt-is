@@ -257,7 +257,15 @@ def compute_health(
         report["work_accounting"] = accounting
 
     # ---- evidence integrity (§9) -------------------------------------------
-    integrity = core.chunk_evidence_integrity(records, last_activity=ctx.state_updated_at)
+    try:
+        from csf.cleanup_staging import DEFAULT_SWEEP_LEDGER_PATH
+
+        swept = core.load_sweep_ledger(DEFAULT_SWEEP_LEDGER_PATH)
+    except Exception:
+        swept = set()
+    integrity = core.chunk_evidence_integrity(
+        records, last_activity=ctx.state_updated_at, swept_paths=swept
+    )
     if integrity:
         evidence["integrity"] = integrity
         unexpected = [
