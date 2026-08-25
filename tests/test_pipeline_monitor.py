@@ -700,6 +700,8 @@ def test_load_sweep_ledger_returns_only_deleted_dirs(tmp_path):
         '{"action":"delete_directory","path":"C:/A/B"}\n'
         '{"action":"delete_file","path":"C:/A/B/x.sqlite"}\n'
         "not-json\n"
+        "[1,2]\n"
+        "42\n"
         '{"action":"delete_directory","path":"C:\\\\a\\\\c"}\n',
         encoding="utf-8",
     )

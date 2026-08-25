@@ -54,6 +54,13 @@ Updated: 2026-08-24 by open-world discovery implementer pass
   durable-interest promotion.
 - 2026-08-24: [seen] Historical/as-of replay is required so discovery
   quality can later be falsified against withheld real-world events.
+- 2026-08-25: [seen] Discovery policy evaluation is contamination-separated
+  from implementation: production discovery is frozen before holdout labels
+  are loaded; target labels are post-hoc scoring inputs only and remain
+  outside the public repository. The six technology names exposed to the
+  implementing context on 2026-08-24 are contaminated: usable only as
+  NON-BLIND_DIAGNOSTIC plumbing cases, never as promotion evidence; the
+  formal gate uses a different unseen holdout.
 
 ## Current state
 
@@ -104,6 +111,32 @@ Updated: 2026-08-24 by open-world discovery implementer pass
   important candidate.
 - [seen] Discovery Radar has a stable read contract (discovery_radar())
   ranked by attention only, with no state mutation; no UI is built yet.
+- [seen] A generic retrospective evaluator exists
+  (scripts/evaluate_concept_discovery.py, evaluator-v1) with frozen metric
+  plan, matching/scorability/negative-control/perturbation/baseline/verdict
+  policies, a freeze-receipt gate that fails closed on production or
+  evaluator drift and refuses targets before freezing, and artifacts
+  outside git under P:/.data/yt-is/ef/concept-discovery-eval/.
+- [seen] The frozen-evaluator receipt of record is
+  P:/.data/yt-is/ef/concept-discovery-eval/freeze-20260825T-FORMAL/
+  frozen-code-hashes.json (production commit d21270a9, burst-policy-v1,
+  formal_holdout_read=false at freeze).
+- [seen] NON-BLIND_DIAGNOSTIC plumbing runs against the real corpus
+  validated every machinery stage (freeze gate, scorability both
+  directions, six-checkpoint as-of replays, matched negative controls,
+  10%/20% perturbation on catalog snapshots, baseline comparison,
+  aggregate + verdict + labeled report); these results are labeled
+  NON-BLIND / NOT PROMOTION EVIDENCE and involved only the contaminated
+  exposed names.
+- [seen] Current read-only calibration scan reproduced 321 entities
+  scanned, 106 candidates, 99 emerging (93% of candidates promoted) with
+  median source diversity 1 — emerging classification is extremely broad
+  under uncalibrated burst-policy-v1; recorded as calibration evidence,
+  no tuning applied.
+- [seen] The formal holdout file has NOT been read by the implementing
+  context; the formal retrospective gate runs in a separate
+  contamination-isolated evaluator lane against an unseen holdout using
+  the frozen receipt.
 - [absent-unverified] Historical real-world discovery quality against a
   hidden holdout set.
 - [absent-unverified] Domain-specific external scouts for medical,
@@ -126,9 +159,12 @@ Updated: 2026-08-24 by open-world discovery implementer pass
 
 ## Next action
 
-Run a fresh contamination-separated retrospective discovery evaluation
-using hidden historical concepts and fixed as-of cutoffs. If that gate
+A fresh contamination-isolated evaluator lane receives the frozen
+evaluator (receipt of record above) plus a NEW unseen private holdout and
+runs the retrospective/as-of/perturbation evaluation; the architect
+judges PASS/PARTIAL/FAIL from its receipts. The implementing context that
+saw the exposed names must not run or score that holdout. If the gate
 passes, integrate Discovery Radar into the dashboard and add
-domain-specific external source adapters through the External
-Intelligence workstream. Do not claim real-world discovery quality
-before that evaluation.
+domain-specific external source adapters; if PARTIAL/FAIL, run an
+architect-approved policy-calibration experiment first (the extremely
+broad emerging classification is the leading known suspect).

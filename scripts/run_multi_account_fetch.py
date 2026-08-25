@@ -1333,7 +1333,13 @@ def _run_account(
         with spec.stdout_path.open("w", encoding="utf-8") as stdout, spec.stderr_path.open(
             "w", encoding="utf-8"
         ) as stderr:
-            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+            # Combined form (0x08000200): no visible console under a
+            # pythonw/GUI parent AND independent process group for worker
+            # termination (taskkill /T /F; signal propagation preserved).
+            creationflags = (
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            ) if os.name == "nt" else 0
             process = subprocess.Popen(
                 command,
                 cwd=str(REPO_ROOT),

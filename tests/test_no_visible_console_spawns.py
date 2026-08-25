@@ -105,10 +105,78 @@ ALLOWANCE: dict[str, int] = {
     "validate_channels.py": 1,
 }
 
-_ACCEPTED = re.compile(
-    r"CREATE_NO_WINDOW|0x08000000|CREATIONFLAGS|NO_WINDOW", re.IGNORECASE
-)
 _SPAWN_ATTRS = {"run", "Popen", "check_output", "check_call"}
+
+
+def _module_facts(tree: ast.Module) -> tuple[set[str], set[str]]:
+    """(no_window_constants, subprocess_spawn_aliases) at module level.
+
+    Constants resolve conservatively: only top-level assignments whose
+    value provably includes CREATE_NO_WINDOW (directly, or via an
+    earlier-accepted constant). Function-local assignments are ignored.
+    """
+    accepted: set[str] = set()
+    aliases: set[str] = set()
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            if _flags_expr_ok(node.value, accepted):
+                accepted.add(node.targets[0].id)
+        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            for alias in node.names:
+                if alias.name in _SPAWN_ATTRS:
+                    aliases.add(alias.asname or alias.name)
+    return accepted, aliases
+
+
+def _flags_expr_ok(node: ast.expr, accepted_names: set[str]) -> bool:
+    """True when the expression provably includes CREATE_NO_WINDOW.
+
+    Accepted: the subprocess.CREATE_NO_WINDOW attribute; the literal
+    0x08000000 / 134217728; getattr(subprocess, "CREATE_NO_WINDOW", d);
+    a module constant already resolved to one of those; a BitOr chain
+    containing an accepted operand (CREATE_NO_WINDOW |
+    CREATE_NEW_PROCESS_GROUP is the correct combined form). Everything
+    else is rejected — name-matching was the shipped false negative
+    (2026-08-24: ``creationflags=creationflags`` holding
+    CREATE_NEW_PROCESS_GROUP passed as compliant).
+    """
+    if isinstance(node, ast.Attribute):
+        return (
+            isinstance(node.value, ast.Name)
+            and node.value.id == "subprocess"
+            and node.attr == "CREATE_NO_WINDOW"
+        )
+    if isinstance(node, ast.Constant):
+        return node.value in (0x08000000, 134217728)
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "getattr":
+            args = node.args
+            return (
+                len(args) >= 2
+                and isinstance(args[0], ast.Name)
+                and args[0].id == "subprocess"
+                and isinstance(args[1], ast.Constant)
+                and args[1].value == "CREATE_NO_WINDOW"
+            )
+        return False
+    if isinstance(node, ast.Name):
+        return node.id in accepted_names
+    if isinstance(node, ast.IfExp):
+        # `<no-window flags> if os.name == "nt" else 0` — the posix
+        # branch carries no console semantics, so one accepted branch
+        # with a zero fallback is no-window everywhere it matters.
+        zero = isinstance(node.orelse, ast.Constant) and node.orelse.value == 0
+        return _flags_expr_ok(node.body, accepted_names) and zero
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _flags_expr_ok(node.left, accepted_names) or _flags_expr_ok(
+            node.right, accepted_names
+        )
+    return False
 
 
 def _scoped_files() -> list[Path]:
@@ -132,28 +200,68 @@ def _scoped_files() -> list[Path]:
 def _bare_spawns(path: Path) -> list[int]:
     """Line numbers of subprocess spawn calls lacking a no-window flag."""
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        source = path.read_text(encoding="utf-8", errors="replace")
+        tree = ast.parse(source)
     except SyntaxError:
         return []
+    module_accepted, spawn_aliases = _module_facts(tree)
+
+    parents: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[id(child)] = parent
+
+    def enclosing_funcs(node: ast.AST) -> list[ast.AST]:
+        chain = []
+        cur = parents.get(id(node))
+        while cur is not None:
+            if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                chain.append(cur)
+            cur = parents.get(id(cur))
+        return chain
+
+    def local_accepted(call: ast.Call) -> set[str]:
+        """Constants assigned in enclosing functions, innermost-first,
+        resolving only assignments that appear before the call. Nested
+        defs do NOT bind outer call sites (review F2, run-91af5d8747bc):
+        assignments inside a nested function are skipped when resolving
+        an outer call."""
+        accepted = set(module_accepted)
+        for func in enclosing_funcs(call):
+            stack = list(func.body)
+            while stack:
+                stmt = stack.pop()
+                if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue  # separate scope — not visible at this site
+                if (
+                    isinstance(stmt, ast.Assign)
+                    and len(stmt.targets) == 1
+                    and isinstance(stmt.targets[0], ast.Name)
+                    and (stmt.lineno or 0) < (call.lineno or 0)
+                    and _flags_expr_ok(stmt.value, accepted)
+                ):
+                    accepted.add(stmt.targets[0].id)
+                stack.extend(ast.iter_child_nodes(stmt))
+        return accepted
+
     hits: list[int] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if not (
+        is_spawn = (
             isinstance(func, ast.Attribute)
             and func.attr in _SPAWN_ATTRS
             and isinstance(func.value, ast.Name)
             and func.value.id == "subprocess"
-        ):
+        ) or (isinstance(func, ast.Name) and func.id in spawn_aliases)
+        if not is_spawn:
             continue
-        ok = False
-        for kw in node.keywords:
-            if kw.arg != "creationflags":
-                continue
-            seg = ast.get_source_segment(path.read_text(encoding="utf-8"), kw.value)
-            if seg and _ACCEPTED.search(seg):
-                ok = True
+        accepted = local_accepted(node)
+        ok = any(
+            kw.arg == "creationflags" and _flags_expr_ok(kw.value, accepted)
+            for kw in node.keywords
+        )
         if not ok:
             hits.append(node.lineno)
     return hits
@@ -190,3 +298,45 @@ if __name__ == "__main__":
             for ln in lines:
                 print(f"    line {ln}")
     print(f"total bare spawns: {total}")
+
+
+def _write_sample(tmp_path, src):
+    p = tmp_path / "sample.py"
+    p.write_text(src, encoding="utf-8")
+    return p
+
+
+def test_matcher_value_semantics(tmp_path):
+    """The 2026-08-24 false-negative class stays closed: acceptance is
+    by flag VALUE, never by name-matching."""
+    assert _bare_spawns(_write_sample(tmp_path, (
+        'import subprocess\n'
+        'subprocess.run(["x"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))\n'
+    ))) == []
+    # variable holding a SIGNAL flag must NOT pass (the shipped bug)
+    assert _bare_spawns(_write_sample(tmp_path, (
+        'import subprocess\n'
+        'FL = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)\n'
+        'subprocess.run(["x"], creationflags=FL)\n'
+    ))) != []
+    # combined no-window | signal is the correct form
+    assert _bare_spawns(_write_sample(tmp_path, (
+        'import subprocess\n'
+        'subprocess.run(["x"], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | '
+        'getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))\n'
+    ))) == []
+    # module constant resolving to the literal
+    assert _bare_spawns(_write_sample(tmp_path, (
+        'import subprocess\nNW = 0x08000000\n'
+        'subprocess.run(["x"], creationflags=NW)\n'
+    ))) == []
+    # nt-ternary with zero fallback
+    assert _bare_spawns(_write_sample(tmp_path, (
+        'import os, subprocess\n'
+        'f = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0\n'
+        'subprocess.run(["x"], creationflags=f)\n'
+    ))) == []
+    # from-import alias without flags is still caught
+    assert _bare_spawns(_write_sample(tmp_path, (
+        'from subprocess import run\nrun(["x"])\n'
+    ))) != []

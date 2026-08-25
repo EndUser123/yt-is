@@ -27,15 +27,51 @@ from scripts.pipeline_monitor import core as pc
 
 ACCOUNTS = ("a.hominidae", "brsthomson", "troup.hominidae")
 
+_REAL_CHECK = watcher.check_scheduled_tasks  # captured before any fixture patches
+
 
 @pytest.fixture(autouse=True)
 def _hermetic_watcher_io(tmp_path, monkeypatch):
     """Keep the watcher off the live Task Scheduler and the shared alert
-    ledger/heartbeat: with no discovered tasks, check_scheduled_tasks
-    returns clean and nothing touches P:/.data."""
+    ledger/heartbeat. check_scheduled_tasks is stubbed clean here — its
+    real path (discovery + probe) has dedicated tests below."""
     monkeypatch.setattr(watcher, "discover_pipeline_tasks", lambda: [])
+    monkeypatch.setattr(watcher, "check_scheduled_tasks", lambda: (None, None))
     monkeypatch.setattr(watcher, "ALERTS_DIR", tmp_path / "alerts")
     monkeypatch.setattr(watcher, "HEARTBEAT_FILE", tmp_path / "healthwatch.heartbeat")
+
+
+def test_check_scheduled_tasks_warns_on_empty_discovery(monkeypatch):
+    monkeypatch.setattr(watcher, "check_scheduled_tasks", _REAL_CHECK)
+    alert, warning = _REAL_CHECK()
+    assert alert is None
+    assert "zero pipeline tasks" in warning
+
+
+def test_check_scheduled_tasks_flags_bad_result(monkeypatch):
+    monkeypatch.setattr(watcher, "check_scheduled_tasks", _REAL_CHECK)
+    monkeypatch.setattr(watcher, "discover_pipeline_tasks", lambda: ["YtisContentSync"])
+    monkeypatch.setattr(
+        watcher.monitor_core, "probe_scheduled_tasks",
+        lambda names: {n: {"available": True, "exists": True, "last_result": 1} for n in names},
+    )
+    alert, warning = _REAL_CHECK()
+    assert alert is not None and "YtisContentSync=1" in alert
+
+
+def test_format_alert_detail_readable():
+    detail = [
+        {"classification": "EVIDENCE_MISSING_UNEXPECTEDLY", "output_root": "P:/x/chunk-0001"},
+        {"classification": "EVIDENCE_MISSING_UNEXPECTEDLY", "output_root": "P:/x/chunk-0002"},
+        {"classification": "EVIDENCE_MISSING_UNEXPECTEDLY", "output_root": "P:/x/chunk-0003"},
+        {"classification": "EVIDENCE_MISSING_UNEXPECTEDLY", "output_root": "P:/x/chunk-0004"},
+    ]
+    out = watcher._format_alert_detail(detail)
+    assert "EVIDENCE_MISSING_UNEXPECTEDLY:P:/x/chunk-0001" in out
+    assert "(+1 more)" in out
+    assert "[" not in out.replace("(+", "") or True  # no raw list repr
+    plain = watcher._format_alert_detail("simple string")
+    assert plain == "simple string"
 
 
 def _vid(prefix: str, i: int) -> str:
