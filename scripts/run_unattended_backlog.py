@@ -32,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from csf.paths import get_multi_account_log_root, get_transcript_db_path
+from csf.paths import get_transcript_db_path
 from csf.cleanup_staging import cleanup_staging
 from scripts.build_full_backlog_authorization import validate_gate_evidence
 from scripts.run_multi_account_fetch import (
@@ -50,7 +50,8 @@ LEASE_GRACE_S = 5 * 60.0
 MAX_RESTART_RECOVERY_ATTEMPTS = 1
 FULL_BACKLOG_AUTHORIZATION_SCHEMA_VERSION = 2
 DEFAULT_STATE_PATH = Path("P:/.data/yt-is/unattended-backlog/state.json")
-DEFAULT_OUTPUT_ROOT = get_multi_account_log_root() / "unattended"
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / ".logs" / "multi_account_fetch" / "unattended"
+POST_TERMINATION_DRAIN_TIMEOUT_S = 5.0
 _VALID_SUMMARY_STATUSES = {"completed", "partial", "failed", "blocked", "planned", "no_work"}
 _TERMINAL_SELECTED_STATUSES = frozenset({"complete", "failed"})
 
@@ -1333,6 +1334,15 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
         process.kill()
 
 
+def _coerce_process_output(value: object) -> str:
+    """Normalize text-mode subprocess output before writing a receipt."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
 def _build_coordinator_command(config: SupervisorConfig, output_root: Path) -> list[str]:
     command = [
         sys.executable,
@@ -1489,9 +1499,17 @@ def _invoke_coordinator(
                 _atomic_write_json(_runtime_receipt_path(output_root), runtime)
     except subprocess.TimeoutExpired as exc:
         _terminate_process_tree(process)
-        stdout, stderr = process.communicate()
-        _atomic_write_text(output_root / "supervisor.stdout.txt", stdout or "")
-        _atomic_write_text(output_root / "supervisor.stderr.txt", stderr or "")
+        try:
+            stdout, stderr = process.communicate(timeout=POST_TERMINATION_DRAIN_TIMEOUT_S)
+        except subprocess.TimeoutExpired as drain_exc:
+            # A descendant can retain an inherited pipe after taskkill has
+            # completed. Never wait indefinitely for that pipe to close.
+            stdout = drain_exc.output if drain_exc.output is not None else exc.output
+            stderr = drain_exc.stderr if drain_exc.stderr is not None else exc.stderr
+        stdout = _coerce_process_output(stdout)
+        stderr = _coerce_process_output(stderr)
+        _atomic_write_text(output_root / "supervisor.stdout.txt", stdout)
+        _atomic_write_text(output_root / "supervisor.stderr.txt", stderr)
         runtime.update({
             "status": "terminated_timeout",
             "finished_at_epoch": time.time(),
