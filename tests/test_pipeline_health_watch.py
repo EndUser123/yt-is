@@ -28,6 +28,16 @@ from scripts.pipeline_monitor import core as pc
 ACCOUNTS = ("a.hominidae", "brsthomson", "troup.hominidae")
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_watcher_io(tmp_path, monkeypatch):
+    """Keep the watcher off the live Task Scheduler and the shared alert
+    ledger/heartbeat: with no discovered tasks, check_scheduled_tasks
+    returns clean and nothing touches P:/.data."""
+    monkeypatch.setattr(watcher, "discover_pipeline_tasks", lambda: [])
+    monkeypatch.setattr(watcher, "ALERTS_DIR", tmp_path / "alerts")
+    monkeypatch.setattr(watcher, "HEARTBEAT_FILE", tmp_path / "healthwatch.heartbeat")
+
+
 def _vid(prefix: str, i: int) -> str:
     safe = "".join(ch for ch in prefix if ch.isalnum()) or "v"
     return f"{safe}{i:0{11 - len(safe)}d}"
@@ -180,6 +190,7 @@ def test_watcher_clears_alert_when_healthy(tmp_path, monkeypatch):
 
     assert code == 0
     assert not alert.exists()
+    assert watcher.HEARTBEAT_FILE.exists()  # healthy tick still heartbeats
 
 
 def test_watcher_supervisor_liveness_uses_runtime_receipt(tmp_path, monkeypatch):

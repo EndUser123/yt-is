@@ -1858,11 +1858,26 @@ def _render_digest_page() -> str:
     # Pipeline health alert (written by the YtisHealthWatch 5-min watcher;
     # surfaced here so the morning brief shows fleet + task health).
     alert_html = ""
+    # Dead-man's snitch first: a frozen alert file is indistinguishable
+    # from a failing pipeline unless the heartbeat is checked.
+    try:
+        hb = Path("P:/.data/yt-is/healthwatch.heartbeat")
+        if hb.exists():
+            hb_age = time.time() - hb.stat().st_mtime
+            if hb_age > 900:
+                alert_html += (
+                    f'<div class="panel" style="border-color: #f85149;">'
+                    f'<h2>WATCHER HEARTBEAT STALE</h2>'
+                    f'<pre>last tick {int(hb_age / 60)} min ago — the '
+                    f'watcher is not running; alert content below may be '
+                    f'frozen</pre></div>')
+    except OSError:
+        pass
     try:
         alert_text = Path(
             "P:/.data/yt-is/pipeline-alert.txt").read_text(encoding="utf-8").strip()
         if alert_text:
-            alert_html = (
+            alert_html += (
                 f'<div class="panel" style="border-color: #f85149;">'
                 f'<h2>Pipeline Alert</h2><pre>{esc(alert_text[:2000])}</pre>'
                 f'<p class="dim">Source: pipeline_health_watch (5-min cadence). '

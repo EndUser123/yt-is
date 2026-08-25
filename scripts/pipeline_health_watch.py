@@ -44,44 +44,74 @@ if str(REPO_ROOT) not in sys.path:
 
 from csf.paths import load_workspace_env  # noqa: E402
 
+from scripts import alert_ledger  # noqa: E402
 from scripts.pipeline_monitor import MonitorContext, compute_health  # noqa: E402
+from scripts.pipeline_monitor import core as monitor_core  # noqa: E402
 
 ALERT_FILE = Path("P:/.data/yt-is/pipeline-alert.txt")
 STATE_FILE = Path("P:/.data/yt-is/unattended-backlog/state.json")
+ALERTS_DIR = Path("P:/.data/yt-is/alerts")
+HEARTBEAT_FILE = Path("P:/.data/yt-is/healthwatch.heartbeat")
 
-# Nightly Task Scheduler jobs whose exit codes gate pipeline health.
-# 2026-08-22: both morning tasks ran red for hours before anyone looked
-# while this watcher reported "all checks passed" — task results are now
-# first-class. 267009 (0x41301) = still running, not a failure.
-SCHEDULED_TASKS = {
-    "YtisUnattendedBacklog": "04:00 backlog drain",
-    "YtisIndexIncremental": "05:00 EF incremental",
-    "YtisContentSync": "06:00 content sync",
-    "chs-reindex": "chat-history reindex",
-    "YtisCandidateApply": "06:30 candidate apply",
-}
+# Pipeline tasks are DISCOVERED by name pattern, not hardcoded: the old
+# five-name dict silently stopped covering new tasks (drift was already
+# observable both ways between the dict and the fleet). 267009
+# (0x41301) = still running, not a failure. YtisHealthWatch itself is
+# excluded — its exit 1 while alerting is the contract, not a failure;
+# its liveness is the heartbeat file + digest staleness surface.
+TASK_NAME_PATTERNS = ("Ytis*", "chs-*")
+SELF_TASK = "YtisHealthWatch"
 
 
-def check_scheduled_tasks() -> tuple[str | None, str | None]:
-    """LastTaskResult of the nightly tasks, as (alert, warning)."""
+def discover_pipeline_tasks() -> list[str]:
+    """Live Task Scheduler names matching the pipeline patterns."""
+    ps = (
+        "$n = @(); "
+        + "".join(
+            f"$n += (Get-ScheduledTask -TaskName '{p}' -ErrorAction SilentlyContinue)"
+            ".TaskName; " for p in TASK_NAME_PATTERNS
+        )
+        + "$n | Sort-Object -Unique"
+    )
     try:
         out = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             "; ".join(
-                 f"(Get-ScheduledTaskInfo -TaskName '{t}').LastTaskResult"
-                 for t in SCHEDULED_TASKS)],
+            ["powershell", "-NoProfile", "-Command", ps],
             capture_output=True, text=True, timeout=60,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         ).stdout.split()
     except (subprocess.TimeoutExpired, OSError) as e:
-        return None, f"task-status probe failed: {e}"
-    bad = [
-        f"{name}={code}"
-        for (name, code) in zip(SCHEDULED_TASKS, out)
-        if code not in ("0", "267009")
-    ]
+        return [f"__probe_failed__:{e}"]
+    return [t for t in out if t and t != SELF_TASK]
+
+
+def check_scheduled_tasks() -> tuple[str | None, str | None]:
+    """LastTaskResult of discovered pipeline tasks, as (alert, warning).
+
+    Uses the monitor's per-task JSON probe instead of a zip()-aligned
+    stdout parse: misaligned or truncated output used to silently drop
+    tasks (false green). Probe failures are warnings, never silence.
+    """
+    names = discover_pipeline_tasks()
+    if names and names[0].startswith("__probe_failed__"):
+        return None, f"task discovery failed: {names[0].split(':', 1)[1]}"
+    results = monitor_core.probe_scheduled_tasks(names)
+    bad: list[str] = []
+    unknown: list[str] = []
+    for name in names:
+        info = results.get(name) or {}
+        if not info.get("available") or not info.get("exists"):
+            unknown.append(name)
+            continue
+        code = str(info.get("last_result"))
+        # 267009 (0x41301) = running; 267014 (0x41306) = scheduler
+        # terminated/stopped state (observed on healthy chs-reindex and
+        # DhtCapture runs). Neither is an exit failure.
+        if code not in ("0", "267009", "267014"):
+            bad.append(f"{name}={code}")
     if bad:
         return "nightly task failure: " + ", ".join(bad), None
+    if unknown:
+        return None, "task probe unknown: " + ", ".join(unknown)
     return None, None
 
 # Model states that justify an alert file entry (everything the unified
@@ -167,15 +197,34 @@ def run_once(
             + "\n"
         )
         alert_file.parent.mkdir(parents=True, exist_ok=True)
-        alert_file.write_text(content, encoding="utf-8")
+        tmp = alert_file.with_suffix(".txt.tmp")
+        tmp.write_text(content, encoding="utf-8")
+        tmp.replace(alert_file)
         print(content)
+        alert_ledger.record(lines, ALERTS_DIR)
+        _write_heartbeat()
         return 1
+    alert_ledger.record([], ALERTS_DIR)  # healthy tick: resolve all open
     if alert_file.exists():
         alert_file.unlink()
         print(f"all checks passed — cleared {alert_file}")
     else:
         print("all checks passed")
+    _write_heartbeat()
     return 0
+
+
+def _write_heartbeat() -> None:
+    """Dead-man's snitch: one timestamp per tick, read by the digest
+    page to surface total watcher death (frozen alert file is otherwise
+    indistinguishable from a failing pipeline)."""
+    try:
+        HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        HEARTBEAT_FILE.write_text(
+            datetime.now(timezone.utc).isoformat(), encoding="utf-8"
+        )
+    except OSError:
+        pass
 
 
 def main(argv: list[str] | None = None) -> int:

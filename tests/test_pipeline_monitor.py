@@ -666,6 +666,48 @@ def test_evidence_integrity_incomplete(tmp_path):
     assert result[0]["classification"] == "EVIDENCE_INCOMPLETE"
 
 
+def test_evidence_integrity_sweep_ledger_clears_in_horizon_missing(tmp_path):
+    """A ledgered sweep record reclassifies an in-horizon missing root as
+    expired-by-policy (the standing 2026-08-20 red); the same shape with
+    no ledger entry must STILL alert — the detector is not blinded."""
+    experiment = tmp_path / "unattended-20260820T044911Z"
+    missing_root = experiment / "chunk-0001"
+    record = pc.ChunkRecord(
+        index=1,
+        status="planned",
+        selected_count=0,
+        selected_complete_count=0,
+        output_root=str(missing_root),
+        summary_path=str(missing_root / "multi_account_fetch_summary.json"),
+        returncode=0,
+    )
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)  # inside the 7-day horizon
+    cleared = pc.chunk_evidence_integrity(
+        [record], last_activity=now, swept_paths={str(experiment)}
+    )
+    assert cleared[0]["classification"] == "EVIDENCE_EXPIRED_BY_POLICY"
+    assert cleared[0]["actor"] == "cleanup_staging_ledger"
+
+    strict = pc.chunk_evidence_integrity([record], last_activity=now)
+    assert strict[0]["classification"] == "EVIDENCE_MISSING_UNEXPECTEDLY"
+
+
+def test_load_sweep_ledger_returns_only_deleted_dirs(tmp_path):
+    ledger = tmp_path / "sweep.jsonl"
+    ledger.write_text(
+        '{"action":"delete_directory","path":"C:/A/B"}\n'
+        '{"action":"delete_file","path":"C:/A/B/x.sqlite"}\n'
+        "not-json\n"
+        '{"action":"delete_directory","path":"C:\\\\a\\\\c"}\n',
+        encoding="utf-8",
+    )
+    swept = pc.load_sweep_ledger(ledger)
+    assert swept == {"c:/a/b", "c:/a/c"}
+    assert pc.load_sweep_ledger(tmp_path / "absent.jsonl") == set()
+
+
 def test_freshness_classes():
     assert ph._freshness_class(10, threshold_s=90, present=True) == "fresh"
     assert ph._freshness_class(100, threshold_s=90, present=True) == "stale"

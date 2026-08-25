@@ -146,6 +146,35 @@ def _experiment_directories(root: Path) -> Iterable[Path]:
     )
 
 
+DEFAULT_SWEEP_LEDGER_PATH = Path("P:/.data/yt-is/cleanup_staging_ledger.jsonl")
+
+
+def _ledger_append(ledger_path: Path | None, action: dict[str, Any]) -> str | None:
+    """Best-effort durable record of what the sweep deleted.
+
+    Without this, the only evidence a chunk root was legitimately swept
+    dies with the directory itself, and the pipeline monitor must flag
+    in-horizon missing roots as unexpected evidence loss (the standing
+    2026-08-20 red). Returns an error string on failure, else None.
+    """
+    if ledger_path is None:
+        return None
+    import json
+    from datetime import datetime, timezone
+
+    try:
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        line = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            **action,
+        }
+        with open(ledger_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+        return None
+    except OSError as exc:
+        return f"{type(exc).__name__}: {exc}"
+
+
 def cleanup_staging(
     root: Path = DEFAULT_EXPERIMENT_ROOT,
     *,
@@ -153,6 +182,7 @@ def cleanup_staging(
     max_age_days: int = DEFAULT_MAX_AGE_DAYS,
     active_grace_hours: float = DEFAULT_ACTIVE_GRACE_HOURS,
     now: datetime | float | int | None = None,
+    ledger_path: Path | None = DEFAULT_SWEEP_LEDGER_PATH,
 ) -> dict[str, Any]:
     """Prune eligible experiment staging artifacts.
 
@@ -227,6 +257,17 @@ def cleanup_staging(
             try:
                 shutil.rmtree(experiment)
                 report["directories_deleted"] += 1
+                err = _ledger_append(
+                    ledger_path,
+                    {
+                        "action": "delete_directory",
+                        "path": str(experiment),
+                        "reason": "experiment_older_than_retention",
+                        "bytes": size_bytes,
+                    },
+                )
+                if err:
+                    errors.append(f"{experiment}:ledger:{err}")
             except OSError as exc:
                 errors.append(f"{experiment}:rmtree:{type(exc).__name__}:{exc}")
                 actions[-1]["action"] = "delete_directory_failed"
@@ -261,6 +302,17 @@ def cleanup_staging(
                     continue
                 path.unlink()
                 report["files_deleted"] += 1
+                err = _ledger_append(
+                    ledger_path,
+                    {
+                        "action": "delete_file",
+                        "path": str(path),
+                        "reason": "staging_sqlite_older_than_active_grace",
+                        "bytes": size_bytes,
+                    },
+                )
+                if err:
+                    errors.append(f"{path}:ledger:{err}")
             except OSError as exc:
                 errors.append(f"{path}:unlink:{type(exc).__name__}:{exc}")
                 actions[-1]["action"] = "delete_file_failed"
