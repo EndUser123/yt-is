@@ -261,7 +261,31 @@ Shared next gate:
   axes (exact scorer eligibility, frozen-scorer T agreement,
   raw-control feasibility, zero v2/v3/fixture overlap). No Discovery
   outputs used for selection; v4 has never been scored; formal ledger
-  untouched for v4. Next: fresh-evaluator formal run of holdout-v4.
+  untouched for v4.
+- [seen] 2026-08-25 FORMAL holdout-v4 run by a fresh blinded evaluator
+  (worktree from origin/main @3dd1c9e8, freeze receipt
+  freeze-20260825T-FORMAL-V2 verified, evaluator sha 21a2704e...,
+  sanity 25/25): 42 total / 42 scorable / 0 unscorable; candidate
+  recall 0.714 [0.564,0.828]; emerging recall 0.000 [0.000,0.084];
+  matched-negative emerging 0/126; perturbation10 0.405, perturbation20
+  0.333; verdict FAIL. Exact FAIL predicate: policy_beats_baselines ==
+  false (policy separation 0.0 vs baseline A 0.379; target rate 0.0 vs
+  baseline A 0.625, controls 0.246; nr and p20 FAIL arms both false).
+  Gate diagnostic (replays T/T+30/T+60): gate D (source_types>=2)
+  fails for ALL matched targets at every checkpoint; at T+60 25/26
+  matched have exactly 1 normalized source type and 17 have >=2
+  independent channels with 1 source type. SOURCE_LABELS normalizes
+  notebooklm/ytdlp/selenium/whisper all to "youtube" (verified in
+  frozen code), so min_source_types=2 structurally blocks
+  single-modality targets even when corroborated across channels
+  (inference from mechanical evidence). Ledger claim
+  formal_20260825T114339_0cc6f1bc COMPLETED; private artifacts at
+  P:/.data/yt-is/ef/concept-discovery-eval/eval-20260825T114338-FORMAL/.
+  holdout-v4 is permanently consumed and must never be reused for
+  formal validation; after calibration begins it is no longer promotion
+  evidence. Next: architect-approved calibration experiment on consumed
+  v4 as training/diagnostic evidence, then a completely new unseen
+  holdout for promotion evidence.
   Details: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
 
 ## Current authoritative snapshot (2026-08-12)
