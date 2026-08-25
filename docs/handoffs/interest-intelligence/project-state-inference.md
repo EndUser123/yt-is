@@ -1,5 +1,6 @@
 # yt-is Personal Intelligence — Inference State
-Updated: 2026-08-24 by architect handoff
+Updated: 2026-08-24 by architect handoff; v2 contract-fidelity and
+full-coverage bootstrap implementer passes
 
 ## Goal & constraints
 
@@ -32,6 +33,13 @@ Updated: 2026-08-24 by architect handoff
   from observed interests.
 - 2026-08-24: [seen] A blinded interest-recovery plus perturbation/stability
   gate precedes downstream recommendation evaluation.
+- 2026-08-24: [seen] V2 inference output must validate fail-closed before
+  persistence; accepted semantic objects use deterministic identity and one
+  transactional typed-graph write with inference-run provenance.
+- 2026-08-24: [seen] Bootstrap inference must not truncate the mechanically
+  eligible cluster universe to a global top-N; it uses deterministic bounded
+  cluster batches plus bounded auditable reconciliation, while the prior
+  top-25 breadth policy remains an explicit baseline.
 
 ## Current state
 
@@ -41,27 +49,41 @@ Updated: 2026-08-24 by architect handoff
 - [seen] Codex JSONL extraction was added at `7446d526`.
 - [seen] The prompt requests interests, goals, questions, cluster IDs,
   counterevidence, relationships, and regret candidates.
-- [seen] Current parsing uses JSON parsing but does not mechanically enforce
-  the complete declared schema, enum validity, confidence ranges, referential
-  integrity, or evidence-reference validity.
-- [seen] Current persistence writes interests but stores `goal_id = NULL`
-  rather than materializing inferred goal relationships.
-- [seen] Current persistence stores `parent_id = NULL`, losing inferred parent
-  hierarchy.
-- [seen] Current questions are persisted with `interest_id = NULL`.
-- [seen] `evidence_links` exists structurally but is not populated by the v2
-  inference storage path.
-- [seen] Regret candidates are parsed but not persisted.
-- [seen] Current inference sends at most 25 clusters from a breadth-ranked
-  candidate set.
+- [seen] V2 provider output is mechanically validated before persistence for
+  required structure, enums, confidence bounds, evidence-cluster references,
+  and internal interest/question relationships.
+- [seen] Invalid provider output fails closed before semantic database
+  mutation.
+- [seen] V2 persistence transactionally materializes deterministic interests,
+  goals, information needs, parent hierarchy, questions, regret candidates,
+  typed relationships, evidence-cluster provenance, and inference-run
+  metadata.
+- [seen] Replaying identical validated semantic output is idempotent for
+  semantic objects and relationship edges.
+- [seen] Focused offline regression tests cover contract rejection,
+  fail-closed behavior, typed persistence, idempotence, rollback, and
+  provider-output parsing.
+- [seen] The former top-25 breadth policy remains available only as an
+  explicit evaluation baseline.
+- [seen] Bootstrap candidate planning enumerates the complete mechanically
+  eligible cluster universe and covers each eligible cluster exactly once
+  across bounded batches of at most 25.
+- [seen] Batch inference outputs are validated intermediates and are not
+  persisted directly as canonical graph state.
+- [seen] Global reconciliation is bounded recursively and requires an
+  auditable disposition for every semantic fragment before final V2
+  validation/persistence.
+- [seen] Read-only current-corpus planning confirmed bootstrap candidate
+  coverage of 319/319 eligible clusters (100.0%) across 13 batches; this is
+  candidate coverage, not yet personal-interest recall.
+- [seen] Focused offline tests cover inventory completeness, batch coverage,
+  top-N baseline contrast, bounded reconciliation, fragment disposition
+  integrity, and fail-closed behavior.
 - [claimed] One live inference produced coherent software, trading, options,
   macro, media-production, and knowledge-automation interests/goals.
 - [claimed] That reported result did not visibly recover several deliberately
   relevant validation domains including longevity, ADHD mitigation, and
   cognitive enhancement.
-- [absent-unverified] Focused tests for schema validation, malformed provider
-  output, typed relationship persistence, provenance integrity, candidate
-  recall, and perturbation stability.
 
 ## Open questions
 
@@ -76,7 +98,7 @@ Updated: 2026-08-24 by architect handoff
 
 ## Next action
 
-Implement one bounded inference-contract milestone: real schema validation,
-complete typed persistence and provenance, high-recall bounded candidate
-selection, blinded interest recovery, perturbation testing, and focused
-regression tests.
+Run a fresh, contamination-separated evaluator comparing the preserved top-25
+baseline against the full-coverage bootstrap on the private known-interest
+set, including perturbation/stability tests. Recommendation-ranking
+optimization remains blocked until that semantic recall gate passes.
