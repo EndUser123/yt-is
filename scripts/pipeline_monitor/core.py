@@ -1074,6 +1074,8 @@ def load_sweep_ledger(path) -> set[str]:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(entry, dict):
+                    continue
                 if entry.get("action") == "delete_directory" and entry.get("path"):
                     swept.add(_norm_path_text(entry["path"]))
     except OSError:

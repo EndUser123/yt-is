@@ -94,7 +94,12 @@ def check_scheduled_tasks() -> tuple[str | None, str | None]:
     names = discover_pipeline_tasks()
     if names and names[0].startswith("__probe_failed__"):
         return None, f"task discovery failed: {names[0].split(':', 1)[1]}"
-    results = monitor_core.probe_scheduled_tasks(names)
+    if not names:
+        # Empty discovery is never silent health: zero matching tasks
+        # means the patterns or the scheduler itself drifted (review
+        # finding 1, run-b84932aa2a1d).
+        return None, "task discovery returned zero pipeline tasks"
+    results = monitor_core.probe_scheduled_tasks(names) if names else {}
     bad: list[str] = []
     unknown: list[str] = []
     for name in names:
@@ -155,6 +160,23 @@ def check_auth_keepalive() -> tuple[str | None, str | None]:
     return None, None
 
 
+def _format_alert_detail(detail) -> str:
+    """Human/agent-readable alert detail — raw list-of-dicts reprs are
+    unreadable in alert lines and ledgers (spawn-lens catch 2026-08-24)."""
+    if isinstance(detail, list):
+        parts = []
+        for item in detail[:3]:
+            if isinstance(item, dict):
+                parts.append(
+                    f"{item.get('classification') or item.get('code') or '?'}:"
+                    f"{str(item.get('output_root') or item.get('detail') or item)[:120]}"
+                )
+            else:
+                parts.append(str(item)[:120])
+        return "; ".join(parts) + (f" (+{len(detail) - 3} more)" if len(detail) > 3 else "")
+    return str(detail)[:400]
+
+
 def run_once(
     *,
     state_path: Path | None,
@@ -176,7 +198,7 @@ def run_once(
     if state in ALERT_STATES:
         lines.append(f"[health] state={state}: {report.get('explanation')}")
     for alert in report.get("alerts") or []:
-        lines.append(f"[{alert.get('code')}] {alert.get('detail')}")
+        lines.append(f"[{alert.get('code')}] {_format_alert_detail(alert.get('detail'))}")
     if not skip_auth_probe:
         auth_alert, auth_warning = check_auth_keepalive()
         if auth_alert:
