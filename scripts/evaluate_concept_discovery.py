@@ -50,11 +50,31 @@ if str(REPO) not in sys.path:
 # of these after freeze invalidates the receipt (fail closed at run time).
 # ===========================================================================
 
-EVALUATOR_VERSION = "retrospective-evaluator-v1"
-ARTIFACT_SCHEMA_VERSION = "concept-discovery-eval-v1"
+EVALUATOR_VERSION = "retrospective-evaluator-v2"
+ARTIFACT_SCHEMA_VERSION = "concept-discovery-eval-v2"
 
 CHECKPOINT_OFFSETS = [(-30, "T-30"), (0, "T"), (7, "T+7"),
                       (14, "T+14"), (30, "T+30"), (60, "T+60")]
+
+FORMAL_LABEL = "FORMAL"   # exact match only; aliases never consume authority
+SINGLE_USE_POLICY = {
+    "version": "single-use-holdout-v1",
+    "ledger_path": "P:/.data/yt-is/private/formal-holdout-ledger.sqlite",
+    "claim_rule": "sha256 of the exact holdout file bytes is atomically "
+                  "claimed (INSERT, UNIQUE(holdout_sha256)) BEFORE target "
+                  "labels are parsed; a duplicate claim fails closed "
+                  "regardless of evaluator/policy generation",
+    "crash_semantics": "a holdout is CONSUMED at successful claim; failure "
+                       "after claim records FAILED_AFTER_CONSUMPTION and "
+                       "the holdout remains consumed — no retry, a "
+                       "replacement holdout is required",
+    "non_formal": "only --label FORMAL (exact) consumes authority; "
+                  "NON_BLIND_DIAGNOSTIC and synthetic runs never touch it",
+    "ledger_fields": ["holdout_sha256", "freeze_receipt_sha256",
+                      "evaluator_sha256", "production_generation", "run_id",
+                      "claimed_at", "completed_at", "status",
+                      "artifact_path"],
+}
 
 METRIC_PLAN = {
     "version": "metrics-v1",
@@ -136,7 +156,14 @@ BASELINE_POLICIES = {
 }
 
 VERDICT_RULES = {
-    "version": "verdict-v1",
+    "version": "verdict-v2",
+    "INSUFFICIENT_EVIDENCE": {
+        "min_scorable_targets": 20,
+        "min_matched_negative_controls": 40,
+        "min_negatives_per_target": 2.0,
+        "note": "preregistered 2026-08-25 BEFORE the unseen holdout is "
+                "opened; must not be reduced after seeing it",
+    },
     "PASS": {"candidate_recall_scorable_min": 0.7,
              "emerging_recall_scorable_min": 0.5,
              "matched_negative_emerging_rate_max": 0.2,
@@ -147,8 +174,20 @@ VERDICT_RULES = {
     "FAIL": {"no_baseline_advantage": True,
              "or_matched_negative_emerging_rate_min": 0.5,
              "or_perturbation20_retention_max": 0.3},
-    "note": "thresholds frozen 2026-08-25 BEFORE any formal holdout run; "
-            "not tuned to any observed case",
+    "note": "substantive thresholds carried unchanged from verdict-v1 "
+            "(frozen 2026-08-25 before any formal holdout run); verdict-v2 "
+            "adds the INSUFFICIENT_EVIDENCE sample-sufficiency gate and "
+            "Wilson interval reporting",
+}
+
+UNCERTAINTY_POLICY = {
+    "version": "uncertainty-v1",
+    "method": "95% Wilson score intervals for proportion metrics",
+    "applies_to": ["candidate_recall_scorable", "emerging_recall_scorable",
+                   "matched_negative_emerging_rate",
+                   "perturbation10_retention", "perturbation20_retention"],
+    "note": "intervals report uncertainty; they do NOT replace the frozen "
+            "point-estimate thresholds",
 }
 
 PRODUCTION_FILES = ("ef/concept_registry.py", "ef/concept_discovery.py",
@@ -161,6 +200,12 @@ EVAL_ARTIFACT_ROOT = Path("P:/.data/yt-is/ef/concept-discovery-eval")
 
 class FreezeError(RuntimeError):
     """Freeze receipt missing, stale, or production drifted from it."""
+
+
+class HoldoutConsumedError(RuntimeError):
+    """The formal holdout (by content hash) was already consumed by ANY
+    prior formal claim, under ANY evaluator/policy generation. The holdout
+    is permanently unusable; a replacement holdout is required."""
 
 
 def _sha256_file(path) -> str:
@@ -182,6 +227,110 @@ def _word_boundary_contains(hay: str, needle: str) -> bool:
     if not needle:
         return False
     return re.search(rf"\b{re.escape(needle)}\b", hay) is not None
+
+
+# ---------------------------------------------------------------------------
+# Single-use formal-holdout authority (private, outside git)
+# ---------------------------------------------------------------------------
+
+_LEDGER_DDL = """
+CREATE TABLE IF NOT EXISTS holdout_claims (
+    holdout_sha256 TEXT PRIMARY KEY,
+    freeze_receipt_sha256 TEXT NOT NULL,
+    evaluator_sha256 TEXT NOT NULL,
+    production_generation TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    completed_at TEXT,
+    status TEXT NOT NULL,
+    artifact_path TEXT
+);
+"""
+
+
+def ensure_holdout_ledger(ledger_path=None) -> None:
+    p = Path(ledger_path or SINGLE_USE_POLICY["ledger_path"])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(p), timeout=30)
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.executescript(_LEDGER_DDL)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def claim_formal_holdout(ledger_path, holdout_sha256: str,
+                         freeze_receipt_sha256: str, evaluator_sha256: str,
+                         production_generation: str, run_id: str,
+                         artifact_path: str = None) -> None:
+    """Atomically claim a formal holdout by content hash BEFORE labels are
+    parsed. UNIQUE(holdout_sha256) makes the claim globally single-use
+    across evaluator generations: same holdout + same OR modified
+    evaluator/policy are all forbidden after the first consumption."""
+    ensure_holdout_ledger(ledger_path)
+    conn = sqlite3.connect(str(ledger_path), timeout=30,
+                           isolation_level=None)
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "INSERT INTO holdout_claims (holdout_sha256, "
+                "freeze_receipt_sha256, evaluator_sha256, "
+                "production_generation, run_id, claimed_at, status, "
+                "artifact_path) VALUES (?,?,?,?,?,?,?,?)",
+                (holdout_sha256, freeze_receipt_sha256, evaluator_sha256,
+                 production_generation, run_id,
+                 time.strftime("%Y-%m-%dT%H:%M:%S"), "RUNNING",
+                 artifact_path))
+            conn.execute("COMMIT")
+        except sqlite3.IntegrityError:
+            conn.execute("ROLLBACK")
+            prior = conn.execute(
+                "SELECT claimed_at, status, run_id FROM holdout_claims "
+                "WHERE holdout_sha256=?", (holdout_sha256,)).fetchone()
+            raise HoldoutConsumedError(
+                f"formal holdout sha256 {holdout_sha256[:12]} was already "
+                f"consumed (claimed_at={prior[0] if prior else '?'}, "
+                f"status={prior[1] if prior else '?'}). A formal holdout "
+                f"is permanently single-use across evaluator generations; "
+                f"a replacement holdout is required.") from None
+    finally:
+        conn.close()
+
+
+def mark_claim_status(ledger_path, holdout_sha256: str, status: str,
+                      artifact_path: str = None) -> None:
+    conn = sqlite3.connect(str(ledger_path), timeout=30)
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute(
+            "UPDATE holdout_claims SET status=?, completed_at=COALESCE("
+            "completed_at, ?), artifact_path=COALESCE(?, artifact_path) "
+            "WHERE holdout_sha256=?",
+            (status, time.strftime("%Y-%m-%dT%H:%M:%S"),
+             artifact_path, holdout_sha256))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Uncertainty (95% Wilson score intervals)
+# ---------------------------------------------------------------------------
+
+def wilson_interval(k: int, n: int) -> dict | None:
+    """95% Wilson score interval for k successes in n trials."""
+    if not n:
+        return None
+    z = 1.959963985
+    p = k / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5) / denom
+    return {"lo": round(max(0.0, center - half), 3),
+            "hi": round(min(1.0, center + half), 3), "k": k, "n": n}
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +368,8 @@ def build_freeze_receipt(receipt_dir: Path, production_sha: str = None) -> dict:
         "perturbation_policy_sha256": _sha256_obj(PERTURBATION_POLICY),
         "baseline_policies_sha256": _sha256_obj(BASELINE_POLICIES),
         "verdict_rules_sha256": _sha256_obj(VERDICT_RULES),
+        "single_use_policy_sha256": _sha256_obj(SINGLE_USE_POLICY),
+        "uncertainty_policy_sha256": _sha256_obj(UNCERTAINTY_POLICY),
         "formal_holdout_read": False,
     }
     receipt_dir.mkdir(parents=True, exist_ok=True)
@@ -484,12 +635,36 @@ def extract_features(registry_path, concept_id: str) -> dict:
 
 def run_evaluation(receipt_path, targets_path, artifact_dir,
                    label="FORMAL", catalog_path=None, max_targets=None,
-                   skip_perturbation=False, skip_baselines=False) -> dict:
+                   skip_perturbation=False, skip_baselines=False,
+                   ledger_path=None) -> dict:
     """Full frozen evaluation. Discovery runs BLIND; labels are applied
-    only to the produced outputs."""
+    only to the produced outputs.
+
+    FORMAL runs (label exactly "FORMAL") claim the holdout by content
+    hash in the private single-use ledger BEFORE any label is parsed; a
+    failure after claim permanently consumes the holdout.
+    """
     receipt = json.loads(Path(receipt_path).read_text(encoding="utf-8"))
     verify_frozen(receipt)
-    targets = load_targets(targets_path)   # labels enter here, post-freeze
+
+    formal = label == FORMAL_LABEL
+    holdout_sha = None
+    if formal:
+        # Claim by exact file bytes, never contents, before label access.
+        holdout_sha = _sha256_file(targets_path)
+        run_id = f"formal_{time.strftime('%Y%m%dT%H%M%S')}_" \
+                 f"{holdout_sha[:8]}"
+        claim_formal_holdout(
+            ledger_path or SINGLE_USE_POLICY["ledger_path"],
+            holdout_sha256=holdout_sha,
+            freeze_receipt_sha256=_sha256_obj(receipt),
+            evaluator_sha256=receipt["evaluator_file_sha256"],
+            production_generation=receipt["production_commit"],
+            run_id=run_id, artifact_path=str(artifact_dir))
+    else:
+        run_id = f"run_{label}_{time.strftime('%Y%m%dT%H%M%S')}"
+
+    targets = load_targets(targets_path)   # labels enter here, post-claim
     if max_targets:
         targets = targets[:max_targets]
 
@@ -500,6 +675,26 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
            "targets_file": str(targets_path), "started_at":
                time.strftime("%Y-%m-%dT%H:%M:%S"),
            "production_commit": receipt["production_commit"]}
+
+    try:
+        aggregate = _run_evaluation_body(
+            receipt, targets, artifact_dir, run, label, catalog_path,
+            skip_perturbation)
+    except Exception:
+        if formal:
+            # The labels were exposed: the holdout is consumed forever.
+            mark_claim_status(ledger_path or SINGLE_USE_POLICY["ledger_path"],
+                              holdout_sha, "FAILED_AFTER_CONSUMPTION",
+                              str(artifact_dir))
+        raise
+    if formal:
+        mark_claim_status(ledger_path or SINGLE_USE_POLICY["ledger_path"],
+                          holdout_sha, "COMPLETED", str(artifact_dir))
+    return aggregate
+
+
+def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
+                         catalog_path, skip_perturbation) -> dict:
 
     # Scorability first (post-hoc evidence lookup, per frozen policy).
     scorability = []
@@ -610,9 +805,10 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
            matched_negative_results)
 
     # Baselines + aggregate + verdict.
-    aggregate = aggregate_metrics(checkpoint_results, matched_negative_results,
+    aggregate = aggregate_metrics(checkpoint_results,
+                                  matched_negative_results,
                                   perturbation_results, len(scorable))
-    aggregate["verdict"] = apply_verdict(aggregate, baseline_comparison)
+    aggregate["verdict"] = apply_verdict_v2(aggregate, baseline_comparison)
     _write(artifact_dir / "aggregate-summary.json", aggregate)
     _write(artifact_dir / "evaluation-report.md", _report_md(
         label, aggregate, baseline_comparison, len(scorable),
@@ -623,7 +819,8 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
         "scorability": SCORABILITY_POLICY,
         "negative_controls": NEGATIVE_CONTROL_POLICY,
         "perturbation": PERTURBATION_POLICY, "baselines": BASELINE_POLICIES,
-        "verdict_rules": VERDICT_RULES})
+        "verdict_rules": VERDICT_RULES, "single_use": SINGLE_USE_POLICY,
+        "uncertainty": UNCERTAINTY_POLICY})
     run["aggregate"] = aggregate
     run["verdict"] = aggregate["verdict"]
     _write(artifact_dir / "run.json", run)
@@ -650,11 +847,23 @@ def _report_md(label, aggregate, baselines, scorable, unscorable) -> str:
         f"{baselines.get('policy_separation')} "
         f"(A {baselines.get('baseline_A_separation')}, "
         f"B {baselines.get('baseline_B_separation')})",
+        f"- matched negative controls: "
+        f"{aggregate.get('matched_negative_controls')} "
+        f"(avg/target {aggregate.get('negatives_per_target_avg')})",
+        f"- Wilson 95% intervals: {json.dumps(aggregate.get('wilson_95'))}",
         f"- VERDICT: {aggregate.get('verdict')}",
         "",
         "Aggregate metrics only. Target-level detail stays outside the "
         "public repository per the contamination protocol.",
     ]
+    if aggregate.get("verdict") == "INSUFFICIENT_EVIDENCE":
+        lines.append("")
+        lines.append(
+            "INSUFFICIENT_EVIDENCE: the scorable sample and/or matched-"
+            "negative coverage is below the preregistered minimums "
+            "(20 scorable targets; 40 controls; 2.0 controls/target). "
+            "No PASS/PARTIAL/FAIL interpretation is emitted; a NEW unseen "
+            "holdout generation is required.")
     if label != "FORMAL":
         lines.append("")
         lines.append(
@@ -713,8 +922,17 @@ def aggregate_metrics(checkpoint_results, negatives, perturbations,
 
     neg_rate = (sum(1 for n in negatives if n["emerging_at_T30"]) /
                 len(negatives)) if negatives else None
-    return {
+    n_cand = len([r for r in checkpoint_results if reached_any(r)])
+    n_emg = len([r for r in checkpoint_results
+                 if reached_lifecycle(r, "emerging")])
+    n_p10 = sum(1 for p in perturbations if p.get("retained_10"))
+    n_p20 = sum(1 for p in perturbations if p.get("retained_20"))
+    n_neg = len(negatives)
+    aggregate = {
         "scorable_targets": scorable_count,
+        "matched_negative_controls": n_neg,
+        "negatives_per_target_avg": round(n_neg / scorable_count, 3)
+        if scorable_count else None,
         "candidate_recall_scorable": round(len(cand) / scorable_count, 3)
         if scorable_count else None,
         "emerging_recall_scorable": round(len(emg) / scorable_count, 3)
@@ -728,14 +946,28 @@ def aggregate_metrics(checkpoint_results, negatives, perturbations,
         "matched_negative_emerging_rate": round(neg_rate, 3)
         if neg_rate is not None else None,
         "perturbation10_retention": round(
-            sum(1 for p in perturbations if p.get("retained_10")) /
-            len(perturbations), 3) if perturbations else None,
+            n_p10 / len(perturbations), 3) if perturbations else None,
         "perturbation20_retention": round(
-            sum(1 for p in perturbations if p.get("retained_20")) /
-            len(perturbations), 3) if perturbations else None,
+            n_p20 / len(perturbations), 3) if perturbations else None,
         "candidates_per_checkpoint":
             _per_checkpoint_totals(checkpoint_results),
     }
+    # 95% Wilson intervals for proportion metrics (uncertainty reporting;
+    # they do not replace the frozen point-estimate thresholds).
+    aggregate["wilson_95"] = {
+        "candidate_recall_scorable": wilson_interval(
+            n_cand, scorable_count) if scorable_count else None,
+        "emerging_recall_scorable": wilson_interval(
+            n_emg, scorable_count) if scorable_count else None,
+        "matched_negative_emerging_rate": wilson_interval(
+            sum(1 for n in negatives if n["emerging_at_T30"]), n_neg)
+        if negatives else None,
+        "perturbation10_retention": wilson_interval(
+            n_p10, len(perturbations)) if perturbations else None,
+        "perturbation20_retention": wilson_interval(
+            n_p20, len(perturbations)) if perturbations else None,
+    }
+    return aggregate
 
 
 def _per_checkpoint_totals(checkpoint_results):
@@ -746,6 +978,26 @@ def _per_checkpoint_totals(checkpoint_results):
                 cp["candidates_total"])
     return [{"checkpoint": k, "mean_candidates": round(
         sum(v) / len(v), 1)} for k, v in sorted(out.items())]
+
+
+def apply_verdict_v2(aggregate: dict,
+                     baseline_comparison: dict | None) -> str:
+    """Verdict-v2: sample sufficiency gates substantive interpretation.
+
+    INSUFFICIENT_EVIDENCE (and no PASS/PARTIAL/FAIL evaluation) when:
+    scorable targets < 20, OR matched negative controls < 40, OR
+    controls/target < 2.0. Otherwise the frozen substantive verdict-v1
+    thresholds decide PASS/PARTIAL/FAIL unchanged."""
+    gate = VERDICT_RULES["INSUFFICIENT_EVIDENCE"]
+    scorable = aggregate.get("scorable_targets") or 0
+    negatives = aggregate.get("matched_negative_controls") or 0
+    per_target = aggregate.get("negatives_per_target_avg")
+    if (scorable < gate["min_scorable_targets"]
+            or negatives < gate["min_matched_negative_controls"]
+            or (per_target is not None
+                and per_target < gate["min_negatives_per_target"])):
+        return "INSUFFICIENT_EVIDENCE"
+    return apply_verdict(aggregate, baseline_comparison)
 
 
 def apply_verdict(aggregate: dict, baseline_comparison: dict | None) -> str:
@@ -833,6 +1085,8 @@ def main(argv=None) -> int:
     p.add_argument("--targets", required=True)
     p.add_argument("--label", default="FORMAL")
     p.add_argument("--catalog", default=None)
+    p.add_argument("--ledger", default=None,
+                   help="single-use holdout ledger override (tests)")
     p.add_argument("--max-targets", type=int, default=None)
     p.add_argument("--skip-perturbation", action="store_true")
     p.set_defaults(fn=lambda a: _cmd_run(a))
@@ -861,6 +1115,7 @@ def _cmd_run(a) -> int:
         f"-{a.label}"
     aggregate = run_evaluation(a.receipt, a.targets, d, label=a.label,
                                catalog_path=a.catalog,
+                               ledger_path=a.ledger,
                                max_targets=a.max_targets,
                                skip_perturbation=a.skip_perturbation)
     print(json.dumps(aggregate, indent=2))
