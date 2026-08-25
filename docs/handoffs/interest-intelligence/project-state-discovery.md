@@ -1,5 +1,5 @@
 # yt-is Personal Intelligence — Discovery / Concept Intelligence State
-Updated: 2026-08-25 by fresh formal-v4 evaluator (FAIL postmortem diagnostics)
+Updated: 2026-08-25 by formal-v4 evaluator + calibration experiment (NO_SIMPLE_POLICY_SUPPORTED)
 
 ## Goal & constraints
 
@@ -251,6 +251,52 @@ Updated: 2026-08-25 by fresh formal-v4 evaluator (FAIL postmortem diagnostics)
   removed==0).
 - 2026-08-25: holdout-v4 is no longer promotion evidence after
   calibration begins and can never be reused for formal validation.
+
+- 2026-08-25: [seen] Calibration experiment v2-policy-family-calibration-v1
+  (preregistered plan sha256 bb1c0299... frozen BEFORE any grid result;
+  plan + all artifacts under
+  P:/.data/yt-is/ef/concept-discovery-calibration/v2-policy-family/).
+  Training data: consumed holdout-v4, TRAINING_DIAGNOSTIC_ONLY.
+  Reproduction guard (consistency check emulating the formal registry
+  row-staleness semantics, expected values hardcoded from the formal
+  artifact; 13 synthetic tests + integration guard pass): baseline A
+  rates 0.625/0.246 (separation 0.379) reproduced exactly.
+- 2026-08-25: [seen] Grid result (6 candidate x 36 emerging = 216
+  configs, frozen): NO configuration qualified on any pass-like axis.
+  Max emerging recall 0.238 (count-only arms) carries control rate
+  0.333 (negative separation); at control rate ~0.008 emerging recall
+  caps at 0.143. 5-fold grouped CV: no fold selected a winner
+  (0 qualified in all 5 training splits); OOF undefined by rule;
+  Pareto frontier = {C4, C5} x recent>=4, ratio>=2.0, channels>=1.
+  Conclusion class: NO_SIMPLE_POLICY_SUPPORTED.
+- 2026-08-25: [seen] Discriminating evidence for the next architecture
+  decision: (1) removing the source_types gate alone yields emerging
+  recall 0.071 / control 0.008 (separation 0.064) — source_types was A
+  problem, not THE problem; the whole conjunction is miscalibrated
+  (verified ablation). (2) count-only (baseline A) separates NEGATIVELY
+  under stateless recall semantics (-0.04); the formal 0.379 came from
+  the 8-row registry denominator. (3) best count+ratio+channels arm
+  (C0, recent>=4, ratio>=2, channels>=2): emR 0.095, ctl 0.008,
+  separation 0.087. (4) C3-C5 reach candidate recall 1.0 but that is
+  partially tautological vs the scorer's >=2-lifetime-EU definition and
+  inflates candidate volume 67 -> 96-125 mean per checkpoint (~191
+  entities total). (5) perturbation20 candidate retention: the plain 30d-window family
+  (C0) 0.31 — above the 0.3 reject line, below the 0.5 pass-like axis;
+  every wider- or lifetime-gated variant reaches 0.62-1.0 (C1 0.69,
+  C2 0.74, C3 0.62, C4/C5 1.0).
+  Candidate future families (NOT implemented): time-decayed evidence,
+  Bayesian burst detection, channel-weighted corroboration, persistence
+  episodes, domain-conditioned thresholds.
+- 2026-08-25: no production policy changed; burst-policy-v1 preserved as
+  control arm; evaluator-v2, formal ledger, holdout files untouched; no
+  FORMAL run. Promotion requires a NEW unseen holdout after any future
+  v2 implementation; holdout-v4 can never be promotion evidence again.
+
+## Next action (calibration concluded)
+
+ARCHITECT DECISION REQUIRED: NO_SIMPLE_POLICY_SUPPORTED — the simple
+count/ratio/channel family is insufficient. Next-stage options are in
+the packet's future-classes list; do not expand the frozen grid.
 
 ## Next action
 

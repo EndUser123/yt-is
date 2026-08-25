@@ -286,6 +286,27 @@ Shared next gate:
   evidence. Next: architect-approved calibration experiment on consumed
   v4 as training/diagnostic evidence, then a completely new unseen
   holdout for promotion evidence.
+- [seen] 2026-08-25 calibration experiment EXECUTED (preregistered plan
+  sha256 bb1c0299..., frozen before results; consumed v4 as
+  TRAINING_DIAGNOSTIC_ONLY data): 216-config grid (6 candidate x 36
+  emerging) + 5-fold grouped CV + ablations + perturbation. Reproduction
+  guard reproduced formal baseline A exactly (0.625/0.246/0.379).
+  NO configuration qualified on any pass-like axis in any training
+  split; OOF undefined by rule; conclusion NO_SIMPLE_POLICY_SUPPORTED.
+  Key ablations: v1-minus-source_types emR 0.071/ctl 0.008 (source_types
+  was a problem, not the problem); count-only separates negatively;
+  C3-C5 candidate recall 1.0 is partially tautological with 1.4-1.9x
+  candidate inflation; p20 retention: plain 30d family (C0) 0.31, all
+  wider/lifetime-gated variants 0.62-1.0. Fresh-context review REJECT (2 major: baseline-B
+  separation missing from reject line; perturbation used T-checkpoint
+  observation base) fixed and rerun before publication; conclusion
+  unchanged. Artifacts (private):
+  P:/.data/yt-is/ef/concept-discovery-calibration/v2-policy-family/.
+  No production/evaluator/ledger/holdout changes. ARCHITECT DECISION
+  REQUIRED on next-stage family (time-decay, Bayesian burst,
+  channel-weighted corroboration, persistence episodes,
+  domain-conditioned thresholds); promotion still requires a new unseen
+  holdout after any future v2 implementation.
   Details: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
 
 ## Current authoritative snapshot (2026-08-12)
