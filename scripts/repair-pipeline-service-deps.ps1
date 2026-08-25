@@ -28,7 +28,6 @@
 # Success marker: P:\.data\yt-is\ef\pipeline-service-deps-repair.json
 $ErrorActionPreference = "Continue"
 $result = "P:\.data\yt-is\ef\pipeline-service-deps-repair.json"
-Remove-Item $result -ErrorAction SilentlyContinue
 
 # ASCII only: Windows PowerShell 5.1 reads BOM-less files as ANSI, and
 # any non-ASCII character breaks the parser before the script runs.
@@ -40,6 +39,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     exit 1
 }
 Write-Output "elevated: yes (user $($identity.Name))"
+# Only an actually-running repair may retire the previous marker: an
+# unelevated fail-fast run must not destroy the last repair's evidence.
+Remove-Item $result -ErrorAction SilentlyContinue
 
 $py = "C:\Python314\python.exe"
 $deps = @(

@@ -85,6 +85,8 @@ def _watcher_ledger_alerts() -> list[dict]:
         data = json.loads(WATCHER_LEDGER_OPEN.read_text(encoding="utf-8"))
     except Exception:
         return []
+    if not isinstance(data, dict) or not isinstance(data.get("events"), dict):
+        return []  # wrong-shape ledger is ignored, never crashes the model
     out: list[dict] = []
     for key, ev in (data.get("events") or {}).items():
         if not isinstance(ev, dict) or ev.get("status") != "open":
@@ -129,7 +131,9 @@ def compute_health(
     the alerts by default would feed the watcher's own verdict back into
     itself (healthy ticks could never clear). The CLI health command opts
     in so interactive `health` never prints "alerts: none" while the
-    ledger holds open events.
+    ledger holds open events. These alerts are display-surfacing only:
+    they are appended after `alertable` is computed and do not change
+    the command's exit code.
     """
     report: dict = {
         "checked_at": datetime.now(timezone.utc).isoformat(),
