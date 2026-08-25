@@ -63,7 +63,9 @@ def probe_ok() -> bool:
         "c.chat.completions.create(model='MiniMax-M3', max_tokens=5,"
         " messages=[{'role':'user','content':'hi'}])"
     )
-    r = subprocess.run([VENV_PY, "-c", code], capture_output=True, timeout=90)
+    r = subprocess.run(
+        [VENV_PY, "-c", code], capture_output=True, timeout=90,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     return r.returncode == 0
 
 
@@ -98,7 +100,8 @@ def run_ingest_cycle() -> bool:
     """Run one ingest pass. Returns True if it ended all-processed."""
     proc = subprocess.run(
         [VENV_PY, INGEST], capture_output=True, text=True,
-        cwd="P:/packages/yt-is/scripts/graph_bakeoff")
+        cwd="P:/packages/yt-is/scripts/graph_bakeoff",
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     tail = (proc.stdout + proc.stderr).strip().splitlines()[-3:]
     for t in tail:
         log(f"  ingest: {t[:160]}")
