@@ -1,5 +1,5 @@
 # yt-is Personal Intelligence — Discovery / Concept Intelligence State
-Updated: 2026-08-24 by open-world discovery implementer pass
+Updated: 2026-08-25 by formal-v2 evaluator + holdout-v3 curator pass
 
 ## Goal & constraints
 
@@ -157,21 +157,49 @@ Updated: 2026-08-24 by open-world discovery implementer pass
 - Which novelty corroboration sources (EF vs wiki vs chat) matter most
   for new_to_corpus confidence?
 
+## Formal evaluation results
+
+- 2026-08-25: [seen] FORMAL holdout-v2 -> INSUFFICIENT_EVIDENCE.
+  Mechanically observed: 60 total / 0 scorable / 60
+  UNSCORABLE_MISSING_EVIDENCE; artifacts (private) at
+  P:/.data/yt-is/ef/concept-discovery-eval/eval-20260825T103445-FORMAL;
+  ledger claim formal_20260825T103445_60193b6c COMPLETED — holdout-v2
+  (sha256 60193b6c...) permanently consumed. NOT a Discovery recall
+  failure: no PASS/PARTIAL/FAIL was emitted and no recall number exists.
+- 2026-08-25: [seen] Raw KG diagnosis proves the cause is representation
+  mismatch, exact-label scorer vs externally selected holdout names:
+  0/60 v2 canonical names match any kg_nodes entity label (scorer
+  universe = 388 entity labels, 321 with EU mentions); 4/60 collide
+  case-insensitively with KG labels but all four are `channel` nodes
+  with zero mentioned_in edges; 0/60 satisfy >=1 EU; 0/60 >=2 EUs.
+- 2026-08-25: [seen] Holdout-v3 generated from preregistered
+  raw-corpus evidence (policy holdout-v3-curation-v1 + disclosed
+  amendment v1.1 implementing the policy's PREFERRED kg_nodes.meta_json
+  NER-type branch: DOMAIN_TYPES = PRODUCT/TECH/ORG; receipt at
+  P:/.data/yt-is/ef/concept-discovery-eval/holdout-v3-curation/).
+  discovery_outputs_read_for_selection=false;
+  v3_discovery_evaluation_run=false; formal ledger untouched for v3.
+  Result: 4 targets of a 321-label universe; thresholds NOT loosened
+  (binding floor: >=6 distinct EUs in [T,T+60d] eliminates 130/321).
+  Preflight 4/4 on every axis incl. frozen-scorer T agreement; zero
+  overlap with v2 or NON-BLIND fixtures. v3 sha256 45e14059...
+  (private path P:/.data/yt-is/private/discovery-retrospective-holdout-v3.json).
+
 ## Next action
 
-Execute the frozen evaluator-v2 (receipt freeze-20260825T-FORMAL-V2) in a
-FRESH IMPLEMENTER/EVALUATOR context against one new unseen private
-holdout; the current implementer must be retired only at that switching
-boundary (its successor cold-start handoff exists — see the FRESH
-DISCOVERY EVALUATOR HANDOFF returned with the v2 freeze). The
-implementing context that saw the exposed names must not run or score
-that holdout. The formal boundary is now mechanically hardened: FORMAL
-holdouts are single-use by content hash (a crash after claim consumes
-permanently), verdict-v2 returns INSUFFICIENT_EVIDENCE below the
-preregistered sufficiency minimums (20 scorable / 40 controls / 2.0 per
-target), and formal proportion metrics carry 95% Wilson intervals. If
-the gate passes, integrate Discovery Radar into the dashboard and add
-domain-specific
-external source adapters; if PARTIAL/FAIL, run an architect-approved
+Run frozen evaluator-v2 exactly once against holdout-v3 using a FRESH
+IMPLEMENTER/EVALUATOR (the v3 curator session is contaminated with v3
+target identities and must never score v3). Known structural constraint:
+4 scorable targets < the verdict-v2 gate (20 scorable / 40 controls /
+2.0 per target), so a v3 formal run yields INSUFFICIENT_EVIDENCE by
+construction unless the operator/architect changes the gate or the
+corpus's entity-mention density grows; the constraint is corpus-side
+(entity-mention concentration over 60-day windows), not evaluator-side.
+Architect/operator decision required on whether to (a) run v3 formally
+to consume it and bank the scorability proof, (b) wait for corpus
+growth, or (c) revisit the preregistered floors with a new frozen
+policy. If a gate-passing holdout ever scores PASS, integrate Discovery
+Radar into the dashboard and add domain-specific external source
+adapters; if PARTIAL/FAIL, run an architect-approved
 policy-calibration experiment first (the extremely broad emerging
-classification is the leading known suspect).
+classification remains the leading known suspect).

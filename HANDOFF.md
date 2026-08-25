@@ -235,6 +235,25 @@ Shared next gate:
   validation before running the goal-aware versus similarity+recency
   recommendation falsifier.
 
+### Discovery formal evaluation status (2026-08-25, state-of-record)
+
+- [seen] FORMAL holdout-v2 scored INSUFFICIENT_EVIDENCE by frozen
+  evaluator-v2: 60 total / 0 scorable / 60 UNSCORABLE_MISSING_EVIDENCE.
+  Not a Discovery recall failure — no recall verdict exists. Cause
+  mechanically proven: 0/60 externally chosen names match any
+  kg_nodes entity label (scorer universe = 388 entity labels; the 4
+  case-insensitive hits are channel nodes with no mentioned_in edges).
+  Holdout-v2 is permanently consumed (ledger COMPLETED).
+- [seen] Holdout-v3 generated from preregistered raw KG/EU evidence
+  (policy holdout-v3-curation-v1 + disclosed amendment v1.1; no
+  Discovery outputs read; never scored). 4 targets of a 321-label
+  universe; preregistered floors not loosened. Preflight 4/4 on all
+  axes with frozen-scorer T agreement, zero v2/fixture overlap.
+- [inference] A v3 formal run will yield INSUFFICIENT_EVIDENCE by
+  construction (4 < the 20-scorable verdict-v2 gate); the constraint
+  is corpus-side entity-mention density, not evaluator-side. Details
+  and next actions: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
+
 ## Current authoritative snapshot (2026-08-12)
 
 The following state supersedes older dated sections in this file. Historical
