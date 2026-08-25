@@ -45,7 +45,7 @@ def _hermetic_watcher_io(tmp_path, monkeypatch):
 
 
 def test_empty_intake_detection(tmp_path, monkeypatch):
-    logs = tmp_path / "intake_pipeline"
+    logs = tmp_path / ".logs" / "intake_pipeline"
     (logs / "20260825T150000Z").mkdir(parents=True)  # empty -> detected
     good = logs / "20260825T160000Z"
     good.mkdir()
