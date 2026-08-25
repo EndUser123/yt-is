@@ -156,6 +156,50 @@ Open items (operator-held unless noted):
    are deliberately split out as a separate operator decision; not part
    of this capture.
 
+## Active workstream — Personal Intelligence (2026-08-24)
+
+The Personal Intelligence / Interest Intelligence program has four genuinely
+parallel descriptor state files. `HANDOFF.md` remains the canonical package
+state-of-record; these files are subordinate active-workstream state, not a
+competing project-state root.
+
+- `docs/handoffs/interest-intelligence/project-state-inference.md`
+- `docs/handoffs/interest-intelligence/project-state-dashboard.md`
+- `docs/handoffs/interest-intelligence/project-state-recommendation.md`
+- `docs/handoffs/interest-intelligence/project-state-external-intelligence.md`
+
+Shared goal:
+- [seen] Turn yt-is from a searchable evidence corpus into an auditable
+  personal intelligence system that models interests, goals, information
+  needs, questions, and eventually claims/opportunities/actions.
+- [seen] Make the corpus proactively answer what changed, what is missing,
+  what connects domains, what may change a decision, and what the operator
+  may regret not learning.
+
+Shared current state:
+- [seen] Interest Graph v1 shipped at `57dc3917`.
+- [seen] Multi-view evidence-cluster v1.5 shipped at `e7c2b6c0`.
+- [seen] Personal-intelligence infrastructure shipped structurally at
+  `faf6dca3` plus `7446d526`.
+- [seen] Relational tables for interests, goals, questions, claims,
+  evidence_links, and feedback are structurally present.
+- [seen] `/today`, `/feedback`, and the v2 LLM execution path are structurally
+  present.
+- [claimed] A live v2 inference run produced useful inferred interests,
+  questions, underlying goals, and regret candidates.
+- [seen] v2 is PARTIAL rather than accepted-complete: inferred typed
+  relationships/provenance are not yet faithfully persisted, declared LLM JSON
+  is not mechanically schema-validated, candidate selection is top-N /
+  breadth-biased, and downstream typed-graph consumption is incomplete.
+- [absent-unverified] A working `/interest/{id}` typed drill-down.
+- [absent-unverified] Focused automated coverage for the new inference,
+  personal-graph, and feedback contracts.
+
+Shared next gate:
+- [seen] Complete inference contract fidelity and high-recall candidate
+  validation before running the goal-aware versus similarity+recency
+  recommendation falsifier.
+
 ## Current authoritative snapshot (2026-08-12)
 
 The following state supersedes older dated sections in this file. Historical
