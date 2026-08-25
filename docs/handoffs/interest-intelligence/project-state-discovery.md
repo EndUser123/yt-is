@@ -1,5 +1,5 @@
 # yt-is Personal Intelligence — Discovery / Concept Intelligence State
-Updated: 2026-08-25 by formal-v2 evaluator + holdout-v3 curator pass
+Updated: 2026-08-25 by fresh formal-v4 evaluator (FAIL postmortem diagnostics)
 
 ## Goal & constraints
 
@@ -205,15 +205,59 @@ Updated: 2026-08-25 by formal-v2 evaluator + holdout-v3 curator pass
   0cc6f1bc... (private path
   P:/.data/yt-is/private/discovery-retrospective-holdout-v4.json).
   NER-type counts: CONCEPT 16, PRODUCT 12, TECH 8, ORG 6.
+- 2026-08-25: [seen] FORMAL holdout-v4 consumed successfully by a fresh
+  blinded evaluator (freeze receipt freeze-20260825T-FORMAL-V2 verified,
+  evaluator sha 21a2704e..., sanity 25/25, ledger claim
+  formal_20260825T114339_0cc6f1bc COMPLETED; private artifacts at
+  P:/.data/yt-is/ef/concept-discovery-eval/eval-20260825T114338-FORMAL/).
+  42 total / 42 scorable / 0 UNSCORABLE_MISSING_EVIDENCE. Candidate
+  recall 0.714 [0.564,0.828]; emerging recall 0.000 [0.000,0.084];
+  matched-negative emerging 0/126 [0.000,0.030]; perturbation10 0.405,
+  perturbation20 0.333. Verdict FAIL.
+- 2026-08-25: [seen] Exact mechanical FAIL predicate (verified against
+  frozen apply_verdict code + recomputed baseline rows, which reproduce
+  the artifact separations 0.0/0.379/0.0 exactly, n_rows=134):
+  policy_beats_baselines == false is the ONLY true FAIL arm
+  (nr 0.000 < 0.5 min and p20 0.333 > 0.3 max are both false).
+  Baselines: policy target rate 0.0 / control 0.0 (sep 0.0);
+  baseline A (recent>=6) target 0.625 / control 0.246 (sep 0.379);
+  baseline B (recent>=4 and novel<=60d) target 0.0 / control 0.0
+  (sep 0.0).
+- 2026-08-25: [seen] Aggregate emerging-gate diagnostic (independent
+  replays at T/T+30/T+60 using frozen code; 26/42 matched in this
+  reduced replay set): gate A (recent>=4) passes 6/8/7, gate B
+  (ratio>=2.0) 12/9/6, gate C (channels>=3) 7/7/6, gate D
+  (source_types>=2) 0/0/0, A+B 1/2/2, A+B+C 1/0/0, A+B+C+D 0/0/0.
+  Removing the D gate would emerge at most 1 target (at T); lowering
+  the channels floor to 2 changes nothing (D still binds). Gate D is
+  the binding constraint on the emerging path.
+- 2026-08-25: [seen] Source-type semantics (mechanical, frozen code):
+  SOURCE_LABELS maps notebooklm/ytdlp/selenium/whisper -> "youtube"
+  and hackernews -> "hn"; reddit/discord/github/rss/dht-artifact stay
+  distinct. At T+60, 25/26 matched targets have exactly 1 normalized
+  source type (1 has 0), none have >=2; 17 targets have >=2
+  independent channels but 1 source type. Hypothesis (inference, not
+  yet promotion evidence): min_source_types=2 measures acquisition
+  modality, not independent publisher identity, and structurally
+  prevents single-modality (YouTube-only) concepts from reaching
+  emerging even when corroborated across multiple channels.
+- 2026-08-25: [seen] Candidate-miss diagnostic (12/42 never candidates
+  at any of 6 formal checkpoints, aggregate): all 12 have >=2 lifetime
+  mentions but <2 mentions in every recent-30d window at T/T+30/T+60 —
+  below candidate_min_recent=2; 0 misses from missing evidence or name
+  matching. Perturbation: retained 17/42 at 10% (all losses candidate
+  disappearances; emerging loss 0 because nothing emerged; 4 losses had
+  removed==0, i.e. already-absent targets), 14/42 at 20% (2 with
+  removed==0).
+- 2026-08-25: holdout-v4 is no longer promotion evidence after
+  calibration begins and can never be reused for formal validation.
 
 ## Next action
 
-Run frozen evaluator-v2 exactly once against holdout-v4 using a FRESH
-IMPLEMENTER/EVALUATOR (the v4 curator session is contaminated with v4
-target identities and must never score v4). v4 prequalifies 42
-scorable targets against the exact scorer, above the verdict-v2 gate
-(20 scorable / 40 controls / 2.0 per target) with headroom. If it
-scores PASS, integrate Discovery Radar into the dashboard and add
-domain-specific external source adapters; if PARTIAL/FAIL, run an
-architect-approved policy-calibration experiment first (the extremely
-broad emerging classification remains the leading known suspect).
+Architect-approved Discovery calibration experiment on consumed
+holdout-v4 as TRAINING/DIAGNOSTIC evidence, followed by a completely
+new unseen holdout for promotion evidence. Leading mechanical finding
+for the calibration packet: the source_types>=2 gate (acquisition
+modality, not channel independence) is the sole blocker of the
+emerging path on v4; "emerging classifier is too conservative overall"
+remains a hypothesis pending the calibration experiment.
