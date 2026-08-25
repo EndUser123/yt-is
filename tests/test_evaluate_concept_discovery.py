@@ -209,8 +209,11 @@ def test_full_evaluation_synthetic(receipt, tmp_path):
         assert (out / name).exists(), f"missing {name}"
     report = (out / "evaluation-report.md").read_text(encoding="utf-8")
     assert "NON-BLIND" in report and "NOT PROMOTION EVIDENCE" in report
-    # verdict present and one of the frozen set
-    assert aggregate["verdict"] in ("PASS", "PARTIAL", "FAIL")
+    # verdict present; with 1 scorable target the v2 sufficiency gate
+    # must return INSUFFICIENT_EVIDENCE (no PASS/PARTIAL/FAIL evaluation)
+    assert aggregate["verdict"] == "INSUFFICIENT_EVIDENCE"
+    assert aggregate["matched_negative_controls"] >= 0
+    assert aggregate["wilson_95"]["candidate_recall_scorable"]["n"] == 1
     # production files untouched by the run
     ev.verify_frozen(receipt)
 
@@ -308,3 +311,230 @@ def test_artifacts_stay_outside_repo(tmp_path, receipt):
     # nothing new appeared under the repo tree during the run
     for produced in out.rglob("*"):
         assert REPO not in produced.parents
+
+
+# ===========================================================================
+# v2: single-use formal-holdout authority
+# ===========================================================================
+
+LEDGER_FIELDS = {"holdout_sha256", "freeze_receipt_sha256", "evaluator_sha256",
+                 "production_generation", "run_id", "claimed_at",
+                 "completed_at", "status", "artifact_path"}
+
+
+def _ledger_rows(ledger):
+    ev.ensure_holdout_ledger(ledger)   # reads stay valid on fresh files
+    conn = sqlite3.connect(str(ledger))
+    try:
+        conn.row_factory = sqlite3.Row
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM holdout_claims")]
+    finally:
+        conn.close()
+
+
+def _claim(ledger, sha, receipt_sha="r" * 64, evaluator_sha="e" * 64,
+           run_id="run-1"):
+    ev.claim_formal_holdout(ledger, sha, receipt_sha, evaluator_sha,
+                            "prodgen", run_id)
+
+
+def test_ledger_schema_and_privacy(tmp_path):
+    ledger = tmp_path / "ledger.sqlite"
+    _claim(ledger, "a" * 64)
+    rows = _ledger_rows(ledger)
+    assert len(rows) == 1
+    assert set(rows[0]) == LEDGER_FIELDS      # no target-name column
+    assert rows[0]["status"] == "RUNNING"
+    blob = ledger.read_bytes()
+    assert b"Fluxcapacitor" not in blob        # names never in the ledger
+
+
+def test_single_use_first_claim_succeeds(tmp_path):
+    ledger = tmp_path / "ledger.sqlite"
+    _claim(ledger, "a" * 64)                   # must not raise
+    assert len(_ledger_rows(ledger)) == 1
+
+
+def test_single_use_same_holdout_rejected(tmp_path):
+    ledger = tmp_path / "ledger.sqlite"
+    _claim(ledger, "a" * 64)
+    with pytest.raises(ev.HoldoutConsumedError, match="consumed"):
+        _claim(ledger, "a" * 64)
+
+
+def test_single_use_across_generations(tmp_path):
+    """Same holdout + new evaluator receipt / new policy generation /
+    new production generation — all still forbidden."""
+    ledger = tmp_path / "ledger.sqlite"
+    _claim(ledger, "a" * 64)
+    with pytest.raises(ev.HoldoutConsumedError):
+        _claim(ledger, "a" * 64, receipt_sha="NEW" + "r" * 60)
+    with pytest.raises(ev.HoldoutConsumedError):
+        _claim(ledger, "a" * 64, evaluator_sha="NEW" + "e" * 60)
+    with pytest.raises(ev.HoldoutConsumedError):
+        ev.claim_formal_holdout(ledger, "a" * 64, "r" * 64, "e" * 64,
+                                "OTHER-GENERATION", "run-2")
+
+
+def test_single_use_distinct_holdout_succeeds(tmp_path):
+    ledger = tmp_path / "ledger.sqlite"
+    _claim(ledger, "a" * 64)
+    _claim(ledger, "b" * 64, run_id="run-2")   # distinct content = fresh
+    assert len(_ledger_rows(ledger)) == 2
+
+
+def test_crash_after_claim_consumes_permanently(receipt, tmp_path, monkeypatch):
+    ledger = tmp_path / "ledger.sqlite"
+    receipt_file = tmp_path / "receipt.json"
+    receipt_file.write_text(json.dumps(receipt))
+    targets = write_targets(tmp_path / "t.json", [
+        {"target_id": "flux", "canonical_name": "Fluxcapacitor Runtime"}])
+    cat = build_catalog(tmp_path / "cat.sqlite")
+
+    def exploding_body(*a, **k):
+        raise RuntimeError("simulated crash after claim")
+
+    monkeypatch.setattr(ev, "_run_evaluation_body", exploding_body)
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        ev.run_evaluation(receipt_file, targets, tmp_path / "out1",
+                          label="FORMAL", catalog_path=cat,
+                          ledger_path=str(ledger))
+    rows = _ledger_rows(ledger)
+    assert rows[0]["status"] == "FAILED_AFTER_CONSUMPTION"
+    # retry with the same holdout is forbidden even after the crash
+    monkeypatch.undo()
+    with pytest.raises(ev.HoldoutConsumedError):
+        ev.run_evaluation(receipt_file, targets, tmp_path / "out2",
+                          label="FORMAL", catalog_path=cat,
+                          ledger_path=str(ledger))
+
+
+def test_formal_run_completes_and_marks_ledger(receipt, tmp_path):
+    ledger = tmp_path / "ledger.sqlite"
+    receipt_file = tmp_path / "receipt.json"
+    receipt_file.write_text(json.dumps(receipt))
+    targets = write_targets(tmp_path / "t.json", [
+        {"target_id": "flux", "canonical_name": "Fluxcapacitor Runtime"}])
+    cat = build_catalog(tmp_path / "cat.sqlite")
+    agg = ev.run_evaluation(receipt_file, targets, tmp_path / "out",
+                            label="FORMAL", catalog_path=cat,
+                            skip_perturbation=True, ledger_path=str(ledger))
+    assert agg["verdict"] == "INSUFFICIENT_EVIDENCE"   # 1 scorable target
+    rows = _ledger_rows(ledger)
+    assert rows[0]["status"] == "COMPLETED"
+
+
+def test_diagnostic_and_alias_labels_never_consume(receipt, tmp_path):
+    ledger = tmp_path / "ledger.sqlite"
+    receipt_file = tmp_path / "receipt.json"
+    receipt_file.write_text(json.dumps(receipt))
+    targets = write_targets(tmp_path / "t.json", [
+        {"target_id": "flux", "canonical_name": "Fluxcapacitor Runtime"}])
+    cat = build_catalog(tmp_path / "cat.sqlite")
+    for label in ("NON-BLIND_DIAGNOSTIC", "TEST", "FORMAL2", "formal"):
+        ev.run_evaluation(receipt_file, targets,
+                          tmp_path / f"out-{label}", label=label,
+                          catalog_path=cat, skip_perturbation=True,
+                          ledger_path=str(ledger))
+    assert not ledger.exists() or not _ledger_rows(ledger)
+
+
+def test_formal_label_required_for_consumption(receipt, tmp_path):
+    """A FORMAL run claims the exact holdout bytes; a later FORMAL retry
+    with the same file fails even though a diagnostic run happened in
+    between (diagnostics never claim)."""
+    ledger = tmp_path / "ledger.sqlite"
+    receipt_file = tmp_path / "receipt.json"
+    receipt_file.write_text(json.dumps(receipt))
+    targets = write_targets(tmp_path / "t.json", [
+        {"target_id": "flux", "canonical_name": "Fluxcapacitor Runtime"}])
+    cat = build_catalog(tmp_path / "cat.sqlite")
+    ev.run_evaluation(receipt_file, targets, tmp_path / "diag",
+                      label="NON-BLIND_DIAGNOSTIC", catalog_path=cat,
+                      skip_perturbation=True, ledger_path=str(ledger))
+    assert not _ledger_rows(ledger)
+    ev.run_evaluation(receipt_file, targets, tmp_path / "formal",
+                      label="FORMAL", catalog_path=cat,
+                      skip_perturbation=True, ledger_path=str(ledger))
+    with pytest.raises(ev.HoldoutConsumedError):
+        ev.run_evaluation(receipt_file, targets, tmp_path / "formal2",
+                          label="FORMAL", catalog_path=cat,
+                          skip_perturbation=True, ledger_path=str(ledger))
+
+
+# ===========================================================================
+# v2: sample sufficiency + uncertainty
+# ===========================================================================
+
+def _agg(scorable, negatives, per_target=None, **kw):
+    a = {"scorable_targets": scorable,
+         "matched_negative_controls": negatives,
+         "negatives_per_target_avg": per_target if per_target is not None
+         else (round(negatives / scorable, 3) if scorable else None),
+         "candidate_recall_scorable": 0.9, "emerging_recall_scorable": 0.9,
+         "matched_negative_emerging_rate": 0.0,
+         "perturbation20_retention": 0.9}
+    a.update(kw)
+    return a
+
+
+def test_verdict_v2_sufficiency_gates():
+    beats = {"policy_beats_baselines": True}
+    assert ev.apply_verdict_v2(_agg(0, 0), beats) == "INSUFFICIENT_EVIDENCE"
+    assert ev.apply_verdict_v2(_agg(1, 3), beats) == "INSUFFICIENT_EVIDENCE"
+    assert ev.apply_verdict_v2(_agg(19, 40), beats) == \
+        "INSUFFICIENT_EVIDENCE"
+    # 20 targets but <40 controls
+    assert ev.apply_verdict_v2(_agg(20, 39), beats) == \
+        "INSUFFICIENT_EVIDENCE"
+    # 20 targets, 40 controls, but avg < 2.0 (e.g. 30/20)
+    assert ev.apply_verdict_v2(_agg(20, 30), beats) == \
+        "INSUFFICIENT_EVIDENCE"
+    # adequate: 20 targets, 40 controls, substantive thresholds met
+    assert ev.apply_verdict_v2(_agg(20, 40), beats) == "PASS"
+    assert ev.apply_verdict_v2(
+        _agg(25, 60, emerging_recall_scorable=0.2), beats) == "PARTIAL"
+    assert ev.apply_verdict_v2(
+        _agg(25, 60, matched_negative_emerging_rate=0.6), beats) == "FAIL"
+
+
+def test_wilson_interval_fixtures():
+    # deterministic fixtures computed from the Wilson score formula
+    # (z = 1.959963985; verified against closed-form arithmetic)
+    w = ev.wilson_interval(0, 0)
+    assert w is None
+    w = ev.wilson_interval(10, 10)
+    assert abs(w["lo"] - 0.722) < 0.001 and abs(w["hi"] - 1.0) < 0.001
+    w = ev.wilson_interval(0, 10)
+    assert w["lo"] == 0.0 and abs(w["hi"] - 0.278) < 0.001
+    w = ev.wilson_interval(5, 20)          # p=0.25
+    assert abs(w["lo"] - 0.112) < 0.001 and abs(w["hi"] - 0.469) < 0.001
+    assert w["k"] == 5 and w["n"] == 20
+
+
+def test_aggregate_includes_wilson_intervals():
+    cps = [{"target_id": "a", "checkpoints": [
+        {"checkpoint": "T", "matched": [{"concept_id": "x",
+         "lifecycle": "emerging", "world_signal": 0.5, "percentile": .9}],
+         "candidates_total": 3, "emerging_total": 1}]}]
+    negs = [{"emerging_at_T30": False}] * 4
+    pert = [{"retained_10": True, "retained_20": True}] * 2
+    agg = ev.aggregate_metrics(cps, negs, pert, 1)
+    w = agg["wilson_95"]
+    assert set(w) == {"candidate_recall_scorable",
+                      "emerging_recall_scorable",
+                      "matched_negative_emerging_rate",
+                      "perturbation10_retention",
+                      "perturbation20_retention"}
+    assert w["matched_negative_emerging_rate"]["k"] == 0
+    assert w["perturbation10_retention"]["hi"] == 1.0
+    assert agg["matched_negative_controls"] == 4
+    assert agg["negatives_per_target_avg"] == 4.0
+
+
+def test_production_discovery_hashes_unchanged(receipt):
+    """The v2 packet must not touch production discovery bytes."""
+    import ef.concept_discovery as cd
+    assert cd.POLICY_VERSION == "burst-policy-v1"
+    ev.verify_frozen(receipt)   # production file hashes still match
