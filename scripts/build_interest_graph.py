@@ -16,15 +16,22 @@ Boundary (2026-08-24 contract-fidelity packet):
     persisted.
   - Invalid provider output fails closed: no semantic DB mutation, and
     no canonical result artifact is written.
-  - MAX_CLUSTERS stays 25 with breadth-biased selection. The known
-    recall limitation is NOT fixed here — the next packet handles
-    candidate selection.
+
+Bootstrap (2026-08-24 full-coverage packet):
+  complete eligible cluster universe → deterministic bounded batches
+  (<= 25 clusters/call) → validated batch FRAGMENTS (never persisted
+  directly) → bounded auditable reconciliation tree → one final V2
+  payload → optional transactional persistence. The old single-shot
+  top-25 breadth path remains only as an explicit evaluation BASELINE.
 
 Usage:
-    python scripts/build_interest_graph.py --dry-run    # show packets
-    python scripts/build_interest_graph.py              # run inference
-    python scripts/build_interest_graph.py --provider agy  # override
-    python scripts/build_interest_graph.py --store      # persist typed graph
+    python scripts/build_interest_graph.py --dry-run     # show packets
+    python scripts/build_interest_graph.py --plan-bootstrap   # 0 provider calls
+    python scripts/build_interest_graph.py --plan-baseline    # 0 provider calls
+    python scripts/build_interest_graph.py --run-bootstrap --allow-spend
+    python scripts/build_interest_graph.py --run-bootstrap --allow-spend --store
+    python scripts/build_interest_graph.py --provider agy ...  # provider override
+    python scripts/build_interest_graph.py                   # LEGACY single-shot
 """
 
 from __future__ import annotations
@@ -42,13 +49,20 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-MAX_CLUSTERS = 25          # packets sent per inference call (breadth-biased
-                           # selection — KNOWN recall limitation, deliberately
-                           # NOT tuned by the contract-fidelity packet)
+MAX_CLUSTERS = 25          # LEGACY single-shot baseline only: one global
+                           # top-25 breadth-ranked subset. Bootstrap replaces
+                           # this truncation; kept for the evaluation baseline.
 MAX_REPS_PER_CLUSTER = 4   # representative docs per packet
 PROMPT_VERSION = "v2.1-contract-fidelity"
-CANDIDATE_POLICY = f"top{MAX_CLUSTERS}-breadth-biased"
+CANDIDATE_POLICY = f"top{MAX_CLUSTERS}-breadth-biased"   # legacy/baseline
 STDERR_DIAGNOSTIC_LIMIT = 2000
+
+# Full-coverage bootstrap bounds. Dashboard-style top-N is allowed;
+# inference bootstrap top-N is NOT.
+BOOTSTRAP_MAX_CLUSTERS_PER_CALL = 25
+MAX_FRAGMENTS_PER_RECONCILIATION = 40
+MAX_RECONCILIATION_STAGES = 8     # fail closed beyond this — never truncate
+ARTIFACT_ROOT = Path("P:/.data/yt-is/ef/interest-inference")
 
 KINDS = ("domain", "topic", "subtopic", "method", "monitor")
 TEMPORAL_STATES = ("durable", "active", "current_problem", "episodic",
@@ -431,9 +445,32 @@ def provider_command(provider: str, prompt_file: Path, prompt: str):
     return cmd, model
 
 
+def _invoke_and_extract(provider: str, prompt: str, prompt_file: Path,
+                        timeout: int = 580):
+    """Shared provider execution seam: returncode check, bounded stderr
+    diagnostic, codex JSONL agent_message extraction, JSON extraction.
+    Returns (parsed_json, requested_model) — the value is UNVALIDATED."""
+    cmd, requested_model = provider_command(provider, prompt_file, prompt)
+
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                       cwd="P:/", creationflags=creationflags)
+    if r.returncode != 0:
+        diag = (r.stderr or r.stdout or "").strip()
+        raise ProviderExecutionError(
+            f"provider {provider} exited {r.returncode}: "
+            f"{diag[-STDERR_DIAGNOSTIC_LIMIT:]}")
+
+    raw = r.stdout.strip()
+    agent_text = extract_agent_message(raw)
+    if agent_text:
+        raw = agent_text
+    return extract_json_object(raw), requested_model
+
+
 def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
                   result_path=None, timeout: int = 580):
-    """Run one inference invocation: packets → provider → validation.
+    """LEGACY single-shot baseline: one global top-25 breadth-ranked subset.
 
     Returns (payload, meta) where meta carries the inference-run
     provenance consumed by personal_graph.store_validated_inference.
@@ -455,22 +492,8 @@ def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
 
     print(f"[inference] {len(selected)} clusters, "
           f"prompt {len(prompt):,} chars -> {provider}")
-    cmd, requested_model = provider_command(provider, prompt_file, prompt)
-
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                       cwd="P:/", creationflags=creationflags)
-    if r.returncode != 0:
-        diag = (r.stderr or r.stdout or "").strip()
-        raise ProviderExecutionError(
-            f"provider {provider} exited {r.returncode}: "
-            f"{diag[-STDERR_DIAGNOSTIC_LIMIT:]}")
-
-    raw = r.stdout.strip()
-    agent_text = extract_agent_message(raw)
-    if agent_text:
-        raw = agent_text
-    payload = extract_json_object(raw)
+    payload, requested_model = _invoke_and_extract(
+        provider, prompt, prompt_file, timeout)
 
     validate_inference(payload, set(supplied))
     result_hash = canonical_result_hash(payload)
@@ -496,15 +519,537 @@ def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
     return payload, meta
 
 
+# ===========================================================================
+# Full-coverage bounded bootstrap
+# ===========================================================================
+# The legacy path above sends ONE global top-25 breadth subset (the
+# BASELINE). Bootstrap removes arbitrary candidate truncation: every
+# mechanically eligible cluster is covered exactly once across bounded
+# batches; batch outputs are validated FRAGMENTS, never canonical graph
+# state; a bounded reconciliation tree merges fragments into one final
+# V2 payload with an auditable disposition for every fragment. Failure
+# at any stage means no persistence — never a best-effort partial graph.
+
+class ReconciliationContractError(ValueError):
+    """Reconciliation output violated the fragment-disposition contract."""
+
+
+def fragment_identity_id(plan_id: str, batch_id: str, interest_name,
+                         cluster_ids) -> str:
+    payload = "\x1f".join((plan_id, batch_id, _norm_name(interest_name),
+                           ",".join(str(c) for c in sorted(cluster_ids))))
+    return "frag_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def build_fragments(plan_id: str, batch_id: str, payload: dict) -> dict:
+    """Deterministic fragment records for one validated batch payload."""
+    interests = []
+    for it in payload["inferred_interests"]:
+        interests.append({
+            "fragment_id": fragment_identity_id(
+                plan_id, batch_id, it["name"], it["cluster_ids"]),
+            "batch_id": batch_id,
+            "interest": it,
+            "cluster_ids": list(it["cluster_ids"]),
+        })
+    return {
+        "interests": interests,
+        "questions": [dict(q, batch_id=batch_id)
+                      for q in payload["questions"]],
+        "regret_candidates": [dict(rc, batch_id=batch_id)
+                              for rc in payload["regret_candidates"]],
+    }
+
+
+def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
+                        timeout: int = 580, prompt_path=None):
+    """One bounded batch: prompt from EXACTLY this batch's clusters,
+    validation against EXACTLY this batch's supplied cluster ids.
+
+    Returns (fragments, batch_meta). NEVER persists anything — batch
+    outputs are intermediate validated fragments only."""
+    supplied = [int(c["cluster_id"]) for c in batch_clusters]
+    if sorted(batch.cluster_ids) != sorted(supplied):
+        raise ValueError(
+            f"batch {batch.batch_id}: hydrated clusters {sorted(supplied)} "
+            f"do not match plan ids {sorted(batch.cluster_ids)}")
+    prompt = build_prompt(batch_clusters)
+    prompt_file = Path(prompt_path) if prompt_path else Path(
+        f"P:/tmp/interest-inference-{plan_id}-{batch.batch_id}-prompt.txt")
+    prompt_file.parent.mkdir(parents=True, exist_ok=True)
+    prompt_file.write_text(prompt, encoding="utf-8")
+
+    print(f"[batch {batch.batch_id}] {len(supplied)} clusters, "
+          f"prompt {len(prompt):,} chars -> {provider}")
+    parsed, requested_model = _invoke_and_extract(
+        provider, prompt, prompt_file, timeout)
+    validate_inference(parsed, set(supplied))
+    fragments = build_fragments(plan_id, batch.batch_id, parsed)
+    meta = {
+        "batch_id": batch.batch_id,
+        "provider": provider,
+        "requested_model": requested_model,
+        "prompt_version": PROMPT_VERSION,
+        "cluster_ids": supplied,
+        "result_hash": canonical_result_hash(parsed),
+    }
+    return fragments, meta
+
+
+RECONCILIATION_PROMPT_TEMPLATE = """You are reconciling inferred-interest fragments produced by independent batch analyses of one person's evidence clusters. The batches could not see each other, so equivalent interests may appear multiple times under different names.
+
+Fragments (JSON):
+{fragments}
+
+Reconcile them into ONE final result:
+- merge semantically equivalent interests across batches (combine their cluster_ids, keep the strongest evidence, note counterevidence)
+- discover cross-batch latent goal relationships (parent/related_to)
+- preserve unique well-supported interests
+- deduplicate questions; keep regret candidates that remain implied
+- every final interest may cite only cluster ids present in the fragments assigned to it
+
+Return ONLY valid JSON:
+{{
+  "final": {{
+    "inferred_interests": [ ...same interest schema as the fragments... ],
+    "questions": [ {{"text": "...", "interest": "...", "status": "open|watching"}} ],
+    "regret_candidates": [ ...same regret schema as the fragments... ]
+  }},
+  "fragment_dispositions": [
+    {{"fragment_id": "...", "decision": "kept|merged|discarded",
+      "target_interest": "final interest name or null",
+      "reason": "non-empty explanation"}}
+  ]
+}}
+
+Hard constraints:
+- EVERY input fragment_id appears exactly once in fragment_dispositions.
+- kept/merged require target_interest naming a final interest.
+- A fragment may be discarded ONLY for evidence/noise/duplication reasons with a non-empty reason — NEVER because of output space or any count limit.
+- Final cluster_ids must be supported by the fragments assigned to that interest.
+"""
+
+
+def _compact_fragments(group_fragments) -> str:
+    compact = []
+    for f in group_fragments:
+        item = {"fragment_id": f["fragment_id"],
+                "batch_id": f["batch_id"],
+                "cluster_ids": list(f["cluster_ids"])}
+        item.update(f["interest"])
+        compact.append(item)
+    return json.dumps(compact, ensure_ascii=False, indent=1)
+
+
+def _reconcile_group(group_fragments, provider, timeout, prompt_file,
+                     invoke=None):
+    """One reconciliation provider call over one bounded group."""
+    prompt = RECONCILIATION_PROMPT_TEMPLATE.format(
+        fragments=_compact_fragments(group_fragments))
+    prompt_file.parent.mkdir(parents=True, exist_ok=True)
+    prompt_file.write_text(prompt, encoding="utf-8")
+    fn = invoke or _invoke_and_extract
+    parsed, _model = fn(provider, prompt, prompt_file, timeout)
+    if not isinstance(parsed, dict) or "final" not in parsed or \
+            "fragment_dispositions" not in parsed:
+        raise ReconciliationContractError(
+            "reconciliation output must contain 'final' and "
+            f"'fragment_dispositions', got keys "
+            f"{list(parsed) if isinstance(parsed, dict) else type(parsed).__name__}")
+    return parsed
+
+
+def validate_reconciliation(wrapper, stage_fragments, allowed_cluster_ids):
+    """Mechanical reconciliation contract — fail closed.
+
+    - every input fragment dispositioned exactly once; no unknown ids
+    - decisions valid; kept/merged resolve to final interests
+    - discarded requires a non-empty reason
+    - final payload passes the full V2 contract against the plan universe
+    - each final interest's cluster_ids are supported by the fragments
+      assigned to it (no invented evidence)
+    """
+    if not isinstance(wrapper, dict):
+        raise ReconciliationContractError(
+            f"reconciliation wrapper must be an object, got "
+            f"{type(wrapper).__name__}")
+    dispositions = wrapper.get("fragment_dispositions")
+    if not isinstance(dispositions, list):
+        raise ReconciliationContractError(
+            "fragment_dispositions must be a list")
+    input_ids = {f["fragment_id"] for f in stage_fragments}
+    clusters_by_id = {f["fragment_id"]: set(f["cluster_ids"])
+                      for f in stage_fragments}
+
+    seen: dict = {}
+    for d in dispositions:
+        if not isinstance(d, dict):
+            raise ReconciliationContractError("disposition must be an object")
+        fid = d.get("fragment_id")
+        if fid not in input_ids:
+            raise ReconciliationContractError(
+                f"disposition references unknown fragment {fid!r}")
+        if fid in seen:
+            raise ReconciliationContractError(
+                f"fragment {fid} dispositioned twice")
+        seen[fid] = d
+
+    missing = sorted(input_ids - set(seen))
+    if missing:
+        raise ReconciliationContractError(
+            f"fragments silently dropped (no disposition): {missing[:5]}")
+
+    final = wrapper.get("final")
+    if not isinstance(final, dict):
+        raise ReconciliationContractError("'final' must be an object")
+    final_names = {_norm_name(it["name"])
+                   for it in final.get("inferred_interests", [])}
+    supported = {}
+    for fid, d in seen.items():
+        decision = d.get("decision")
+        if decision not in ("kept", "merged", "discarded"):
+            raise ReconciliationContractError(
+                f"fragment {fid}: invalid decision {decision!r}")
+        reason = d.get("reason")
+        target = d.get("target_interest")
+        if decision == "discarded":
+            if not isinstance(reason, str) or not reason.strip():
+                raise ReconciliationContractError(
+                    f"fragment {fid}: discarded without a non-empty reason")
+        else:
+            if _norm_name(target) not in final_names:
+                raise ReconciliationContractError(
+                    f"fragment {fid}: target_interest {target!r} does not "
+                    f"resolve to a final interest")
+            supported.setdefault(_norm_name(target), set()).update(
+                clusters_by_id[fid])
+
+    validate_inference(final, set(allowed_cluster_ids))
+    for it in final["inferred_interests"]:
+        allowed = supported.get(_norm_name(it["name"]), set())
+        unsupported = set(it["cluster_ids"]) - allowed
+        if unsupported:
+            raise ReconciliationContractError(
+                f"final interest {it['name']!r} cites cluster ids not "
+                f"supported by its assigned fragments: {sorted(unsupported)}")
+    return wrapper
+
+
+def reconciliation_stage_structure(n_fragments: int,
+                                   max_per_call: int =
+                                   MAX_FRAGMENTS_PER_RECONCILIATION):
+    """Worst-case shape of the bounded reconciliation tree: one list per
+    stage, each a list of group sizes, ASSUMING each stage's outputs feed
+    the next stage. Real depth depends on how much merging each stage
+    does; a stage that fails to reduce its input count fails closed
+    (see run_reconciliation_tree) rather than looping or truncating."""
+    levels = []
+    current = n_fragments
+    if current <= 0:
+        return levels
+    while True:
+        n_groups = -(-current // max_per_call)
+        sizes = [min(max_per_call, current - i * max_per_call)
+                 for i in range(n_groups)]
+        levels.append(sizes)
+        if n_groups == 1:
+            return levels
+        current = n_groups
+
+
+def run_reconciliation_tree(fragments, plan_cluster_ids, provider="codex",
+                            timeout: int = 580, prompt_path=None,
+                            invoke=None, stage_writer=None,
+                            max_per_call: int =
+                            MAX_FRAGMENTS_PER_RECONCILIATION):
+    """Bounded recursive reconciliation over ALL fragments.
+
+    Returns {"final", "fragment_dispositions" (flattened to LEAF
+    fragments), "stages" (raw per-stage records), "provider_calls"}.
+    No arbitrary truncation: every leaf fragment retains an auditable
+    disposition chain to the final result."""
+    leaf_records = sorted(fragments["interests"],
+                          key=lambda f: f["fragment_id"])
+    stage_records = []
+    current = leaf_records
+    final_wrapper = None
+    provider_calls = 0
+    stage = 0
+    while True:
+        stage += 1
+        groups = [current[i:i + max_per_call]
+                  for i in range(0, len(current), max_per_call)]
+        is_last = len(groups) == 1
+        record = {"stage": stage, "group_sizes": [len(g) for g in groups],
+                  "dispositions": [], "outputs": {}}
+        next_current = []
+        for gi, group in enumerate(groups):
+            prompt_file = Path(prompt_path) if prompt_path else Path(
+                f"P:/tmp/interest-reconciliation-s{stage}-g{gi + 1:03d}.txt")
+            wrapper = _reconcile_group(group, provider, timeout, prompt_file,
+                                       invoke=invoke)
+            provider_calls += 1
+            validate_reconciliation(wrapper, group, plan_cluster_ids)
+            record["dispositions"].extend(wrapper["fragment_dispositions"])
+            if is_last:
+                final_wrapper = wrapper
+            else:
+                for it in wrapper["final"]["inferred_interests"]:
+                    nid = fragment_identity_id(
+                        f"recon-s{stage}", f"g{gi + 1:03d}", it["name"],
+                        it["cluster_ids"])
+                    record["outputs"][_norm_name(it["name"])] = nid
+                    next_current.append({
+                        "fragment_id": nid,
+                        "batch_id": f"recon-s{stage}-g{gi + 1:03d}",
+                        "interest": it,
+                        "cluster_ids": list(it["cluster_ids"]),
+                    })
+        stage_records.append(record)
+        if stage_writer:
+            stage_writer(stage, record)
+        if is_last:
+            break
+        if len(next_current) >= len(current):
+            raise ReconciliationContractError(
+                f"reconciliation stage {stage} did not reduce the fragment "
+                f"count ({len(current)} -> {len(next_current)}); the "
+                f"bounded tree cannot converge without truncation — "
+                f"failing closed")
+        if stage >= MAX_RECONCILIATION_STAGES:
+            raise ReconciliationContractError(
+                f"reconciliation exceeded {MAX_RECONCILIATION_STAGES} "
+                f"stages; failing closed rather than truncating")
+        current = sorted(next_current, key=lambda f: f["fragment_id"])
+
+    leaf_dispositions = _flatten_leaf_dispositions(stage_records,
+                                                   leaf_records)
+    return {"final": final_wrapper["final"],
+            "fragment_dispositions": leaf_dispositions,
+            "stages": stage_records,
+            "provider_calls": provider_calls}
+
+
+def _flatten_leaf_dispositions(stage_records, leaf_records):
+    """Walk every leaf fragment through the stage chain to its terminal
+    disposition. A leaf discarded at any stage is terminal-discarded;
+    otherwise the final stage's target_interest is the terminal result."""
+    if len(stage_records) == 1:
+        return stage_records[0]["dispositions"]
+    out = []
+    for leaf in leaf_records:
+        cur = leaf["fragment_id"]
+        decision = target = reason_chain = None
+        for si, rec in enumerate(stage_records):
+            disp = {d["fragment_id"]: d for d in rec["dispositions"]}.get(cur)
+            if disp is None:
+                raise ReconciliationContractError(
+                    f"fragment {cur} has no disposition at stage "
+                    f"{si + 1} during lineage flattening")
+            if disp["decision"] == "discarded":
+                decision, target = "discarded", None
+                reason_chain = [disp["reason"]]
+                break
+            nxt = None
+            if si + 1 < len(stage_records):
+                nxt = stage_records[si]["outputs"].get(
+                    _norm_name(disp["target_interest"]))
+            if nxt is None:
+                decision = disp["decision"]
+                target = disp["target_interest"]
+                reason_chain = [disp["reason"]]
+                break
+            reason_chain = [disp["reason"]]
+            cur = nxt
+        out.append({"fragment_id": leaf["fragment_id"],
+                    "decision": decision,
+                    "target_interest": target,
+                    "reason": "; ".join(r for r in reason_chain if r)})
+    return out
+
+
+def _write_json(path: Path, obj) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+
+
+def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
+                  timeout: int = 580, store=False, inventory=None,
+                  hydrate=None, invoke=None):
+    """Execute the full-coverage bounded bootstrap end to end.
+
+    Fail-closed: any batch/reconciliation/validation failure marks the
+    run failed and NOTHING is persisted. Only with store=True is the
+    single final reconciled payload persisted through the existing
+    transactional path. Batch fragments are never persisted canonically.
+    """
+    if not allow_spend:
+        raise PermissionError(
+            "multi-call bootstrap requires explicit --allow-spend")
+    from ef.evidence_clusters import evidence_cluster_inventory, \
+        hydrate_evidence_clusters
+    from ef.interest_candidates import build_bootstrap_plan, \
+        validate_plan_coverage
+
+    if inventory is None:
+        inventory = evidence_cluster_inventory()
+    plan = build_bootstrap_plan(
+        inventory["clusters"],
+        max_per_call=BOOTSTRAP_MAX_CLUSTERS_PER_CALL,
+        exclusions=inventory.get("exclusions", {}))
+    validate_plan_coverage(plan, BOOTSTRAP_MAX_CLUSTERS_PER_CALL)
+
+    run_dir = Path(artifact_root) if artifact_root else (
+        ARTIFACT_ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}_{plan.plan_id}")
+    _write_json(run_dir / "plan.json", plan.to_dict())
+    _write_json(run_dir / "inventory-summary.json", {
+        "total_semantic_non_series":
+            inventory.get("total_semantic_non_series"),
+        "eligible_count": inventory.get("eligible_count"),
+        "exclusions": inventory.get("exclusions", {}),
+    })
+
+    hydrate_fn = hydrate or hydrate_evidence_clusters
+    all_fragments = {"interests": [], "questions": [],
+                     "regret_candidates": []}
+    provider_calls = 0
+    requested_model = None
+    try:
+        for i, batch in enumerate(plan.batches, 1):
+            packets = hydrate_fn(list(batch.cluster_ids))
+            fragments, meta = run_batch_inference(
+                plan.plan_id, batch, packets, provider=provider,
+                timeout=timeout)
+            provider_calls += 1
+            requested_model = meta["requested_model"]
+            _write_json(run_dir / f"batch-{i:02d}-input-metadata.json", {
+                "batch_id": batch.batch_id,
+                "cluster_ids": list(batch.cluster_ids)})
+            _write_json(run_dir / f"batch-{i:02d}-validated-result.json",
+                        {"meta": meta, "fragments": fragments})
+            all_fragments["interests"].extend(fragments["interests"])
+            all_fragments["questions"].extend(fragments["questions"])
+            all_fragments["regret_candidates"].extend(
+                fragments["regret_candidates"])
+
+        recon = run_reconciliation_tree(
+            all_fragments, list(plan.eligible_cluster_ids), provider,
+            timeout, invoke=invoke,
+            stage_writer=lambda s, rec: _write_json(
+                run_dir / f"reconciliation-stage-{s:02d}.json", rec))
+        provider_calls += recon["provider_calls"]
+        validate_inference(recon["final"], set(plan.eligible_cluster_ids))
+        _write_json(run_dir / "final-validated-result.json", recon)
+
+        summary = {
+            "status": "success", "plan_id": plan.plan_id,
+            "policy": plan.policy, "provider": provider,
+            "provider_calls": provider_calls,
+            "batches": len(plan.batches),
+            "eligible_clusters": len(plan.eligible_cluster_ids),
+            "fragments": len(all_fragments["interests"]),
+            "final_interests": len(recon["final"]["inferred_interests"]),
+            "dispositions": len(recon["fragment_dispositions"]),
+        }
+        _write_json(run_dir / "run-summary.json", summary)
+    except Exception as exc:
+        summary = {
+            "status": "failed", "plan_id": plan.plan_id,
+            "policy": plan.policy, "provider": provider,
+            "provider_calls": provider_calls,
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:STDERR_DIAGNOSTIC_LIMIT],
+        }
+        _write_json(run_dir / "run-summary.json", summary)
+        raise
+
+    if store:
+        from ef.personal_graph import connect, store_validated_inference
+        run_id = (f"run_{time.strftime('%Y%m%dT%H%M%S')}_"
+                  f"{canonical_result_hash(recon['final'])[:8]}")
+        conn = connect()
+        try:
+            store_validated_inference(
+                conn, recon["final"], run_id=run_id, provider=provider,
+                model=requested_model or provider,
+                prompt_version=PROMPT_VERSION,
+                candidate_policy=plan.policy,
+                cluster_ids=list(plan.eligible_cluster_ids),
+                result_hash=canonical_result_hash(recon["final"]))
+        finally:
+            conn.close()
+    return {"run_dir": str(run_dir), "summary": summary,
+            "final": recon["final"],
+            "fragment_dispositions": recon["fragment_dispositions"]}
+
+
+def _plan_artifact_dir(artifact_root, plan_id) -> Path:
+    root = Path(artifact_root) if artifact_root else ARTIFACT_ROOT
+    d = root / f"{time.strftime('%Y%m%dT%H%M%S')}_{plan_id}"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def main(argv=None) -> int:
     from csf.paths import load_workspace_env
     load_workspace_env()
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        description="Interest inference. Plain invocation is the LEGACY "
+                    "single-shot top-25 baseline, not the authoritative "
+                    "bootstrap; use --run-bootstrap for full coverage.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--provider", default="codex")
     ap.add_argument("--store", action="store_true",
                     help="store results in the typed tables")
+    ap.add_argument("--plan-bootstrap", action="store_true",
+                    help="write the full-coverage bootstrap plan (zero "
+                         "provider calls)")
+    ap.add_argument("--plan-baseline", action="store_true",
+                    help="write the legacy top-25 baseline plan (zero "
+                         "provider calls)")
+    ap.add_argument("--run-bootstrap", action="store_true",
+                    help="execute all planned bootstrap batches plus "
+                         "reconciliation (requires --allow-spend)")
+    ap.add_argument("--allow-spend", action="store_true",
+                    help="authorize multi-call provider execution")
+    ap.add_argument("--artifact-dir", default=None,
+                    help="override runtime artifact root (tests)")
     a = ap.parse_args(argv)
+
+    if a.plan_bootstrap or a.plan_baseline:
+        from ef.evidence_clusters import evidence_cluster_inventory
+        from ef.interest_candidates import build_baseline_plan, \
+            build_bootstrap_plan
+        inventory = evidence_cluster_inventory()
+        if a.plan_bootstrap:
+            plan = build_bootstrap_plan(
+                inventory["clusters"],
+                max_per_call=BOOTSTRAP_MAX_CLUSTERS_PER_CALL,
+                exclusions=inventory.get("exclusions", {}))
+        else:
+            plan = build_baseline_plan(
+                inventory["clusters"], exclusions=inventory.get(
+                    "exclusions", {}))
+        out = _plan_artifact_dir(a.artifact_dir, plan.plan_id)
+        _write_json(out / "plan.json", plan.to_dict())
+        _write_json(out / "inventory-summary.json", {
+            "total_semantic_non_series":
+                inventory.get("total_semantic_non_series"),
+            "eligible_count": inventory.get("eligible_count"),
+            "exclusions": inventory.get("exclusions", {}),
+        })
+        print(f"[plan] {plan.policy} {plan.plan_id}: "
+              f"{plan.metrics.planned_count}/{plan.metrics.eligible_count} "
+              f"clusters, {plan.metrics.batch_count} batches "
+              f"(max {plan.metrics.max_batch_size}) -> {out / 'plan.json'}")
+        return 0
+
+    if a.run_bootstrap:
+        result = run_bootstrap(provider=a.provider, allow_spend=a.allow_spend,
+                               artifact_root=a.artifact_dir, store=a.store)
+        print(json.dumps(result["summary"], indent=2))
+        return 0
 
     if a.dry_run:
         from ef.evidence_clusters import cached_clusters

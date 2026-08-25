@@ -388,3 +388,470 @@ def test_invalid_output_never_reaches_storage(monkeypatch, tmp_path,
 def test_canonical_result_hash_is_stable_for_identical_output():
     assert big.canonical_result_hash(valid_payload()) == \
         big.canonical_result_hash(valid_payload())
+
+
+# ===========================================================================
+# Full-coverage bounded bootstrap
+# ===========================================================================
+
+def cheap_entry(cid, **overrides):
+    entry = {
+        "cluster_id": cid, "label": f"cluster-{cid}",
+        "member_count": 40 + cid, "video_count": 10 + cid,
+        "channels": 4 + (cid % 7), "documents": 50 + 10 * cid,
+        "active_months": 5 + (cid % 4),
+        "first_month": "2025-01", "last_month": "2026-08",
+        "phase": "emerging" if cid % 17 == 0 else None,
+        "sources": [["youtube", 30], ["discord", 10 + cid % 5], ["hn", 5]],
+        "terms": [f"term{cid}a", f"term{cid}b"],
+        "evidence_signature": f"sig{cid:04d}",
+    }
+    entry.update(overrides)
+    return entry
+
+
+NARROW_CID = 58          # the distinctive narrow-interest cluster
+NARROW_NAME = "Gardening soil chemistry"
+
+
+def inventory_of(n=60, narrow=True):
+    entries = []
+    for cid in range(1, n + 1):
+        if narrow and cid == NARROW_CID:
+            entries.append(cheap_entry(
+                cid, label="gardening-soil-chemistry", channels=3,
+                documents=45, active_months=3,
+                sources=[["youtube", 45], ["reddit", 2]]))
+        else:
+            entries.append(cheap_entry(cid))
+    return {"clusters": entries, "eligible_count": len(entries),
+            "total_semantic_non_series": len(entries) + 3,
+            "exclusions": {"series": 2, "member_count_below_floor": 1,
+                           "channels_below_floor": 0}}
+
+
+def synth_packet(cid, label=None):
+    return {"cluster_id": cid, "label": label or f"cluster-{cid}",
+            "terms": [f"t{cid}a", f"t{cid}b"],
+            "entities": [{"entity": f"Entity{cid}", "videos": 5,
+                          "specificity": 0.5}],
+            "channels": 4, "documents": 10 + cid,
+            "videos": 10 + cid, "active_months": 4,
+            "first_month": "2026-01", "last_month": "2026-07",
+            "sources": [["youtube", 5 + cid]],
+            "phase": None,
+            "representative": [{"title": f"Doc {cid}", "month": "2026-05",
+                                "source": "youtube"}]}
+
+
+def make_fake_invoke(special=None, merge_pairs=False):
+    """Dispatcher faking both seams (batch inference + reconciliation).
+
+    Batch prompts emit one interest per cluster (paired two-per-interest
+    when merge_pairs=True so reconciliation stays single-stage for 60
+    clusters); special names a cluster's unique interest. Reconciliation
+    prompts are identity-merged (kept, one fragment per interest)."""
+    import re
+
+    def invoke(provider, prompt, prompt_file, timeout):
+        if "Fragments (JSON):" in prompt:
+            blob = prompt.split("Fragments (JSON):\n", 1)[1] \
+                        .split("\n\nReconcile them", 1)[0]
+            frags = json.loads(blob)
+            final_interests, dispositions = [], []
+            for f in frags:
+                it = {k: v for k, v in f.items()
+                      if k not in ("fragment_id", "batch_id")}
+                final_interests.append(it)
+                dispositions.append({
+                    "fragment_id": f["fragment_id"], "decision": "kept",
+                    "target_interest": it["name"],
+                    "reason": "identity reconciliation for test"})
+            return ({"final": {"inferred_interests": final_interests,
+                               "questions": [], "regret_candidates": []},
+                     "fragment_dispositions": dispositions}, "fake-model")
+
+        cids = sorted(int(m) for m in
+                      re.findall(r"^Cluster (\d+):", prompt, re.M))
+        interests = []
+        if merge_pairs:
+            for i in range(0, len(cids), 2):
+                pair = cids[i:i + 2]
+                special_name = next(
+                    (special[c] for c in pair if c in (special or {})), None)
+                name = special_name or \
+                    f"Interest of clusters {pair[0]}-{pair[-1]}"
+                interests.append({
+                    "name": name, "kind": "topic", "parent": None,
+                    "temporal_state": "active", "stance": "learning",
+                    "confidence": 0.7,
+                    "observed_vs_inferred": "observed", "goal": None,
+                    "information_need": None, "cluster_ids": pair,
+                    "evidence_summary": f"clusters {pair}",
+                    "counterevidence": None, "related_to": []})
+        else:
+            for cid in cids:
+                name = (special or {}).get(cid, f"Interest of cluster {cid}")
+                interests.append({
+                    "name": name, "kind": "topic", "parent": None,
+                    "temporal_state": "active", "stance": "learning",
+                    "confidence": 0.7,
+                    "observed_vs_inferred": "observed", "goal": None,
+                    "information_need": None, "cluster_ids": [cid],
+                    "evidence_summary": f"cluster {cid} evidence",
+                    "counterevidence": None, "related_to": []})
+        return ({"inferred_interests": interests, "questions": [],
+                 "regret_candidates": []}, "fake-model")
+
+    return invoke
+
+
+# --- fragments -------------------------------------------------------------
+
+def test_fragment_ids_deterministic():
+    plan = "plan_abc123"
+    f1 = big.build_fragments(plan, "b001", valid_payload())
+    f2 = big.build_fragments(plan, "b001", valid_payload())
+    assert [i["fragment_id"] for i in f1["interests"]] == \
+        [i["fragment_id"] for i in f2["interests"]]
+    other = big.build_fragments(plan, "b002", valid_payload())
+    assert f1["interests"][0]["fragment_id"] != \
+        other["interests"][0]["fragment_id"]
+    assert all(i["fragment_id"].startswith("frag_")
+               for i in f1["interests"])
+
+
+# --- batch inference --------------------------------------------------------
+
+def test_run_batch_inference_uses_exact_batch_ids(monkeypatch, tmp_path):
+    from ef.interest_candidates import build_bootstrap_plan
+    plan = build_bootstrap_plan(inventory_of(n=30)["clusters"])
+    batch = plan.batches[0]
+    captured = {}
+
+    def invoke(provider, prompt, prompt_file, timeout):
+        captured["prompt"] = prompt
+        import re
+        cids = sorted(int(m) for m in
+                      re.findall(r"^Cluster (\d+):", prompt, re.M))
+        interest = {"name": f"Interest of cluster {cids[0]}",
+                    "kind": "topic", "parent": None,
+                    "temporal_state": "active", "stance": "learning",
+                    "confidence": 0.7, "observed_vs_inferred": "observed",
+                    "goal": None, "information_need": None,
+                    "cluster_ids": [cids[0]],
+                    "evidence_summary": "evidence", "counterevidence": None,
+                    "related_to": []}
+        return ({"inferred_interests": [interest], "questions": [],
+                 "regret_candidates": []}, "fake-model")
+
+    monkeypatch.setattr(big, "_invoke_and_extract", invoke)
+    fragments, meta = big.run_batch_inference(
+        plan.plan_id, batch, [synth_packet(c) for c in batch.cluster_ids],
+        prompt_path=tmp_path / "p.txt")
+    import re
+    in_prompt = {int(m) for m in
+                 re.findall(r"^Cluster (\d+):", captured["prompt"], re.M)}
+    assert in_prompt == set(batch.cluster_ids)
+    assert meta["cluster_ids"] == list(batch.cluster_ids)
+    assert meta["requested_model"] == "fake-model"
+
+
+def test_run_batch_inference_rejects_foreign_cluster(monkeypatch, tmp_path):
+    from ef.interest_candidates import build_bootstrap_plan
+    plan = build_bootstrap_plan(inventory_of(n=26)["clusters"])
+    batch = plan.batches[0]
+
+    def invoke(provider, prompt, prompt_file, timeout):
+        payload = valid_payload()   # cites clusters {1,2,3,4}-shaped refs
+        return payload, "fake-model"
+
+    monkeypatch.setattr(big, "_invoke_and_extract", invoke)
+    with pytest.raises(big.InferenceContractError):
+        big.run_batch_inference(
+            plan.plan_id, batch,
+            [synth_packet(c) for c in batch.cluster_ids],
+            prompt_path=tmp_path / "p.txt")
+
+
+# --- reconciliation contract -------------------------------------------------
+
+def leaf_fragment(name, cids, fid):
+    return {"fragment_id": fid, "batch_id": "b001",
+            "interest": {"name": name, "kind": "topic", "parent": None,
+                         "temporal_state": "active", "stance": "learning",
+                         "confidence": 0.7,
+                         "observed_vs_inferred": "observed", "goal": None,
+                         "information_need": None,
+                         "cluster_ids": list(cids),
+                         "evidence_summary": f"evidence {name}",
+                         "counterevidence": None, "related_to": []},
+            "cluster_ids": list(cids)}
+
+
+def recon_wrapper(interests, dispositions):
+    return {"final": {"inferred_interests": interests, "questions": [],
+                      "regret_candidates": []},
+            "fragment_dispositions": dispositions}
+
+
+def kept(fid, name):
+    return {"fragment_id": fid, "decision": "kept",
+            "target_interest": name, "reason": "well supported"}
+
+
+def test_validate_reconciliation_accepts_valid():
+    frags = [leaf_fragment("Distributed Databases", [1], "f1"),
+             leaf_fragment("Compiler Optimization", [2], "f2")]
+    interests = [dict(frags[0]["interest"], cluster_ids=[1]),
+                 dict(frags[1]["interest"], cluster_ids=[2])]
+    big.validate_reconciliation(
+        recon_wrapper(interests, [kept("f1", "Distributed Databases"),
+                                  kept("f2", "Compiler Optimization")]),
+        frags, {1, 2, 3, 4})
+
+
+def _expect_recon_error(wrapper, frags, allowed={1, 2, 3, 4}):
+    with pytest.raises(big.ReconciliationContractError):
+        big.validate_reconciliation(wrapper, frags, allowed)
+
+
+def test_validate_reconciliation_rejections():
+    frags = [leaf_fragment("A", [1], "f1"), leaf_fragment("B", [2], "f2")]
+    ia = dict(frags[0]["interest"], cluster_ids=[1])
+    ib = dict(frags[1]["interest"], cluster_ids=[2])
+    ok = [kept("f1", "A"), kept("f2", "B")]
+
+    _expect_recon_error(recon_wrapper([ia, ib], [kept("f9", "A")] + ok[1:]),
+                        frags)                                   # unknown id
+    _expect_recon_error(recon_wrapper([ia, ib], [ok[0]]), frags)  # missing
+    _expect_recon_error(recon_wrapper([ia, ib], ok + [ok[0]]), frags)  # dup
+    bad_decision = [dict(kept("f1", "A"), decision="lost"), ok[1]]
+    _expect_recon_error(recon_wrapper([ia, ib], bad_decision), frags)
+    unknown_target = [dict(kept("f1", "Gardening")), ok[1]]
+    _expect_recon_error(recon_wrapper([ia, ib], unknown_target), frags)
+    no_reason = [dict(kept("f1", "A"), decision="discarded",
+                      target_interest=None, reason="  "), ok[1]]
+    _expect_recon_error(recon_wrapper([ia, ib], no_reason), frags)
+    invented = [dict(ia, cluster_ids=[1, 3]), ib]
+    _expect_recon_error(recon_wrapper(invented, ok), frags)  # cid 3 unassigned
+    _expect_recon_error({"no": "wrapper"}, frags)             # wrong shape
+    _expect_recon_error(recon_wrapper([ia, ib], "nope"), frags)  # bad list
+
+
+# --- bounded tree ------------------------------------------------------------
+
+def test_reconciliation_stage_structure_bounds():
+    assert big.reconciliation_stage_structure(40) == [[40]]
+    assert big.reconciliation_stage_structure(41) == [[40, 1], [2]]
+    assert big.reconciliation_stage_structure(100) == [[40, 40, 20], [3]]
+    assert big.reconciliation_stage_structure(0) == []
+
+
+def merging_invoke(provider, prompt, prompt_file, timeout):
+    """Reconciler that merges fragments sharing a normalized name."""
+    blob = prompt.split("Fragments (JSON):\n", 1)[1] \
+                .split("\n\nReconcile them", 1)[0]
+    frags = json.loads(blob)
+    by_name = {}
+    order = []
+    for f in frags:
+        key = " ".join(f["name"].strip().casefold().split())
+        if key not in by_name:
+            by_name[key] = {"name": f["name"], "cluster_ids": set()}
+            order.append(key)
+        by_name[key]["cluster_ids"].update(f["cluster_ids"])
+    interests = []
+    for key in order:
+        merged = by_name[key]
+        interests.append({"name": merged["name"], "kind": "topic",
+                          "parent": None, "temporal_state": "active",
+                          "stance": "learning", "confidence": 0.7,
+                          "observed_vs_inferred": "observed", "goal": None,
+                          "information_need": None,
+                          "cluster_ids": sorted(merged["cluster_ids"]),
+                          "evidence_summary": "merged",
+                          "counterevidence": None, "related_to": []})
+    name_by_key = {i["name"]:
+                   " ".join(i["name"].strip().casefold().split())
+                   for i in interests}
+    dispositions = []
+    for f in frags:
+        key = " ".join(f["name"].strip().casefold().split())
+        target = next(n for n, k in name_by_key.items() if k == key)
+        dispositions.append({"fragment_id": f["fragment_id"],
+                             "decision": "merged",
+                             "target_interest": target,
+                             "reason": "same interest across batches"})
+    return ({"final": {"inferred_interests": interests, "questions": [],
+                       "regret_candidates": []},
+             "fragment_dispositions": dispositions}, "fake-model")
+
+
+def make_named_fragments(n_names, copies=2):
+    """n_names*copies leaf fragments where every `copies` share a name."""
+    frags = []
+    for i in range(n_names):
+        for c in range(copies):
+            frags.append(leaf_fragment(
+                f"Interest {i}", [i * copies + c + 1],
+                f"frag_{i:03d}{c}"))
+    return sorted(frags, key=lambda f: f["fragment_id"])
+
+
+def test_bounded_tree_recursive_and_audited():
+    frags = make_named_fragments(25, copies=2)      # 50 fragments, 25 names
+    result = big.run_reconciliation_tree(
+        {"interests": frags, "questions": [], "regret_candidates": []},
+        list(range(1, 51)), invoke=merging_invoke)
+    assert len(result["stages"]) == 2               # 50 -> 25 -> 1 call
+    assert result["provider_calls"] == 3            # 2 groups + final
+    assert len(result["fragment_dispositions"]) == 50
+    assert all(d["decision"] == "merged" for d in result["fragment_dispositions"])
+    assert len(result["final"]["inferred_interests"]) == 25
+
+
+def test_bounded_tree_fails_closed_when_no_reduction():
+    frags = [leaf_fragment(f"Unique {i}", [i + 1], f"frag_u{i}")
+             for i in range(45)]                     # 45 unique names
+    with pytest.raises(big.ReconciliationContractError, match="reduce"):
+        big.run_reconciliation_tree(
+            {"interests": frags, "questions": [], "regret_candidates": []},
+            list(range(1, 46)), invoke=merging_invoke)
+
+
+def test_flatten_leaf_dispositions_walks_stages():
+    # unit-level: leaf -> intermediate -> final chain
+    stage_records = [
+        {"stage": 1, "group_sizes": [40, 1], "dispositions": [
+            {"fragment_id": "leaf_a", "decision": "merged",
+             "target_interest": "Deep Topic", "reason": "same topic"},
+            {"fragment_id": "leaf_b", "decision": "discarded",
+             "target_interest": None, "reason": "noise"},
+        ], "outputs": {"deep topic": "inter_1"}},
+        {"stage": 2, "group_sizes": [2], "dispositions": [
+            {"fragment_id": "inter_1", "decision": "kept",
+             "target_interest": "Deep Topic Final", "reason": "supported"},
+        ], "outputs": {}},
+    ]
+    leaves = [leaf_fragment("Deep Topic", [1], "leaf_a"),
+              leaf_fragment("Noise", [2], "leaf_b")]
+    out = {d["fragment_id"]: d for d in
+           big._flatten_leaf_dispositions(stage_records, leaves)}
+    assert out["leaf_a"]["decision"] == "kept"
+    assert out["leaf_a"]["target_interest"] == "Deep Topic Final"
+    assert out["leaf_b"]["decision"] == "discarded"
+
+
+# --- bootstrap runner ---------------------------------------------------------
+
+def run_fake_bootstrap(tmp_path, monkeypatch, inventory, invoke, **kw):
+    monkeypatch.setattr(big, "_invoke_and_extract", invoke)
+    return big.run_bootstrap(
+        allow_spend=True, artifact_root=tmp_path, inventory=inventory,
+        hydrate=lambda ids: [synth_packet(c) for c in ids],
+        invoke=invoke, **kw)
+
+
+def test_run_bootstrap_requires_allow_spend(tmp_path):
+    with pytest.raises(PermissionError):
+        big.run_bootstrap(allow_spend=False, artifact_root=tmp_path,
+                          inventory=inventory_of(n=30),
+                          hydrate=lambda ids: [synth_packet(c) for c in ids])
+
+
+def test_run_bootstrap_happy_path_artifacts(tmp_path, monkeypatch):
+    invoke = make_fake_invoke(merge_pairs=True)
+    result = run_fake_bootstrap(tmp_path, monkeypatch, inventory_of(n=30),
+                                invoke)
+    run_dir = Path(result["run_dir"])
+    assert result["summary"]["status"] == "success"
+    assert result["summary"]["batches"] == 2
+    assert result["summary"]["provider_calls"] == 3   # 2 batches + 1 recon
+    for name in ("plan.json", "inventory-summary.json",
+                 "batch-01-input-metadata.json",
+                 "batch-01-validated-result.json",
+                 "batch-02-input-metadata.json",
+                 "batch-02-validated-result.json",
+                 "reconciliation-stage-01.json",
+                 "final-validated-result.json", "run-summary.json"):
+        assert (run_dir / name).exists(), f"missing artifact {name}"
+    assert str(run_dir).startswith(str(tmp_path))     # outside source tree
+    covered = set()
+    for it in result["final"]["inferred_interests"]:
+        covered.update(it["cluster_ids"])
+    assert covered == set(range(1, 31))
+
+
+def test_run_bootstrap_fail_closed_on_bad_batch(tmp_path, monkeypatch):
+    good = make_fake_invoke(merge_pairs=True)
+
+    def invoke(provider, prompt, prompt_file, timeout):
+        if "Fragments (JSON):" in prompt:
+            return good(provider, prompt, prompt_file, timeout)
+        payload, model = good(provider, prompt, prompt_file, timeout)
+        if "Cluster 26:" in prompt:          # batch 2 covers clusters 26-30
+            payload = valid_payload()        # wrong cluster refs
+        return payload, model
+
+    with pytest.raises(big.InferenceContractError):
+        run_fake_bootstrap(tmp_path, monkeypatch, inventory_of(n=30), invoke)
+    summaries = list(Path(tmp_path).rglob("run-summary.json"))
+    assert summaries and json.loads(
+        summaries[0].read_text(encoding="utf-8"))["status"] == "failed"
+    assert not list(Path(tmp_path).rglob("final-validated-result.json"))
+
+
+def test_run_bootstrap_fail_closed_on_reconciliation(tmp_path, monkeypatch):
+    base = make_fake_invoke(merge_pairs=True)
+
+    def invoke(provider, prompt, prompt_file, timeout):
+        if "Fragments (JSON):" not in prompt:
+            return base(provider, prompt, prompt_file, timeout)
+        wrapper, model = base(provider, prompt, prompt_file, timeout)
+        wrapper["fragment_dispositions"] = wrapper["fragment_dispositions"][:-1]
+        return wrapper, model                    # silently drops a fragment
+
+    with pytest.raises(big.ReconciliationContractError):
+        run_fake_bootstrap(tmp_path, monkeypatch, inventory_of(n=30), invoke)
+    assert not list(Path(tmp_path).rglob("final-validated-result.json"))
+
+
+# --- discriminating root-cause test (§18) ------------------------------------
+
+def test_baseline_misses_narrow_cluster_bootstrap_recovers_it(
+        tmp_path, monkeypatch):
+    from ef.interest_candidates import (build_baseline_plan,
+                                        build_bootstrap_plan, plan_coverage)
+    inventory = inventory_of(n=60)
+
+    # A: baseline top-25 structurally excludes the narrow cluster.
+    baseline = build_baseline_plan(inventory["clusters"])
+    assert NARROW_CID not in {c for b in baseline.batches
+                              for c in b.cluster_ids}
+    assert baseline.metrics.planned_count == 25
+    assert baseline.metrics.dropped_count == 35
+
+    # B: bootstrap covers every eligible cluster exactly once.
+    bootstrap = build_bootstrap_plan(inventory["clusters"])
+    cov = plan_coverage(bootstrap)
+    assert cov["covered"] == 60 and cov["eligible"] == 60
+    assert not cov["missing_cluster_ids"] and not cov["duplicate_cluster_ids"]
+    assert NARROW_CID in {c for b in bootstrap.batches
+                          for c in b.cluster_ids}
+
+    # C: mocked end-to-end bootstrap retains the unique narrow interest.
+    invoke = make_fake_invoke(special={NARROW_CID: NARROW_NAME},
+                              merge_pairs=True)
+    result = run_fake_bootstrap(tmp_path, monkeypatch, inventory, invoke)
+    assert result["summary"]["status"] == "success"
+    names = {it["name"] for it in result["final"]["inferred_interests"]}
+    assert NARROW_NAME in names
+    narrow = next(it for it in result["final"]["inferred_interests"]
+                  if it["name"] == NARROW_NAME)
+    assert NARROW_CID in narrow["cluster_ids"]
+    # no top-N truncation: every eligible cluster appears in the final graph
+    covered = set()
+    for it in result["final"]["inferred_interests"]:
+        covered.update(it["cluster_ids"])
+    assert covered == set(range(1, 61))

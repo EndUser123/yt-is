@@ -1,5 +1,6 @@
 # yt-is Personal Intelligence — Inference State
-Updated: 2026-08-24 by architect handoff; v2 contract-fidelity implementer pass
+Updated: 2026-08-24 by architect handoff; v2 contract-fidelity and
+full-coverage bootstrap implementer passes
 
 ## Goal & constraints
 
@@ -35,6 +36,10 @@ Updated: 2026-08-24 by architect handoff; v2 contract-fidelity implementer pass
 - 2026-08-24: [seen] V2 inference output must validate fail-closed before
   persistence; accepted semantic objects use deterministic identity and one
   transactional typed-graph write with inference-run provenance.
+- 2026-08-24: [seen] Bootstrap inference must not truncate the mechanically
+  eligible cluster universe to a global top-N; it uses deterministic bounded
+  cluster batches plus bounded auditable reconciliation, while the prior
+  top-25 breadth policy remains an explicit baseline.
 
 ## Current state
 
@@ -58,8 +63,22 @@ Updated: 2026-08-24 by architect handoff; v2 contract-fidelity implementer pass
 - [seen] Focused offline regression tests cover contract rejection,
   fail-closed behavior, typed persistence, idempotence, rollback, and
   provider-output parsing.
-- [seen] Current inference sends at most 25 clusters from a breadth-ranked
-  candidate set.
+- [seen] The former top-25 breadth policy remains available only as an
+  explicit evaluation baseline.
+- [seen] Bootstrap candidate planning enumerates the complete mechanically
+  eligible cluster universe and covers each eligible cluster exactly once
+  across bounded batches of at most 25.
+- [seen] Batch inference outputs are validated intermediates and are not
+  persisted directly as canonical graph state.
+- [seen] Global reconciliation is bounded recursively and requires an
+  auditable disposition for every semantic fragment before final V2
+  validation/persistence.
+- [seen] Read-only current-corpus planning confirmed bootstrap candidate
+  coverage of 319/319 eligible clusters (100.0%) across 13 batches; this is
+  candidate coverage, not yet personal-interest recall.
+- [seen] Focused offline tests cover inventory completeness, batch coverage,
+  top-N baseline contrast, bounded reconciliation, fragment disposition
+  integrity, and fail-closed behavior.
 - [claimed] One live inference produced coherent software, trading, options,
   macro, media-production, and knowledge-automation interests/goals.
 - [claimed] That reported result did not visibly recover several deliberately
@@ -79,7 +98,7 @@ Updated: 2026-08-24 by architect handoff; v2 contract-fidelity implementer pass
 
 ## Next action
 
-Implement and falsify a bounded high-recall candidate-selection strategy,
-then run the private blinded interest-recovery and perturbation/stability
-gate. Do not begin recommendation-ranking optimization until that gate
-passes.
+Run a fresh, contamination-separated evaluator comparing the preserved top-25
+baseline against the full-coverage bootstrap on the private known-interest
+set, including perturbation/stability tests. Recommendation-ranking
+optimization remains blocked until that semantic recall gate passes.
