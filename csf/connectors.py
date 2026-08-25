@@ -70,6 +70,11 @@ def _dht_available() -> bool:
         return False
 
 
+def _newsletter_available() -> bool:
+    import shutil
+    return shutil.which("himalaya") is not None
+
+
 REGISTRY: list[Connector] = [
     Connector(
         name="reddit",
@@ -83,6 +88,12 @@ REGISTRY: list[Connector] = [
         name="rss",
         sync=lambda: _run_script("run_rss_sync.py"),
         description="Blog/article feeds (full-text via trafilatura)"),
+    Connector(
+        name="newsletter",
+        sync=lambda: _run_script("run_newsletter_sync.py"),
+        available=_newsletter_available,
+        description="Bulk email newsletters via himalaya "
+                    "(List-Unsubscribe gated; personal mail excluded)"),
     Connector(
         name="github",
         sync=lambda: _run_script("run_github_sync.py"),

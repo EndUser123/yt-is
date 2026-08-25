@@ -169,7 +169,7 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         where t.cached_at > ? and length(t.transcript) >= 100
           and t.terminal_id not like 'test%'
           and t.source not in ('reddit','hackernews','discord','rss',
-                               'github','podcast','dht-artifact')
+                               'github','podcast','dht-artifact','newsletter')
         order by t.cached_at asc limit ?
     """, (iw, batch_limit)).fetchall()]
     conn.close()
