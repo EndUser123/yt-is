@@ -159,22 +159,41 @@ Open items (operator-held unless noted):
 5. Whole-file six-section conversion and archive prune for this file
    are deliberately split out as a separate operator decision; not part
    of this capture.
-6. ytis-pipeline NSSM service has never completed a green cycle (born
-   broken at install 2026-08-22): it runs as LocalSystem while its Python
-   deps are pip --user installs invisible to that account (numpy,
-   qdrant_client, mcp, psutil, fasteners, notebooklm, typing_extensions —
-   reproduced with a `python -s` probe 2026-08-25). Reddit/hn/rss/discord
-   steps do run green each cycle (the source of the continuous ~15/hr
-   connector completions). Repair:
-   `scripts/repair-pipeline-service-deps.ps1` (elevated one-shot; installs
-   the pinned dep set machine-wide, re-applies the delegated DACL restart
-   grant this service was installed without, restarts, verifies first
-   cycle). Known-remaining after repair: the github connector step needs
-   gh CLI auth that LocalSystem does not have.
+6. ytis-pipeline NSSM service — RESOLVED then RETIRED (2026-08-25). Born
+   broken at install 2026-08-22 (LocalSystem vs pip --user deps; repaired
+   same day by `scripts/repair-pipeline-service-deps.ps1` — machine-wide
+   pins + delegated DACL restart grant; first green cycles verified, index
+   step green, 8/11 sync steps green). Then retired as a redundant THIRD
+   orchestrator of sync+index (06:00 task owns sync, 05:00 daemon owns
+   embedding; see wiki concept thin-timer-typed-job-queue-orchestration):
+   stopped 2026-08-25 via the delegated grant. ADMIN REMAINING: disable
+   at boot + delete (`sc config ytis-pipeline start=disabled` then
+   `sc delete ytis-pipeline`) — a stopped AUTO_START service revives at
+   reboot until disabled. Intra-day connector freshness was its only
+   unique output and no consumer needs it today; a thin hourly connector
+   task is a 5-minute registration if that changes.
+7. YtisPodcastSync task REGISTERED 2026-08-25 (daily 04:10, pythonw,
+   `run_podcast_sync.py --limit 2`, 90-min cap): activates the podcast
+   lane (6 feeds seeded 08-22, one episode E2E-verified, then dormant).
+   Guards in-script (orphan sweep, stop-after-3-failures); GPU has
+   headroom.
+8. Visual scorer finding (2026-08-25, read-only investigation): the
+   "zero enqueues since 08-05" reading was an artifact — scorer enqueues
+   stamp `created_at='1999-01-01'` (run_continuous_ops.py:380), hiding
+   them from max(created_at). Real dropout: 2026-08-20, when the
+   watermark entered the 08-17..19 ingest wave whose analysis_status rows
+   are 100% NULL-thumbnail (61K-69K rows/day), forfeiting the +0.5
+   thumbnail bonus the 1.0 threshold presumes (text-only observed max
+   0.92). 187K completed rows behind the watermark (post-08-20, ~99%
+   with thumbnails) have never been scored. Reactivation option (operator
+   decision, visual fate already parked): run the scorer step alone over
+   the post-08-20 cohort (expect pass-rate recovery per the falsifier);
+   the 08-17..19 wave needs thumbnail backfill (i.ytimg.com/vi/<id>/default.jpg)
+   or a watermark reset to ever pass.
 
 ## Active workstream — Personal Intelligence (2026-08-24)
 
-The Personal Intelligence / Interest Intelligence program has five genuinely
+The Personal Intelligence / Interest Intelligence program has four genuinely
 parallel descriptor state files. `HANDOFF.md` remains the canonical package
 state-of-record; these files are subordinate active-workstream state, not a
 competing project-state root.
@@ -183,13 +202,6 @@ competing project-state root.
 - `docs/handoffs/interest-intelligence/project-state-dashboard.md`
 - `docs/handoffs/interest-intelligence/project-state-recommendation.md`
 - `docs/handoffs/interest-intelligence/project-state-external-intelligence.md`
-- `docs/handoffs/interest-intelligence/project-state-discovery.md` —
-  Discovery / Concept Intelligence: durable open-world Concept Registry
-  (identity vs attention), internal new-entity/cluster burst detection
-  with `--as-of` replay, and search-fleet horizon scouting by category
-  queries (unknown names come from evidence). Distinct from the Interest
-  layer: concepts are world objects; personal relevance is a separate,
-  provenance-labeled axis.
 
 Shared goal:
 - [seen] Turn yt-is from a searchable evidence corpus into an auditable
