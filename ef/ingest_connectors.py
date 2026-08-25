@@ -45,7 +45,7 @@ FTS_DB = EF_DATA / "fts5.sqlite"
 # CLI name -> source value stored in transcript_cache by the sync scripts
 SOURCE_ALIASES = {"reddit": "reddit", "hn": "hackernews",
                   "discord": "discord", "rss": "rss", "github": "github",
-                  "dht-artifact": "dht-artifact"}
+                  "dht-artifact": "dht-artifact", "newsletter": "newsletter"}
 SOURCES = tuple(SOURCE_ALIASES)  # CLI-facing names
 WATERMARK_KEY = "connector_indexed_watermark"
 MIN_CHARS = 100  # same floor as the freshness loop
@@ -141,6 +141,11 @@ def build_connector_eu(row: dict) -> EvidenceUnit:
         channel_title = meta.get("feed", "RSS")
         title = (meta.get("title") or "")[:300]
         published = _date_only(meta.get("published"))
+    elif src == "newsletter":
+        channel_id = f"newsletter:{(meta.get('from_email') or 'unknown').split('@')[-1]}"[:80]
+        channel_title = meta.get("from") or "Newsletter"
+        title = (meta.get("subject") or "")[:300]
+        published = _date_only(meta.get("date"))
     elif src == "dht-artifact":
         # Two-layer markdown artifact from a Discord attachment (handoff
         # 2026-08-21: scripts/extract_dht_artifacts.py). The metadata is set

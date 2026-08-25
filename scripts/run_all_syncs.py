@@ -189,6 +189,9 @@ def main(argv=None):
                            5400))   # twitter pacing: 12 accts x 75s
         light_jobs.append(("github", REPO / "scripts" / "run_github_sync.py",
                            900))
+        light_jobs.append(("newsletter",
+                           REPO / "scripts" / "run_newsletter_sync.py",
+                           900))
     light_jobs.append(("dht_ingest", REPO / "scripts" / "run_dht_ingest.py",
                        300))
 
