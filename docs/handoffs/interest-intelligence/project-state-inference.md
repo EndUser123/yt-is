@@ -1,5 +1,5 @@
 # yt-is Personal Intelligence — Inference State
-Updated: 2026-08-24 by architect handoff
+Updated: 2026-08-24 by architect handoff; v2 contract-fidelity implementer pass
 
 ## Goal & constraints
 
@@ -32,6 +32,9 @@ Updated: 2026-08-24 by architect handoff
   from observed interests.
 - 2026-08-24: [seen] A blinded interest-recovery plus perturbation/stability
   gate precedes downstream recommendation evaluation.
+- 2026-08-24: [seen] V2 inference output must validate fail-closed before
+  persistence; accepted semantic objects use deterministic identity and one
+  transactional typed-graph write with inference-run provenance.
 
 ## Current state
 
@@ -41,17 +44,20 @@ Updated: 2026-08-24 by architect handoff
 - [seen] Codex JSONL extraction was added at `7446d526`.
 - [seen] The prompt requests interests, goals, questions, cluster IDs,
   counterevidence, relationships, and regret candidates.
-- [seen] Current parsing uses JSON parsing but does not mechanically enforce
-  the complete declared schema, enum validity, confidence ranges, referential
-  integrity, or evidence-reference validity.
-- [seen] Current persistence writes interests but stores `goal_id = NULL`
-  rather than materializing inferred goal relationships.
-- [seen] Current persistence stores `parent_id = NULL`, losing inferred parent
-  hierarchy.
-- [seen] Current questions are persisted with `interest_id = NULL`.
-- [seen] `evidence_links` exists structurally but is not populated by the v2
-  inference storage path.
-- [seen] Regret candidates are parsed but not persisted.
+- [seen] V2 provider output is mechanically validated before persistence for
+  required structure, enums, confidence bounds, evidence-cluster references,
+  and internal interest/question relationships.
+- [seen] Invalid provider output fails closed before semantic database
+  mutation.
+- [seen] V2 persistence transactionally materializes deterministic interests,
+  goals, information needs, parent hierarchy, questions, regret candidates,
+  typed relationships, evidence-cluster provenance, and inference-run
+  metadata.
+- [seen] Replaying identical validated semantic output is idempotent for
+  semantic objects and relationship edges.
+- [seen] Focused offline regression tests cover contract rejection,
+  fail-closed behavior, typed persistence, idempotence, rollback, and
+  provider-output parsing.
 - [seen] Current inference sends at most 25 clusters from a breadth-ranked
   candidate set.
 - [claimed] One live inference produced coherent software, trading, options,
@@ -59,9 +65,6 @@ Updated: 2026-08-24 by architect handoff
 - [claimed] That reported result did not visibly recover several deliberately
   relevant validation domains including longevity, ADHD mitigation, and
   cognitive enhancement.
-- [absent-unverified] Focused tests for schema validation, malformed provider
-  output, typed relationship persistence, provenance integrity, candidate
-  recall, and perturbation stability.
 
 ## Open questions
 
@@ -76,7 +79,7 @@ Updated: 2026-08-24 by architect handoff
 
 ## Next action
 
-Implement one bounded inference-contract milestone: real schema validation,
-complete typed persistence and provenance, high-recall bounded candidate
-selection, blinded interest recovery, perturbation testing, and focused
-regression tests.
+Implement and falsify a bounded high-recall candidate-selection strategy,
+then run the private blinded interest-recovery and perturbation/stability
+gate. Do not begin recommendation-ranking optimization until that gate
+passes.
