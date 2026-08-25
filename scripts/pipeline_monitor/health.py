@@ -56,7 +56,9 @@ old evidence is never interpreted as current-healthy.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import chunks as chunks_mod
 from . import core
@@ -68,6 +70,35 @@ STATE_FRESH_S = 6 * 3600.0
 # A terminal state is *historical* by design after this age; still valid to
 # report, but freshness classes must not imply current activity.
 HISTORICAL_S = 24 * 3600.0
+
+# The watcher's alert ledger (scripts/pipeline_health_watch.py ->
+# scripts/alert_ledger.py). The monitor's checks and the watcher's checks are
+# different scopes; health must not print "alerts: none" while the ledger
+# holds open events (observed 2026-08-25: health said "alerts: none" minutes
+# after the ledger opened a nightly-task-failure alert). Fail-open: an
+# unreadable or missing ledger adds no alert.
+WATCHER_LEDGER_OPEN = Path("P:/.data/yt-is/alerts/open.json")
+
+
+def _watcher_ledger_alerts() -> list[dict]:
+    try:
+        data = json.loads(WATCHER_LEDGER_OPEN.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    out: list[dict] = []
+    for key, ev in (data.get("events") or {}).items():
+        if not isinstance(ev, dict) or ev.get("status") != "open":
+            continue
+        out.append(
+            {
+                "code": "watcher_ledger_open",
+                "detail": (
+                    f"{key} (count={ev.get('count')} "
+                    f"last_seen={ev.get('last_seen')})"
+                ),
+            }
+        )
+    return out
 
 
 def _freshness_class(age_s: float | None, *, threshold_s: float, present: bool) -> str:
@@ -88,8 +119,18 @@ def compute_health(
     include_host: bool = True,
     include_control_plane: bool = True,
     probe_notebooks: bool = False,
+    include_watcher_ledger: bool = False,
 ) -> dict:
-    """Single unified health verdict + evidence + alerts + explanation."""
+    """Single unified health verdict + evidence + alerts + explanation.
+
+    include_watcher_ledger surfaces the watcher's OPEN ledger events as
+    watcher_ledger_open alerts. Opt-in: pipeline_health_watch.run_once is
+    itself a compute_health consumer and WRITES that ledger — inheriting
+    the alerts by default would feed the watcher's own verdict back into
+    itself (healthy ticks could never clear). The CLI health command opts
+    in so interactive `health` never prints "alerts: none" while the
+    ledger holds open events.
+    """
     report: dict = {
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "evidence": {},
@@ -509,6 +550,8 @@ def compute_health(
         ),
         "backlog_db": "fresh" if db_available else "unknown",
     }
+    if include_watcher_ledger:
+        report["alerts"].extend(_watcher_ledger_alerts())
     report["explanation"] = _explain(report, evidence, state)
     return report
 

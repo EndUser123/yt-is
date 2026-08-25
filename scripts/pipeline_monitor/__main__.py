@@ -212,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             include_host=not args.no_host,
             include_control_plane=not args.no_control_plane,
             probe_notebooks=args.probe_notebooks,
+            include_watcher_ledger=True,
         )
         _print_json(report) if args.as_json else _print_text_health(report)
         return 1 if report.get("alertable") else 0

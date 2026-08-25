@@ -142,19 +142,35 @@ are evidence states, not confidence.
 
 Open items (operator-held unless noted):
 
-1. Category exclusion decision — Health 76.7K / Markets 74.2K / Finance
-   51.1K pending (about 202K rows). Flip = add categories to
-   `excluded_categories` in `config/discovery-settings.json`; the 6 AM
-   enforcer applies on the next run. Highest-leverage open call.
+1. Category exclusion decision — EVIDENCE COMPLETE, recommendation KEEP:
+   see `docs/operations/category-exclusion-decision-20260825.md` (H+M+F =
+   202K pending = 46%, but also 41% of the completed corpus with Health the
+   #1 completed category; the 48h fetch frontier is already SWE+Tech+AI/ML
+   = 89% with Markets/Finance at zero; both original motivations were fixed
+   by 5f8faaab and 0ddb0b48). 30-day fetch-share falsifier defined.
+   Operator word pending.
 2. 128,834 video_catalog rows sit on blocked channels; purge is an
    explicit operator call (`scripts/purge_channels.py` exists).
-3. Watcher flags stale chunk dirs from 2026-08-20 (retention-cleaned
-   but state-referenced); cleanup outstanding.
+3. ~~Watcher flags stale chunk dirs from 2026-08-20~~ RESOLVED 2026-08-25
+   04:48Z: e31216ed's sweep-ledger consumption classifies the ledgered
+   deletion as EXPIRED_BY_POLICY; the alert self-resolved.
 4. Grok-side guidance parity (`~/.grok/AGENTS.md` search_all + pro-tier
    exception mirror).
 5. Whole-file six-section conversion and archive prune for this file
    are deliberately split out as a separate operator decision; not part
    of this capture.
+6. ytis-pipeline NSSM service has never completed a green cycle (born
+   broken at install 2026-08-22): it runs as LocalSystem while its Python
+   deps are pip --user installs invisible to that account (numpy,
+   qdrant_client, mcp, psutil, fasteners, notebooklm, typing_extensions —
+   reproduced with a `python -s` probe 2026-08-25). Reddit/hn/rss/discord
+   steps do run green each cycle (the source of the continuous ~15/hr
+   connector completions). Repair:
+   `scripts/repair-pipeline-service-deps.ps1` (elevated one-shot; installs
+   the pinned dep set machine-wide, re-applies the delegated DACL restart
+   grant this service was installed without, restarts, verifies first
+   cycle). Known-remaining after repair: the github connector step needs
+   gh CLI auth that LocalSystem does not have.
 
 ## Active workstream — Personal Intelligence (2026-08-24)
 

@@ -1779,3 +1779,45 @@ def test_deterministic_expired_by_policy_evidence(tmp_path):
     ]
     assert "EVIDENCE_EXPIRED_BY_POLICY" in classifications
     assert report["state"] not in {"RUNNING_HEALTHY", "RUNNING_DEGRADED"}
+
+
+def test_health_surfaces_watcher_ledger_open_alerts(tmp_path, monkeypatch):
+    """health must not say 'alerts: none' while the watcher ledger holds
+    open events (2026-08-25 desync receipt: monitor 'alerts: none' minutes
+    after the ledger opened a nightly-task-failure alert)."""
+    from scripts.pipeline_monitor import health as health_mod
+
+    ledger = tmp_path / "open.json"
+    ledger.write_text(
+        json.dumps(
+            {
+                "updated": "2026-08-25T04:57:52Z",
+                "events": {
+                    "[tasks] nightly task failure: chs-test-suite=N, YtisContentSync=N": {
+                        "status": "open",
+                        "count": 3,
+                        "last_seen": "2026-08-25T04:57:52Z",
+                    },
+                    "[resolved-example] should not surface": {
+                        "status": "resolved",
+                        "count": 1,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(health_mod, "WATCHER_LEDGER_OPEN", ledger)
+    alerts = health_mod._watcher_ledger_alerts()
+    assert len(alerts) == 1
+    assert alerts[0]["code"] == "watcher_ledger_open"
+    assert "count=3" in alerts[0]["detail"]
+    assert "chs-test-suite" in alerts[0]["detail"]
+
+    # resolved-only ledger and missing ledger contribute nothing (fail-open)
+    ledger.write_text(
+        json.dumps({"events": {"x": {"status": "resolved"}}}), encoding="utf-8"
+    )
+    assert health_mod._watcher_ledger_alerts() == []
+    monkeypatch.setattr(health_mod, "WATCHER_LEDGER_OPEN", tmp_path / "missing.json")
+    assert health_mod._watcher_ledger_alerts() == []
