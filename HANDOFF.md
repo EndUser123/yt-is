@@ -3,20 +3,13 @@
 **This is the package-local operational reference for `yt-is`.** For active work
 streams, see the integration handoff chain at the bottom of this file.
 
-Last updated: 2026-08-12 (hot-path throughput loop outcome: ceiling
-classification subject to a blocked no-patch lever; current-state
-reconciliation after invalidated
-throughput validation run01, source-add
-fallback-only canary and exact promotion, production-shaped
-health canary run01, bounded unattended chunk 0002 partial,
-fallback recovery, source-add initial-window canary run01, residual audit and
-plan refresh, exact canonical promotion, source-add fallback canary run10,
-terminal-guard validation run08, run09 RPC9 invalidation, source-add pacing
-control abort, current residual-policy refresh, source-add fallback routing
-canary run01, fallback provenance repair, source-add fallback quality canary
-run01, source-class isolation canary run01, source-class isolation canary
-run02, S4U registration recheck, and
-unattended supervisor durability hardening).
+Last updated: 2026-08-24 (EF pipeline + shared search-fleet capture:
+five WinSW services port-verified; evidence-fabric fast-forward merged
+to main; 536K blocked rows migrated to excluded with exclusion enforced
+at scan and pending ends; alert egress plus YtisHealthWatch 5-min
+watcher; interest graph /interests and personal intelligence /today
+live on :6393; authoritative snapshot section added after the
+2026-08-17 monitor section).
 
 ### Hot-path throughput loop outcome (2026-08-12)
 
@@ -101,6 +94,67 @@ event JSONL, and both SQLite DBs — no TSDB, no new services, no UI.
 - Tests: `tests/test_pipeline_monitor.py` (66 incl. live §21 replay,
   skip-if-swept), `tests/test_pipeline_health_watch.py` (5),
   extended `tests/test_check_unattended_backlog.py` (26 total).
+
+## Current authoritative snapshot (2026-08-24)
+
+Recorded via the architect-handoff protocol (agent: zcode). Supersedes
+older dated sections for currency; they remain historical evidence. Tags
+are evidence states, not confidence.
+
+- [seen] Five WinSW services live, port-verified 2026-08-24: search_wiki
+  :8321, search_chat :8322, search_web :8323, ef_warm_query (:6391
+  renderers + :8324 MCP face), ef_qdrant (Qdrant 1.19 :6390). Black
+  console windows closed at all four subsystems 2026-08-19..21. The
+  search-fleet stream is durably documented in wiki concept
+  `shared-mcp-search-fleet-2026-08.md`.
+- [seen] evidence-fabric fast-forward merged into main the morning of
+  2026-08-24; the 2026-08-17 monitor note "commits live only on
+  evidence-fabric" is resolved. Later work commits direct to main; local
+  main matches origin/main.
+- [seen] On main since the 2026-08-17 monitor: 5f8faaab alert egress
+  (pipeline alert rendered on the :6391 digest page) with 536,255
+  blocked rows migrated to status=excluded (drain selector 6.5s to
+  1.2s); 0ddb0b48 exclusion enforced at the scan end (cmd_check_all
+  filters channel_blocklist — 1,045 of 2,865 channels were being scanned
+  daily for videos nobody would fetch, about 36% of every scan cycle);
+  57dc3917 + e7c2b6c0 interest graph v1/v1.5 on :6393 (evidence
+  clusters, coverage chain); faf6dca3 + 7446d526 personal intelligence
+  system (typed personal-graph schema, /today and /feedback live on
+  :6393).
+- [seen] Nightly task fleet (Task Scheduler): YtisDhtCapture 03:00,
+  YtisStateBackup 03:30, YtisColdBackup 03:35, YtisUnattendedBacklog
+  04:00, YtisIndexIncremental 05:00, YtisContentSync 06:00,
+  ytis-nlm-auth-keepalive 06:00, YtisCandidateApply 06:30. The 5-minute
+  YtisHealthWatch watcher is registered and live (last run 2026-08-24
+  18:06).
+- [seen] Corpus counts (mode=ro, 2026-08-24): complete 262,848 / failed
+  3,502 / pending 435,600 (all-eligible, zero on blocked channels) /
+  excluded 536,255. Counts in pre-08-17 sections are stale.
+- [seen] 6 AM YtisContentSync still exits 1 (fetch_failed after a
+  successful scan) — chronic; root cause sits in the NLM fetch
+  supervisor path, not the sync wrapper. RCA not started.
+- [claimed] WinSW reboot auto-start of all five services — unverified
+  until the next natural reboot; NSSM binaries stay installed as the
+  rollback path until that check passes.
+- [planned] yt-is review loop (review-vehicle dry-run on this repo):
+  amended per tp-panel 2026-08-24, session-lane worktree, awaiting
+  operator go.
+
+Open items (operator-held unless noted):
+
+1. Category exclusion decision — Health 76.7K / Markets 74.2K / Finance
+   51.1K pending (about 202K rows). Flip = add categories to
+   `excluded_categories` in `config/discovery-settings.json`; the 6 AM
+   enforcer applies on the next run. Highest-leverage open call.
+2. 128,834 video_catalog rows sit on blocked channels; purge is an
+   explicit operator call (`scripts/purge_channels.py` exists).
+3. Watcher flags stale chunk dirs from 2026-08-20 (retention-cleaned
+   but state-referenced); cleanup outstanding.
+4. Grok-side guidance parity (`~/.grok/AGENTS.md` search_all + pro-tier
+   exception mirror).
+5. Whole-file six-section conversion and archive prune for this file
+   are deliberately split out as a separate operator decision; not part
+   of this capture.
 
 ## Current authoritative snapshot (2026-08-12)
 
