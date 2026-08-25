@@ -200,6 +200,46 @@ def check_auth_keepalive() -> tuple[str | None, str | None]:
     return None, None
 
 
+def check_empty_intake_runs(max_age_h: int = 6) -> tuple[str | None, str | None]:
+    """Detect intake invocations that created a log dir and died before
+    writing anything (no pipeline_receipt.json, empty dir).
+
+    2026-08-24..25: jittered ~75-min empty invocations (05:03-09:53 local)
+    with no matching task, service, or loop process; the invoker died
+    ~09:53 and was never identified. This check turns the next occurrence
+    into a timestamped ledger alert so the trigger can be correlated with
+    live processes at alert time instead of post-hoc.
+    """
+    import time as _time
+
+    root = REPO_ROOT / ".logs" / "intake_pipeline"
+    if not root.is_dir():
+        return None, None
+    now = _time.time()
+    empty_recent = []
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return None, None
+    for d in entries[-12:]:
+        try:
+            if not d.is_dir() or (now - d.stat().st_mtime) > max_age_h * 3600:
+                continue
+        except OSError:
+            continue
+        has_receipt = (d / "pipeline_receipt.json").is_file()
+        has_any = any(d.iterdir())
+        if not has_receipt and not has_any:
+            empty_recent.append(d.name)
+    if empty_recent:
+        return (
+            f"empty intake invocations (started, produced nothing): "
+            f"{', '.join(empty_recent[-3:])} — capture live processes to identify the trigger",
+            None,
+        )
+    return None, None
+
+
 def _format_alert_detail(detail) -> str:
     """Human/agent-readable alert detail — raw list-of-dicts reprs are
     unreadable in alert lines and ledgers (spawn-lens catch 2026-08-24)."""
@@ -294,6 +334,10 @@ def run_once(
         lines.append(f"[tasks] {task_alert}")
     elif task_warning:
         lines.append(f"[tasks-warning] {task_warning}")
+
+    intake_alert, _ = check_empty_intake_runs()
+    if intake_alert:
+        lines.append(f"[intake] {intake_alert}")
 
     if lines:
         content = (
