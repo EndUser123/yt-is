@@ -1050,8 +1050,42 @@ def probe_notebook_inventory(accounts: list[str], *, timeout_s: int = 240) -> di
     return results
 
 
+def _norm_path_text(path) -> str:
+    return str(path).replace("\\", "/").casefold()
+
+
+def load_sweep_ledger(path) -> set[str]:
+    """Deleted-directory paths recorded by csf.cleanup_staging, normalized.
+
+    Only ``delete_directory`` actions count: those are the deletions that
+    remove whole chunk roots. Best-effort — unreadable/missing ledger
+    yields an empty set (monitor keeps its fail-closed alert behavior).
+    """
+    import json
+
+    swept: set[str] = set()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("action") == "delete_directory" and entry.get("path"):
+                    swept.add(_norm_path_text(entry["path"]))
+    except OSError:
+        return set()
+    return swept
+
+
 def chunk_evidence_integrity(
-    records: list[ChunkRecord], *, last_activity: datetime | None = None
+    records: list[ChunkRecord],
+    *,
+    last_activity: datetime | None = None,
+    swept_paths: set[str] | None = None,
 ) -> list[dict]:
     """State<->disk reference check with retention-aware classification.
 
@@ -1060,10 +1094,14 @@ def chunk_evidence_integrity(
       EVIDENCE_EXPIRED_BY_POLICY    missing, but the run went quiet at least
                                     DEFAULT_MAX_AGE_DAYS ago, so the
                                     cleanup_staging sweep is the expected
-                                    actor (drill-down degrades to DB-level)
-      EVIDENCE_MISSING_UNEXPECTEDLY missing while the run is inside the
-                                    retention horizon (actor unknown — the
-                                    Aug-16 deleted-root incident class)
+                                    actor (drill-down degrades to DB-level);
+                                    ALSO when the sweep ledger proves the
+                                    root was deliberately deleted, regardless
+                                    of quiet age
+      EVIDENCE_MISSING_UNEXPECTEDLY missing while inside the retention
+                                    horizon with no sweep record (actor
+                                    unknown — the Aug-16 deleted-root
+                                    incident class)
       EVIDENCE_INCOMPLETE           only part of the expected artifacts
                                     exist (e.g. summary present, events dir
                                     absent)
@@ -1076,6 +1114,7 @@ def chunk_evidence_integrity(
         horizon_s = 7.0 * 86400.0
     quiet_age_s = age_s(last_activity)
     expired_horizon = quiet_age_s is not None and quiet_age_s > horizon_s
+    swept_norm = {_norm_path_text(p) for p in (swept_paths or ())}
     problems: list[dict] = []
     for record in records:
         output_root = Path(record.output_root) if record.output_root else None
@@ -1084,16 +1123,21 @@ def chunk_evidence_integrity(
         events_present = bool(
             output_root and any((output_root / "accounts").glob("*/events"))
         )
+        swept_match = False
+        if output_root is not None and swept_norm:
+            swept_match = (
+                _norm_path_text(output_root) in swept_norm
+                or _norm_path_text(output_root.parent) in swept_norm
+            )
         if root_present and summary_present:
             classification = "EVIDENCE_AVAILABLE"
             if record.executed and not events_present:
                 classification = "EVIDENCE_INCOMPLETE"
         elif not root_present and not summary_present:
-            classification = (
-                "EVIDENCE_EXPIRED_BY_POLICY"
-                if expired_horizon
-                else "EVIDENCE_MISSING_UNEXPECTEDLY"
-            )
+            if expired_horizon or swept_match:
+                classification = "EVIDENCE_EXPIRED_BY_POLICY"
+            else:
+                classification = "EVIDENCE_MISSING_UNEXPECTEDLY"
         else:
             classification = "EVIDENCE_INCOMPLETE"
         if classification != "EVIDENCE_AVAILABLE":
@@ -1108,6 +1152,7 @@ def chunk_evidence_integrity(
                     "events_present": events_present,
                     "retention_horizon_days": round(horizon_s / 86400.0, 1),
                     "run_quiet_age_s": round(quiet_age_s, 0) if quiet_age_s is not None else None,
+                    **({"actor": "cleanup_staging_ledger"} if swept_match else {}),
                 }
             )
     return problems

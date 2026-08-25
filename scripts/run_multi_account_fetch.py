@@ -341,6 +341,23 @@ def _safe_exception_reason(exc: BaseException, *, prefix: str | None = None) -> 
     return f"{prefix}:{reason}" if prefix else reason
 
 
+def _read_log_tail(path: Path, max_chars: int) -> str | None:
+    """Tail of a child log file, inlined into the account result.
+
+    The stderr file lives inside the experiment tree that staging
+    cleanup deletes; without this copy the fatal text of a child that
+    dies mid-assignment is destroyed nightly (chronic 2026-08-21..24).
+    Credential-shaped content is not expected in these logs, but the
+    redaction regex is applied anyway for defense in depth.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    text = _SENSITIVE_EXCEPTION_VALUE_RE.sub("[REDACTED]", text.strip())
+    return text[-max_chars:] if text else None
+
+
 def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
     """Stop one coordinator child and descendants after an explicit deadline."""
     if os.name == "nt":
@@ -1367,6 +1384,7 @@ def _run_account(
         "termination_status": termination_status if timed_out else None,
         "timeout_cleanup": timeout_cleanup,
         "error": error or None,
+        "stderr_tail": _read_log_tail(spec.stderr_path, 4000),
         "elapsed_s": round(time.monotonic() - started_at, 3),
         "manifest_path": str(spec.manifest_path),
         "receipt_path": str(spec.receipt_path),

@@ -627,6 +627,37 @@ def _validate_chunk_ownership(
     return ownership
 
 
+def _summary_account_failures(summary: dict[str, object]) -> list[dict[str, object]]:
+    """Failing account children, with error text, for the durable chunk record.
+
+    The coordinator summary dies with the experiment tree (staging sweep);
+    supervisor_state.json survives it. Without this copy, a child that
+    dies mid-assignment leaves failure_reason=null and the fatal error
+    text is destroyed nightly (the chronic 2026-08-21..24 a.hominidae
+    death was undiagnosable four nights running).
+    """
+    account_results = summary.get("account_results", [])
+    if not isinstance(account_results, list):
+        return []
+    failures: list[dict[str, object]] = []
+    for result in account_results:
+        if not isinstance(result, dict):
+            continue
+        rc = result.get("returncode")
+        error = result.get("error")
+        if rc in (0, None) and not error:
+            continue
+        failures.append(
+            {
+                "account_profile": result.get("account_profile"),
+                "returncode": rc,
+                "error": error,
+                "stderr_tail": result.get("stderr_tail"),
+            }
+        )
+    return failures
+
+
 def _summary_assignments(summary: dict[str, object], output_root: Path) -> list[dict[str, object]]:
     """Persist account-level manifest ownership without inventing worker IDs."""
     account_results = summary.get("account_results", [])
@@ -1889,6 +1920,7 @@ def run_supervisor(config: SupervisorConfig, *, timeout_s: float = DEFAULT_SUPER
                     returncode == 0 and _partial_summary_is_terminalized(summary)
                 ),
                 "assignment_ownership": _summary_assignments(summary, output_root),
+                "account_failures": _summary_account_failures(summary),
             })
             state["status"] = chunk["status"]
             chunks_this_invocation += 1
