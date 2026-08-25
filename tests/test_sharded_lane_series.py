@@ -19,6 +19,35 @@ from csf.sharded_lane_series import (
 )
 
 
+def _lane_entry(
+    tmp_path: Path,
+    *,
+    lane: str,
+    account_class: str,
+    profiles: tuple[str, ...],
+    browser_root: str,
+    browser_profile_directory: str,
+) -> dict[str, object]:
+    """Build a hermetic lane-config entry for parser tests."""
+    return {
+        "lane": lane,
+        "account_class": account_class,
+        "workers": len(profiles),
+        "notebooklm_profile_prefix": profiles[0].rsplit("-", 1)[0],
+        "notebooklm_profiles": list(profiles),
+        "browser_profile_root": str(tmp_path / "browser" / browser_root),
+        "browser_profile_directory": browser_profile_directory,
+        "worker_state_root": str(tmp_path / "states" / lane),
+        "notebook_prefix": f"benchmark-shard-{lane}",
+    }
+
+
+def _write_lane_config(tmp_path: Path, entries: list[dict[str, object]]) -> Path:
+    path = tmp_path / "lanes.json"
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    return path
+
+
 def test_load_lane_configs_requires_distinct_profile_and_state_namespaces(tmp_path):
     config_path = tmp_path / "lanes.json"
     config_path.write_text(
@@ -123,8 +152,38 @@ def test_load_lane_configs_accepts_same_browser_root_with_distinct_directories(t
     assert lanes[1].coordinator_profile == "default"
 
 
-def test_pro_free_lane_config_uses_dedicated_browser_roots():
-    config_path = Path("P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json")
+def test_pro_free_lane_config_uses_dedicated_browser_roots(tmp_path):
+    config_path = _write_lane_config(
+        tmp_path,
+        [
+            _lane_entry(
+                tmp_path,
+                lane="a_hominidae_pro",
+                account_class="pro",
+                profiles=(
+                    "ytis-pro-worker-01",
+                    "ytis-pro-worker-02",
+                    "ytis-pro-worker-03",
+                    "ytis-pro-worker-04",
+                ),
+                browser_root="notebooklm-pro",
+                browser_profile_directory="Profile",
+            ),
+            _lane_entry(
+                tmp_path,
+                lane="troup_hominidae_free",
+                account_class="free",
+                profiles=(
+                    "ytis-free-worker-01",
+                    "ytis-free-worker-02",
+                    "ytis-free-worker-03",
+                    "ytis-free-worker-04",
+                ),
+                browser_root="notebooklm-free",
+                browser_profile_directory="Default",
+            ),
+        ],
+    )
     lanes = load_lane_configs(config_path)
 
     assert len(lanes) == 2
@@ -164,8 +223,36 @@ def test_load_lane_configs_repairs_overescaped_windows_paths(tmp_path):
     )
 
 
-def test_pro_free_hotmail_lane_config_includes_second_free_account():
-    config_path = Path("P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_hotmail_lanes.json")
+def test_pro_free_hotmail_lane_config_includes_second_free_account(tmp_path):
+    config_path = _write_lane_config(
+        tmp_path,
+        [
+            _lane_entry(
+                tmp_path,
+                lane="a_hominidae_pro",
+                account_class="pro",
+                profiles=tuple(f"ytis-pro-worker-{i:02d}" for i in range(1, 5)),
+                browser_root="notebooklm-pro",
+                browser_profile_directory="Profile",
+            ),
+            _lane_entry(
+                tmp_path,
+                lane="troup_hominidae_free",
+                account_class="free",
+                profiles=tuple(f"ytis-free-worker-{i:02d}" for i in range(1, 5)),
+                browser_root="notebooklm-free",
+                browser_profile_directory="Default",
+            ),
+            _lane_entry(
+                tmp_path,
+                lane="brsthomson_hotmail_free",
+                account_class="free",
+                profiles=tuple(f"ytis-free2-worker-{i:02d}" for i in range(1, 5)),
+                browser_root="notebooklm-free-2",
+                browser_profile_directory="Default",
+            ),
+        ],
+    )
     lanes = load_lane_configs(config_path)
 
     assert len(lanes) == 3
@@ -182,8 +269,20 @@ def test_pro_free_hotmail_lane_config_includes_second_free_account():
     assert lanes[2].browser_profile_directory == "Default"
 
 
-def test_free_only_lane_config_uses_free_account_route():
-    config_path = Path("P:\\\\\\packages/yt-is/.logs/sharded_lane_series/free_only_lanes.json")
+def test_free_only_lane_config_uses_free_account_route(tmp_path):
+    config_path = _write_lane_config(
+        tmp_path,
+        [
+            _lane_entry(
+                tmp_path,
+                lane="troup_hominidae_free",
+                account_class="free",
+                profiles=tuple(f"ytis-free1-worker-{i:02d}" for i in range(1, 5)),
+                browser_root="notebooklm-free",
+                browser_profile_directory="Default",
+            ),
+        ],
+    )
     (lane,) = load_lane_configs(config_path)
 
     assert lane.lane == "troup_hominidae_free"
@@ -2143,5 +2242,4 @@ def test_main_reports_versioned_invalidated_summary(tmp_path, monkeypatch):
     ])
 
     assert result == 1
-
 
