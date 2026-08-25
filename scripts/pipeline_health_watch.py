@@ -307,10 +307,6 @@ def run_once(
 ) -> int:
     load_workspace_env()
     _write_heartbeat("start")
-    ctx = MonitorContext.create(
-        state_path=state_path, db_path=db_path, load_env=not db_path
-    )
-    _write_heartbeat("ctx-built")
     report = _compute_health_guarded(
         state_path, db_path,
         include_host=include_host, include_control_plane=include_control_plane,
