@@ -71,6 +71,7 @@ def check_scheduled_tasks() -> tuple[str | None, str | None]:
                  f"(Get-ScheduledTaskInfo -TaskName '{t}').LastTaskResult"
                  for t in SCHEDULED_TASKS)],
             capture_output=True, text=True, timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         ).stdout.split()
     except (subprocess.TimeoutExpired, OSError) as e:
         return None, f"task-status probe failed: {e}"
@@ -111,6 +112,7 @@ def check_auth_keepalive() -> tuple[str | None, str | None]:
         text=True,
         cwd=str(REPO_ROOT),
         timeout=180,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if result.returncode in (2, 3):
         lines = [l for l in result.stdout.splitlines() if "failed" in l.lower()]

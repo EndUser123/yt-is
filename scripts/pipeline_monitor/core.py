@@ -848,6 +848,7 @@ def probe_scheduled_tasks(task_names: list[str] | None = None) -> dict:
                 capture_output=True,
                 text=True,
                 timeout=20,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except (OSError, subprocess.SubprocessError) as exc:
             out[name] = {
@@ -992,6 +993,7 @@ def probe_notebook_inventory(accounts: list[str], *, timeout_s: int = 240) -> di
                     timeout=timeout_s,
                     cwd=str(REPO_ROOT),
                     env=env,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             except (OSError, subprocess.SubprocessError) as exc:
                 results[account] = {"status": "unknown", "reason": f"probe_failed:{type(exc).__name__}"}

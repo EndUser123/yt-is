@@ -163,6 +163,9 @@ def test_watcher_clears_alert_when_healthy(tmp_path, monkeypatch):
     state = tmp_path / "state.json"
     make_state(state, status="completed", chunk_roots=[chunk], db_path=db)
     _patch_tasks(monkeypatch, arguments=f"--state-path {state} --execute")
+    # The nightly-task LastTaskResult probe reads the live scheduler; a real
+    # failed task elsewhere on the host must not fail this hermetic test.
+    monkeypatch.setattr(watcher, "check_scheduled_tasks", lambda: (None, None))
     alert = tmp_path / "pipeline-alert.txt"
     alert.write_text("PIPELINE ALERT — stale\n", encoding="utf-8")
 
