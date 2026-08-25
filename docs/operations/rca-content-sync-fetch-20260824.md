@@ -109,6 +109,10 @@ What the fix decision needs: one night's surviving per-account stderr from M1 sh
 
 Run one night with M1 in place. If a night ends rc 1 with all three account children at returncode 0 (no `process_failed`), the "a.hominidae child dies mid-assignment" theory is wrong and the fault is in classify/exit logic itself. If the child error is captured and is a plain uncaught exception, the fix is mechanical in `csf-source fetch`; if it is OOM/kill, the fix is capacity configuration.
 
+## 6a. DECOY WARNING for the M1 evidence read (operator directive, 2026-08-25)
+
+**The 2026-08-25 06:00 run's M1 capture is a decoy — do not diagnose M2 from it.** That run died pre-work in ~17s with `ModuleNotFoundError: No module named 'dev'` across all three accounts because an unattributed sweep had deleted `dev/` from the working tree; the package was restored via `git restore` at ~13:35Z, which leaves no trace (no commit, no log entry, clean status). The artifact says "missing module," the repo says the module exists — the natural conclusion would fix an already-fixed problem and mis-decide M2. **The 2026-08-26 06:00 run is the first true chronic-signature capture.** Also: children exit rc=0 on total worker-spawn failure, so classify by the stderr tail, not the returncode.
+
 ## Accounting
 
 - Verified: task XML, log path, latest-run errors (quoted), receipt, supervisor state, DB per-account statuses, exit-code logic in all three pipeline layers.
