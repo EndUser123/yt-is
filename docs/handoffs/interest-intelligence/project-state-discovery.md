@@ -159,12 +159,16 @@ Updated: 2026-08-24 by open-world discovery implementer pass
 
 ## Next action
 
-A fresh contamination-isolated evaluator lane receives the frozen
-evaluator (receipt of record above) plus a NEW unseen private holdout and
-runs the retrospective/as-of/perturbation evaluation; the architect
-judges PASS/PARTIAL/FAIL from its receipts. The implementing context that
-saw the exposed names must not run or score that holdout. If the gate
-passes, integrate Discovery Radar into the dashboard and add
-domain-specific external source adapters; if PARTIAL/FAIL, run an
-architect-approved policy-calibration experiment first (the extremely
-broad emerging classification is the leading known suspect).
+Execute the frozen evaluator in a FRESH IMPLEMENTER/EVALUATOR context
+against a new unseen private holdout; the current implementer must be
+retired only at that switching boundary (its successor cold-start handoff
+exists — see the FRESH DISCOVERY EVALUATOR HANDOFF returned with the
+freeze). The implementing context that saw the exposed names must not run
+or score that holdout. Subject to the architect first resolving the
+formal-boundary hardening recorded in PROJECT_STATE.md (single-use
+holdout authority, sample sufficiency); any evaluator change requires a
+NEW freeze receipt before the holdout is opened. If the gate passes,
+integrate Discovery Radar into the dashboard and add domain-specific
+external source adapters; if PARTIAL/FAIL, run an architect-approved
+policy-calibration experiment first (the extremely broad emerging
+classification is the leading known suspect).
