@@ -66,8 +66,14 @@ if (Test-MachineImports) {
     Write-Output "machine imports already resolve - skipping pip install"
 } else {
     Write-Output "installing pinned dep set machine-wide..."
+    # pip resolves "Requirement already satisfied" against the CURRENT
+    # user's per-user site (same trap the repair exists to fix - receipt
+    # 2026-08-25: elevated pip installed nothing and verification failed).
+    # Disabling user-site for the pip run forces a real machine install.
+    $env:PYTHONNOUSERSITE = "1"
     & $py -m pip install @deps
     if ($LASTEXITCODE -ne 0) { Write-Output "PIP INSTALL FAILED"; exit 1 }
+    Remove-Item Env:PYTHONNOUSERSITE -ErrorAction SilentlyContinue
 }
 
 if (-not (Test-MachineImports)) {
