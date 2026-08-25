@@ -61,11 +61,27 @@
   broad emerging policy but has not been used for tuning.
 - [claimed] The unseen formal holdout has not been read by the implementing
   context.
-- [seen] formal_holdout_read is checked but not mechanically transitioned when
-  a formal target set is consumed; one-use holdout authority is therefore not
-  currently enforced by the evaluator.
-- [seen] Verdict-v1 has no minimum scorable-target count, so statistical
-  sufficiency is not mechanically part of PASS/PARTIAL/FAIL.
+- [seen] FORMAL holdouts are atomically claimed by content hash
+  (sha256 of exact file bytes, private sqlite ledger with
+  UNIQUE(holdout_sha256)) before label parsing and are globally single-use
+  across evaluator generations (evaluator-v2, commit 6a50de36; 25 focused
+  tests prove first-claim/duplicate/cross-generation rejection).
+- [seen] A crash after formal claim permanently consumes that holdout
+  (ledger records FAILED_AFTER_CONSUMPTION; retry with the same holdout
+  fails closed).
+- [seen] Verdict-v2 returns INSUFFICIENT_EVIDENCE below 20 scorable
+  targets, below 40 matched negative controls, or below 2.0
+  controls/target, and only then evaluates the frozen substantive
+  PASS/PARTIAL/FAIL thresholds.
+- [seen] Formal proportion metrics include 95% Wilson intervals
+  (candidate/emerging recall, matched-negative emerging rate, 10%/20%
+  perturbation retention).
+- [seen] A new frozen evaluator-v2 receipt
+  (freeze-20260825T-FORMAL-V2, evaluator sha256 21a2704e…, includes
+  single-use and uncertainty policy hashes; production discovery hashes
+  unchanged from the v1 receipt) supersedes evaluator-v1 before any
+  unseen holdout is opened; the v1 receipt now fails closed against the
+  published tree.
 - [claimed] Full-coverage interest-inference bootstrap exists and its semantic
   recall gate remains outstanding.
 - [claimed] Recommendation optimization, broad dashboard expansion, and broad
@@ -74,29 +90,19 @@
 
 # Open questions
 
-- What mechanism should make a formal holdout mechanically single-use across
-  evaluator/policy generations: immutable consumption receipt, holdout hash
-  registry, or equivalent fail-closed authority?
-- What preregistered minimum number of scorable targets and uncertainty
-  reporting are required before PASS/PARTIAL/FAIL is decision-grade?
-- Should insufficient scorable sample produce a fourth verdict such as
-  INSUFFICIENT_EVIDENCE rather than PARTIAL/FAIL?
 - What actor generates/custodies the unseen holdout so the implementation and
   policy-tuning contexts cannot inspect it before freeze?
-- If either formal-gate correction changes evaluator bytes, what new freeze
-  receipt supersedes the current pre-holdout receipt?
+- If a future formal-gate correction changes evaluator bytes again, what new
+  freeze receipt supersedes evaluator-v2? (Mechanism proven: a new receipt
+  from published bytes; the supersession itself is procedural.)
 - After discovery and inference gates resolve, which downstream workstream has
   the highest decision-value priority: dashboard drill-down, feedback/ranking
   hardening, or external-intelligence acquisition?
 
 # Next action
 
-- Harden the formal retrospective-evaluation boundary BEFORE consuming the
-  unseen holdout.
-- Specifically, the architect must resolve:
-  1. mechanically single-use formal-holdout authority; and
-  2. decision-grade sample sufficiency / insufficient-evidence semantics.
-- If evaluator bytes or frozen policies change, create a NEW frozen receipt
-  before any formal holdout is opened.
-- Only after that may a fresh contamination-isolated evaluator lane consume
-  one unseen formal holdout and return evidence for architect judgment.
+- Execute evaluator-v2 against ONE unseen formal holdout using a
+  FRESH IMPLEMENTER/EVALUATOR (single-use ledger enforces first-and-only
+  consumption; INSUFFICIENT_EVIDENCE applies below the preregistered
+  minimums; a replacement holdout generation is required if the sample is
+  inadequate).

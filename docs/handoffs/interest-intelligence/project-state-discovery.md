@@ -159,16 +159,19 @@ Updated: 2026-08-24 by open-world discovery implementer pass
 
 ## Next action
 
-Execute the frozen evaluator in a FRESH IMPLEMENTER/EVALUATOR context
-against a new unseen private holdout; the current implementer must be
-retired only at that switching boundary (its successor cold-start handoff
-exists — see the FRESH DISCOVERY EVALUATOR HANDOFF returned with the
-freeze). The implementing context that saw the exposed names must not run
-or score that holdout. Subject to the architect first resolving the
-formal-boundary hardening recorded in PROJECT_STATE.md (single-use
-holdout authority, sample sufficiency); any evaluator change requires a
-NEW freeze receipt before the holdout is opened. If the gate passes,
-integrate Discovery Radar into the dashboard and add domain-specific
+Execute the frozen evaluator-v2 (receipt freeze-20260825T-FORMAL-V2) in a
+FRESH IMPLEMENTER/EVALUATOR context against one new unseen private
+holdout; the current implementer must be retired only at that switching
+boundary (its successor cold-start handoff exists — see the FRESH
+DISCOVERY EVALUATOR HANDOFF returned with the v2 freeze). The
+implementing context that saw the exposed names must not run or score
+that holdout. The formal boundary is now mechanically hardened: FORMAL
+holdouts are single-use by content hash (a crash after claim consumes
+permanently), verdict-v2 returns INSUFFICIENT_EVIDENCE below the
+preregistered sufficiency minimums (20 scorable / 40 controls / 2.0 per
+target), and formal proportion metrics carry 95% Wilson intervals. If
+the gate passes, integrate Discovery Radar into the dashboard and add
+domain-specific
 external source adapters; if PARTIAL/FAIL, run an architect-approved
 policy-calibration experiment first (the extremely broad emerging
 classification is the leading known suspect).
