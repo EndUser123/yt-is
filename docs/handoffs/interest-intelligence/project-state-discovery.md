@@ -184,22 +184,36 @@ Updated: 2026-08-25 by formal-v2 evaluator + holdout-v3 curator pass
   Preflight 4/4 on every axis incl. frozen-scorer T agreement; zero
   overlap with v2 or NON-BLIND fixtures. v3 sha256 45e14059...
   (private path P:/.data/yt-is/private/discovery-retrospective-holdout-v3.json).
+- 2026-08-25: [seen] Architect decision: holdout-v3 is
+  ABANDONED_UNCONSUMED_UNDERPOWERED (4 guaranteed-scorable targets <
+  verdict-v2 minimum 20). Formal v3 was NEVER run; the formal holdout
+  ledger was never touched for v3; the private v3 file remains for
+  provenance and must never be submitted with --label FORMAL.
+- 2026-08-25: [seen] Holdout-v4 curated under a NEW preregistered
+  architect-specified raw-evidence policy (holdout-v4-curation-v1,
+  policy sha256 c2cb4745...; receipt at
+  P:/.data/yt-is/ef/concept-discovery-eval/holdout-v4-curation/).
+  Domain broadened to PRODUCT|TECH|ORG|CONCEPT (PERSON/PLACE excluded)
+  with a preregistered persistence ladder: Tier A(60d/5EU)=5 eligible,
+  Tier B(90d/4EU)=18, Tier C(120d/3EU+late-after-T+30)=42 -> selected
+  Tier C. 42 targets of a 321-label raw universe; deterministic
+  stratified selection (T/mass/channel terciles x NER type;
+  sha256(policy+label) within stratum). Preflight 42/42 on all axes
+  incl. frozen-scorer T agreement, raw-control feasibility, zero
+  overlap with v2/v3/fixtures. discovery_outputs_read_for_selection=
+  false; v4 never scored; formal ledger untouched for v4. v4 sha256
+  0cc6f1bc... (private path
+  P:/.data/yt-is/private/discovery-retrospective-holdout-v4.json).
+  NER-type counts: CONCEPT 16, PRODUCT 12, TECH 8, ORG 6.
 
 ## Next action
 
-Run frozen evaluator-v2 exactly once against holdout-v3 using a FRESH
-IMPLEMENTER/EVALUATOR (the v3 curator session is contaminated with v3
-target identities and must never score v3). Known structural constraint:
-4 scorable targets < the verdict-v2 gate (20 scorable / 40 controls /
-2.0 per target), so a v3 formal run yields INSUFFICIENT_EVIDENCE by
-construction unless the operator/architect changes the gate or the
-corpus's entity-mention density grows; the constraint is corpus-side
-(entity-mention concentration over 60-day windows), not evaluator-side.
-Architect/operator decision required on whether to (a) run v3 formally
-to consume it and bank the scorability proof, (b) wait for corpus
-growth, or (c) revisit the preregistered floors with a new frozen
-policy. If a gate-passing holdout ever scores PASS, integrate Discovery
-Radar into the dashboard and add domain-specific external source
-adapters; if PARTIAL/FAIL, run an architect-approved
-policy-calibration experiment first (the extremely broad emerging
-classification remains the leading known suspect).
+Run frozen evaluator-v2 exactly once against holdout-v4 using a FRESH
+IMPLEMENTER/EVALUATOR (the v4 curator session is contaminated with v4
+target identities and must never score v4). v4 prequalifies 42
+scorable targets against the exact scorer, above the verdict-v2 gate
+(20 scorable / 40 controls / 2.0 per target) with headroom. If it
+scores PASS, integrate Discovery Radar into the dashboard and add
+domain-specific external source adapters; if PARTIAL/FAIL, run an
+architect-approved policy-calibration experiment first (the extremely
+broad emerging classification remains the leading known suspect).

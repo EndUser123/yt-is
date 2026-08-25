@@ -249,10 +249,20 @@ Shared next gate:
   Discovery outputs read; never scored). 4 targets of a 321-label
   universe; preregistered floors not loosened. Preflight 4/4 on all
   axes with frozen-scorer T agreement, zero v2/fixture overlap.
-- [inference] A v3 formal run will yield INSUFFICIENT_EVIDENCE by
-  construction (4 < the 20-scorable verdict-v2 gate); the constraint
-  is corpus-side entity-mention density, not evaluator-side. Details
-  and next actions: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
+- [seen] A v3 formal run was predicted to yield INSUFFICIENT_EVIDENCE by
+  construction (4 < the 20-scorable verdict-v2 gate). Architect
+  decision: holdout-v3 is ABANDONED_UNCONSUMED_UNDERPOWERED — formal
+  v3 never run, ledger never touched, file kept for provenance only.
+- [seen] Holdout-v4 curated under preregistered cross-domain raw-evidence
+  policy holdout-v4-curation-v1 (sha256 c2cb4745...; PRODUCT|TECH|ORG|
+  CONCEPT; persistence ladder A/B/C). Aggregate tier eligibility:
+  A=5, B=18, C=42 -> Tier C selected. 42 targets of a 321-label
+  universe; deterministic stratified selection; preflight 42/42 on all
+  axes (exact scorer eligibility, frozen-scorer T agreement,
+  raw-control feasibility, zero v2/v3/fixture overlap). No Discovery
+  outputs used for selection; v4 has never been scored; formal ledger
+  untouched for v4. Next: fresh-evaluator formal run of holdout-v4.
+  Details: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
 
 ## Current authoritative snapshot (2026-08-12)
 
