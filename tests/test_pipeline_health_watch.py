@@ -28,17 +28,32 @@ from scripts.pipeline_monitor import core as pc
 ACCOUNTS = ("a.hominidae", "brsthomson", "troup.hominidae")
 
 _REAL_CHECK = watcher.check_scheduled_tasks  # captured before any fixture patches
+_REAL_INTAKE = watcher.check_empty_intake_runs
 
 
 @pytest.fixture(autouse=True)
 def _hermetic_watcher_io(tmp_path, monkeypatch):
-    """Keep the watcher off the live Task Scheduler and the shared alert
-    ledger/heartbeat. check_scheduled_tasks is stubbed clean here — its
-    real path (discovery + probe) has dedicated tests below."""
+    """Keep the watcher off the live Task Scheduler, the shared alert
+    ledger/heartbeat, and the real intake log root. check_scheduled_tasks
+    and check_empty_intake_runs are stubbed clean here — both have
+    dedicated tests below."""
     monkeypatch.setattr(watcher, "discover_pipeline_tasks", lambda: [])
     monkeypatch.setattr(watcher, "check_scheduled_tasks", lambda: (None, None))
+    monkeypatch.setattr(watcher, "check_empty_intake_runs", lambda: (None, None))
     monkeypatch.setattr(watcher, "ALERTS_DIR", tmp_path / "alerts")
     monkeypatch.setattr(watcher, "HEARTBEAT_FILE", tmp_path / "healthwatch.heartbeat")
+
+
+def test_empty_intake_detection(tmp_path, monkeypatch):
+    logs = tmp_path / "intake_pipeline"
+    (logs / "20260825T150000Z").mkdir(parents=True)  # empty -> detected
+    good = logs / "20260825T160000Z"
+    good.mkdir()
+    (good / "pipeline_receipt.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(watcher, "REPO_ROOT", tmp_path)
+    alert, warn = _REAL_INTAKE()
+    assert alert is not None and "20260825T150000Z" in alert
+    assert "160000Z" not in alert  # receipt-bearing run is not flagged
 
 
 def test_check_scheduled_tasks_warns_on_empty_discovery(monkeypatch):
