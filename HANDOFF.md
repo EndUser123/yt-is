@@ -174,7 +174,7 @@ Open items (operator-held unless noted):
 
 ## Active workstream — Personal Intelligence (2026-08-24)
 
-The Personal Intelligence / Interest Intelligence program has four genuinely
+The Personal Intelligence / Interest Intelligence program has five genuinely
 parallel descriptor state files. `HANDOFF.md` remains the canonical package
 state-of-record; these files are subordinate active-workstream state, not a
 competing project-state root.
@@ -183,6 +183,13 @@ competing project-state root.
 - `docs/handoffs/interest-intelligence/project-state-dashboard.md`
 - `docs/handoffs/interest-intelligence/project-state-recommendation.md`
 - `docs/handoffs/interest-intelligence/project-state-external-intelligence.md`
+- `docs/handoffs/interest-intelligence/project-state-discovery.md` —
+  Discovery / Concept Intelligence: durable open-world Concept Registry
+  (identity vs attention), internal new-entity/cluster burst detection
+  with `--as-of` replay, and search-fleet horizon scouting by category
+  queries (unknown names come from evidence). Distinct from the Interest
+  layer: concepts are world objects; personal relevance is a separate,
+  provenance-labeled axis.
 
 Shared goal:
 - [seen] Turn yt-is from a searchable evidence corpus into an auditable
