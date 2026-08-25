@@ -52,11 +52,22 @@ def test_check_scheduled_tasks_flags_bad_result(monkeypatch):
     monkeypatch.setattr(watcher, "check_scheduled_tasks", _REAL_CHECK)
     monkeypatch.setattr(watcher, "discover_pipeline_tasks", lambda: ["YtisContentSync"])
     monkeypatch.setattr(
-        watcher.monitor_core, "probe_scheduled_tasks",
+        watcher, "_probe_tasks_batched",
         lambda names: {n: {"available": True, "exists": True, "last_result": 1} for n in names},
     )
     alert, warning = _REAL_CHECK()
     assert alert is not None and "YtisContentSync=1" in alert
+
+
+def test_check_scheduled_tasks_never_run_is_benign(monkeypatch):
+    monkeypatch.setattr(watcher, "check_scheduled_tasks", _REAL_CHECK)
+    monkeypatch.setattr(watcher, "discover_pipeline_tasks", lambda: ["YtisPodcastSync"])
+    monkeypatch.setattr(
+        watcher, "_probe_tasks_batched",
+        lambda names: {n: {"available": True, "exists": True, "last_result": 267011} for n in names},
+    )
+    alert, warning = _REAL_CHECK()
+    assert alert is None and warning is None
 
 
 def test_format_alert_detail_readable():

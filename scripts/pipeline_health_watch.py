@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -84,22 +85,64 @@ def discover_pipeline_tasks() -> list[str]:
     return [t for t in out if t and t != SELF_TASK]
 
 
+def _probe_tasks_batched(names: list[str]) -> dict[str, dict] | None:
+    """One powershell process for ALL tasks (name, last_result) as JSON.
+
+    The per-task probe loop spawned 13+ powershell processes per tick —
+    warm-shell 15s, but cold under the scheduled-task context it exceeded
+    the 2-minute task limit, killing every tick before the heartbeat
+    write (watcher silently dead 2026-08-25 15:56-17:00Z). One process
+    is ~4s and bounded. Returns None on probe failure (caller warns).
+    """
+    name_filter = ",".join(f"'{n}'" for n in names)
+    ps = (
+        "$out = @(); Get-ScheduledTask -TaskName " + name_filter + " | "
+        "ForEach-Object { $i = $_ | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue; "
+        "$out += [PSCustomObject]@{ name = $_.TaskName; last_result = $i.LastTaskResult } }; "
+        "$out | ConvertTo-Json -Compress"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=45,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return {"__failed__": str(e)}
+    raw = (proc.stdout or "").strip()
+    if not raw:
+        return {"__failed__": "empty probe output"}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"__failed__": f"unparseable: {raw[:120]}"}
+    rows = parsed if isinstance(parsed, list) else [parsed]
+    out: dict[str, dict] = {}
+    for row in rows:
+        if isinstance(row, dict) and row.get("name"):
+            out[str(row["name"])] = {
+                "available": True,
+                "exists": True,
+                "last_result": row.get("last_result"),
+            }
+    return out
+
+
 def check_scheduled_tasks() -> tuple[str | None, str | None]:
     """LastTaskResult of discovered pipeline tasks, as (alert, warning).
 
-    Uses the monitor's per-task JSON probe instead of a zip()-aligned
-    stdout parse: misaligned or truncated output used to silently drop
-    tasks (false green). Probe failures are warnings, never silence.
+    Single batched probe (see _probe_tasks_batched). 267009 (running),
+    267011 (never run yet), 267014 (scheduler stopped state) are benign;
+    probe failures are warnings, never silence.
     """
     names = discover_pipeline_tasks()
     if names and names[0].startswith("__probe_failed__"):
         return None, f"task discovery failed: {names[0].split(':', 1)[1]}"
     if not names:
-        # Empty discovery is never silent health: zero matching tasks
-        # means the patterns or the scheduler itself drifted (review
-        # finding 1, run-b84932aa2a1d).
         return None, "task discovery returned zero pipeline tasks"
-    results = monitor_core.probe_scheduled_tasks(names) if names else {}
+    results = _probe_tasks_batched(names)
+    if "__failed__" in results:
+        return None, f"task probe failed: {results['__failed__']}"
     bad: list[str] = []
     unknown: list[str] = []
     for name in names:
@@ -108,10 +151,7 @@ def check_scheduled_tasks() -> tuple[str | None, str | None]:
             unknown.append(name)
             continue
         code = str(info.get("last_result"))
-        # 267009 (0x41301) = running; 267014 (0x41306) = scheduler
-        # terminated/stopped state (observed on healthy chs-reindex and
-        # DhtCapture runs). Neither is an exit failure.
-        if code not in ("0", "267009", "267014"):
+        if code not in ("0", "267009", "267011", "267014"):
             bad.append(f"{name}={code}")
     if bad:
         return "nightly task failure: " + ", ".join(bad), None
@@ -177,6 +217,45 @@ def _format_alert_detail(detail) -> str:
     return str(detail)[:400]
 
 
+def _compute_health_guarded(state_path, db_path, *, include_host: bool, include_control_plane: bool, timeout_s: int = 90) -> dict:
+    """compute_health in a killable subprocess with a hard timeout.
+
+    2026-08-25: ticks hung >2min inside compute_health under the
+    scheduled-task context (manual runs: 40s) and the task's 2-minute
+    kill fired before the end-of-run heartbeat — silent watcher death
+    for 15+ ticks. A guarded tick always completes: on timeout it
+    reports a degraded-health alert through the normal ledger path.
+    The child recreates MonitorContext from the CALLER's paths so
+    tests and task runs compute over the same state.
+    """
+    sp = repr(str(state_path)) if state_path else "None"
+    dp = repr(str(db_path)) if db_path else "None"
+    code = (
+        "import json, sys; sys.path.insert(0, r'P:/packages/yt-is'); "
+        "from pathlib import Path; "
+        "from scripts.pipeline_monitor import MonitorContext, compute_health; "
+        f"ctx = MonitorContext.create(state_path={('Path(' + sp + ')') if state_path else None}, "
+        f"db_path={('Path(' + dp + ')') if db_path else None}, load_env={not db_path!r}); "
+        "print(json.dumps(compute_health(ctx,"
+        f"include_host={include_host!r}, include_control_plane={include_control_plane!r})))"
+    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, timeout=timeout_s, cwd=str(REPO_ROOT),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+    except subprocess.TimeoutExpired:
+        return {"state": "WATCHDOG_HEALTH_TIMEOUT",
+                "alerts": [{"code": "watcher_health_timeout",
+                            "detail": f"compute_health exceeded {timeout_s}s (killed; monitoring degraded)"}]}
+    except (OSError, ValueError, IndexError, json.JSONDecodeError) as exc:
+        return {"state": "WATCHDOG_HEALTH_FAILED",
+                "alerts": [{"code": "watcher_health_probe_error",
+                            "detail": f"{type(exc).__name__}: {exc}"}]}
+
+
 def run_once(
     *,
     state_path: Path | None,
@@ -187,12 +266,16 @@ def run_once(
     skip_auth_probe: bool = False,
 ) -> int:
     load_workspace_env()
+    _write_heartbeat("start")
     ctx = MonitorContext.create(
         state_path=state_path, db_path=db_path, load_env=not db_path
     )
-    report = compute_health(
-        ctx, include_host=include_host, include_control_plane=include_control_plane
+    _write_heartbeat("ctx-built")
+    report = _compute_health_guarded(
+        state_path, db_path,
+        include_host=include_host, include_control_plane=include_control_plane,
     )
+    _write_heartbeat("health-computed")
     lines: list[str] = []
     state = report.get("state")
     if state in ALERT_STATES:
@@ -224,7 +307,7 @@ def run_once(
         tmp.replace(alert_file)
         print(content)
         alert_ledger.record(lines, ALERTS_DIR)
-        _write_heartbeat()
+        _write_heartbeat("done-alert")
         return 1
     alert_ledger.record([], ALERTS_DIR)  # healthy tick: resolve all open
     if alert_file.exists():
@@ -232,19 +315,24 @@ def run_once(
         print(f"all checks passed — cleared {alert_file}")
     else:
         print("all checks passed")
-    _write_heartbeat()
+    _write_heartbeat("done-healthy")
     return 0
 
 
-def _write_heartbeat() -> None:
-    """Dead-man's snitch: one timestamp per tick, read by the digest
+def _write_heartbeat(phase: str = "tick") -> None:
+    """Dead-man's snitch: timestamp per tick phase, read by the digest
     page to surface total watcher death (frozen alert file is otherwise
-    indistinguishable from a failing pipeline)."""
+    indistinguishable from a failing pipeline). Phase markers make the
+    next diagnosis evidence-first: the last phase written is the hang
+    site (2026-08-25: ticks hung >2min silently; the marker log found
+    it in one tick)."""
     try:
         HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
         HEARTBEAT_FILE.write_text(
             datetime.now(timezone.utc).isoformat(), encoding="utf-8"
         )
+        with open(HEARTBEAT_FILE.parent / "healthwatch-tick.log", "a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now(timezone.utc).isoformat()} {phase}\n")
     except OSError:
         pass
 
