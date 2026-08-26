@@ -198,9 +198,10 @@ def normalize_alias(alias: str) -> str:
 
 def connect(db_path: Any = None) -> sqlite3.Connection:
     """Open (and schema-ensure) the registry DB. row_factory=Row, 30s busy timeout."""
-    conn = sqlite3.connect(str(db_path) if db_path is not None else str(CATALOG))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout = 30000")
+    from csf.db_utils import open_sqlite_rw
+
+    target_path = db_path if db_path is not None else get_catalog_path()
+    conn = open_sqlite_rw(target_path, timeout=30.0, wal=False)
     ensure_schema(conn)
     return conn
 

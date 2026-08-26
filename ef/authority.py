@@ -20,6 +20,7 @@ import hashlib
 import sqlite3
 from pathlib import Path
 
+from csf.db_utils import open_sqlite_ro
 from .contracts import EvidenceUnit, MEDIA_TRANSCRIPT
 
 TRANSCRIPTS_DB = Path("P:/.data/yt-is/transcripts.sqlite")
@@ -31,9 +32,7 @@ MIN_TRANSCRIPT_CHARS = 100
 
 
 def _ro(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return open_sqlite_ro(path)
 
 
 # C-gate decision 3: incomplete-metadata rows are ELIGIBLE (Case A —
