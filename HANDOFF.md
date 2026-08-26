@@ -307,6 +307,19 @@ Shared next gate:
   channel-weighted corroboration, persistence episodes,
   domain-conditioned thresholds); promotion still requires a new unseen
   holdout after any future v2 implementation.
+- [seen] 2026-08-25 stateful burst bakeoff EXECUTED (preregistered plan
+  sha256 a04ee198..., frozen before results; donors: pybursts Kleinberg
+  local port with disclosed intra-bin adaptation, BOCD rejected).
+  Decay candidate D30-1.5: recall 0.9048 @ 79.1 mean candidates.
+  Gamma-Poisson episodes (60d vs 180d, mult 1.5, thr 0.80, floor 1,
+  persistence): full-v4 emR 0.5476 / ctl 0.0714 / sep 0.4762; OOF
+  emR 0.5295 / ctl 0.0717 / sep 0.4578; same config selected in all 5
+  folds. Kleinberg never qualified (max emR 0.4048). Persistence is
+  decisive (OFF -> ctl 0.246). Conclusion: BAYESIAN_EPISODES_SUPPORTED.
+  Proposed burst-policy-v2 spec at
+  stateful-burst-v1/proposed-burst-policy-v2.md — NOT implemented;
+  architect approval required; promotion needs a NEW unseen holdout
+  after freeze. No production/evaluator/ledger changes.
   Details: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
 
 ## Current authoritative snapshot (2026-08-12)
