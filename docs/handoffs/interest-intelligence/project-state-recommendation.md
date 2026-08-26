@@ -57,6 +57,13 @@ Updated: 2026-08-26 by feedback-contract hardening session (agent: zcode)
   One batch == one 10-min TTL cache regeneration; whether an operator
   actually viewed a batch is explicitly unknown (not fabricated).
 - [verified] No feedback path writes `interests` or any inference state.
+- [implemented, runtime-tested 2026-08-26 closure] Additive event
+  annotations (`feedback_event_annotations`): exclusion-from-evaluation
+  marks without mutating the immutable event row. The synthetic probe
+  from live contract verification (fe_3be9c657bd724962a5190e3bc226ef21,
+  surface=probe, verdict=wrong_inference) is annotated test_probe /
+  excluded; evaluation reads exclude it by default and audit/raw access
+  preserves it. Raw immutable history remains fully inspectable.
 - [seen] Current `/today` is not the final goal-aware utility scorer
   (policy `mechanical-clusters-recency` v1).
 - [absent-unverified] Similarity+recency baseline for the regret experiment.
@@ -74,8 +81,9 @@ Updated: 2026-08-26 by feedback-contract hardening session (agent: zcode)
 - What candidate-set protocol makes the baseline comparison fair?
 - What promotion threshold is practically meaningful?
 - View-level attribution: impression batches record render trigger
-  (request/warm) but not operator views; when does view accounting matter
-  enough to record on serve rather than render?
+  (request/warm) but not operator views — render != confirmed operator
+  view stays an open future-ranking question until the ranking experiment
+  design makes it material.
 
 ## Next action
 
