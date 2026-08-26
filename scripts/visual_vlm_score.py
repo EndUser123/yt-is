@@ -216,6 +216,7 @@ def score_batch(
         consecutive = 0
         if verdict is None:
             failures += 1
+            consecutive += 1
             print(f"{video_id}: unparseable reply", file=sys.stderr)
             time.sleep(gap_s)
             continue
@@ -271,6 +272,12 @@ def calibrate(db_path: Path) -> dict:
     """
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10.0)
     conn.execute("PRAGMA busy_timeout=5000")
+    has_table = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='visual_vlm_scores'"
+    ).fetchone()[0]
+    if not has_table:
+        conn.close()
+        return {"pairs": 0}
     rows = conn.execute(
         """SELECT s.video_id, s.density, a.title, a.description,
                   COALESCE(v.duration, 0)
@@ -289,7 +296,9 @@ def calibrate(db_path: Path) -> dict:
         ).fetchone()
         transcript = str(trow[0]) if trow and trow[0] else ""
         text_result = content_scorer.score_text(transcript, title, description)
-        depth = content_scorer.depth_weight(duration_s=duration_s, transcript_words=0)
+        depth = content_scorer.depth_weight(
+            duration_s=duration_s, transcript_words=text_result["transcript_words"]
+        )
         combined_no_thumb = text_result["text_score"] * depth
         pairs.append(
             {
@@ -339,6 +348,9 @@ def calibrate(db_path: Path) -> dict:
     sparse = [p for p in pairs if p["density"] < 5]
     old_pass = [p for p in pairs if p["old_gate_pass"]]
     tp = sum(1 for p in old_pass if p["density"] >= 5)
+    corr = rank_corr(
+        [p["text_score"] for p in pairs], [float(p["density"]) for p in pairs]
+    )
     bins = {}
     for lo, hi in ((0.0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.01)):
         bucket = [p["density"] for p in pairs if lo <= p["text_score"] < hi]
@@ -351,9 +363,7 @@ def calibrate(db_path: Path) -> dict:
     return {
         "pairs": len(pairs),
         "dense_ge5": len(dense),
-        "spearman_text_vs_density": round(
-            rank_corr([p["text_score"] for p in pairs], [float(p["density"]) for p in pairs]) or 0, 3
-        ),
+        "spearman_text_vs_density": round(corr, 3) if corr is not None else None,
         "old_gate": {
             "passers": len(old_pass),
             "true_dense_of_passers": tp,

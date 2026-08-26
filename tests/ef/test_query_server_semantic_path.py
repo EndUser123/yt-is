@@ -53,7 +53,7 @@ class FakeClient:
         self.points = points
         self.calls = []
 
-    def query_points(self, **kwargs):
+    def query_points(self, *args, **kwargs):
         self.calls.append(kwargs)
         return SimpleNamespace(points=list(self.points))
 
@@ -107,3 +107,14 @@ def test_semantic_route_respects_channel_filter(patched):
     res = q.relevant("another question", limit=2, channel_id="chanOTHER")
     # all payloads carry chanA -> filter excludes everything
     assert res == []
+
+
+def test_comparison_route_filters_both_qdrant_legs(patched):
+    pts = [_point("v1:transcript#0", "v1", 0.9)]
+    fake = patched(pts)
+    q = _make_query()
+
+    q.relevant("cats versus dogs", limit=1, channel_id="chanA")
+
+    assert len(fake.calls) == 2
+    assert fake.calls[0]["query_filter"] is fake.calls[1]["query_filter"]
