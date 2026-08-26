@@ -101,7 +101,7 @@ def _seed_users_channels_servers(conn, users=None, channels=None, servers=None):
     conn.commit()
 
 
-# --- module-level fixture: redirect DB / TDB to tmp paths -------------------
+# --- module-level fixture: redirect SDB / TDB to tmp paths -------------------
 
 
 @pytest.fixture
@@ -109,7 +109,10 @@ def dht(tmp_path, monkeypatch):
     monkeypatch.setenv("YTIS_TEST", "1")
     import scripts.run_dht_ingest as mod
     mod = importlib.reload(mod)
-    monkeypatch.setattr(mod, "DB", tmp_path / "batch_status.sqlite")
+    # module constants are SDB (status/fingerprints) and TDB (transcripts);
+    # the old `DB` name died in 69d397fa and every test in this module
+    # errored at setup until the fixture caught up
+    monkeypatch.setattr(mod, "SDB", tmp_path / "batch_status.sqlite")
     monkeypatch.setattr(mod, "TDB", tmp_path / "transcripts.sqlite")
     tdb = sqlite3.connect(mod.TDB)
     tdb.executescript("""
@@ -140,6 +143,16 @@ def _msgs(n, *, ch="100", user="u1", prefix="hello world", id_offset=0):
         (str(id_offset + i + 1), ch, user, f"[{i}] " + text, "2026-08-19T00:00:00Z")
         for i in range(n)
     ]
+
+
+def _ingest(dht, archive):
+    """ingest_archive takes the open transcripts connection (streaming
+    ingest, 69d397fa); open the temp TDB, run, close."""
+    tdb = sqlite3.connect(dht.TDB)
+    try:
+        return dht.ingest_archive(archive, tdb)
+    finally:
+        tdb.close()
 
 
 # === introspect_messages_table ==============================================
@@ -232,7 +245,7 @@ def test_ingest_archive_happy_path(dht, tmp_path):
     )
     conn.close()
 
-    result = dht.ingest_archive(archive)
+    result = _ingest(dht, archive)
     assert result["ok"] is True
     assert result["messages_seen"] == 50
     assert result["channels"] == 1
@@ -272,8 +285,8 @@ def test_ingest_archive_is_idempotent(dht, tmp_path):
     )
     conn.close()
 
-    r1 = dht.ingest_archive(archive)
-    r2 = dht.ingest_archive(archive)
+    r1 = _ingest(dht, archive)
+    r2 = _ingest(dht, archive)
     assert r1["new_batches"] == 1
     # Second pass must skip the already-stored cache_key.
     assert r2["new_batches"] == 0
@@ -295,7 +308,7 @@ def test_ingest_archive_windowing_100_messages(dht, tmp_path):
     )
     conn.close()
 
-    result = dht.ingest_archive(archive)
+    result = _ingest(dht, archive)
     assert result["ok"] is True
     assert result["new_batches"] == 3  # 100 + 100 + 50
 
@@ -327,7 +340,7 @@ def test_ingest_archive_skips_short_window(dht, tmp_path):
     )
     conn.close()
 
-    result = dht.ingest_archive(archive)
+    result = _ingest(dht, archive)
     assert result["ok"] is True
     assert result["new_batches"] == 0  # below length floor
 
@@ -355,7 +368,7 @@ def test_ingest_archive_multi_channel(dht, tmp_path):
     )
     conn.close()
 
-    result = dht.ingest_archive(archive)
+    result = _ingest(dht, archive)
     assert result["ok"] is True
     assert result["channels"] == 2
     assert result["new_batches"] == 2
@@ -376,7 +389,7 @@ def test_ingest_archive_unknown_table_returns_error(dht, tmp_path):
     conn.commit()
     conn.close()
 
-    result = dht.ingest_archive(archive)
+    result = _ingest(dht, archive)
     assert result["ok"] is False
     assert "no recognizable messages table" in result["error"]
 
@@ -399,7 +412,7 @@ def test_ingest_archive_unknown_user_falls_back_to_raw_id(dht, tmp_path):
     )
     conn.close()
 
-    result = dht.ingest_archive(archive)
+    result = _ingest(dht, archive)
     assert result["ok"] is True
     tdb = sqlite3.connect(dht.TDB)
     transcript = tdb.execute(
@@ -408,48 +421,54 @@ def test_ingest_archive_unknown_user_falls_back_to_raw_id(dht, tmp_path):
     assert "unknown_user" in transcript
 
 
-# === discover_archive =======================================================
+# === discover_archives ======================================================
 
 
-def test_discover_archive_returns_none_when_no_candidates(dht, tmp_path,
-                                                          monkeypatch):
-    # Restrict candidate globs to the empty tmp dir.
+def test_discover_archives_empty_when_no_candidates(dht, tmp_path, monkeypatch):
     import scripts.run_dht_ingest as mod
-    monkeypatch.setattr(mod, "CANDIDATE_GLOBS", [tmp_path / "missing" / "*.dht"])
-    assert dht.discover_archive() is None
+    monkeypatch.setattr(mod, "CANDIDATE_DIRS", [tmp_path / "missing"])
+    assert dht.discover_archives() == []
 
 
-def test_discover_archive_finds_one_with_messages_table(dht, tmp_path, monkeypatch):
-    # Build a candidate archive in the tmp area.
-    archive = _build_archive(tmp_path, messages=_msgs(5, ch="100", user="u1"))
-    # Restrict candidate globs to this tmp dir.
-    import scripts.run_dht_ingest as mod
-    monkeypatch.setattr(
-        mod, "CANDIDATE_GLOBS", [tmp_path / "*.dht"],
-    )
-    found = dht.discover_archive()
-    assert found == archive
-
-
-def test_discover_archive_skips_archive_without_messages_table(
+def test_discover_archives_finds_archive_with_messages_table(
         dht, tmp_path, monkeypatch):
-    # Build an archive with no messages-shaped table.
+    archive = _build_archive(tmp_path, messages=_msgs(5, ch="100", user="u1"))
+    import scripts.run_dht_ingest as mod
+    monkeypatch.setattr(mod, "CANDIDATE_DIRS", [tmp_path])
+    assert dht.discover_archives() == [archive]
+
+
+def test_discover_archives_skips_archive_without_messages_table(
+        dht, tmp_path, monkeypatch):
     other = tmp_path / "garbage.dht"
     conn = sqlite3.connect(other)
     conn.executescript("CREATE TABLE Notes (Id TEXT, Body TEXT);")
     conn.commit()
     conn.close()
     import scripts.run_dht_ingest as mod
-    monkeypatch.setattr(mod, "CANDIDATE_GLOBS", [tmp_path / "*.dht"])
-    assert dht.discover_archive() is None
+    monkeypatch.setattr(mod, "CANDIDATE_DIRS", [tmp_path])
+    assert dht.discover_archives() == []
 
 
-def test_discover_archive_handles_corrupt_archive_gracefully(
+def test_discover_archives_handles_corrupt_archive_gracefully(
         dht, tmp_path, monkeypatch):
     """A garbage .dht file should be skipped, not raise."""
     bad = tmp_path / "broken.dht"
     bad.write_bytes(b"not a sqlite database at all")
     import scripts.run_dht_ingest as mod
-    monkeypatch.setattr(mod, "CANDIDATE_GLOBS", [tmp_path / "*.dht"])
-    # No raise, no candidate -> None.
-    assert dht.discover_archive() is None
+    monkeypatch.setattr(mod, "CANDIDATE_DIRS", [tmp_path])
+    assert dht.discover_archives() == []
+
+
+def test_discover_archives_dedupes_by_name_preferring_earliest_dir(
+        dht, tmp_path, monkeypatch):
+    """Same-named archive in two candidate dirs: first dir wins."""
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _build_archive(tmp_path / "a", messages=_msgs(5, ch="100", user="u1"))
+    _build_archive(tmp_path / "b", messages=_msgs(6, ch="200", user="u2"))
+    import scripts.run_dht_ingest as mod
+    monkeypatch.setattr(mod, "CANDIDATE_DIRS", [tmp_path / "a", tmp_path / "b"])
+    found = dht.discover_archives()
+    assert len(found) == 1
+    assert found[0].parent == tmp_path / "a"
