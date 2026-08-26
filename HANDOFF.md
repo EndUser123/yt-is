@@ -207,6 +207,19 @@ Open items (operator-held unless noted):
    the post-08-20 cohort (expect pass-rate recovery per the falsifier);
    the 08-17..19 wave needs thumbnail backfill (i.ytimg.com/vi/<id>/default.jpg)
    or a watermark reset to ever pass.
+   RESOLVED-REPLACED (2026-08-25 late, operator-directed): the legacy text
+   gate was measured against VLM ground truth and failed both checks — 0/60
+   recent completes pass it, and Spearman ρ=0.133 vs MiniMax-VLM thumbnail
+   density (22/24 dense videos in the text score's BOTTOM bin). Superseded
+   by `scripts/visual_vlm_score.py` (a2f5e285): MMX vision scores thumbnails
+   via URL (no downloads — 30/hr ceiling never binds on intake), density>=5
+   enqueues at created_at epoch 1998 with profile='vlm', claiming ahead of
+   all legacy rows. Live first night: 60 scored/0 failures/24 enqueued;
+   worker processed 2 end-to-end (artifacts+OCR). Remaining 22 vlm jobs in
+   worker run vlm-batch-1; intake batch 2 (120 more) in flight. Standing
+   cadence NOT yet scheduled — operator decision pending (recommend nightly
+   scoring post-06:00-sync + bounded worker window). Wiki:
+   visual-intake-vlm-calibration-20260825.
 
 ## Active workstream — Personal Intelligence (2026-08-24)
 
