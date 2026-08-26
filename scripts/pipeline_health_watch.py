@@ -36,6 +36,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -347,6 +348,26 @@ def check_worktree_shrink() -> str | None:
             f"(2026-08-26 class)")
 
 
+def check_backup_volume(min_free_gb: float = 100.0) -> str | None:
+    """Alert when the restic target volume (G:) runs low on space.
+
+    2026-08-26 /todo finding: G: at 99% (79G free); the restic repo is
+    only ~31GB — the volume's bulk is non-backup data, so backup growth
+    into a near-full destination fails mid-write. Threshold 100GB.
+    """
+    try:
+        usage = shutil.disk_usage("G:/")
+    except OSError:
+        return None  # volume absent (offline) — the restic runner reports that
+    free_gb = usage.free / 1024 ** 3
+    if free_gb < min_free_gb:
+        return (f"backup volume G: low: {free_gb:.0f}GB free of "
+                f"{usage.total / 1024 ** 3:.0f}GB — next restic run can "
+                f"fail mid-write; free space on G: (restic repo is only "
+                f"~31GB; the bulk is non-backup data)")
+    return None
+
+
 def run_once(
     *,
     state_path: Path | None,
@@ -389,6 +410,10 @@ def run_once(
     shrink_alert = check_worktree_shrink()
     if shrink_alert:
         lines.append(f"[worktrees] {shrink_alert}")
+
+    volume_alert = check_backup_volume()
+    if volume_alert:
+        lines.append(f"[volume] {volume_alert}")
 
     if lines:
         content = (
