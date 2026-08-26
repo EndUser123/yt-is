@@ -70,6 +70,15 @@ this evaluator; conflation of the two gates is removed.
 - Inference workstream: full-coverage bootstrap exists; semantic recall
   gate outstanding. Recommendation, dashboard, and external expansion
   remain downstream of the inference/discovery evidence gates.
+- Recommendation prerequisite (2026-08-26, agent: zcode): feedback and
+  recommendation-observation event semantics HARDENED ahead of history
+  accumulation — immutable `impressions`/`feedback_events` +
+  candidate-set capture with policy/version/rank on `/today`,
+  workflow-state separated from event history, `/feedback` moved from
+  mutating GET to POST+JSON (405 on GET) on :6391/:6393, idempotent
+  retries with key-reuse rejection, legacy `feedback` table frozen
+  read-only. No ranking/algorithm change; bandits prohibited and absent.
+  See project-state-recommendation.md.
 - Evaluator-v3's 0.344 matched-comparator emerging rate is an
   OUTCOME-UNLABELED comparator rate, NOT a measured false-positive rate
   (audit: 125 rows / 33 unique concepts, heavy reuse; 6 of 21 promoted
