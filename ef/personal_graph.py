@@ -194,6 +194,20 @@ CREATE INDEX IF NOT EXISTS idx_feedback_events_item
     ON feedback_events(item_kind, item_id);
 CREATE INDEX IF NOT EXISTS idx_impressions_candidate_set
     ON impressions(candidate_set_id);
+-- Additive annotations ABOUT feedback events (2026-08-26 closure): the
+-- event row itself is never updated or deleted; an annotation marks it
+-- excluded from evaluation (e.g. live-verification probes). Raw history
+-- stays fully inspectable via the events table.
+CREATE TABLE IF NOT EXISTS feedback_event_annotations (
+    annotation_id TEXT PRIMARY KEY,
+    feedback_event_id TEXT NOT NULL,
+    annotation_type TEXT NOT NULL,    -- test_probe|operator_reviewed|...
+    exclude_from_evaluation INTEGER NOT NULL DEFAULT 1,
+    reason TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_event_annotations
+    ON feedback_event_annotations(feedback_event_id, annotation_type);
 -- Mutable workflow state, keyed by item; an event may cause a transition
 -- but this table never replaces event history.
 CREATE TABLE IF NOT EXISTS item_workflow_state (
@@ -721,6 +735,116 @@ def get_impressions_for_candidate_set(candidate_set_id: str, db_path=None):
             "SELECT * FROM impressions WHERE candidate_set_id = ? "
             "ORDER BY rank_position, impression_id",
             (candidate_set_id,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def annotate_feedback_event(feedback_event_id: str,
+                            annotation_type: str = "test_probe",
+                            *, exclude_from_evaluation: bool = True,
+                            reason: str = "", db_path=None) -> dict:
+    """Additively annotate an event (never mutate the event row).
+
+    Unknown event ids are rejected. Retrying the same (event, type) with
+    the same payload is idempotent; reuse with a different payload is
+    reported as conflict. Exclusion only takes effect through the
+    evaluation read (feedback_events_for_evaluation); raw history and
+    workflow state are untouched.
+    """
+    annotation_id = "ann_" + uuid.uuid4().hex
+    created_at = _now()
+    conn = connect(_feedback_db(db_path))
+    try:
+        hit = conn.execute(
+            "SELECT 1 FROM feedback_events WHERE feedback_event_id = ?",
+            (feedback_event_id,)).fetchone()
+        if hit is None:
+            return {"ok": False, "error": "unknown feedback_event_id"}
+        try:
+            conn.execute(
+                "INSERT INTO feedback_event_annotations (annotation_id, "
+                "feedback_event_id, annotation_type, "
+                "exclude_from_evaluation, reason, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (annotation_id, feedback_event_id, annotation_type,
+                 1 if exclude_from_evaluation else 0, reason or None,
+                 created_at))
+        except sqlite3.IntegrityError:
+            row = conn.execute(
+                "SELECT annotation_id, exclude_from_evaluation, reason "
+                "FROM feedback_event_annotations WHERE feedback_event_id=? "
+                "AND annotation_type=?",
+                (feedback_event_id, annotation_type)).fetchone()
+            conn.rollback()
+            if row is None:
+                return {"ok": False, "error": "annotation conflict"}
+            if (bool(row["exclude_from_evaluation"]),
+                    row["reason"] or "") != (
+                    bool(exclude_from_evaluation), reason or ""):
+                return {"ok": False, "error": "annotation key reuse with "
+                                              "different payload"}
+            return {"ok": True, "duplicate": True,
+                    "annotation_id": row["annotation_id"]}
+        conn.commit()
+        return {"ok": True, "duplicate": False,
+                "annotation_id": annotation_id}
+    finally:
+        conn.close()
+
+
+def get_feedback_event(feedback_event_id: str, db_path=None):
+    """Raw single-event read for audit — annotations do not hide it."""
+    conn = connect(_feedback_db(db_path))
+    try:
+        row = conn.execute(
+            "SELECT * FROM feedback_events WHERE feedback_event_id = ?",
+            (feedback_event_id,)).fetchone()
+        if row is None:
+            return None
+        anns = [dict(a) for a in conn.execute(
+            "SELECT * FROM feedback_event_annotations "
+            "WHERE feedback_event_id = ?", (feedback_event_id,))]
+        return dict(row) | {"annotations": anns}
+    finally:
+        conn.close()
+
+
+# Canonical evaluation read: excludes events annotated
+# exclude_from_evaluation=1 by default; include_excluded=True is the
+# explicit audit mode (annotated events come back flagged, not filtered).
+def feedback_events_for_evaluation(item_kind: str = None,
+                                   item_id: str = None,
+                                   impression_id: str = None,
+                                   include_excluded: bool = False,
+                                   db_path=None) -> list:
+    clauses, args = [], []
+    if item_kind is not None:
+        clauses.append("e.item_kind = ?")
+        args.append(item_kind)
+    if item_id is not None:
+        clauses.append("e.item_id = ?")
+        args.append(item_id)
+    if impression_id is not None:
+        clauses.append("e.impression_id = ?")
+        args.append(impression_id)
+    if not include_excluded:
+        clauses.append(
+            "NOT EXISTS (SELECT 1 FROM feedback_event_annotations a "
+            "WHERE a.feedback_event_id = e.feedback_event_id AND "
+            "a.exclude_from_evaluation = 1)")
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    conn = connect(_feedback_db(db_path))
+    try:
+        rows = conn.execute(
+            "SELECT e.*" + (", EXISTS ("
+                            "SELECT 1 FROM feedback_event_annotations a "
+                            "WHERE a.feedback_event_id="
+                            "e.feedback_event_id AND "
+                            "a.exclude_from_evaluation=1) AS excluded"
+                            if include_excluded else "") +
+            f" FROM feedback_events e{where} "
+            "ORDER BY e.occurred_at, e.feedback_event_id", args).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()

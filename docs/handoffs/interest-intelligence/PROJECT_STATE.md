@@ -67,9 +67,23 @@ this evaluator; conflation of the two gates is removed.
   disclosure: cd9733d9… FAILED_AFTER_CONSUMPTION from a pre-fix test
   bug (no real holdout affected; row preserved; tests now redirect the
   ledger via YTIS_FORMAL_LEDGER_PATH).
-- Inference workstream: full-coverage bootstrap exists; semantic recall
-  gate outstanding. Recommendation, dashboard, and external expansion
+- Inference workstream: semantic recall gate EVALUATED 2026-08-26 and
+  FAILED (see below); Recommendation, dashboard, and external expansion
   remain downstream of the inference/discovery evidence gates.
+<<<<<<< HEAD
+- Interest-recovery gate result (evaluator interest-recovery-v1,
+  preregistered pre-scoring, aggregate only, no private names):
+  legacy top-25 baseline recall 0.024 (all) / 0.036 (supported subset) /
+  0.000 (narrow half), provenance valid 1.0, explicit-negative rate
+  0.50 (post review-fix rescore; 0.083 pre-fix); full-coverage bootstrap completed ZERO runs in 3 consecutive
+  attempts — fail-closed contract violations (dangling related_to at
+  batches 4 and 3, invalid temporal_state enum at batch 1) — so
+  full-coverage recall is unavailable. Verdict FAIL; recommendation
+  optimization remains blocked. Perturbation/stability runs beyond
+  deterministic-replay (verified identical) were not executable without
+  a completed bootstrap run.
+||||||| b4c2bef5
+=======
 - Recommendation prerequisite (2026-08-26, agent: zcode): feedback and
   recommendation-observation event semantics HARDENED ahead of history
   accumulation — immutable `impressions`/`feedback_events` +
@@ -79,6 +93,7 @@ this evaluator; conflation of the two gates is removed.
   retries with key-reuse rejection, legacy `feedback` table frozen
   read-only. No ranking/algorithm change; bandits prohibited and absent.
   See project-state-recommendation.md.
+>>>>>>> cb22856acc4e
 - Evaluator-v3's 0.344 matched-comparator emerging rate is an
   OUTCOME-UNLABELED comparator rate, NOT a measured false-positive rate
   (audit: 125 rows / 33 unique concepts, heavy reuse; 6 of 21 promoted
