@@ -567,6 +567,29 @@ def check_extended_surfaces() -> str | None:
     return " | ".join(problems[:4]) + (" …" if len(problems) > 4 else "")
 
 
+def _expire_foreign_ledger(max_age_h: float = 24.0) -> None:
+    """Auto-expire stale events in the ih alert ledger (2026-08-26).
+
+    The ih_receipt_checker's design says "resolution is an operator
+    action" — but no operator action ever fires, so events accumulate
+    indefinitely (14 events open 48h+ when this shipped). This runs the
+    resolve_alerts utility against the ih ledger every tick, resolving
+    events older than max_age_h. The yt-is ledger already self-resolves
+    via record([]) on healthy ticks.
+    """
+    ih_dir = Path("P:/.data/info-harness/alerts")
+    if not (ih_dir / "open.json").is_file():
+        return
+    try:
+        subprocess.run(
+            [sys.executable, "P:/.agents/scripts/resolve_alerts.py",
+             "--ledger", str(ih_dir), "--older-than-hours", str(max_age_h)],
+            capture_output=True, text=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (subprocess.TimeoutExpired, OSError):
+        pass  # best-effort expiry; never block the tick
+
+
 def run_once(
     *,
     state_path: Path | None,
@@ -634,9 +657,11 @@ def run_once(
         tmp.replace(alert_file)
         print(content)
         alert_ledger.record(lines, ALERTS_DIR)
+        _expire_foreign_ledger()
         _write_heartbeat("done-alert")
         return 1
     alert_ledger.record([], ALERTS_DIR)  # healthy tick: resolve all open
+    _expire_foreign_ledger()
     if alert_file.exists():
         alert_file.unlink()
         print(f"all checks passed — cleared {alert_file}")
