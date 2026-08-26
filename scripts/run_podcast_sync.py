@@ -86,7 +86,14 @@ def already_ingested(cache_key: str) -> bool:
 
 def fetch_episodes(url: str, feed_name: str):
     import feedparser
-    parsed = feedparser.parse(url)
+    import urllib.request
+
+    # feedparser.parse(url) does its own socket fetch with NO timeout and can
+    # block forever on a dead feed (2026-08-26: sync produced no output and
+    # no error for 90+ minutes). Fetch bounded, then parse the payload.
+    with urllib.request.urlopen(url, timeout=30) as resp:
+        payload = resp.read()
+    parsed = feedparser.parse(payload)
     episodes = []
     for e in parsed.entries[:15]:
         audio_url = None
