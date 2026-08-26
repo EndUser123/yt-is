@@ -14,8 +14,7 @@ Both DBs are live (WAL) while the fetch pipeline runs; all connections use
 mode=ro so this module can never write or lock the authority.
 """
 
-from __future__ import annotations
-
+import os
 import hashlib
 import sqlite3
 from pathlib import Path
@@ -23,8 +22,22 @@ from pathlib import Path
 from csf.db_utils import open_sqlite_ro
 from .contracts import EvidenceUnit, MEDIA_TRANSCRIPT
 
-TRANSCRIPTS_DB = Path("P:/.data/yt-is/transcripts.sqlite")
-STATUS_DB = Path("P:/.data/yt-is/batch_status.sqlite")
+_DEFAULT_TRANSCRIPTS_DB = Path("P:/.data/yt-is/transcripts.sqlite")
+_DEFAULT_STATUS_DB = Path("P:/.data/yt-is/batch_status.sqlite")
+
+
+def get_transcripts_db_path() -> Path:
+    override = os.environ.get("YTIS_TRANSCRIPT_CACHE_DB_PATH")
+    return Path(override) if override else _DEFAULT_TRANSCRIPTS_DB
+
+
+def get_status_db_path() -> Path:
+    override = os.environ.get("YTIS_BATCH_STATUS_DB_PATH")
+    return Path(override) if override else _DEFAULT_STATUS_DB
+
+
+TRANSCRIPTS_DB = _DEFAULT_TRANSCRIPTS_DB
+STATUS_DB = _DEFAULT_STATUS_DB
 
 # Test fixtures and degenerate rows discovered during discovery (receipt in
 # DECISIONS.md D005/D006 session notes): 1 test row, 48 rows <100 chars.
@@ -73,10 +86,12 @@ def list_eligible_transcripts(limit: int | None = None,
         q += " limit ?"
         args.append(limit)
 
-    conn = sqlite3.connect(f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True)
+    transcripts_db = get_transcripts_db_path()
+    status_db = get_status_db_path()
+    conn = sqlite3.connect(f"file:{transcripts_db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute(f"attach database 'file:{STATUS_DB}?mode=ro' as status")
+        conn.execute(f"attach database 'file:{status_db}?mode=ro' as status")
         rows = [dict(r) for r in conn.execute(q, args)]
     finally:
         conn.close()
@@ -104,13 +119,14 @@ def build_eu(row: dict) -> EvidenceUnit:
 
 
 def reopen_span(video_id: str, start_char: int, end_char: int,
-                context: int = 0, transcripts_db: Path = TRANSCRIPTS_DB) -> str:
+                context: int = 0, transcripts_db: Path | None = None) -> str:
     """Reopen the authority transcript and slice the provenance span.
 
     The 'reopen' half of the A-0 round-trip requirement: the result must be
     derived from the authority DB, never from projection-side copies.
     """
-    conn = _ro(transcripts_db)
+    db_path = transcripts_db if transcripts_db is not None else get_transcripts_db_path()
+    conn = _ro(db_path)
     try:
         row = conn.execute(
             "select transcript from transcript_cache where video_id = ? "
@@ -127,7 +143,9 @@ def reopen_span(video_id: str, start_char: int, end_char: int,
 
 def authority_stats() -> dict:
     """Cardinality + health snapshot of the authority layer (discovery aid)."""
-    tc = _ro(TRANSCRIPTS_DB)
+    transcripts_db = get_transcripts_db_path()
+    status_db = get_status_db_path()
+    tc = _ro(transcripts_db)
     try:
         stats = {
             "transcript_rows": tc.execute(
@@ -144,7 +162,7 @@ def authority_stats() -> dict:
     finally:
         tc.close()
 
-    bs = _ro(STATUS_DB)
+    bs = _ro(status_db)
     try:
         stats["analysis_by_status"] = dict(bs.execute(
             "select status, count(*) from analysis_status group by status").fetchall())
@@ -155,9 +173,9 @@ def authority_stats() -> dict:
 
     # Provenance-gap audit: transcripts lacking title/channel (excluded
     # from EU building by contract; Phase A needs their cardinality).
-    conn = sqlite3.connect(f"file:{TRANSCRIPTS_DB}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{transcripts_db}?mode=ro", uri=True)
     try:
-        conn.execute(f"attach database 'file:{STATUS_DB}?mode=ro' as status")
+        conn.execute(f"attach database 'file:{status_db}?mode=ro' as status")
         stats["provenance_gaps"] = conn.execute(
             """select count(*) from transcript_cache t
                left join status.analysis_status a on a.video_id = t.video_id
