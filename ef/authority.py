@@ -28,12 +28,14 @@ _DEFAULT_STATUS_DB = Path("P:/.data/yt-is/batch_status.sqlite")
 
 def get_transcripts_db_path() -> Path:
     override = os.environ.get("YTIS_TRANSCRIPT_CACHE_DB_PATH")
-    return Path(override) if override else _DEFAULT_TRANSCRIPTS_DB
+    # fall back to the module constant (not the frozen default) so test
+    # monkeypatching of TRANSCRIPTS_DB keeps working alongside the env override
+    return Path(override) if override else TRANSCRIPTS_DB
 
 
 def get_status_db_path() -> Path:
     override = os.environ.get("YTIS_BATCH_STATUS_DB_PATH")
-    return Path(override) if override else _DEFAULT_STATUS_DB
+    return Path(override) if override else STATUS_DB
 
 
 TRANSCRIPTS_DB = _DEFAULT_TRANSCRIPTS_DB

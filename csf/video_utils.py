@@ -70,6 +70,11 @@ def extract_frames(
         RuntimeError: FFmpeg is not installed or not on PATH — a truly
             unrecoverable state.
     """
+    if fps <= 0:
+        raise ValueError(f"fps must be positive, got {fps}")
+    if max_frames <= 0:
+        raise ValueError(f"max_frames must be positive, got {max_frames}")
+
     video_path = Path(video_path)
 
     duration = _parse_duration_ffmpeg(video_path)

@@ -749,8 +749,11 @@ class _BatchStatusStorage:
             conn = sqlite3.connect(uri, uri=True, timeout=30.0)
         else:
             conn = sqlite3.connect(self._db_path, timeout=30.0)
+            # busy_timeout BEFORE WAL: the WAL acquisition itself can
+            # block on a lock; arming the timeout first prevents a
+            # hot-spin failure (codex 3b43c030 ordering invariant)
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
     @contextmanager
@@ -3208,8 +3211,8 @@ def record_status_event(
         db_path = Path(db_path)
 
     conn = sqlite3.connect(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA journal_mode=WAL")
 
     try:
         # Check current rank for monotonic enforcement

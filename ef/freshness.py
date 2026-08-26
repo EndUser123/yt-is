@@ -168,9 +168,9 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         raise RuntimeError("no indexed_watermark recorded; run bulk build "
                            "state bootstrap first (set to build snapshot "
                            "watermark)")
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{authority.get_transcripts_db_path().as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
-    conn.execute(f"attach database 'file:{authority.STATUS_DB}?mode=ro' as status")
+    conn.execute(f"attach database 'file:{authority.get_status_db_path().as_posix()}?mode=ro' as status")
     rows = [dict(r) for r in conn.execute("""
         select t.video_id, t.lang, t.source, t.cached_at, t.transcript,
                a.title, a.channel_id, a.published_at, a.duration,
@@ -219,7 +219,14 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         quarantined = tuple(authority.QUARANTINED_VIDEO_IDS)
         boundary_ts = rows[-1]["cached_at"]
         boundary_total = _eligible_boundary_count(boundary_ts, quarantined)
-        at_boundary = sum(1 for r in rows if r["cached_at"] == boundary_ts)
+        # count ONLY eligible selected rows: a quarantined row inside the
+        # selected tie made at_boundary equal the eligible boundary_total
+        # while an eligible row stayed unselected — completion skipped,
+        # watermark held forever (reviewer finding, run-77229ad22e75)
+        at_boundary = sum(
+            1 for r in rows
+            if r["cached_at"] == boundary_ts
+            and r["video_id"] not in quarantined)
         if at_boundary < boundary_total <= TIE_COMPLETION_MAX:
             tie_sql = _SEL % "t.cached_at = ?"
             seen = {(r["video_id"], r["lang"], r["source"]) for r in rows}
@@ -302,7 +309,7 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         # deletion reconciliation: catalog EUs missing from authority
         # (single shared scan — per-EU connection opens caused disk I/O
         # errors once the catalog passed ~78K EUs)
-        auth = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro",
+        auth = sqlite3.connect(f"file:{authority.get_transcripts_db_path().as_posix()}?mode=ro",
                                uri=True)
         try:
             auth_vids = {r[0] for r in auth.execute(

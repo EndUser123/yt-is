@@ -15,6 +15,7 @@ idempotent and safe alongside other tables.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 import re
 import sqlite3
@@ -23,7 +24,18 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
+_DEFAULT_CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
+
+
+def get_catalog_path() -> Path:
+    """Catalog DB path with YTIS_EF_CATALOG_DB_PATH env override (restored
+    agy bc89a9c1 hunk dropped by an --ours conflict resolution — reviewer
+    blocker, run-9caef895f992)."""
+    override = os.environ.get("YTIS_EF_CATALOG_DB_PATH")
+    return Path(override) if override else _DEFAULT_CATALOG
+
+
+CATALOG = _DEFAULT_CATALOG
 
 LIFECYCLE_STATES = (
     "candidate",
