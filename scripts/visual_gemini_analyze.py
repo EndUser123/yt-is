@@ -221,6 +221,7 @@ def select_recent(
         for r in conn.execute(
             f"""SELECT a.video_id FROM analysis_status a
                 WHERE a.status = 'complete' AND a.updated_at >= ?
+                  AND EXISTS (SELECT 1 FROM video_catalog c WHERE c.video_id = a.video_id)
                   AND NOT EXISTS ({have})
                 ORDER BY a.updated_at DESC LIMIT ?""",
             (cutoff, count),

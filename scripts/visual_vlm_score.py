@@ -129,9 +129,12 @@ def select_candidates(
 
     The thumbnail URL is constructible from video_id alone, so NULL-thumbnail
     rows (the 08-17..19 ingest wave is 100% NULL) are still scoreable — do
-    not filter on the column. ``include_queued`` scores already-queued videos
-    too (signal completeness); enqueue stays guarded by the one-job-per-video
-    invariant, so re-enqueue is impossible.
+    not filter on the column. Membership in video_catalog is the YouTube
+    guard: analysis_status also holds reddit rows (7-char base36 ids, NULL
+    thumbnails) that the old thumbnail filter was accidentally excluding
+    (2026-08-26 batch-3 failure). ``include_queued`` scores already-queued
+    videos too (signal completeness); enqueue stays guarded by the
+    one-job-per-video invariant, so re-enqueue is impossible.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     queued_clause = "" if include_queued else (
@@ -142,6 +145,7 @@ def select_candidates(
            WHERE a.status = 'complete'
              AND a.updated_at >= ?
              {queued_clause}
+             AND EXISTS (SELECT 1 FROM video_catalog c WHERE c.video_id = a.video_id)
              AND NOT EXISTS (SELECT 1 FROM visual_vlm_scores s WHERE s.video_id = a.video_id)
            ORDER BY a.updated_at DESC
            LIMIT ?""",
