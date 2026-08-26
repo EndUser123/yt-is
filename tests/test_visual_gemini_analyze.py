@@ -157,3 +157,64 @@ def test_call_gemini_video_retries_503_then_succeeds(monkeypatch):
     verdict = mod.call_gemini_video("k" * 39, "abc123", timeout_s=5)
     assert calls["n"] == 2
     assert verdict["density"] == 5
+
+
+def test_retry_after_503_posts_bytes_not_error_text(monkeypatch):
+    """Regression: quota-fix shadowed `body` with the decoded error text, so
+    the retry POSTed the prior error string. The request data must stay bytes."""
+    import io
+    import urllib.error
+
+    import scripts.visual_gemini_analyze as mod
+
+    seen = []
+    payload = json.dumps({"contents": [{"parts": [{"text": "x"}]}]}).encode()
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        seen.append(req.data)
+        if len(seen) == 1:
+            raise urllib.error.HTTPError(req.full_url, 503, "busy", {}, io.BytesIO(b"{}"))
+        return FakeResp(
+            json.dumps(
+                {"candidates": [{"content": {"parts": [{"text": '{"density": 7}'}]}}]}
+            ).encode()
+        )
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    verdict = mod.call_gemini_video("k" * 39, "abc123", timeout_s=5)
+    assert len(seen) == 2
+    assert all(isinstance(d, bytes) for d in seen), "retry must POST bytes"
+    assert seen[1] == seen[0], "retry must resend identical payload"
+    assert verdict["density"] == 7
+
+
+def test_429_billing_hard_stops(monkeypatch):
+    import io
+    import urllib.error
+
+    import scripts.visual_gemini_analyze as mod
+
+    billing_msg = json.dumps({"error": {"code": 429, "message": "You exceeded your current quota, please check your plan and billing details."}}).encode()
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 429, "quota", {}, io.BytesIO(billing_msg))
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    try:
+        mod.call_gemini_video("k" * 39, "abc123", timeout_s=5)
+        raised = False
+    except mod.GeminiQuotaExceeded:
+        raised = True
+    except RuntimeError:
+        raised = False
+    assert raised, "plan/billing 429 must raise GeminiQuotaExceeded, not retry"
+
