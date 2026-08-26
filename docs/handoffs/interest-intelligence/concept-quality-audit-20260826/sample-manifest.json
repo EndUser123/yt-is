@@ -1,0 +1,46 @@
+{
+ "frozen_at": "2026-08-26T13:0x pre-review",
+ "policy_path": "P:/tmp/burst-audit-concept/sample.py",
+ "policy_hash": "290a3fbdd9b6a031",
+ "universe_counts": {
+  "kg_entity_nodes": 388,
+  "topic_clusters_noseries": 319,
+  "mentioned_in_edges": 91670,
+  "trend_topics": 16
+ },
+ "sample_sizes": {
+  "A_entity": 51,
+  "B_cluster": 30,
+  "R_edges": 60,
+  "T_trend": 15
+ },
+ "strata_A": {
+  "mid-deg/mid-pub": 97,
+  "low-deg/low-pub": 113,
+  "high-deg/high-pub": 114,
+  "low-deg/mid-pub": 19,
+  "high-deg/mid-pub": 13,
+  "mid-deg/low-pub": 17,
+  "mid-deg/high-pub": 13,
+  "high-deg/low-pub": 2
+ },
+ "strata_B": {
+  "ge1000": 32,
+  "100-999": 261,
+  "lt100": 26
+ },
+ "strata_R": {
+  "w3-5": 3587,
+  "w2": 4761,
+  "wgt5": 2597
+ },
+ "hidden_fields": [
+  "trend_alert membership",
+  "temporal-emergence labels",
+  "holdout status",
+  "burst v1/v2 posteriors",
+  "lifecycle state",
+  "recommendation outcomes"
+ ],
+ "revision": "v2: fixed evidence-title/channel join (eu table, not kg meta_json); v1 reviews discarded as pilot (sampler defect: all publisher/channel fields blank, relation evidence titles missing)"
+}
