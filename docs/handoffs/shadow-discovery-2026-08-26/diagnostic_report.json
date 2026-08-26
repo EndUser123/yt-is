@@ -1,0 +1,324 @@
+{
+ "plan": {
+  "plan_id": "shadow_b3a6ddcc636b",
+  "created_at": "2026-08-26T19:02:53Z",
+  "policy_version": "shadow-discovery-v1",
+  "anchors_used": [
+   "Cowork Skills Hours",
+   "Bitcoin Ethereum Crypto",
+   "Exercises Rebounder Min",
+   "Spread Short Spreads",
+   "Manager Product Career",
+   "Hfy Stories Alien",
+   "Islam Muslims Dawah",
+   "Profitable Traders Trader",
+   "Wave Profile Volume",
+   "Sugar Resistance Insulin",
+   "Kling Higgsfield Veo",
+   "Capcut Add Veed",
+   "Lean 10% Getting",
+   "Gains Studies Sets",
+   "Indicator Tradingview Indicators",
+   "Qqq Technical Analysis",
+   "Nextjs Prisma Clone",
+   "Notebooklm Turn Professional",
+   "Swiftui Framer Css",
+   "Mac Nemoclaw Zero",
+   "Stripe Nextjs Platform",
+   "Found Black Universe",
+   "Autistic Masking Autistics",
+   "Fold Smartphone Phone",
+   "Store Wordpress Shopify",
+   "AI",
+   "YouTube",
+   "Google",
+   "Action",
+   "Claude",
+   "Drive",
+   "API",
+   "Apple",
+   "Protein",
+   "Zoom",
+   "Amazon",
+   "GitHub",
+   "Premium",
+   "React",
+   "Fear",
+   "Microsoft",
+   "United States",
+   "Insulin",
+   "Instagram",
+   "Meta",
+   "Earth",
+   "Twitter",
+   "OpenAI",
+   "NVIDIA",
+   "Mac",
+   "Facebook",
+   "Anthropic",
+   "recovery",
+   "Trump",
+   "Claude Code",
+   "S&P",
+   "Glucose",
+   "New York",
+   "Good Idea",
+   "AI agents",
+   "Tesla",
+   "PC",
+   "iPhone",
+   "Android",
+   "Blood sugar",
+   "weight loss",
+   "Docs",
+   "GPU",
+   "pull-up",
+   "JavaScript",
+   "Probability",
+   "Workspace",
+   "LinkedIn",
+   "Bench",
+   "dip"
+  ],
+  "queries": [
+   {
+    "query_id": "sq_bf41de4966",
+    "operator": "fingerprint",
+    "query": "\"SKILL.md\" \"AGENTS.md\" github repository",
+    "exploration": "wildcard",
+    "meta": {},
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_dff1ab749b",
+    "operator": "adjacency",
+    "query": "prerequisites and foundations for Cowork Skills Hours",
+    "exploration": "adjacent",
+    "meta": {
+     "adjacency_class": "prerequisites",
+     "anchor": "Cowork Skills Hours"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_727dc6eb1a",
+    "operator": "adjacency",
+    "query": "infrastructure that enables Cowork Skills Hours",
+    "exploration": "adjacent",
+    "meta": {
+     "adjacency_class": "enabling_infrastructure",
+     "anchor": "Cowork Skills Hours"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_707af29eaa",
+    "operator": "capability",
+    "query": "Codex skills extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "skills"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_265738f4bd",
+    "operator": "capability",
+    "query": "Codex research and search extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "research and search"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_ef887fa459",
+    "operator": "capability",
+    "query": "Claude evals extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Claude",
+     "capability": "evals"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_1b07455f74",
+    "operator": "capability",
+    "query": "Grok model routing extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Grok",
+     "capability": "model routing"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_1b89f58234",
+    "operator": "capability",
+    "query": "Pi skills extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Pi",
+     "capability": "skills"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_6b9f209df4",
+    "operator": "capability",
+    "query": "Pi research and search extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Pi",
+     "capability": "research and search"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_adbdc61940",
+    "operator": "capability",
+    "query": "ZCode evals extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "ZCode",
+     "capability": "evals"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_96988e0219",
+    "operator": "capability",
+    "query": "OpenCode model routing extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "OpenCode",
+     "capability": "model routing"
+    },
+    "policy_version": "shadow-discovery-v1"
+   }
+  ]
+ },
+ "query_counts_by_operator": {
+  "fingerprint": 1,
+  "adjacency": 2,
+  "capability": 8
+ },
+ "records": 168,
+ "errors": 0,
+ "dispositions": {
+  "DONOR-EXTRACT": 33,
+  "WATCH": 70,
+  "IGNORE": 63,
+  "TEST": 2
+ },
+ "disposition_examples": {
+  "DONOR-EXTRACT": [
+   "https://github.com/aiagentskills/skills",
+   "https://github.com/microsoft/skills",
+   "https://github.com/addyosmani/agent-skills",
+   "https://github.com/vercel-labs/agent-skills/blob/main/AGENTS.md",
+   "https://github.com/netresearch/agent-rules-skill",
+   "https://github.com/addyosmani/agent-skills/blob/main/AGENTS.md",
+   "https://github.com/aiagentskills/skills/blob/main/README.md",
+   "https://github.com/microsoft/skills/blob/main/Agents.md",
+   "https://github.com/netresearch/agents-skill",
+   "https://chrisreddington.com/blog/building-your-agent-toolbox/"
+  ],
+  "WATCH": [
+   "https://github.com/microsoft/agent-skills",
+   "https://github.com/addyosmani/agent-skills?tab=readme-ov-file",
+   "https://github.com/mxyhi/ok-skills",
+   "https://github.com/cameronbrill/universal-agents",
+   "https://anthropic.skilljar.com/introduction-to-claude-cowork",
+   "https://coworkconsultant.com/blog/how-to-use-claude-cowork-skills/",
+   "https://www.anthropic.com/webinars/cowork-workshop-foundations",
+   "https://composio.dev/content/top-cowork-skills",
+   "https://www.coworkcertificationguide.com/learn",
+   "https://coworkacademy.com/how-it-works/"
+  ],
+  "IGNORE": [
+   "https://github.com/tianjianjiang/smith",
+   "https://www.codex-docs.com/en/docs/plugins",
+   "https://learn.chatgpt.com/docs/plugins",
+   "https://composio.dev/content/best-codex-plugins",
+   "https://github.com/mateusdcc/codex-search-opencode",
+   "https://github.com/literaf/ai4scholar-plugin-codex",
+   "https://www.firecrawl.dev/blog/best-codex-plugins",
+   "https://github.com/mikeyobrien/pi-codex-search/",
+   "https://vercel.com/i/codex-plugins",
+   "https://github.com/ayagmar/pi-codex-web-search"
+  ],
+  "TEST": [
+   "https://github.com/antfu/skills/blob/main/AGENTS.md",
+   "https://www.reddit.com/r/ClaudeCode/comments/1qhjke3/calling_claude_code_plugin_authors_looking_for/"
+  ]
+ },
+ "convergence": [
+  {
+   "mechanism": "skill_portability",
+   "independent_implementations": 3,
+   "host_diversity": [
+    "chrisreddington.com",
+    "findskill.ai",
+    "github.com"
+   ],
+   "evidence": [
+    {
+     "title": "GitHub - addyosmani/agent-skills: Production-grade engineering skills for AI coding agents. \u00b7 GitHub",
+     "url": "https://github.com/addyosmani/agent-skills",
+     "operator": "fingerprint"
+    },
+    {
+     "title": "AGENTS.md and SKILL.md examples: build a reusable agent toolbox | Chris Reddington",
+     "url": "https://chrisreddington.com/blog/building-your-agent-toolbox/",
+     "operator": "fingerprint"
+    },
+    {
+     "title": "GitHub - kesslernity/awesome-copilot-cowork-skills: 37 folder-drop skills for Microsoft 365 Copilot Cowork. 21 workflow skills plus a 16-persona executive review board. Drop a folder into OneDrive, no admin, no app package. The same SKILL.md files run verbatim in Claude Code. \u00b7 GitHub",
+     "url": "https://github.com/kesslernity/awesome-copilot-cowork-skills",
+     "operator": "adjacency"
+    },
+    {
+     "title": "Cowork Skills & Plugins: Build Custom SKILL.md + MCP Connectors | FindSkill.ai \u2014 Learn AI for Your Job",
+     "url": "https://findskill.ai/courses/cowork-skills-plugins/",
+     "operator": "adjacency"
+    }
+   ],
+   "first_observed": "2026-08-26T19:02:53Z",
+   "trend": "first-observation",
+   "confidence": "medium",
+   "overlap_with_our_architecture": true,
+   "implication": "watch for standardization; evaluate donor extraction"
+  }
+ ],
+ "evaluation_contract": {
+  "purpose": "Blinded usefulness assessment of shadow discovery (Plan B) vs baseline scout (Plan A). No superiority claim before this contract is executed by an assessor blind to which plan produced which item.",
+  "unit": "one discovery record (url + title + snippet + originating query)",
+  "axes": {
+   "useful_discoveries_gained": "count judged actionable or knowledge-extending",
+   "irrelevant_discoveries_added": "count judged noise",
+   "evidence_quality": "1-5 mean of primary-source availability",
+   "detection_lead_time": "days vs first appearance in existing corpus",
+   "novelty": "fraction not present in wiki/registry/corpus",
+   "transfer_value": "fraction applicable beyond the anchor domain",
+   "regret_miss_reduction": "assessor judgment, 1-5",
+   "investigate_save_action_likelihood": "fraction the assessor would save/investigate/act on"
+  },
+  "controls": {
+   "same_budget": "Plan A and Plan B run with the same query count and tier",
+   "blinding": "items shuffled, plan origin stripped before assessment",
+   "sample_size": "minimum 50 records per plan for a reportable comparison"
+  },
+  "success_rule": "Plan B superior only if useful_gained increases AND irrelevant fraction does not increase at 95% interval",
+  "falsifier": "blinded assessment shows adjacency/bridge/fingerprint operators produce no more useful discoveries per query than wildcard-only planning"
+ },
+ "provenance": {
+  "agent": "zcode",
+  "mode": "shadow",
+  "layer": "yt-is/ef"
+ },
+ "generated_at": "2026-08-26T19:02:53Z"
+}
