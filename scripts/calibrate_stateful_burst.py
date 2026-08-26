@@ -37,6 +37,17 @@ import evaluate_concept_discovery as ev  # noqa: E402
 from ef import concept_discovery as cd  # noqa: E402
 from ef import concept_registry as cr  # noqa: E402
 
+def _load_targets_local(path):
+    """Local legacy-targets loader (evaluator-v4 removed load_targets;
+    concluded-campaign diagnostics keep a self-contained copy)."""
+    import json as _json
+    payload = _json.loads(Path(path).read_text(encoding="utf-8"))
+    out = []
+    for t in payload.get("targets", []):
+        t.setdefault("aliases", [])
+        out.append(t)
+    return out
+
 PLAN_PATH = Path("P:/.data/yt-is/ef/concept-discovery-calibration/"
                  "stateful-burst-v1/preregistered-plan.json")
 PLAN_SHA256 = "a04ee19897ef318daa658caf8d27995a1caa11a556e0def050f340c52c24b957"
@@ -329,7 +340,7 @@ def extract() -> None:
     conn = sqlite3.connect(str(fdb))
     conn.executescript(SCHEMA)
     conn.execute("INSERT INTO meta VALUES('plan_sha256', ?)", (digest,))
-    targets = ev.load_targets(HOLDOUT)
+    targets = _load_targets_local(HOLDOUT)
     scor = {s["target_id"]: s["T"] for s in
             json.loads((ART / "target-scorability.json").read_text())}
     negs = json.loads((ART / "negative-controls.json").read_text())

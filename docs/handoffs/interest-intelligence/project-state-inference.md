@@ -98,7 +98,37 @@ full-coverage bootstrap implementer passes
 
 ## Next action
 
-Run a fresh, contamination-separated evaluator comparing the preserved top-25
-baseline against the full-coverage bootstrap on the private known-interest
-set, including perturbation/stability tests. Recommendation-ranking
-optimization remains blocked until that semantic recall gate passes.
+- 2026-08-26 (architect correction, same day): the interest-recovery
+  evaluation recorded below used the WRONG ground truth. Evaluator
+  interest-recovery-v1 treated Discovery temporal-emergence artifacts
+  (holdout-v4 targets curated for retrospective concept-emergence from
+  raw-corpus PRODUCT|TECH|ORG|CONCEPT; case-control paired negatives)
+  as a known-Interest/Goal/InformationNeed/Question holdout. They are
+  not: they establish no operator-confirmed Interests, Goals,
+  Information Needs, or Questions and no explicit negatives for
+  Interest inference.
+- Classification: INVALID_EVALUATION_GROUND_TRUTH. All label-dependent
+  metrics from that run (1/42 recall_all, 0.036 supported recall, narrow
+  0/14, explicit-negative rate 0.50) are WRONG_GROUND_TRUTH_DIAGNOSTIC_ONLY;
+  its FAIL verdict is INVALID_FOR_INTEREST_RECOVERY. The Interest
+  semantic-recall gate remains UNRESOLVED / NOT YET VALIDLY RUN.
+- Valid retained finding (label-free):
+  FULL_COVERAGE_INFERENCE_COMPLETION_FAILURE — 3 attempted full-coverage
+  bootstrap runs, 0 completed; every failure occurred before
+  reconciliation/persistence (two dangling related_to violations, one
+  invalid temporal_state enum); fail-closed validation correctly
+  prevented invalid persistence. Inference-completion reliability can be
+  repaired independently, without any private Interest label access.
+- Recommendation optimization remains blocked because valid Interest
+  recall is still unknown.
+- Required next lane: dedicated Interest ground-truth curation
+  (operator-confirmed Interests, Goals, Information Needs, Questions),
+  contamination-separated from this evaluator session, which has seen
+  private Discovery labels and is retired from all inference tuning and
+  Interest holdout curation/evaluation.
+- Historical record of the invalidated run: [seen] interest-recovery-v1
+  preregistered pre-scoring; legacy top-25 baseline produced one valid
+  payload (12 interests) while the bootstrap failed completion 3 times;
+  perturbation schemes unexecutable without a completed bootstrap run;
+  deterministic-replay stability verified. Those numbers carry no
+  Interest-recovery meaning.

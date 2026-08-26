@@ -32,6 +32,97 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("YTIS_EF_QUERY_PORT", "6391"))
 PID_FILE = REPO / ".data" / "yt-is" / "ef" / "query-service.pid"
 
+
+# ---- TTL cache for slow page data -------------------------------------- #
+# _topic_trends costs ~6s per call and the home/today renderers stack
+# several such queries; uncached, /home could exceed 25s (operator-reported
+# hang 2026-08-25). A background refresher pays the cold cost so user
+# requests always hit a warm cache.
+_CACHE_LOCK = threading.Lock()
+_TTL_CACHE: dict[str, tuple[float, object]] = {}
+
+
+def handle_feedback_post(headers, body: bytes, host: str) -> tuple:
+    """Shared POST /feedback handler (used by :6391 and the :6393 DHT
+    server). Returns (status, json_dict).
+
+    Mutation safety: JSON body only, a Host allowlist (defends DNS
+    rebinding), and a same-origin check — when an Origin header is
+    present it must match the request Host. "null" Origin stays allowed
+    for the remaining file://-opened page consumers on a localhost
+    single-operator service. Idempotency is the contract layer's concern
+    (personal_graph.record_feedback_event).
+    """
+    host = (host or "").strip()
+    if host.split(":")[0] not in ("127.0.0.1", "localhost", "::1"):
+        return 403, {"error": "unexpected Host"}
+    origin = (headers.get("Origin") or "").strip()
+    if origin and origin not in (f"http://{host}", "null"):
+        return 403, {"error": "cross-origin feedback rejected"}
+    try:
+        payload = json.loads(body.decode("utf-8")) if body else {}
+    except Exception:
+        return 400, {"error": "invalid JSON body"}
+    if not isinstance(payload, dict):
+        return 400, {"error": "invalid JSON body"}
+    try:
+        from ef.personal_graph import record_feedback_event
+        result = record_feedback_event(
+            str(payload.get("surface") or ""),
+            str(payload.get("kind") or ""),
+            str(payload.get("id") or ""),
+            str(payload.get("v") or ""),
+            note=str(payload.get("note") or ""),
+            impression_id=payload.get("impression_id") and
+            str(payload["impression_id"]) or None,
+            idempotency_key=payload.get("idempotency_key") or None,
+            source_route="POST /feedback")
+    except Exception as e:
+        return 500, {"error": str(e)[:200]}
+    if not result.get("ok"):
+        return 400, result
+    return 200, result
+
+
+def _ttl(key: str, ttl_s: float, fn):
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        hit = _TTL_CACHE.get(key)
+        if hit and now - hit[0] < ttl_s:
+            return hit[1]
+    val = fn()
+    with _CACHE_LOCK:
+        _TTL_CACHE[key] = (time.monotonic(), val)
+    return val
+
+
+def _cache_warmer():
+    while True:
+        for key, ttl_s, fn in _WARM_TARGETS:
+            try:
+                _ttl(key, ttl_s, fn)
+            except Exception:
+                pass
+        time.sleep(300)
+
+
+def _warm_targets_list():
+    _scripts = str(REPO / "scripts")
+    if _scripts not in sys.path:  # idempotent in a long-running daemon
+        sys.path.insert(0, _scripts)
+    import generate_digest as gd
+    return [
+        ("trends", 300, lambda: _topic_trends()),
+        ("gd24", 300, lambda: gd.get_new_transcripts(24)),
+        ("gd_stats", 300, lambda: gd.get_stats()),
+        ("today_html", 600,
+         lambda: _render_today_page(trigger="warm")),
+        ("interests_html", 600, _render_interests_page),
+    ]
+
+
+_WARM_TARGETS: list = []  # bound at startup (needs renderer defs)
+
 _query_instance = None
 _query_lock = threading.Lock()
 # Set only after a canary encode proves the encoder actually works.
@@ -283,6 +374,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._text(500, f"home unavailable: {e}")
 
+        elif parsed.path == "/stats.json":
+            # Live numbers for the search page's stats panel (replaced a
+            # hardcoded snapshot that contradicted every other page).
+            try:
+                self._json(200, _stats_snapshot())
+            except Exception as e:
+                self._json(500, {"error": str(e)[:200]})
+
         elif parsed.path == "/graph/data":
             # P6.9 extension surface: typed JSON for the workspace Graph tab
             try:
@@ -306,33 +405,29 @@ class Handler(BaseHTTPRequestHandler):
 
         elif parsed.path == "/interests":
             try:
-                self._bytes(200, _render_interests_page().encode("utf-8"),
+                html = _ttl("interests_html", 600, _render_interests_page)
+                self._bytes(200, html.encode("utf-8"),
                             "text/html; charset=utf-8")
             except Exception as e:
                 self._text(500, f"interests page unavailable: {e}")
 
         elif parsed.path == "/today":
             try:
-                self._bytes(200, _render_today_page().encode("utf-8"),
+                html = _ttl("today_html", 600,
+                           lambda: _render_today_page(trigger="request"))
+                self._bytes(200, html.encode("utf-8"),
                             "text/html; charset=utf-8")
             except Exception as e:
                 self._text(500, f"today page unavailable: {e}")
 
         elif parsed.path == "/feedback":
-            params = parse_qs(parsed.query)
-            try:
-                from ef.personal_graph import record_feedback
-                ok = record_feedback(
-                    (params.get("surface") or [""])[0],
-                    (params.get("kind") or [""])[0],
-                    (params.get("id") or [""])[0],
-                    (params.get("v") or [""])[0],
-                    (params.get("note") or [""])[0])
-                self._json(200 if ok else 400,
-                           {"ok": ok} if ok
-                           else {"error": "invalid verdict"})
-            except Exception as e:
-                self._json(500, {"error": str(e)[:200]})
+            # Feedback is a state mutation: POST only (2026-08-26 contract
+            # hardening — a GET that writes is a CSRF/double-submit hazard
+            # and pollutes caches/prefetch). No GET compat path: the only
+            # client (this page's JS) was migrated in the same change.
+            self._json(405, {"error": "feedback requires POST with JSON "
+                                     "body: {surface,kind,id,v,note?,"
+                                     "impression_id?,idempotency_key?}"})
 
         elif parsed.path == "/graph":
             try:
@@ -446,6 +541,18 @@ class Handler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         import sqlite3
         try:
+            if parsed.path == "/feedback":
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if length <= 0 or length > 64 * 1024:
+                    return self._json(400, {"error": "missing or oversized "
+                                                     "feedback body"})
+                status, body = handle_feedback_post(
+                    self.headers, self.rfile.read(length),
+                    self.headers.get("Host", ""))
+                return self._json(status, body)
             if parsed.path == "/ingest-extension":
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -705,7 +812,7 @@ def _render_dht_page() -> str:
   .dim {{ color: #8b949e; }}
 </style></head><body>
 <nav><a href="/">Search</a> · <a href="/home">Home</a> ·
-<a href="/digest">Daily brief</a> · <a href="/status">Status</a></nav>
+<a href="/digest">Daily brief</a> · <a href="/status">Status</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a></nav>
 <h1>Discord capture</h1>
 <p class="dim">{len(cat.get('guilds', []))} servers ·
 {enabled} channel(s) enabled · catalog refreshed
@@ -746,7 +853,7 @@ document.addEventListener('click', e => {{
 </body></html>"""
 
 
-def _render_today_page() -> str:
+def _render_today_page(trigger: str = "request") -> str:
     from ef.evidence_clusters import cached_clusters
     from urllib.parse import parse_qs as _pq
     import html as _html
@@ -766,7 +873,7 @@ def _render_today_page() -> str:
             timeout=15)
         for c in clusters[:6]:
             rows = conn.execute(r"""
-                SELECT eu.title, eu.channel_title, eu.source,
+                SELECT eu.video_id, eu.title, eu.channel_title, eu.source,
                        substr(COALESCE(NULLIF(eu.published_at,''),
                                        eu.captured_at), 1, 10) day
                 FROM eu
@@ -774,17 +881,51 @@ def _render_today_page() -> str:
                 WHERE cc.cluster_id = ? AND eu.title IS NOT NULL
                   AND length(eu.title) > 12
                 ORDER BY day DESC LIMIT 3""", (c["cluster_id"],)).fetchall()
-            for t, ch_t, src, day in rows:
+            for vid, t, ch_t, src, day in rows:
                 recent.append({"title": (t or "")[:80], "cluster": c["label"],
                                "channel": (ch_t or "")[:30], "source": src,
-                               "day": day, "cluster_id": c["cluster_id"]})
+                               "day": day, "cluster_id": c["cluster_id"],
+                               "video_id": vid})
         conn.close()
     except _sq.Error:
         pass
 
+    # Impression contract (2026-08-26): every surfacing batch records its
+    # candidate set (policy + ordered members) and one immutable impression
+    # row per item, so future offline evaluation can reconstruct what was
+    # shown, under which policy, at which rank. Render runs behind the
+    # 10-min /today TTL cache, so one batch == one cache regeneration.
+    surfaced = (
+        [{"item_kind": "cluster", "item_id": f"cluster:{c['cluster_id']}",
+          "item_label": c["label"], "why_surfaced": "emerging"}
+         for c in emerging[:5]] +
+        [{"item_kind": "doc", "item_id": f"video:{r['video_id']}",
+          "item_label": r["title"], "why_surfaced": "recent_doc"}
+         for r in recent[:12]] +
+        [{"item_kind": "cluster", "item_id": f"cluster:{c['cluster_id']}",
+          "item_label": c["label"], "why_surfaced": "dormant"}
+         for c in dormant[:3]])
+    imp_by_item = {}
+    try:
+        from ef.personal_graph import record_candidate_set
+        batch = record_candidate_set(
+            "today", "mechanical-clusters-recency", "v1", surfaced,
+            provenance=f"warm_query_service._render_today_page({trigger})")
+        for item, imp in zip(surfaced, batch["impression_ids"]):
+            imp_by_item.setdefault(item["item_id"], imp)
+    except Exception as e:
+        # Feedback still records unattributed (impression_id=None), but a
+        # persistent failure must be visible — silent degradation would
+        # detach all future feedback from its impressions.
+        print(f"[feedback] impression capture failed: {e}",
+              file=sys.stderr)
+
     def fb(kind, id_, label):
+        imp = imp_by_item.get(id_)
+        imp_arg = f"'{imp}'" if imp else "null"
         return (" ".join(
-            f"<a class='fb' href='#' onclick=\"fb('{kind}','{id_}','{v}')\""
+            f"<a class='fb' href='#' onclick=\"fb('{kind}',"
+            f"'{_html.escape(id_, quote=True)}',{imp_arg},'{v}')\""
             f">{v.replace('_',' ')}</a>"
             for v in ("useful", "known_already", "investigate")))
 
@@ -792,7 +933,7 @@ def _render_today_page() -> str:
         f"<div class='item'><b>{_html.escape(c['label'])}</b> "
         f"<span class='dim'>{c['channels']} channels, "
         f"{c['active_months']} months, since {c['first_month']}</span> "
-        f"{fb('cluster', c['cluster_id'], '')}</div>"
+        f"{fb('cluster', 'cluster:%s' % c['cluster_id'], '')}</div>"
         for c in emerging[:5])
     dormant_html = "".join(
         f"<div class='item dim'><b>{_html.escape(c['label'])}</b> "
@@ -802,7 +943,8 @@ def _render_today_page() -> str:
     recent_html = "".join(
         f"<div class='item'>{_html.escape(r['title'])} "
         f"<span class='dim'>— {_html.escape(r['cluster'][:28])} "
-        f"({r['day']})</span> {fb('doc', r['title'][:40], '')}</div>"
+        f"({r['day']})</span> "
+        f"{fb('doc', 'video:%s' % r['video_id'], '')}</div>"
         for r in recent[:12])
 
     return f"""<!DOCTYPE html>
@@ -846,9 +988,15 @@ arrives with the v2 inference run.</div>
 {coverage.get('tracked_channels', 0):,} channels tracked</p>
 
 <script>
-function fb(kind, id, v) {{
-  fetch('/feedback?surface=today&kind=' + kind + '&id=' +
-        encodeURIComponent(id) + '&v=' + v)
+function fb(kind, id, imp, v) {{
+  fetch('/feedback', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      surface: 'today', kind: kind, id: id, v: v,
+      impression_id: imp
+    }})
+  }})
     .then(r => r.json())
     .then(d => {{ if (d.ok) {{
       event.target.style.color = '#7ee2a8';
@@ -939,7 +1087,7 @@ def _render_interests_page() -> str:
   details {{ margin-top: 1.5rem; }}
 </style></head><body>
 <nav><a href="/">Search</a> · <a href="/home">Home</a> ·
-<a href="/digest">Daily brief</a> · <a href="/graph">Graph</a> ·
+<a href="/digest">Daily brief</a> · <a href="/graph">Graph</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a>
 <a href="/status">Status</a></nav>
 <h1>Interests</h1>
 <div class='banner'><b>Evidence clusters (v1.5)</b> — semantic topic
@@ -996,7 +1144,7 @@ missing data, not absent interest):<br>{cov}</div>
   .ph.dormant {{ background: #4d3a1f; color: #e2c07e; }}
 </style></head><body>
 <nav><a href="/">Search</a> · <a href="/home">Home</a> ·
-<a href="/digest">Daily brief</a> · <a href="/graph">Graph</a> ·
+<a href="/digest">Daily brief</a> · <a href="/graph">Graph</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a>
 <a href="/status">Status</a></nav>
 <h1>Interests</h1>
 <div class="banner"><b>Observed layer (v1)</b> — breadth / depth /
@@ -1131,7 +1279,7 @@ def _render_graph_page(q: str = "") -> str:
   .srcs {{ color: #8b949e; }} .srcs b {{ color: #e6edf3; }}
 </style></head><body>
 <nav><a href="/">Search</a> · <a href="/home">Home</a> ·
-<a href="/digest">Daily brief</a> · <a href="/sources">Sources</a> ·
+<a href="/digest">Daily brief</a> · <a href="/sources">Sources</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a>
 <a href="/dht">Discord capture</a> · <a href="/status">Status</a></nav>
 <h1>Knowledge graph</h1>
 <p><input id="q" placeholder="entity or channel — e.g. 0DTE, Whisper, Google"
@@ -1169,7 +1317,7 @@ def _render_ask_page() -> str:
   .src a { color: #58a6ff; } .dim { color: #8b949e; }
 </style></head><body>
 <nav><a href="/">Search</a> · <a href="/home">Home</a> ·
-<a href="/digest">Daily brief</a> · <a href="/status">Status</a></nav>
+<a href="/digest">Daily brief</a> · <a href="/status">Status</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a></nav>
 <h1>Ask your knowledge base</h1>
 <p class="dim">Answers from 208K+ transcripts, posts, and articles — with citations.</p>
 <p><input id="q" placeholder="e.g., What do my sources say about GLM-5?"
@@ -1233,12 +1381,12 @@ def _render_home_page() -> str:
         import sys as _sys
         _sys.path.insert(0, str(REPO / "scripts"))
         import generate_digest as gd
-        today = gd.get_new_transcripts(24)
-        stats = gd.get_stats()
+        today = _ttl("gd24", 300, lambda: gd.get_new_transcripts(24))
+        stats = _ttl("gd_stats", 300, gd.get_stats)
     except Exception:
         today, stats = {"total": 0, "channels": []}, {}
 
-    trends = _topic_trends()
+    trends = _ttl("trends", 300, _topic_trends)
     cards_24 = trends.get("24h", {})
 
     def trend_table(items):
@@ -1351,7 +1499,7 @@ def _render_home_page() -> str:
   .up {{ color: #3fb950; }}
   .dim {{ color: #8b949e; }}
 </style></head><body>
-<nav><a href="/">Search</a> · <b>Home</b> · <a href="/digest">Daily brief</a> ·
+<nav><a href="/">Search</a> · <b>Home</b> · <a href="/digest">Daily brief</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a>
 <a href="/sources">Sources</a> · <a href="/review">YouTube channels</a> ·
 <a href="/dht">Discord capture</a> · <a href="/graph">Graph</a> ·
 <a href="/ask">Ask</a> · <a href="/status">Status</a></nav>
@@ -1361,7 +1509,7 @@ def _render_home_page() -> str:
 <div class="cards">
   <div class="card"><div class="v">{_channel_side_published(1):,}</div>new on active channels (24h)</div>
   <div class="card"><div class="v">{today['total']:,}</div>transcripts ingested (24h)</div>
-  <div class="card"><div class="v">{len(today['channels'])}</div>active channels</div>
+  <div class="card"><div class="v">{len(today['channels'])}</div>channels with new videos (24h)</div>
   <div class="card"><div class="v">{stats.get('complete', 0):,}</div>total in corpus</div>
   <div class="card"><div class="v">{docs.get('reddit', 0) + docs.get('hackernews', 0) + docs.get('rss', 0):,}</div>community docs</div>
 </div>
@@ -1447,7 +1595,7 @@ def _render_entities_page() -> str:
 <script>function askSearch(e) {{ window.open('/?q=' + encodeURIComponent(e), '_self'); }}</script>
 </head><body>
 <nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> ·
-<a href="/digest">Daily brief</a> · <a href="/status">Status</a></nav>
+<a href="/digest">Daily brief</a> · <a href="/status">Status</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a></nav>
 <h1>Entities</h1>
 <p class="dim">{extracted:,} entities extracted across topics ·
 {total:,} with corpus counts · click any entity to search it</p>
@@ -1517,7 +1665,7 @@ def _render_sources_page() -> str:
   .dim {{ color: #8b949e; }}
 </style></head><body>
 <nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> ·
-<a href="/digest">Daily brief</a> · <a href="/status">Status</a></nav>
+<a href="/digest">Daily brief</a> · <a href="/status">Status</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a></nav>
 <h1>Sources</h1>
 
 <h2>RSS feeds</h2>
@@ -1573,6 +1721,46 @@ async function rmPod(url) {{
 }}
 </script>
 </body></html>"""
+
+
+def _stats_snapshot() -> dict:
+    """Live corpus numbers for the search page stats panel (all counts
+    labeled with scope; consumed via /stats.json)."""
+    import sqlite3
+    _scripts = str(REPO / "scripts")
+    if _scripts not in sys.path:  # idempotent in a long-running daemon
+        sys.path.insert(0, _scripts)
+    import generate_digest as gd
+    stats = _ttl("gd_stats", 300, gd.get_stats)
+    out = {
+        "complete": int(stats.get("complete", 0)),
+        "pending": int(stats.get("pending", 0)),
+        "channels": int(stats.get("channels", 0)),
+        "topics": 0,
+        "reddit": 0,
+        "newsletter": 0,
+    }
+    try:
+        tdb = sqlite3.connect(
+            "file:P:/.data/yt-is/transcripts.sqlite?mode=ro", uri=True,
+            timeout=10)
+        for src in ("reddit", "newsletter"):
+            out[src] = tdb.execute(
+                "select count(*) from transcript_cache where source = ?",
+                (src,)).fetchone()[0]
+        tdb.close()
+    except Exception:
+        pass
+    try:
+        cat = sqlite3.connect(
+            "file:P:/.data/yt-is/ef/catalog.sqlite?mode=ro", uri=True,
+            timeout=10)
+        out["topics"] = cat.execute(
+            "select count(*) from topic_clusters").fetchone()[0]
+        cat.close()
+    except Exception:
+        pass
+    return out
 
 
 def _render_status_page() -> str:
@@ -1658,14 +1846,24 @@ def _render_status_page() -> str:
         qc = server.client()
         from . import projection_server as _ps
         from . import buildspec as _bs
-        qdrant_points = qc.count(
-            _ps.collection_name(_bs.load_spec()["generation"]),
-            exact=True).count
+        col = _ps.collection_name(_bs.load_spec()["generation"])
+        # exact=True walks every point and intermittently times out,
+        # rendering the "?" card; approximate count is instant and close
+        # enough for a status glance.
+        qdrant_points = qc.count(col, exact=False).count
     except Exception:
         pass
 
     def num(v):
         return f"{v:,}" if isinstance(v, int) and v >= 0 else "?"
+
+    # Every connector source that actually has documents — the old table
+    # hardcoded four rows and silently omitted GitHub/newsletters/podcasts.
+    _src_labels = {"hackernews": "Hacker News", "dht-artifact": "Discord artifacts"}
+    connector_rows = "".join(
+        f"<tr><td>{_src_labels.get(s, s.capitalize())}</td>"
+        f"<td class='num'>{n:,}</td></tr>"
+        for s, n in sorted(by_source.items(), key=lambda kv: -kv[1]))
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ytis — Status</title>
@@ -1684,7 +1882,7 @@ def _render_status_page() -> str:
   .card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: .9rem 1.3rem; }}
   .card .v {{ font-size: 1.5rem; font-weight: 700; color: #58a6ff; }}
 </style></head><body>
-<nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> · <a href="/digest">Daily brief</a> ·
+<nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> · <a href="/digest">Daily brief</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a>
 <a href="/review">YouTube channels</a> · <a href="/reddit">Reddit</a> ·
 <a href="/discord">Discord</a> · <a href="/status">Status</a></nav>
 <h1>Status</h1>
@@ -1703,7 +1901,8 @@ def _render_status_page() -> str:
     <td class="dim">{since_hours(indexed_wm)}</td></tr>
 <tr><td>Indexer daemon</td><td class="num">{'<span class="ok">running</span>' if indexer_alive else '<span class="bad">down</span>'}</td><td></td></tr>
 <tr><td>Warm query service</td><td class="num"><span class="ok">running</span></td><td></td></tr>
-<tr><td>Failed transcripts</td><td class="num">{num(failed)}</td><td class="dim">~5-7% is normal</td></tr>
+<tr><td>Failed transcripts</td><td class="num">{num(failed)}</td>
+    <td class="dim">{(100.0 * failed / (complete + failed)) if (complete + failed) > 0 else 0:.1f}% of fetch attempts — exclusions govern most</td></tr>
 <tr><td>Missing titles</td><td class="num">{num(titleless)}</td><td class="dim">heals daily at 06:00</td></tr>
 <tr><td>Channels missing metadata</td><td class="num">{num(chan_meta_gap)}</td><td class="dim">thumbnail/description; heals daily at 06:00</td></tr>
 <tr><td>Scheduled</td><td class="num">05:00 / 06:00</td><td class="dim">index keeper / full content sync</td></tr>
@@ -1712,10 +1911,7 @@ def _render_status_page() -> str:
 <h2>Connector content (documents)</h2>
 <table>
 <tr><th>Source</th><th>Docs</th></tr>
-<tr><td>Reddit</td><td class="num">{by_source.get('reddit', 0):,}</td></tr>
-<tr><td>Hacker News</td><td class="num">{by_source.get('hackernews', 0):,}</td></tr>
-<tr><td>RSS</td><td class="num">{by_source.get('rss', 0):,}</td></tr>
-<tr><td>Discord</td><td class="num">{by_source.get('discord', 0):,}</td></tr>
+{connector_rows}
 </table>
 </body></html>"""
 
@@ -1798,7 +1994,7 @@ def _render_source_page(kind: str) -> str:
   .dim {{ color: #8b949e; }}
   code {{ background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: .1rem .4rem; }}
 </style></head><body>
-<nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> · <a href="/digest">Daily brief</a> ·
+<nav><a href="/">&larr; Search</a> · <a href="/home">Home</a> · <a href="/digest">Daily brief</a> · <a href="/today">Today</a> · <a href="/entities">Entities</a> · <a href="http://127.0.0.1:6395/">Lineage</a>
 <a href="/review">YouTube channels</a> · <a href="/reddit">Reddit</a> ·
 <a href="/discord">Discord</a></nav>
 <h1>{title}</h1>
@@ -1889,23 +2085,42 @@ def _render_digest_page() -> str:
     except OSError:
         pass
     try:
-        alert_text = Path(
-            "P:/.data/yt-is/pipeline-alert.txt").read_text(encoding="utf-8").strip()
-        if alert_text:
-            alert_html += (
-                f'<div class="panel" style="border-color: #f85149;">'
-                f'<h2>Pipeline Alert</h2><pre>{esc(alert_text[:2000])}</pre>'
-                f'<p class="dim">Source: pipeline_health_watch (5-min cadence). '
-                f'Alert file: P:/.data/yt-is/pipeline-alert.txt</p></div>')
-    except OSError:
-        pass
+        # Alert LEDGER summary (transition-based, authoritative) instead of
+        # the legacy raw pipeline-alert.txt dump that pasted operator
+        # log lines at first-time users.
+        events = json.loads(Path(
+            "P:/.data/yt-is/alerts/open.json").read_text(
+                encoding="utf-8")).get("events") or {}
+        open_rows = [(k, v) for k, v in events.items()
+                     if isinstance(v, dict) and v.get("status") == "open"]
+    except Exception:
+        open_rows = []
+    if open_rows:
+        rows = "".join(
+            f'<li>{esc(k[:130])} '
+            f'<span class="dim">— seen {v.get("count", "?")}x, '
+            f'last {str(v.get("last_seen", ""))[:19]}Z</span></li>'
+            for k, v in open_rows[:5])
+        alert_html += (
+            '<div class="panel" style="border-color: #d29922;">'
+            '<h2>System notices</h2>'
+            '<p class="dim">Operator health alerts — corpus and search keep '
+            'working; owning streams pick these up.</p>'
+            f'<ul>{rows}</ul></div>')
 
     def channel_rows(channels, limit):
+        import re as _re
+        def _junk(t):
+            # Transcript-side junk titles: bare timestamps ("20:25 20:25
+            # Now playing") and near-empty strings surfaced as "Latest".
+            return (not t) or _re.match(r"^\d{1,2}:\d{2}(\s|$)", t) \
+                or len(t.strip()) < 3
         out = []
         for ch in channels[:limit]:
+            vs = [v for v in ch["latest"] if not _junk(v.get("title", ""))][:3]
             titles = " · ".join(
                 f'<a href="{esc(v["url"])}">{esc(v["title"][:90])}</a>'
-                for v in ch["latest"])
+                for v in vs)
             out.append(
                 f'<tr><td>{esc(ch["name"][:60])}</td>'
                 f'<td class="num">{ch["count"]:,}</td>'
@@ -2199,6 +2414,17 @@ def main():
             os._exit(1)
 
     threading.Thread(target=warm, daemon=True).start()
+
+    # Keep slow page data (trends/home/today) warm so /home never pays
+    # the 6-25s cold cost (operator-reported hang 2026-08-25).
+    global _WARM_TARGETS
+    try:
+        _WARM_TARGETS = _warm_targets_list()
+    except Exception as _e:  # degrade pages, never block startup (review minor 3)
+        print(f"  warm-targets list unavailable: {_e}", flush=True)
+        _WARM_TARGETS = []
+    threading.Thread(target=_cache_warmer, daemon=True,
+                     name="page-cache-warmer").start()
 
     # Merged MCP face (2026-08-22): when MCP_HTTP_PORT is set, serve the
     # search_ef MCP on a second face from THIS process — one BGE-M3 for

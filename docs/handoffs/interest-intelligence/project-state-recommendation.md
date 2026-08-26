@@ -1,5 +1,5 @@
 # yt-is Personal Intelligence — Recommendation State
-Updated: 2026-08-24 by architect handoff
+Updated: 2026-08-26 by feedback-contract hardening session (agent: zcode)
 
 ## Goal & constraints
 
@@ -34,15 +34,38 @@ Updated: 2026-08-24 by architect handoff
 
 ## Current state
 
-- [seen] A feedback table exists.
+- [seen] A feedback table exists (legacy `feedback`, frozen read-only
+  history; nothing writes it since 2026-08-26).
 - [seen] Current verdict vocabulary includes `useful`, `known_already`,
   `not_interested`, `wrong_inference`, `investigate`, `acted_on`, `save`,
   `more_like`, and `less_like`.
-- [seen] `/feedback` currently performs a state mutation through HTTP GET.
-- [seen] Current feedback records lack an immutable event ID, impression/run
-  ID, rank position, candidate-set identity, and ranking-policy/version
-  context.
-- [seen] Current `/today` is not the final goal-aware utility scorer.
+- [implemented, runtime-tested 2026-08-26] Impression + feedback-event
+  contract in `ef/personal_graph.py`: `candidate_sets`,
+  `impressions` (immutable; policy/version, rank, why-surfaced,
+  provenance incl. render trigger `request|warm`; unknown fields NULL),
+  `feedback_events` (immutable, unique ids, idempotency-keyed; key reuse
+  with different payload rejected), `item_workflow_state` (mutable state,
+  separate from event history; only `investigate`/`save`/`acted_on`/
+  `not_interested` transition; evaluation verdicts never do).
+- [implemented, runtime-tested 2026-08-26] `/feedback` is POST+JSON only
+  on both servers (:6391, :6393) with Host allowlist + same-origin check;
+  GET returns 405 and mutates nothing. No GET compat path (the only
+  client, the Today page JS, migrated in the same change).
+- [implemented] `/today` records a candidate set + impressions at render
+  with stable item ids (`cluster:<id>`, `video:<id>` — note the namespace
+  break vs legacy rows) and carries impression ids into feedback links.
+  One batch == one 10-min TTL cache regeneration; whether an operator
+  actually viewed a batch is explicitly unknown (not fabricated).
+- [verified] No feedback path writes `interests` or any inference state.
+- [implemented, runtime-tested 2026-08-26 closure] Additive event
+  annotations (`feedback_event_annotations`): exclusion-from-evaluation
+  marks without mutating the immutable event row. The synthetic probe
+  from live contract verification (fe_3be9c657bd724962a5190e3bc226ef21,
+  surface=probe, verdict=wrong_inference) is annotated test_probe /
+  excluded; evaluation reads exclude it by default and audit/raw access
+  preserves it. Raw immutable history remains fully inspectable.
+- [seen] Current `/today` is not the final goal-aware utility scorer
+  (policy `mechanical-clusters-recency` v1).
 - [absent-unverified] Similarity+recency baseline for the regret experiment.
 - [absent-unverified] Goal-aware ranking implementation suitable for fair
   comparison.
@@ -51,17 +74,31 @@ Updated: 2026-08-24 by architect handoff
 
 ## Open questions
 
-- What immutable impression/event schema is sufficient for trustworthy offline
-  evaluation?
 - How should feedback verdicts map, if at all, to utility rewards?
 - How should `known_already` differ from `not_interested`?
 - How should `save`, `investigate`, and `acted_on` be interpreted without
   conflating attention with utility?
 - What candidate-set protocol makes the baseline comparison fair?
 - What promotion threshold is practically meaningful?
+- View-level attribution: impression batches record render trigger
+  (request/warm) but not operator views — render != confirmed operator
+  view stays an open future-ranking question until the ranking experiment
+  design makes it material.
 
 ## Next action
 
-Harden feedback event semantics before substantial history accumulates, but
-defer the main ranking falsifier until inference recall/provenance passes its
-gate.
+Workstream closure (2026-08-26): feedback/impression event-semantics
+hardening is COMPLETE (architect acceptance of 89b4054c/e9bdae70). The
+synthetic live-verification probe
+fe_3be9c657bd724962a5190e3bc226ef21 is annotated test_probe /
+excluded-from-evaluation (annotation ann_1245b83fe9d9408998152491142f26a8);
+raw immutable history preserved; view-level attribution remains open.
+Recommendation ranking stays BLOCKED on the Interest Intelligence
+semantic recall/provenance gate. No further implementer sessions for this
+workstream.
+
+Prior next action (superseded): feedback semantics are hardened; new history accumulates under the
+contract. Defer the main ranking falsifier until inference
+recall/provenance passes its gate; then build the similarity+recency
+baseline and blinded regret evaluation against the captured
+impression/feedback history.
