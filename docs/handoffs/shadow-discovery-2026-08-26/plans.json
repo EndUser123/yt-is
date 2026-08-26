@@ -1,0 +1,328 @@
+{
+ "plan_a": {
+  "plan_id": "plan_206fccb9275b",
+  "created_at": "2026-08-26T19:00:35Z",
+  "policy_version": "horizon-scout-v1",
+  "queries": [
+   {
+    "query_id": "q_81d5063143",
+    "origin_kind": "wildcard",
+    "origin_id": null,
+    "domain": "developer tools",
+    "intent": "emerging_projects",
+    "query": "emerging programming languages and runtimes",
+    "exploration": "wildcard",
+    "policy_version": "horizon-scout-v1"
+   },
+   {
+    "query_id": "q_d2e40a0e51",
+    "origin_kind": "wildcard",
+    "origin_id": null,
+    "domain": "developer tools",
+    "intent": "new_methods",
+    "query": "new developer tooling projects",
+    "exploration": "wildcard",
+    "policy_version": "horizon-scout-v1"
+   },
+   {
+    "query_id": "q_a1f3c6e1a3",
+    "origin_kind": "wildcard",
+    "origin_id": null,
+    "domain": "developer tools",
+    "intent": "architecture_changes",
+    "query": "new open source agent orchestration runtimes",
+    "exploration": "wildcard",
+    "policy_version": "horizon-scout-v1"
+   },
+   {
+    "query_id": "q_47bd504884",
+    "origin_kind": "wildcard",
+    "origin_id": null,
+    "domain": "developer tools",
+    "intent": "rapidly_growing_tools",
+    "query": "rapidly growing open source developer tools 2026",
+    "exploration": "wildcard",
+    "policy_version": "horizon-scout-v1"
+   }
+  ]
+ },
+ "plan_b": {
+  "plan_id": "shadow_3803164e9ad3",
+  "created_at": "2026-08-26T19:00:35Z",
+  "policy_version": "shadow-discovery-v1",
+  "anchors_used": [
+   "Cowork Skills Hours",
+   "Bitcoin Ethereum Crypto",
+   "Exercises Rebounder Min",
+   "Spread Short Spreads",
+   "Manager Product Career",
+   "Hfy Stories Alien",
+   "Islam Muslims Dawah",
+   "Profitable Traders Trader",
+   "Wave Profile Volume",
+   "Sugar Resistance Insulin",
+   "Kling Higgsfield Veo",
+   "Capcut Add Veed",
+   "Lean 10% Getting",
+   "Gains Studies Sets",
+   "Indicator Tradingview Indicators",
+   "Qqq Technical Analysis",
+   "Nextjs Prisma Clone",
+   "Notebooklm Turn Professional",
+   "Swiftui Framer Css",
+   "Mac Nemoclaw Zero",
+   "Stripe Nextjs Platform",
+   "Found Black Universe",
+   "Autistic Masking Autistics",
+   "Fold Smartphone Phone",
+   "Store Wordpress Shopify",
+   "AI",
+   "YouTube",
+   "Google",
+   "Action",
+   "Claude",
+   "Drive",
+   "API",
+   "Apple",
+   "Protein",
+   "Zoom",
+   "Amazon",
+   "GitHub",
+   "Premium",
+   "React",
+   "Fear",
+   "Microsoft",
+   "United States",
+   "Insulin",
+   "Instagram",
+   "Meta",
+   "Earth",
+   "Twitter",
+   "OpenAI",
+   "NVIDIA",
+   "Mac",
+   "Facebook",
+   "Anthropic",
+   "recovery",
+   "Trump",
+   "Claude Code",
+   "S&P",
+   "Glucose",
+   "New York",
+   "Good Idea",
+   "AI agents",
+   "Tesla",
+   "PC",
+   "iPhone",
+   "Android",
+   "Blood sugar",
+   "weight loss",
+   "Docs",
+   "GPU",
+   "pull-up",
+   "JavaScript",
+   "Probability",
+   "Workspace",
+   "LinkedIn",
+   "Bench",
+   "dip"
+  ],
+  "queries": [
+   {
+    "query_id": "sq_bf41de4966",
+    "operator": "fingerprint",
+    "query": "\"SKILL.md\" \"AGENTS.md\" github repository",
+    "exploration": "wildcard",
+    "meta": {},
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_dff1ab749b",
+    "operator": "adjacency",
+    "query": "prerequisites and foundations for Cowork Skills Hours",
+    "exploration": "adjacent",
+    "meta": {
+     "adjacency_class": "prerequisites",
+     "anchor": "Cowork Skills Hours"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_727dc6eb1a",
+    "operator": "adjacency",
+    "query": "infrastructure that enables Cowork Skills Hours",
+    "exploration": "adjacent",
+    "meta": {
+     "adjacency_class": "enabling_infrastructure",
+     "anchor": "Cowork Skills Hours"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_707af29eaa",
+    "operator": "capability",
+    "query": "Codex skills extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "skills"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_fee7519de1",
+    "operator": "capability",
+    "query": "Codex hooks extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "hooks"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_f46b71983d",
+    "operator": "capability",
+    "query": "Codex subagents extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "subagents"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_af335d3100",
+    "operator": "capability",
+    "query": "Codex model routing extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "model routing"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_f5f55e1179",
+    "operator": "capability",
+    "query": "Codex memory and context extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "memory and context"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_d7813a7e79",
+    "operator": "capability",
+    "query": "Codex worktrees and sandboxing extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "worktrees and sandboxing"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_cc533aee12",
+    "operator": "capability",
+    "query": "Codex scheduling extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "scheduling"
+    },
+    "policy_version": "shadow-discovery-v1"
+   },
+   {
+    "query_id": "sq_ff836a154b",
+    "operator": "capability",
+    "query": "Codex evals extensions and plugins",
+    "exploration": "known_domain",
+    "meta": {
+     "host": "Codex",
+     "capability": "evals"
+    },
+    "policy_version": "shadow-discovery-v1"
+   }
+  ]
+ },
+ "anchors": [
+  "Cowork Skills Hours",
+  "Bitcoin Ethereum Crypto",
+  "Exercises Rebounder Min",
+  "Spread Short Spreads",
+  "Manager Product Career",
+  "Hfy Stories Alien",
+  "Islam Muslims Dawah",
+  "Profitable Traders Trader",
+  "Wave Profile Volume",
+  "Sugar Resistance Insulin",
+  "Kling Higgsfield Veo",
+  "Capcut Add Veed",
+  "Lean 10% Getting",
+  "Gains Studies Sets",
+  "Indicator Tradingview Indicators",
+  "Qqq Technical Analysis",
+  "Nextjs Prisma Clone",
+  "Notebooklm Turn Professional",
+  "Swiftui Framer Css",
+  "Mac Nemoclaw Zero",
+  "Stripe Nextjs Platform",
+  "Found Black Universe",
+  "Autistic Masking Autistics",
+  "Fold Smartphone Phone",
+  "Store Wordpress Shopify",
+  "AI",
+  "YouTube",
+  "Google",
+  "Action",
+  "Claude",
+  "Drive",
+  "API",
+  "Apple",
+  "Protein",
+  "Zoom",
+  "Amazon",
+  "GitHub",
+  "Premium",
+  "React",
+  "Fear",
+  "Microsoft",
+  "United States",
+  "Insulin",
+  "Instagram",
+  "Meta",
+  "Earth",
+  "Twitter",
+  "OpenAI",
+  "NVIDIA",
+  "Mac",
+  "Facebook",
+  "Anthropic",
+  "recovery",
+  "Trump",
+  "Claude Code",
+  "S&P",
+  "Glucose",
+  "New York",
+  "Good Idea",
+  "AI agents",
+  "Tesla",
+  "PC",
+  "iPhone",
+  "Android",
+  "Blood sugar",
+  "weight loss",
+  "Docs",
+  "GPU",
+  "pull-up",
+  "JavaScript",
+  "Probability",
+  "Workspace",
+  "LinkedIn",
+  "Bench",
+  "dip"
+ ]
+}

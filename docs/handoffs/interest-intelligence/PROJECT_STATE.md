@@ -70,6 +70,7 @@ this evaluator; conflation of the two gates is removed.
 - Inference workstream: semantic recall gate EVALUATED 2026-08-26 and
   FAILED (see below); Recommendation, dashboard, and external expansion
   remain downstream of the inference/discovery evidence gates.
+<<<<<<< HEAD
 - Interest-recovery gate result (evaluator interest-recovery-v1,
   preregistered pre-scoring, aggregate only, no private names):
   legacy top-25 baseline recall 0.024 (all) / 0.036 (supported subset) /
@@ -81,6 +82,18 @@ this evaluator; conflation of the two gates is removed.
   optimization remains blocked. Perturbation/stability runs beyond
   deterministic-replay (verified identical) were not executable without
   a completed bootstrap run.
+||||||| b4c2bef5
+=======
+- Recommendation prerequisite (2026-08-26, agent: zcode): feedback and
+  recommendation-observation event semantics HARDENED ahead of history
+  accumulation — immutable `impressions`/`feedback_events` +
+  candidate-set capture with policy/version/rank on `/today`,
+  workflow-state separated from event history, `/feedback` moved from
+  mutating GET to POST+JSON (405 on GET) on :6391/:6393, idempotent
+  retries with key-reuse rejection, legacy `feedback` table frozen
+  read-only. No ranking/algorithm change; bandits prohibited and absent.
+  See project-state-recommendation.md.
+>>>>>>> cb22856acc4e
 - Evaluator-v3's 0.344 matched-comparator emerging rate is an
   OUTCOME-UNLABELED comparator rate, NOT a measured false-positive rate
   (audit: 125 rows / 33 unique concepts, heavy reuse; 6 of 21 promoted
@@ -102,3 +115,22 @@ this evaluator; conflation of the two gates is removed.
   stop) or (stop without freeze, return to architect).
 - Do NOT implement adjacency, bridge discovery, external expansion, or
   dashboard work in that packet.
+
+## Concept/KG extraction quality audit (2026-08-26, agent: zcode)
+
+Cold-start blinded audit of the production concept/KG substrate (full report:
+docs/handoffs/interest-intelligence/concept-quality-audit-20260826/AUDIT-REPORT.md;
+raw private packets under .data/yt-is/ef/concept-quality-audit-20260826/, uncommitted).
+Decision: CONCEPT_LAYER_PARTIAL. Headline: adjudicated concept good-rate 0.56 overall
+(entity 0.69, cluster 0.33); relations 0.72 supported (no wrong-direction/duplicate/
+type errors in sample); reviewer agreement 0.80/0.82; methodology review APPROVE_WITH_NOTES.
+Key structural facts: the Concept Registry (concepts/aliases/observations/relations
+tables) is deployed in CODE ONLY — no production DB contains registry tables; the
+audited substrate is entities/kg_nodes/kg_edges/topic_clusters/trend_alerts in
+catalog.sqlite. Corpus-wide: 388/7390 extracted entities survive FTS qualification
+(5.3%); 67/388 graph entity nodes orphaned; 52% of EUs undated (discord bulk capture);
+779 casefold-collision entity names (no alias layer); 5/15 sampled trend labels
+byte-duplicate cluster labels. Root causes RC1-RC6 and discriminating experiments
+E1-E5 (evidence floor + distinct-source count, label polysemy gate, cluster relabel,
+discord date policy, registry deploy-or-descope) are in the report. No production,
+extraction, schema, or data changes were made.

@@ -42,6 +42,48 @@ _CACHE_LOCK = threading.Lock()
 _TTL_CACHE: dict[str, tuple[float, object]] = {}
 
 
+def handle_feedback_post(headers, body: bytes, host: str) -> tuple:
+    """Shared POST /feedback handler (used by :6391 and the :6393 DHT
+    server). Returns (status, json_dict).
+
+    Mutation safety: JSON body only, a Host allowlist (defends DNS
+    rebinding), and a same-origin check — when an Origin header is
+    present it must match the request Host. "null" Origin stays allowed
+    for the remaining file://-opened page consumers on a localhost
+    single-operator service. Idempotency is the contract layer's concern
+    (personal_graph.record_feedback_event).
+    """
+    host = (host or "").strip()
+    if host.split(":")[0] not in ("127.0.0.1", "localhost", "::1"):
+        return 403, {"error": "unexpected Host"}
+    origin = (headers.get("Origin") or "").strip()
+    if origin and origin not in (f"http://{host}", "null"):
+        return 403, {"error": "cross-origin feedback rejected"}
+    try:
+        payload = json.loads(body.decode("utf-8")) if body else {}
+    except Exception:
+        return 400, {"error": "invalid JSON body"}
+    if not isinstance(payload, dict):
+        return 400, {"error": "invalid JSON body"}
+    try:
+        from ef.personal_graph import record_feedback_event
+        result = record_feedback_event(
+            str(payload.get("surface") or ""),
+            str(payload.get("kind") or ""),
+            str(payload.get("id") or ""),
+            str(payload.get("v") or ""),
+            note=str(payload.get("note") or ""),
+            impression_id=payload.get("impression_id") and
+            str(payload["impression_id"]) or None,
+            idempotency_key=payload.get("idempotency_key") or None,
+            source_route="POST /feedback")
+    except Exception as e:
+        return 500, {"error": str(e)[:200]}
+    if not result.get("ok"):
+        return 400, result
+    return 200, result
+
+
 def _ttl(key: str, ttl_s: float, fn):
     now = time.monotonic()
     with _CACHE_LOCK:
@@ -73,7 +115,8 @@ def _warm_targets_list():
         ("trends", 300, lambda: _topic_trends()),
         ("gd24", 300, lambda: gd.get_new_transcripts(24)),
         ("gd_stats", 300, lambda: gd.get_stats()),
-        ("today_html", 600, _render_today_page),
+        ("today_html", 600,
+         lambda: _render_today_page(trigger="warm")),
         ("interests_html", 600, _render_interests_page),
     ]
 
@@ -370,27 +413,21 @@ class Handler(BaseHTTPRequestHandler):
 
         elif parsed.path == "/today":
             try:
-                html = _ttl("today_html", 600, _render_today_page)
+                html = _ttl("today_html", 600,
+                           lambda: _render_today_page(trigger="request"))
                 self._bytes(200, html.encode("utf-8"),
                             "text/html; charset=utf-8")
             except Exception as e:
                 self._text(500, f"today page unavailable: {e}")
 
         elif parsed.path == "/feedback":
-            params = parse_qs(parsed.query)
-            try:
-                from ef.personal_graph import record_feedback
-                ok = record_feedback(
-                    (params.get("surface") or [""])[0],
-                    (params.get("kind") or [""])[0],
-                    (params.get("id") or [""])[0],
-                    (params.get("v") or [""])[0],
-                    (params.get("note") or [""])[0])
-                self._json(200 if ok else 400,
-                           {"ok": ok} if ok
-                           else {"error": "invalid verdict"})
-            except Exception as e:
-                self._json(500, {"error": str(e)[:200]})
+            # Feedback is a state mutation: POST only (2026-08-26 contract
+            # hardening — a GET that writes is a CSRF/double-submit hazard
+            # and pollutes caches/prefetch). No GET compat path: the only
+            # client (this page's JS) was migrated in the same change.
+            self._json(405, {"error": "feedback requires POST with JSON "
+                                     "body: {surface,kind,id,v,note?,"
+                                     "impression_id?,idempotency_key?}"})
 
         elif parsed.path == "/graph":
             try:
@@ -504,6 +541,18 @@ class Handler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         import sqlite3
         try:
+            if parsed.path == "/feedback":
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if length <= 0 or length > 64 * 1024:
+                    return self._json(400, {"error": "missing or oversized "
+                                                     "feedback body"})
+                status, body = handle_feedback_post(
+                    self.headers, self.rfile.read(length),
+                    self.headers.get("Host", ""))
+                return self._json(status, body)
             if parsed.path == "/ingest-extension":
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -804,7 +853,7 @@ document.addEventListener('click', e => {{
 </body></html>"""
 
 
-def _render_today_page() -> str:
+def _render_today_page(trigger: str = "request") -> str:
     from ef.evidence_clusters import cached_clusters
     from urllib.parse import parse_qs as _pq
     import html as _html
@@ -824,7 +873,7 @@ def _render_today_page() -> str:
             timeout=15)
         for c in clusters[:6]:
             rows = conn.execute(r"""
-                SELECT eu.title, eu.channel_title, eu.source,
+                SELECT eu.video_id, eu.title, eu.channel_title, eu.source,
                        substr(COALESCE(NULLIF(eu.published_at,''),
                                        eu.captured_at), 1, 10) day
                 FROM eu
@@ -832,17 +881,51 @@ def _render_today_page() -> str:
                 WHERE cc.cluster_id = ? AND eu.title IS NOT NULL
                   AND length(eu.title) > 12
                 ORDER BY day DESC LIMIT 3""", (c["cluster_id"],)).fetchall()
-            for t, ch_t, src, day in rows:
+            for vid, t, ch_t, src, day in rows:
                 recent.append({"title": (t or "")[:80], "cluster": c["label"],
                                "channel": (ch_t or "")[:30], "source": src,
-                               "day": day, "cluster_id": c["cluster_id"]})
+                               "day": day, "cluster_id": c["cluster_id"],
+                               "video_id": vid})
         conn.close()
     except _sq.Error:
         pass
 
+    # Impression contract (2026-08-26): every surfacing batch records its
+    # candidate set (policy + ordered members) and one immutable impression
+    # row per item, so future offline evaluation can reconstruct what was
+    # shown, under which policy, at which rank. Render runs behind the
+    # 10-min /today TTL cache, so one batch == one cache regeneration.
+    surfaced = (
+        [{"item_kind": "cluster", "item_id": f"cluster:{c['cluster_id']}",
+          "item_label": c["label"], "why_surfaced": "emerging"}
+         for c in emerging[:5]] +
+        [{"item_kind": "doc", "item_id": f"video:{r['video_id']}",
+          "item_label": r["title"], "why_surfaced": "recent_doc"}
+         for r in recent[:12]] +
+        [{"item_kind": "cluster", "item_id": f"cluster:{c['cluster_id']}",
+          "item_label": c["label"], "why_surfaced": "dormant"}
+         for c in dormant[:3]])
+    imp_by_item = {}
+    try:
+        from ef.personal_graph import record_candidate_set
+        batch = record_candidate_set(
+            "today", "mechanical-clusters-recency", "v1", surfaced,
+            provenance=f"warm_query_service._render_today_page({trigger})")
+        for item, imp in zip(surfaced, batch["impression_ids"]):
+            imp_by_item.setdefault(item["item_id"], imp)
+    except Exception as e:
+        # Feedback still records unattributed (impression_id=None), but a
+        # persistent failure must be visible — silent degradation would
+        # detach all future feedback from its impressions.
+        print(f"[feedback] impression capture failed: {e}",
+              file=sys.stderr)
+
     def fb(kind, id_, label):
+        imp = imp_by_item.get(id_)
+        imp_arg = f"'{imp}'" if imp else "null"
         return (" ".join(
-            f"<a class='fb' href='#' onclick=\"fb('{kind}','{id_}','{v}')\""
+            f"<a class='fb' href='#' onclick=\"fb('{kind}',"
+            f"'{_html.escape(id_, quote=True)}',{imp_arg},'{v}')\""
             f">{v.replace('_',' ')}</a>"
             for v in ("useful", "known_already", "investigate")))
 
@@ -850,7 +933,7 @@ def _render_today_page() -> str:
         f"<div class='item'><b>{_html.escape(c['label'])}</b> "
         f"<span class='dim'>{c['channels']} channels, "
         f"{c['active_months']} months, since {c['first_month']}</span> "
-        f"{fb('cluster', c['cluster_id'], '')}</div>"
+        f"{fb('cluster', 'cluster:%s' % c['cluster_id'], '')}</div>"
         for c in emerging[:5])
     dormant_html = "".join(
         f"<div class='item dim'><b>{_html.escape(c['label'])}</b> "
@@ -860,7 +943,8 @@ def _render_today_page() -> str:
     recent_html = "".join(
         f"<div class='item'>{_html.escape(r['title'])} "
         f"<span class='dim'>— {_html.escape(r['cluster'][:28])} "
-        f"({r['day']})</span> {fb('doc', r['title'][:40], '')}</div>"
+        f"({r['day']})</span> "
+        f"{fb('doc', 'video:%s' % r['video_id'], '')}</div>"
         for r in recent[:12])
 
     return f"""<!DOCTYPE html>
@@ -904,9 +988,15 @@ arrives with the v2 inference run.</div>
 {coverage.get('tracked_channels', 0):,} channels tracked</p>
 
 <script>
-function fb(kind, id, v) {{
-  fetch('/feedback?surface=today&kind=' + kind + '&id=' +
-        encodeURIComponent(id) + '&v=' + v)
+function fb(kind, id, imp, v) {{
+  fetch('/feedback', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      surface: 'today', kind: kind, id: id, v: v,
+      impression_id: imp
+    }})
+  }})
     .then(r => r.json())
     .then(d => {{ if (d.ok) {{
       event.target.style.color = '#7ee2a8';
