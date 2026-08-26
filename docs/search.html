@@ -325,13 +325,26 @@
             resultsDiv.innerHTML = `<div class="empty">
                 <h2 style="margin-bottom:1rem">ytis — YouTube Intelligence System</h2>
                 <div style="text-align:left; max-width:500px; margin:0 auto; line-height:2; color:#8b949e">
-                    <p>📊 <strong style="color:#e6edf3">206,606</strong> transcripts indexed</p>
-                    <p>📺 <strong style="color:#e6edf3">2,865</strong> channels tracked</p>
-                    <p>🧩 <strong style="color:#e6edf3">351</strong> topics discovered</p>
-                    <p>💻 <strong style="color:#e6edf3">46</strong> code artifacts extracted</p>
-                    <p>📝 <strong style="color:#e6edf3">250</strong> Reddit posts indexed</p>
+                    <p>📊 <strong style="color:#e6edf3">…</strong> transcripts indexed</p>
                 </div>
             </div>`;
+            fetch('/stats.json').then(r => r.json()).then(s => {
+                const n = v => (v ?? 0).toLocaleString();
+                resultsDiv.innerHTML = `<div class="empty">
+                    <h2 style="margin-bottom:1rem">ytis — YouTube Intelligence System</h2>
+                    <div style="text-align:left; max-width:500px; margin:0 auto; line-height:2; color:#8b949e">
+                        <p>📊 <strong style="color:#e6edf3">${n(s.complete)}</strong> transcripts indexed</p>
+                        <p>📺 <strong style="color:#e6edf3">${n(s.channels)}</strong> channels tracked</p>
+                        <p>🧩 <strong style="color:#e6edf3">${n(s.topics)}</strong> topics discovered</p>
+                        <p>📝 <strong style="color:#e6edf3">${n(s.reddit)}</strong> Reddit posts indexed</p>
+                        <p>✉️ <strong style="color:#e6edf3">${n(s.newsletter)}</strong> newsletters indexed</p>
+                    </div>
+                </div>`;
+            }).catch(() => {
+                resultsDiv.querySelector('.empty').innerHTML =
+                    '<h2 style="margin-bottom:1rem">ytis — YouTube Intelligence System</h2>' +
+                    '<p style="color:#8b949e">live stats unavailable</p>';
+            });
         }
 
         loadStatus();

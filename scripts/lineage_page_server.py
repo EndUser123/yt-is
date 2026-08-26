@@ -275,7 +275,8 @@ def render(d: dict) -> str:
 <a href="http://127.0.0.1:6391/digest">digest</a> ·
 <a href="http://127.0.0.1:6391/dht">dht</a> ·
 <a href="http://127.0.0.1:6391/graph">graph</a> ·
-<a href="http://127.0.0.1:6393/today">today</a>
+<a href="http://127.0.0.1:6391/today">today</a> ·
+<a href="http://127.0.0.1:6391/interests">interests</a>
 </div>
 <div class="card" style="margin-top:8px"><b>Corpus</b>
 <div class="m">{a.get('complete', 0):,} complete · {a.get('pending', 0):,} pending · {a.get('failed', 0):,} failed · {a.get('excluded', 0):,} excluded</div></div>
