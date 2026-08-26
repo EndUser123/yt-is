@@ -296,6 +296,54 @@ def _compute_health_guarded(state_path, db_path, *, include_host: bool, include_
                             "detail": f"{type(exc).__name__}: {exc}"}]}
 
 
+def check_worktree_shrink() -> str | None:
+    """Detect worktree registrations that disappeared since the last tick.
+
+    The 2026-08-26 incident (codex-20260825-170400 destroyed mid-run from
+    a manual shell) left no agent-visible trace because nothing watched
+    the registration set. This check snapshots `git worktree list` for
+    both repos and alerts on shrink — the only cheap line into removals
+    that bypass every hook (manual shells, raw rmdir + prune).
+    """
+    repos = ["P:/", "P:/packages/yt-is"]
+    snapshot: dict[str, list[str]] = {}
+    for repo in repos:
+        try:
+            proc = subprocess.run(
+                ["git", "-C", repo, "worktree", "list", "--porcelain"],
+                capture_output=True, text=True, timeout=30,
+                creationflags=NO_WINDOW,
+            )
+            if proc.returncode != 0:
+                continue  # probe failure: skip this repo this tick
+            paths = [l[9:] for l in proc.stdout.splitlines()
+                     if l.startswith("worktree ")]
+            snapshot[repo] = paths
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+    state_file = HEARTBEAT_FILE.parent / "worktree-snapshot.json"
+    try:
+        prev = json.loads(state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        prev = {}
+    vanished: list[str] = []
+    for repo, paths in snapshot.items():
+        old = set(prev.get(repo, []))
+        gone = old - set(paths)
+        vanished.extend(sorted(gone))
+    try:
+        state_file.write_text(json.dumps(snapshot), encoding="utf-8")
+    except OSError:
+        pass
+    if not vanished or not prev:
+        return None
+    shown = "; ".join(v[:70] for v in vanished[:3])
+    more = f" (+{len(vanished) - 3} more)" if len(vanished) > 3 else ""
+    return (f"worktree registrations removed since last tick: {shown}{more} "
+            f"— if this was not your cleanup, check for mid-run destruction "
+            f"(2026-08-26 class)")
+
+
 def run_once(
     *,
     state_path: Path | None,
@@ -334,6 +382,10 @@ def run_once(
     intake_alert, _ = check_empty_intake_runs()
     if intake_alert:
         lines.append(f"[intake] {intake_alert}")
+
+    shrink_alert = check_worktree_shrink()
+    if shrink_alert:
+        lines.append(f"[worktrees] {shrink_alert}")
 
     if lines:
         content = (

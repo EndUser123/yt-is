@@ -62,7 +62,20 @@ INDEXES = [
         "SELECT COUNT(*) FROM analysis_status WHERE updated_at > datetime('now', '-12 hours')",
         "F2b: 12h freshness window — was full-scan 4-5s",
     ),
+    (
+        DB_BATCH,
+        "analysis_status",
+        "idx_analysis_status_updated_at_status",
+        "CREATE INDEX IF NOT EXISTS idx_analysis_status_updated_at_status "
+        "ON analysis_status(updated_at, status)",
+        "SELECT status, COUNT(*) FROM analysis_status "
+        "WHERE updated_at > datetime('now', '-12 hours') GROUP BY status",
+        "F2c: covering index for freshness+composition (review follow-up "
+        "2026-08-26): answers the 12h window GROUP BY from the index alone",
+    ),
 ]
+
+ANALYZE_DBS = [DB_TRANSCRIPTS, DB_BATCH]
 
 
 def time_query(con: sqlite3.Connection, sql: str) -> float:
@@ -110,6 +123,16 @@ def main() -> int:
         print(f"  RESULT: {speedup:.0f}x speedup | {status}")
         if not uses_index:
             all_ok = False
+
+    # ANALYZE: refresh optimizer statistics so the new indexes are chosen
+    # (review follow-up 2026-08-26; ANALYZE on WAL DBs is online-safe)
+    for db_path in ANALYZE_DBS:
+        con = sqlite3.connect(db_path, timeout=60)
+        t0 = time.perf_counter()
+        con.execute("ANALYZE")
+        con.commit()
+        con.close()
+        print(f"\nANALYZE {db_path}: {time.perf_counter() - t0:.1f}s")
 
     print(f"\n{'ALL INDEXES VERIFIED' if all_ok else 'SOME INDEXES NOT USED BY OPTIMIZER — review plans above'}")
     return 0 if all_ok else 1
