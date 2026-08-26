@@ -105,6 +105,37 @@ class ProductionQuery:
             "order by bm25(chunks) limit ?", (match, top)).fetchall()
         return [r[0] for r in rows]
 
+    FTS_CHANNEL_SCAN_CAP = 1000   # bounded overfetch for filtered lanes
+    FTS_CHANNEL_BATCH = 200
+
+    def _fts_lane_filtered(self, query_text: str, limit: int,
+                           channel_id: str, qc) -> list[str]:
+        """Channel-restricted BM25 candidates, filtered BEFORE truncation.
+
+        The FTS index carries only (text, chunk_id) — no channel column —
+        so restriction resolves chunk payloads via qdrant retrieve in
+        bounded batches over the BM25-ordered candidate list, until
+        `limit` channel matches are collected or the scan cap is hit.
+        Without this, channel-filtered exact/identifier/ambiguous queries
+        truncate to the global top-N first and drop every row whose
+        channel mismatches afterwards (the underfill defect: 0 of 8
+        results for a channel holding 10 matches).
+        """
+        ids = self._fts_lane(query_text, top=self.FTS_CHANNEL_SCAN_CAP)
+        out: list[str] = []
+        for i in range(0, len(ids), self.FTS_CHANNEL_BATCH):
+            batch = ids[i:i + self.FTS_CHANNEL_BATCH]
+            points = qc.retrieve(
+                self.collection,
+                ids=[ps.point_id(c) for c in batch],
+                with_payload=True)
+            for p in points:
+                if p.payload.get("channel_id") == channel_id:
+                    out.append(p.payload["chunk_id"])
+                    if len(out) >= limit:
+                        return out
+        return out
+
     def _reopen(self, eu_id: str, start: int, end: int) -> str:
         """Snippet via PK lookups only: catalog eu_id -> authority_ref
         (== transcripts.sqlite cache_key PK) -> substr. A video_id lookup
@@ -138,7 +169,9 @@ class ProductionQuery:
             # F-gate: dual retrieval, ambiguity-aware merge (policy D).
             # Literal subgroup ranked semantically, weighted leg; unique
             # literals still outrank semantic-only hits; no false pins.
-            fts_ids = self._fts_lane(query_text, top=100)
+            fts_ids = (self._fts_lane_filtered(query_text, 100, channel_id, qc)
+                       if channel_id
+                       else self._fts_lane(query_text, top=100))
             if not fts_ids:
                 final = []      # no literal AND weak token: no pin (cf. zero-literal rule)
                 exact_hit = True
@@ -189,8 +222,12 @@ class ProductionQuery:
             final = [(p, p.score) for p in points[:limit]]
             exact_hit = False
         elif route.intent == "exact_strict":
-            # literal only, no semantic fill (D-gate rule 3)
-            fts_ids = self._fts_lane(query_text, top=max(limit * 5, 50))
+            # literal only, no semantic fill (D-gate rule 3); with a
+            # channel filter the lane restricts BEFORE truncation
+            fts_ids = (self._fts_lane_filtered(query_text, max(limit * 5, 50),
+                                               channel_id, qc)
+                       if channel_id
+                       else self._fts_lane(query_text, top=max(limit * 5, 50)))
             by_id: dict = {}
             if fts_ids:
                 extra = qc.retrieve(self.collection,
@@ -201,7 +238,9 @@ class ProductionQuery:
                      enumerate(fts_ids[:limit]) if c in by_id]
             exact_hit = True
         else:  # identifier: containment priority at any df (D-gate rule 2)
-            fts_ids = self._fts_lane(query_text, top=100)
+            fts_ids = (self._fts_lane_filtered(query_text, 100, channel_id, qc)
+                       if channel_id
+                       else self._fts_lane(query_text, top=100))
             if not fts_ids:
                 # D-gate b-prime rule 1: zero literal matches => PRIMARY
                 # EVIDENCE EMPTY. A semantic near-twin must not masquerade

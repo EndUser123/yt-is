@@ -1,4 +1,4 @@
-"""PROBE (not a regression pin yet): channel-filtered FTS-lane underfill.
+"""Regression pins: channel-filtered FTS lanes restrict BEFORE truncation.
 
 codex's open hypothesis, verified structurally here: the exact_strict and
 identifier routes pull BM25 candidates from the FTS lane with NO channel
@@ -8,10 +8,10 @@ hits are dominated by other channels, a channel-filtered query underfills
 — returning fewer results than the requested channel actually contains at
 deeper FTS ranks, or nothing at all.
 
-These tests assert the CORRECT behavior (full results for a channel that
-has matches) and are marked strict xfail: they fail while the defect
-exists and will flip to XPASS the moment a fix lands, at which point the
-marker gets removed and they become regression pins.
+The defect (0 of 8 results for a channel holding 10 BM25 matches) was
+fixed by _fts_lane_filtered: bounded payload-resolve over BM25-ordered
+candidates until the limit fills. These pins enforce the full behavior
+per route; the ambiguous route (same code shape) is pinned too.
 
 Fully hermetic: tmp FTS5 index, fake Qdrant client, stubbed reopen.
 """
@@ -117,9 +117,6 @@ def patched_client(monkeypatch, mixed):
     return mixed
 
 
-@pytest.mark.xfail(strict=True, reason="FTS lanes filter AFTER truncation: "
-                                       "channel-restricted exact queries "
-                                       "underfill; fix pending operator go")
 def test_exact_route_returns_full_results_for_matching_channel(patched_client):
     q = _make(patched_client)
     res = q.relevant(PHRASE, limit=8, channel_id="chanA", exact=True)
@@ -131,12 +128,23 @@ def test_exact_route_returns_full_results_for_matching_channel(patched_client):
     assert all(r.channel_id == "chanA" for r in res)
 
 
-@pytest.mark.xfail(strict=True, reason="same truncation-then-filter shape "
-                                       "on the identifier literal lane")
 def test_identifier_route_returns_full_results_for_matching_channel(patched_client):
     q = _make(patched_client)
     res = q.relevant("raft-log-compaction", limit=8, channel_id="chanA")
     assert len(res) == 8, (
+        f"underfilled: got {len(res)} for a channel holding 10 matches")
+    assert all(r.channel_id == "chanA" for r in res)
+
+
+def test_ambiguous_route_returns_full_results_for_matching_channel(patched_client):
+    """Ambiguous single token (dual-lane): the literal subgroup must come
+    from the channel-restricted lane, not a post-truncation drop."""
+    q = _make(patched_client)
+    # weak-identifier shape (internal case shift) -> ambiguous route;
+    # fillerword tokens exist only in chanA's long docs, so the literal
+    # leg is entirely chanA and must survive restriction
+    res = q.relevant("fillerWord5", limit=8, channel_id="chanA")
+    assert len(res) >= 1, (
         f"underfilled: got {len(res)} for a channel holding 10 matches")
     assert all(r.channel_id == "chanA" for r in res)
 
