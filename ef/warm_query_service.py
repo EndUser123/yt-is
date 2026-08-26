@@ -65,7 +65,9 @@ def _cache_warmer():
 
 
 def _warm_targets_list():
-    sys.path.insert(0, str(REPO / "scripts"))
+    _scripts = str(REPO / "scripts")
+    if _scripts not in sys.path:  # idempotent in a long-running daemon
+        sys.path.insert(0, _scripts)
     import generate_digest as gd
     return [
         ("trends", 300, lambda: _topic_trends()),
@@ -1635,7 +1637,9 @@ def _stats_snapshot() -> dict:
     """Live corpus numbers for the search page stats panel (all counts
     labeled with scope; consumed via /stats.json)."""
     import sqlite3
-    sys.path.insert(0, str(REPO / "scripts"))
+    _scripts = str(REPO / "scripts")
+    if _scripts not in sys.path:  # idempotent in a long-running daemon
+        sys.path.insert(0, _scripts)
     import generate_digest as gd
     stats = _ttl("gd_stats", 300, gd.get_stats)
     out = {
@@ -1808,7 +1812,7 @@ def _render_status_page() -> str:
 <tr><td>Indexer daemon</td><td class="num">{'<span class="ok">running</span>' if indexer_alive else '<span class="bad">down</span>'}</td><td></td></tr>
 <tr><td>Warm query service</td><td class="num"><span class="ok">running</span></td><td></td></tr>
 <tr><td>Failed transcripts</td><td class="num">{num(failed)}</td>
-    <td class="dim">{(100.0 * failed / (complete + failed)) if (complete + failed) else 0:.1f}% of fetch attempts — exclusions govern most</td></tr>
+    <td class="dim">{(100.0 * failed / (complete + failed)) if (complete + failed) > 0 else 0:.1f}% of fetch attempts — exclusions govern most</td></tr>
 <tr><td>Missing titles</td><td class="num">{num(titleless)}</td><td class="dim">heals daily at 06:00</td></tr>
 <tr><td>Channels missing metadata</td><td class="num">{num(chan_meta_gap)}</td><td class="dim">thumbnail/description; heals daily at 06:00</td></tr>
 <tr><td>Scheduled</td><td class="num">05:00 / 06:00</td><td class="dim">index keeper / full content sync</td></tr>
@@ -2324,7 +2328,11 @@ def main():
     # Keep slow page data (trends/home/today) warm so /home never pays
     # the 6-25s cold cost (operator-reported hang 2026-08-25).
     global _WARM_TARGETS
-    _WARM_TARGETS = _warm_targets_list()
+    try:
+        _WARM_TARGETS = _warm_targets_list()
+    except Exception as _e:  # degrade pages, never block startup (review minor 3)
+        print(f"  warm-targets list unavailable: {_e}", flush=True)
+        _WARM_TARGETS = []
     threading.Thread(target=_cache_warmer, daemon=True,
                      name="page-cache-warmer").start()
 
