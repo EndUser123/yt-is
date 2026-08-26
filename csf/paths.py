@@ -69,3 +69,27 @@ def get_transcript_db_path() -> Path:
 def get_batch_db_path() -> Path:
     """Return the batch status DB path (batch_status.sqlite)."""
     return _get_batch_db_path_raw()
+
+
+def get_catalog_db_path() -> Path:
+    """Return the EF concept catalog DB path (catalog.sqlite)."""
+    override = os.environ.get("YTIS_EF_CATALOG_DB_PATH")
+    if override:
+        return Path(override)
+    return Path("P:/.data/yt-is/ef/catalog.sqlite")
+
+
+def get_fts_db_path() -> Path:
+    """Return the EF FTS5 full-text index DB path (fts5.sqlite)."""
+    override = os.environ.get("YTIS_EF_FTS_DB_PATH")
+    if override:
+        return Path(override)
+    return Path("P:/.data/yt-is/ef/fts5.sqlite")
+
+
+def get_shared_retry_pool_db_path() -> Path:
+    """Return the shared NLM retry pool DB path."""
+    override = os.environ.get("YTIS_NLM_SHARED_RETRY_POOL_DB_PATH")
+    if override:
+        return Path(override)
+    return Path("P:/.data/yt-is/nlm_shared_retry_pool.sqlite")

@@ -3214,3 +3214,30 @@ Operator-directed cutover 2026-08-16 ~12:20-13:00 (fix session stopped,
 - ONLY remaining incident item: operator files the GitHub Support request
   (cached c720775). Everything else closed.
 <!-- END incident-cleanup-20260816 -->
+
+<!-- BEGIN harness-program-20260825 (agent: zcode) -->
+## Harness program state + primary-checkout warning (2026-08-25)
+
+Three harness runs (codex/agy/muse-spark) compared by three independent
+analyses; muse integrated at fa29eea8 (20 fixes, review run-77229ad22e75
+approved), agy infrastructure at 298ea36d (review runs 9caef895f992
+REJECTED a dropped-hunk blocker -> fixed -> 922a68025e13 approved).
+Suite on integrated tree: 2320 passed / 0 failed / 2 xfailed.
+
+RESOLVED 2026-08-26: the in-flight warm_query_service edit was
+captured verbatim (P:/packages/yt-is/.data/preserved/
+sibling-ttl-20260826.diff + full file copy), its feature set ported
+onto current main through the review gates (run-0aa0471966cf approved;
+the three pre-fa29eea8 regression hunks dropped), the primary file
+synced to main, and the service restarted + verified live (honest
+warming->ready health, top_k 400, channel-filtered exact query 8/8
+matching). The original session can diff its preserved copy against
+main to see exactly what was and wasn't carried. Also: strict-xfail pins for the FTS
+channel-underfill defect (0/8 results for a channel holding 10 matches)
+live in tests/ef/test_fts_channel_underfill_probe.py — the fix is the
+named follow-up task (bounded-overfetch design in its commit message).
+
+ef_warm_query restarted and healthy (health 200 ready, queries serving,
+retrieval paths tagged). Deferred with receipts: FTS-lane fix (pinned),
+ProductionQuery pooling (measured low-value), tie>100k monitoring hook.
+<!-- END harness-program-20260825 (agent: zcode) -->

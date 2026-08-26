@@ -47,10 +47,15 @@ def save_state(st: dict) -> None:
 
 
 def authority_watermark() -> str:
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
+    from csf.db_utils import open_sqlite_ro
+
+    db_path = authority.get_transcripts_db_path()
+    if not db_path.exists():
+        return ""
+    conn = open_sqlite_ro(db_path)
     try:
-        return conn.execute(
-            "select max(cached_at) from transcript_cache").fetchone()[0] or ""
+        row = conn.execute("select max(cached_at) from transcript_cache").fetchone()
+        return row[0] or "" if row else ""
     finally:
         conn.close()
 
@@ -64,12 +69,19 @@ def compute_lag(indexed_wm: str) -> dict:
     30s: the full-WAL count costs ~6s against the live 1.4GB DB and is
     polled repeatedly by status emission and staleness modes."""
     import time as _t
+    from csf.db_utils import open_sqlite_ro
+
     now = _t.monotonic()
     if (_LAG_CACHE["wm"] == indexed_wm
             and _LAG_CACHE["result"] is not None
             and now - _LAG_CACHE["at"] < _LAG_CACHE_S):
         return dict(_LAG_CACHE["result"])
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
+
+    db_path = authority.get_transcripts_db_path()
+    if not db_path.exists():
+        return {"index_lag_count": 0, "oldest_unindexed_at": None, "oldest_unindexed_age_s": None}
+
+    conn = open_sqlite_ro(db_path)
     try:
         n, oldest = conn.execute(
             "select count(*), min(cached_at) from transcript_cache "
@@ -156,9 +168,9 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         raise RuntimeError("no indexed_watermark recorded; run bulk build "
                            "state bootstrap first (set to build snapshot "
                            "watermark)")
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{authority.get_transcripts_db_path().as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
-    conn.execute(f"attach database 'file:{authority.STATUS_DB}?mode=ro' as status")
+    conn.execute(f"attach database 'file:{authority.get_status_db_path().as_posix()}?mode=ro' as status")
     rows = [dict(r) for r in conn.execute("""
         select t.video_id, t.lang, t.source, t.cached_at, t.transcript,
                a.title, a.channel_id, a.published_at, a.duration,
@@ -207,7 +219,14 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         quarantined = tuple(authority.QUARANTINED_VIDEO_IDS)
         boundary_ts = rows[-1]["cached_at"]
         boundary_total = _eligible_boundary_count(boundary_ts, quarantined)
-        at_boundary = sum(1 for r in rows if r["cached_at"] == boundary_ts)
+        # count ONLY eligible selected rows: a quarantined row inside the
+        # selected tie made at_boundary equal the eligible boundary_total
+        # while an eligible row stayed unselected — completion skipped,
+        # watermark held forever (reviewer finding, run-77229ad22e75)
+        at_boundary = sum(
+            1 for r in rows
+            if r["cached_at"] == boundary_ts
+            and r["video_id"] not in quarantined)
         if at_boundary < boundary_total <= TIE_COMPLETION_MAX:
             tie_sql = _SEL % "t.cached_at = ?"
             seen = {(r["video_id"], r["lang"], r["source"]) for r in rows}
@@ -290,7 +309,7 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         # deletion reconciliation: catalog EUs missing from authority
         # (single shared scan — per-EU connection opens caused disk I/O
         # errors once the catalog passed ~78K EUs)
-        auth = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro",
+        auth = sqlite3.connect(f"file:{authority.get_transcripts_db_path().as_posix()}?mode=ro",
                                uri=True)
         try:
             auth_vids = {r[0] for r in auth.execute(

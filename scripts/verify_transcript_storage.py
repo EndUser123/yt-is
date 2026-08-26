@@ -37,91 +37,109 @@ SAMPLE_SIZE = 10
 
 
 def verify(batch_db: Path, transcript_db: Path, suspect_min: int) -> dict:
-    tdb = sqlite3.connect(f"file:{transcript_db}?mode=ro", uri=True)
-    bdb = sqlite3.connect(f"file:{batch_db}?mode=ro", uri=True)
+    from csf.db_utils import open_sqlite_ro
 
-    # 1. Cache stats
-    total_cached = tdb.execute("SELECT COUNT(*) FROM transcript_cache").fetchone()[0]
-    nonempty = tdb.execute(
-        "SELECT COUNT(*) FROM transcript_cache "
-        "WHERE transcript IS NOT NULL AND TRIM(transcript) != ''"
-    ).fetchone()[0]
-    empty = total_cached - nonempty
+    batch_db = Path(batch_db)
+    transcript_db = Path(transcript_db)
 
-    # 2. Orphans: complete without cache
-    bdb.execute(
-        f"ATTACH DATABASE 'file:{transcript_db}?mode=ro' AS tc"
-    )
-    orphans = bdb.execute("""
-        SELECT COUNT(*) FROM main.analysis_status a
-        WHERE a.status = 'complete'
-        AND NOT EXISTS (SELECT 1 FROM tc.transcript_cache tc WHERE tc.video_id = a.video_id)
-    """).fetchone()[0]
-    orphan_sample = [
-        row[0] for row in bdb.execute("""
-        SELECT a.video_id FROM main.analysis_status a
-        WHERE a.status = 'complete'
-        AND NOT EXISTS (SELECT 1 FROM tc.transcript_cache tc WHERE tc.video_id = a.video_id)
-        LIMIT 5
-    """).fetchall()]
+    if not batch_db.exists() or not transcript_db.exists():
+        missing = []
+        if not batch_db.exists():
+            missing.append(f"batch_db not found: {batch_db}")
+        if not transcript_db.exists():
+            missing.append(f"transcript_db not found: {transcript_db}")
+        return {
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+            "batch_db": str(batch_db),
+            "transcript_db": str(transcript_db),
+            "clean": False,
+            "issues": missing,
+        }
 
-    # 3. Suspects: suspiciously short
-    suspects = tdb.execute(
-        "SELECT COUNT(*) FROM transcript_cache "
-        "WHERE transcript IS NOT NULL AND LENGTH(transcript) < ?",
-        (suspect_min,),
-    ).fetchone()[0]
-    suspect_sample = [
-        {"video_id": r[0], "chars": r[1], "source": r[2]}
-        for r in tdb.execute(
-            "SELECT video_id, LENGTH(transcript), source FROM transcript_cache "
-            "WHERE transcript IS NOT NULL AND LENGTH(transcript) < ? "
-            "ORDER BY LENGTH(transcript) LIMIT 5",
+    tdb = open_sqlite_ro(transcript_db)
+    bdb = open_sqlite_ro(batch_db)
+    try:
+        # 1. Cache stats
+        total_cached = tdb.execute("SELECT COUNT(*) FROM transcript_cache").fetchone()[0]
+        nonempty = tdb.execute(
+            "SELECT COUNT(*) FROM transcript_cache "
+            "WHERE transcript IS NOT NULL AND TRIM(transcript) != ''"
+        ).fetchone()[0]
+        empty = total_cached - nonempty
+
+        # 2. Orphans: complete without cache
+        transcript_uri = f"file:{transcript_db.resolve().as_posix()}?mode=ro"
+        bdb.execute("ATTACH DATABASE ? AS tc", (transcript_uri,))
+        orphans = bdb.execute("""
+            SELECT COUNT(*) FROM main.analysis_status a
+            WHERE a.status = 'complete'
+            AND NOT EXISTS (SELECT 1 FROM tc.transcript_cache tc WHERE tc.video_id = a.video_id)
+        """).fetchone()[0]
+        orphan_sample = [
+            row[0] for row in bdb.execute("""
+            SELECT a.video_id FROM main.analysis_status a
+            WHERE a.status = 'complete'
+            AND NOT EXISTS (SELECT 1 FROM tc.transcript_cache tc WHERE tc.video_id = a.video_id)
+            LIMIT 5
+        """).fetchall()]
+
+        # 3. Suspects: suspiciously short
+        suspects = tdb.execute(
+            "SELECT COUNT(*) FROM transcript_cache "
+            "WHERE transcript IS NOT NULL AND LENGTH(transcript) < ?",
             (suspect_min,),
-        ).fetchall()
-    ]
+        ).fetchone()[0]
+        suspect_sample = [
+            {"video_id": r[0], "chars": r[1], "source": r[2]}
+            for r in tdb.execute(
+                "SELECT video_id, LENGTH(transcript), source FROM transcript_cache "
+                "WHERE transcript IS NOT NULL AND LENGTH(transcript) < ? "
+                "ORDER BY LENGTH(transcript) LIMIT 5",
+                (suspect_min,),
+            ).fetchall()
+        ]
 
-    # 4. Unclaimed: cache on non-complete rows (informational)
-    unclaimed = bdb.execute("""
-        SELECT COUNT(*) FROM main.analysis_status a
-        WHERE a.status != 'complete'
-        AND EXISTS (SELECT 1 FROM tc.transcript_cache tc WHERE tc.video_id = a.video_id)
-    """).fetchone()[0]
+        # 4. Unclaimed: cache on non-complete rows (informational)
+        unclaimed = bdb.execute("""
+            SELECT COUNT(*) FROM main.analysis_status a
+            WHERE a.status != 'complete'
+            AND EXISTS (SELECT 1 FROM tc.transcript_cache tc WHERE tc.video_id = a.video_id)
+        """).fetchone()[0]
 
-    # 5. Readability: sample and verify decode
-    readable = 0
-    unreadable = 0
-    for vid, content in tdb.execute(
-        "SELECT video_id, SUBSTR(transcript, 1, 500) FROM transcript_cache "
-        "WHERE TRIM(transcript) != '' ORDER BY RANDOM() LIMIT ?",
-        (SAMPLE_SIZE,),
-    ).fetchall():
-        try:
-            content.encode("utf-8").decode("utf-8")
-            readable += 1
-        except (UnicodeDecodeError, UnicodeEncodeError):
-            unreadable += 1
+        # 5. Readability: sample and verify decode
+        readable = 0
+        unreadable = 0
+        for vid, content in tdb.execute(
+            "SELECT video_id, SUBSTR(transcript, 1, 500) FROM transcript_cache "
+            "WHERE TRIM(transcript) != '' ORDER BY RANDOM() LIMIT ?",
+            (SAMPLE_SIZE,),
+        ).fetchall():
+            try:
+                content.encode("utf-8").decode("utf-8")
+                readable += 1
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                unreadable += 1
 
-    # 6. Length distribution
-    dist = {}
-    for band, n in tdb.execute("""
-        SELECT CASE
-            WHEN LENGTH(transcript) < 50 THEN 'lt50'
-            WHEN LENGTH(transcript) < 500 THEN '50to500'
-            WHEN LENGTH(transcript) < 2000 THEN '500to2k'
-            WHEN LENGTH(transcript) < 10000 THEN '2kto10k'
-            ELSE 'gt10k'
-        END, COUNT(*) FROM transcript_cache
-        WHERE transcript IS NOT NULL GROUP BY 1
-    """).fetchall():
-        dist[band] = n
+        # 6. Length distribution
+        dist = {}
+        for band, n in tdb.execute("""
+            SELECT CASE
+                WHEN LENGTH(transcript) < 50 THEN 'lt50'
+                WHEN LENGTH(transcript) < 500 THEN '50to500'
+                WHEN LENGTH(transcript) < 2000 THEN '500to2k'
+                WHEN LENGTH(transcript) < 10000 THEN '2kto10k'
+                ELSE 'gt10k'
+            END, COUNT(*) FROM transcript_cache
+            WHERE transcript IS NOT NULL GROUP BY 1
+        """).fetchall():
+            dist[band] = n
 
-    complete_count = bdb.execute(
-        "SELECT COUNT(*) FROM analysis_status WHERE status='complete'"
-    ).fetchone()[0]
-
-    tdb.close()
-    bdb.close()
+        complete_count = bdb.execute(
+            "SELECT COUNT(*) FROM analysis_status WHERE status='complete'"
+        ).fetchone()[0]
+    finally:
+        tdb.close()
+        bdb.close()
 
     # Build receipt
     issues = []

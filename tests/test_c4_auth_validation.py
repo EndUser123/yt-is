@@ -256,7 +256,7 @@ class TestFamilyRefreshUsesLiveSessionCheck:
 
         family = DEFAULT_FAMILIES[1]
         auth_context = nlm_batch._NLMAuthContext(
-            profile=family.sibling_profiles[0] if family.sibling_profiles else family.source_profile,
+            profile=family.source_profile,
             login_profile_args=["--profile", family.source_profile],
             requires_profile=True,
             expected_email=family.expected_email,
