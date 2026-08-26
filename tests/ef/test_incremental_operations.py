@@ -85,6 +85,11 @@ def hermetic(tmp_path, monkeypatch):
 
     monkeypatch.setattr(authority, "TRANSCRIPTS_DB", tdb)
     monkeypatch.setattr(authority, "STATUS_DB", tdb)
+    # the env override takes precedence over the constants now — claim it
+    # too (the autouse conftest fixture otherwise points every test at its
+    # own shared cache DB)
+    monkeypatch.setenv("YTIS_TRANSCRIPT_CACHE_DB_PATH", str(tdb))
+    monkeypatch.setenv("YTIS_BATCH_STATUS_DB_PATH", str(tdb))
     monkeypatch.setattr(authority, "QUARANTINED_VIDEO_IDS", ())
     monkeypatch.setattr(buildspec, "load_spec", lambda: {"generation": GEN})
     monkeypatch.setattr(buildspec, "spec_digest", lambda spec: "t")

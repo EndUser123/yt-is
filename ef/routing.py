@@ -191,13 +191,13 @@ def fuse_identifier_priority(literal_leg: list[str], semantic_leg: list[str],
     - semantic FILL only when literal candidates < top."""
     literals = literal_leg[:max(top, len(literal_leg))]
     sem_rank = {cid: i for i, cid in enumerate(semantic_leg)}
+    lit_rank = {cid: i for i, cid in enumerate(literals)}
+    ranked = sorted(literals,
+                    key=lambda c: (sem_rank.get(c, 1 << 30),
+                                   lit_rank.get(c, 1 << 30)))
     if len(literals) >= top:
-        ranked = sorted(literals,
-                        key=lambda c: (sem_rank.get(c, 1 << 30),
-                                       literals.index(c)))
         return ranked[:top]
-    out = sorted(literals, key=lambda c: (sem_rank.get(c, 1 << 30),
-                                          literals.index(c)))
+    out = list(ranked)
     seen = set(out)
     for cid in semantic_leg:
         if len(out) >= top:

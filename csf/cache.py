@@ -20,7 +20,7 @@ _VIDEO_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 # Shared transcript cache DB (all terminals share the same pool)
 # Stored in .data alongside other CSF runtime data
-_DEFAULT_SHARED_DB_PATH = Path("P:\\\\\\.data/yt-is/transcripts.sqlite")
+_DEFAULT_SHARED_DB_PATH = Path("P:/.data/yt-is/transcripts.sqlite")
 # Backward-compatible alias for callers that import the constant directly.
 _SHARED_DB_PATH = _DEFAULT_SHARED_DB_PATH
 
@@ -31,8 +31,10 @@ _db_access_lock = threading.RLock()
 
 
 def _connect_shared_db() -> sqlite3.Connection:
-    """Open the shared transcript DB with a conservative lock timeout."""
-    return sqlite3.connect(get_shared_db_path(), timeout=30.0)
+    """Open the shared transcript DB with a conservative lock timeout and busy pragma."""
+    conn = sqlite3.connect(get_shared_db_path(), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
 
 
 def get_shared_db_path() -> Path:
@@ -564,9 +566,11 @@ def promote_transcript_cache(source_db: Path, dest_db: Path | None = None) -> in
 
     with _db_access_lock:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-        source_conn = sqlite3.connect(source_path)
-        dest_conn = sqlite3.connect(dest_path)
+        source_conn = sqlite3.connect(source_path, timeout=30.0)
+        dest_conn = sqlite3.connect(dest_path, timeout=30.0)
         try:
+            source_conn.execute("PRAGMA busy_timeout = 30000")
+            dest_conn.execute("PRAGMA busy_timeout = 30000")
             source_conn.execute("PRAGMA journal_mode=WAL")
             dest_conn.execute("PRAGMA journal_mode=WAL")
             _ensure_transcript_cache_schema(source_conn)
@@ -614,9 +618,11 @@ def backup_transcript_cache(backup_root: Path | None = None) -> Path | None:
             backup_path = backup_dir / f"transcripts-{stamp}-{suffix}.sqlite"
             suffix += 1
 
-        source_conn = sqlite3.connect(db_path)
-        dest_conn = sqlite3.connect(backup_path)
+        source_conn = sqlite3.connect(db_path, timeout=30.0)
+        dest_conn = sqlite3.connect(backup_path, timeout=30.0)
         try:
+            source_conn.execute("PRAGMA busy_timeout = 30000")
+            dest_conn.execute("PRAGMA busy_timeout = 30000")
             source_conn.backup(dest_conn)
             dest_conn.commit()
         finally:

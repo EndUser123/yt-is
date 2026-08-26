@@ -73,7 +73,9 @@ def _new_event_loop() -> asyncio.AbstractEventLoop:
 
 # Matches the notebooklm-py default: ``get_home_dir() / "profiles"`` where
 # ``get_home_dir()`` resolves to ``~/.notebooklm`` (see ``notebooklm.paths``).
-DEFAULT_PROFILE_STORAGE_ROOT = Path.home() / ".notebooklm" / "profiles"
+DEFAULT_PROFILE_STORAGE_ROOT = Path(
+    os.environ.get("NOTEBOOKLM_PROFILES_DIR", str(Path.home() / ".notebooklm" / "profiles"))
+)
 
 ACCOUNT_PROFILES = ("a.hominidae", "troup.hominidae", "brsthomson")
 

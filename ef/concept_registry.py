@@ -15,6 +15,7 @@ idempotent and safe alongside other tables.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 import re
 import sqlite3
@@ -23,7 +24,18 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
+_DEFAULT_CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
+
+
+def get_catalog_path() -> Path:
+    """Catalog DB path with YTIS_EF_CATALOG_DB_PATH env override (restored
+    agy bc89a9c1 hunk dropped by an --ours conflict resolution — reviewer
+    blocker, run-9caef895f992)."""
+    override = os.environ.get("YTIS_EF_CATALOG_DB_PATH")
+    return Path(override) if override else _DEFAULT_CATALOG
+
+
+CATALOG = _DEFAULT_CATALOG
 
 LIFECYCLE_STATES = (
     "candidate",
@@ -198,9 +210,10 @@ def normalize_alias(alias: str) -> str:
 
 def connect(db_path: Any = None) -> sqlite3.Connection:
     """Open (and schema-ensure) the registry DB. row_factory=Row, 30s busy timeout."""
-    conn = sqlite3.connect(str(db_path) if db_path is not None else str(CATALOG))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout = 30000")
+    from csf.db_utils import open_sqlite_rw
+
+    target_path = db_path if db_path is not None else get_catalog_path()
+    conn = open_sqlite_rw(target_path, timeout=30.0, wal=False)
     ensure_schema(conn)
     return conn
 

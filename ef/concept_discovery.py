@@ -35,7 +35,7 @@ from typing import Any
 from ef import concept_registry as cr
 from ef.evidence_clusters import evidence_cluster_inventory
 
-CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
+CATALOG = cr.CATALOG
 
 POLICY_VERSION = "burst-policy-v1"
 
@@ -71,7 +71,7 @@ _W = POLICY["weights"]
 
 
 def _catalog_ro(catalog_path: Any = None) -> sqlite3.Connection:
-    path = CATALOG if catalog_path is None else Path(catalog_path)
+    path = cr.get_catalog_path() if catalog_path is None else Path(catalog_path)
     conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 30000")

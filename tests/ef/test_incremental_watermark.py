@@ -56,6 +56,11 @@ def hermetic(tmp_path, monkeypatch):
         CREATE TABLE transcript_cache (
             cache_key TEXT PRIMARY KEY, video_id TEXT, lang TEXT,
             source TEXT, transcript TEXT, cached_at TEXT, terminal_id TEXT);
+        CREATE TABLE analysis_status (
+            video_id TEXT PRIMARY KEY, title TEXT, channel_id TEXT,
+            published_at TEXT, duration INTEGER);
+        CREATE TABLE channel_metadata (
+            channel_id TEXT PRIMARY KEY, channel_title TEXT);
     """)
     conn.commit()
     conn.close()
@@ -96,6 +101,10 @@ def hermetic(tmp_path, monkeypatch):
         return real_connect(db_path=catalog_path)
 
     monkeypatch.setattr(authority, "TRANSCRIPTS_DB", tdb)
+    # env override takes precedence over the constant now — claim it (the
+    # autouse conftest fixture otherwise points tests at its shared DB)
+    monkeypatch.setenv("YTIS_TRANSCRIPT_CACHE_DB_PATH", str(tdb))
+    monkeypatch.setenv("YTIS_BATCH_STATUS_DB_PATH", str(tdb))
     monkeypatch.setattr(authority, "STATUS_DB", sdb)
     monkeypatch.setattr(authority, "QUARANTINED_VIDEO_IDS", ())
     monkeypatch.setattr(buildspec, "load_spec", lambda: {"generation": GEN})
@@ -226,3 +235,31 @@ def test_watermark_advances_when_tie_exceeds_batch_limit(hermetic):
     assert r2["indexed_watermark"] == "2026-01-04T00:00:00Z"
     r3 = freshness.incremental_update(batch_limit=10)
     assert r3["processed"] == 0              # nothing stuck behind
+
+
+def test_tie_completion_fires_with_quarantined_row_in_batch(hermetic, monkeypatch):
+    """Reviewer finding (run-77229ad22e75, major): the completion trigger
+    counted quarantined rows in at_boundary while the eligible boundary
+    count excludes them — a quarantined row inside a split tie made the
+    trigger miss by exactly that count, holding the watermark forever."""
+    from ef import authority
+    monkeypatch.setattr(authority, "QUARANTINED_VIDEO_IDS",
+                        ("quarantined-vid",))
+    for vid in ("v1", "v2"):
+        _add_row(hermetic, vid, "2026-01-02T00:00:00Z")
+    # T3 tie: 3 eligible + 1 quarantined. batch_limit 5 selects v1, v2,
+    # and ALL THREE remaining T3 rows (e1, e2, THE QUARANTINED ROW):
+    # at_boundary counts 3 (including the quarantined row) == the
+    # eligible boundary_total 3 -> the old trigger skipped completion,
+    # but only 2 ELIGIBLE rows were selected -> watermark held forever.
+    _add_row(hermetic, "e1", "2026-01-03T00:00:00Z")
+    _add_row(hermetic, "e2", "2026-01-03T00:00:00Z")
+    # quarantined row inserted BEFORE e3 so the rowid-ordered batch
+    # actually selects it over the eligible e3
+    _add_row(hermetic, "quarantined-vid", "2026-01-03T00:00:00Z")
+    _add_row(hermetic, "e3", "2026-01-03T00:00:00Z")
+
+    r1 = freshness.incremental_update(batch_limit=5)
+    assert r1["indexed_watermark"] == "2026-01-03T00:00:00Z"
+    r2 = freshness.incremental_update(batch_limit=4)
+    assert r2["processed"] == 0

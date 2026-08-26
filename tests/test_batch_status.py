@@ -602,7 +602,7 @@ def test_write_connection_sets_busy_timeout_before_wal(monkeypatch, tmp_path):
     )
     assert storage._get_conn() is connection
     assert statements[:2] == [
-        "PRAGMA busy_timeout=5000",
+        "PRAGMA busy_timeout=30000",  # agy 6ad37ff8 raised 5000 -> 30000; ORDER invariant unchanged
         "PRAGMA journal_mode=WAL",
     ]
 

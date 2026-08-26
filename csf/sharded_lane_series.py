@@ -760,6 +760,16 @@ def _run_lane(
         try:
             returncode = proc.wait()
         except BaseException as exc:
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5.0)
+                except Exception:
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=2.0)
+                    except Exception:
+                        pass
             process_snapshot.update(
                 {
                     "status": "wait_failed",

@@ -746,11 +746,13 @@ class _BatchStatusStorage:
         """Get a connection to the batch status DB."""
         if read_only:
             uri = f"file:{self._db_path.resolve().as_posix()}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True)
+            conn = sqlite3.connect(uri, uri=True, timeout=30.0)
         else:
-            conn = sqlite3.connect(self._db_path)
-        conn.execute("PRAGMA busy_timeout=5000")
-        if not read_only:
+            conn = sqlite3.connect(self._db_path, timeout=30.0)
+            # busy_timeout BEFORE WAL: the WAL acquisition itself can
+            # block on a lock; arming the timeout first prevents a
+            # hot-spin failure (codex 3b43c030 ordering invariant)
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
@@ -3208,8 +3210,8 @@ def record_status_event(
     else:
         db_path = Path(db_path)
 
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA journal_mode=WAL")
 
     try:
@@ -3282,8 +3284,8 @@ def get_transcript_status(
     else:
         db_path = Path(db_path)
 
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
     try:
         row = conn.execute(
             "SELECT status FROM transcript_status WHERE video_id = ?",
@@ -3303,8 +3305,8 @@ def get_visual_status(
     else:
         db_path = Path(db_path)
 
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
     try:
         row = conn.execute(
             "SELECT status FROM visual_status WHERE video_id = ?",
