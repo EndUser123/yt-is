@@ -87,7 +87,17 @@ Updated: 2026-08-26 by feedback-contract hardening session (agent: zcode)
 
 ## Next action
 
-Feedback semantics are hardened; new history accumulates under the
+Workstream closure (2026-08-26): feedback/impression event-semantics
+hardening is COMPLETE (architect acceptance of 89b4054c/e9bdae70). The
+synthetic live-verification probe
+fe_3be9c657bd724962a5190e3bc226ef21 is annotated test_probe /
+excluded-from-evaluation (annotation ann_1245b83fe9d9408998152491142f26a8);
+raw immutable history preserved; view-level attribution remains open.
+Recommendation ranking stays BLOCKED on the Interest Intelligence
+semantic recall/provenance gate. No further implementer sessions for this
+workstream.
+
+Prior next action (superseded): feedback semantics are hardened; new history accumulates under the
 contract. Defer the main ranking falsifier until inference
 recall/provenance passes its gate; then build the similarity+recency
 baseline and blinded regret evaluation against the captured
