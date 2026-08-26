@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import json
 import re
 import shutil
@@ -50,8 +51,8 @@ if str(REPO) not in sys.path:
 # of these after freeze invalidates the receipt (fail closed at run time).
 # ===========================================================================
 
-EVALUATOR_VERSION = "retrospective-evaluator-v3"
-ARTIFACT_SCHEMA_VERSION = "concept-discovery-eval-v3"
+EVALUATOR_VERSION = "retrospective-evaluator-v4"
+ARTIFACT_SCHEMA_VERSION = "concept-discovery-eval-v4"
 
 CHECKPOINT_OFFSETS = [(-30, "T-30"), (0, "T"), (7, "T+7"),
                       (14, "T+14"), (30, "T+30"), (60, "T+60")]
@@ -480,16 +481,30 @@ def replay_series(registry_path, as_of_dates: list[str],
 # Post-hoc target handling (labels allowed ONLY below this line)
 # ---------------------------------------------------------------------------
 
-def load_targets(path) -> list[dict]:
+def load_case_control(path) -> dict:
+    """Formal schema v4: curator-supplied positive_targets AND
+    negative_targets. Labels enter here, ALWAYS after the formal claim.
+    The evaluator NEVER derives negatives from production outcomes."""
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    targets = payload.get("targets", payload if isinstance(payload, list)
-                          else [])
-    for t in targets:
+    for key in ("negative_targets", "positive_targets"):
+        if not isinstance(payload.get(key), list):
+            raise FreezeError(
+                f"formal schema v4 requires '{key}' (curator-supplied)")
+    out = {"positives": [], "negatives": []}
+    for t in payload["positive_targets"]:
         for field in ("target_id", "canonical_name"):
             if not t.get(field):
-                raise FreezeError(f"target missing {field}")
+                raise FreezeError(f"positive target missing {field}")
         t.setdefault("aliases", [])
-    return targets
+        out["positives"].append(t)
+    for n in payload["negative_targets"]:
+        for field in ("negative_id", "canonical_name",
+                      "paired_positive_id", "anchor_T"):
+            if not n.get(field):
+                raise FreezeError(f"explicit negative missing {field}")
+        n.setdefault("aliases", [])
+        out["negatives"].append(n)
+    return out
 
 
 def first_qualifying_evidence(target: dict, catalog_path=None) -> str | None:
@@ -638,16 +653,16 @@ def _baseline_flags(features: dict) -> dict:
 
 
 def _compare_baselines(rows: list[dict]) -> dict:
-    """Aligned v3 baseline comparison (baselines-v2-aligned): policy and
-    baselines evaluated over the SAME cohorts and units — the fraction of
-    the cohort positive/emerging at ANY checkpoint by T+60. The v2
-    registry-row denominator/staleness semantics are gone."""
+    """Aligned v4 baseline comparison: policy and baselines evaluated
+    over the SAME EXPLICIT labeled cohorts — positives versus explicit
+    negatives, fraction positive/emerging at ANY checkpoint by T+60.
+    Automatic matched comparators are NOT baseline denominators."""
     def rate(kind, field):
         sub = [r for r in rows if r["kind"] == kind]
         return (sum(1 for r in sub if r[field]) / len(sub)) if sub else None
 
     def sep(field):
-        t_r, c_r = rate("target", field), rate("control", field)
+        t_r, c_r = rate("target", field), rate("negative", field)
         if t_r is None or c_r is None:
             return None, None, None
         return t_r, c_r, round(t_r - c_r, 3)
@@ -659,9 +674,9 @@ def _compare_baselines(rows: list[dict]) -> dict:
     return {
         "policy_target_rate": t_p, "policy_control_rate": c_p,
         "policy_separation": sep_p,
-        "baseline_A_target_rate": t_a, "baseline_A_control_rate": c_a,
+        "baseline_A_positive_rate": t_a, "baseline_A_negative_rate": c_a,
         "baseline_A_separation": sep_a,
-        "baseline_B_target_rate": t_b, "baseline_B_control_rate": c_b,
+        "baseline_B_positive_rate": t_b, "baseline_B_negative_rate": c_b,
         "baseline_B_separation": sep_b,
         "policy_beats_baselines": (
             sep_p is not None and
@@ -707,6 +722,12 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
     receipt = json.loads(Path(receipt_path).read_text(encoding="utf-8"))
     verify_frozen(receipt)
 
+    # Test-safety invariant: unit tests MUST redirect the formal ledger
+    # via YTIS_FORMAL_LEDGER_PATH; the production ledger path is never
+    # writable from a test run that sets the override.
+    prod_ledger = os.environ.get("YTIS_FORMAL_LEDGER_PATH",
+                                 SINGLE_USE_POLICY["ledger_path"])
+
     formal = label == FORMAL_LABEL
     holdout_sha = None
     if formal:
@@ -715,7 +736,7 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
         run_id = f"formal_{time.strftime('%Y%m%dT%H%M%S')}_" \
                  f"{holdout_sha[:8]}"
         claim_formal_holdout(
-            ledger_path or SINGLE_USE_POLICY["ledger_path"],
+            ledger_path or prod_ledger,
             holdout_sha256=holdout_sha,
             freeze_receipt_sha256=_sha256_obj(receipt),
             evaluator_sha256=receipt["evaluator_file_sha256"],
@@ -724,7 +745,9 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
     else:
         run_id = f"run_{label}_{time.strftime('%Y%m%dT%H%M%S')}"
 
-    targets = load_targets(targets_path)   # labels enter here, post-claim
+    case_control = load_case_control(targets_path)  # post-claim labels
+    targets = case_control["positives"]
+    explicit_negatives = case_control["negatives"]
     if max_targets:
         targets = targets[:max_targets]
 
@@ -738,28 +761,30 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
 
     try:
         aggregate = _run_evaluation_body(
-            receipt, targets, artifact_dir, run, label, catalog_path,
-            skip_perturbation)
+            receipt, targets, explicit_negatives, artifact_dir, run,
+            label, catalog_path, skip_perturbation)
     except Exception:
         if formal:
             # The labels were exposed: the holdout is consumed forever.
-            mark_claim_status(ledger_path or SINGLE_USE_POLICY["ledger_path"],
+            mark_claim_status(ledger_path or prod_ledger,
                               holdout_sha, "FAILED_AFTER_CONSUMPTION",
                               str(artifact_dir))
         raise
     if formal:
-        mark_claim_status(ledger_path or SINGLE_USE_POLICY["ledger_path"],
+        mark_claim_status(ledger_path or prod_ledger,
                           holdout_sha, "COMPLETED", str(artifact_dir))
     return aggregate
 
 
-def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
-                         catalog_path, skip_perturbation) -> dict:
-    """evaluator-v3 body: pinned target policy, one registry per target
-    replayed through ALL checkpoints, entity-only negative controls
-    selected at T-30 and tracked through the SAME registry (symmetric
-    stateful opportunity), aligned target/control baseline rates, and a
-    stateful perturbation prefix."""
+def _run_evaluation_body(receipt, targets, explicit_negatives,
+                         artifact_dir, run, label, catalog_path,
+                         skip_perturbation) -> dict:
+    """evaluator-v4 body: evaluator-v3 semantics plus EXPLICIT negative
+    ground truth. Explicit negatives (curator-supplied, paired to each
+    positive's anchor T) are replayed in the SAME per-positive registry
+    (stateful symmetry) and drive the selectivity verdict; the automatic
+    T-30 matched comparators are retained as a SECONDARY diagnostic that
+    never drives PASS/FAIL."""
 
     policy_version = receipt["target_policy_version"]
 
@@ -775,8 +800,17 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
     _write(artifact_dir / "target-scorability.json", scorability)
 
     scorable = [t for t, s in zip(targets, scorability) if s["T"]]
+    scorable_ids = {t["target_id"] for t in scorable}
     checkpoint_results, matched_negative_results = [], []
-    baseline_rows = []   # aligned per-cohort rows
+    negative_results = []   # explicit negative ground truth rows
+    baseline_rows = []   # aligned per-cohort rows (positives + explicit negatives only)
+    attention = {"episode_open": 0, "episode_active": 0,
+                 "episode_cooled": 0}
+    negs_by_target = {}
+    for n in explicit_negatives:
+        if n["paired_positive_id"] in scorable_ids:
+            negs_by_target.setdefault(n["paired_positive_id"],
+                                      []).append(n)
     unperturbed_posteriors = {}   # tid -> posterior at T+30
     unperturbed_promo_cp = {}     # tid -> first emerging checkpoint label
 
@@ -791,7 +825,12 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
             states = []
             controls = None
             t_flags = {"A": False, "B": False, "emerging": False}
-            ctl_flags = {}   # cid -> {"A":bool,"B":bool,"emerging":bool}
+            ctl_flags = {}   # comparator cid -> flags
+            my_negs = negs_by_target.get(tid, [])
+            neg_flags = {n["negative_id"]: {"A": False, "B": False,
+                                            "emerging": False,
+                                            "matched": False}
+                         for n in my_negs}
             for cp_label, cp_date in cps:
                 summary = replay_as_of(registry, cp_date, catalog_path,
                                        policy_version=policy_version)
@@ -852,6 +891,22 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
                         fl["A"] = True
                     if f.get("recent_count", 0) >= 4 and f.get("novel"):
                         fl["B"] = True
+                # explicit negatives: same registry, same checkpoints
+                # (stateful symmetry with the paired positive)
+                for n in my_negs:
+                    fl = neg_flags[n["negative_id"]]
+                    neg_matched = [c for c in concepts
+                                   if match_concept(c, n)]
+                    if neg_matched:
+                        fl["matched"] = True
+                    for c in neg_matched:
+                        if c["lifecycle_state"] == "emerging":
+                            fl["emerging"] = True
+                        f = extract_features(registry, c["concept_id"])
+                        if f.get("recent_count", 0) >= 6:
+                            fl["A"] = True
+                        if f.get("recent_count", 0) >= 4 and                                 f.get("novel"):
+                            fl["B"] = True
             checkpoint_results.append({"target_id": tid,
                                        "checkpoints": states})
             baseline_rows.append({"kind": "target", **t_flags})
@@ -860,7 +915,33 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
                     "target_id": tid, "control_id": cid,
                     "emerging_by_T60": fl["emerging"],
                 })
-                baseline_rows.append({"kind": "control", **fl})
+            for n in my_negs:
+                fl = neg_flags[n["negative_id"]]
+                negative_results.append({
+                    "negative_id": n["negative_id"],
+                    "paired_positive_id": tid,
+                    "matched_ever": fl["matched"],
+                    "emerging_by_T60": fl["emerging"],
+                })
+                baseline_rows.append({"kind": "negative", **{
+                    "A": fl["A"], "B": fl["B"],
+                    "emerging": fl["emerging"]}})
+            # episode attention (registry trend_episodes, policy v2)
+            econn = sqlite3.connect(str(registry))
+            try:
+                for state, key in (("active", "episode_active"),
+                                   ("cooled", "episode_cooled")):
+                    attention[key] += econn.execute(
+                        "SELECT COUNT(*) FROM trend_episodes WHERE "
+                        "policy_version=? AND state=?",
+                        (policy_version, state)).fetchone()[0]
+                attention["episode_open"] += econn.execute(
+                    "SELECT COUNT(*) FROM trend_episodes WHERE "
+                    "policy_version=?", (policy_version,)).fetchone()[0]
+            finally:
+                econn.close()
+        _write(artifact_dir / "explicit-negative-results.json",
+               negative_results)
         baseline_comparison = _compare_baselines(baseline_rows)
         _write(artifact_dir / "baseline-comparison.json", baseline_comparison)
 
@@ -912,8 +993,23 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
            matched_negative_results)
 
     aggregate = aggregate_metrics(checkpoint_results,
+                                  negative_results,
                                   matched_negative_results,
                                   perturbation_results, len(scorable))
+    aggregate["attention"] = {
+        "episode_open_total": attention["episode_open"],
+        "episode_active_total": attention["episode_active"],
+        "episode_cooled_total": attention["episode_cooled"],
+        "mean_emerging_per_checkpoint": round(sum(
+            s["emerging_total"] for r in checkpoint_results
+            for s in r["checkpoints"]) / max(
+            sum(len(r["checkpoints"]) for r in checkpoint_results), 1), 2),
+        "max_emerging_per_checkpoint": max(
+            (s["emerging_total"] for r in checkpoint_results
+             for s in r["checkpoints"]), default=0),
+        "max_candidates_per_checkpoint": max(
+            (s["candidates_total"] for r in checkpoint_results
+             for s in r["checkpoints"]), default=0)}
     aggregate["verdict"] = apply_verdict_v2(aggregate, baseline_comparison)
     _write(artifact_dir / "aggregate-summary.json", aggregate)
     _write(artifact_dir / "evaluation-report.md", _report_md(
@@ -954,8 +1050,12 @@ def _report_md(label, aggregate, baselines, scorable, unscorable) -> str:
         f"{aggregate.get('candidate_recall_scorable')}",
         f"- emerging recall (scorable): "
         f"{aggregate.get('emerging_recall_scorable')}",
-        f"- matched-negative emerging rate: "
-        f"{aggregate.get('matched_negative_emerging_rate')}",
+        f"- explicit negative emerging rate: "
+        f"{aggregate.get('explicit_negative_emerging_rate')} "
+        f"[{aggregate.get('explicit_negative_rows')} rows]",
+        f"- matched comparators (secondary diagnostic): "
+        f"{aggregate.get('matched_comparator_emerging_rate')} "
+        f"[{aggregate.get('matched_comparator_rows')} rows]",
         f"- perturbation retention 10%/20%: "
         f"{aggregate.get('perturbation10_retention')} / "
         f"{aggregate.get('perturbation20_retention')}",
@@ -963,9 +1063,6 @@ def _report_md(label, aggregate, baselines, scorable, unscorable) -> str:
         f"{baselines.get('policy_separation')} "
         f"(A {baselines.get('baseline_A_separation')}, "
         f"B {baselines.get('baseline_B_separation')})",
-        f"- matched negative controls: "
-        f"{aggregate.get('matched_negative_controls')} "
-        f"(avg/target {aggregate.get('negatives_per_target_avg')})",
         f"- Wilson 95% intervals: {json.dumps(aggregate.get('wilson_95'))}",
         f"- VERDICT: {aggregate.get('verdict')}",
         "",
@@ -1005,8 +1102,9 @@ def _percentile(score: float, sorted_desc: list) -> float:
     return round(lower / len(sorted_desc), 3)
 
 
-def aggregate_metrics(checkpoint_results, negatives, perturbations,
-                      scorable_count: int) -> dict:
+def aggregate_metrics(checkpoint_results, explicit_negatives,
+                      comparators, perturbations, scorable_count: int,
+                      ) -> dict:
     """Metrics per the FROZEN METRIC_PLAN. No target-specific detail."""
     def reached_lifecycle(result, want: str) -> str | None:
         for cp in result["checkpoints"]:
@@ -1036,19 +1134,26 @@ def aggregate_metrics(checkpoint_results, negatives, perturbations,
         days.sort()
         return days[len(days) // 2]
 
-    neg_rate = (sum(1 for n in negatives if n["emerging_by_T60"]) /
-                len(negatives)) if negatives else None
+    n_neg_rows = len(explicit_negatives)
+    neg_rate = (sum(1 for n in explicit_negatives
+                    if n["emerging_by_T60"]) / n_neg_rows)         if n_neg_rows else None
+    cmp_rate = (sum(1 for n in comparators if n["emerging_by_T60"]) /
+                len(comparators)) if comparators else None
     n_cand = len([r for r in checkpoint_results if reached_any(r)])
     n_emg = len([r for r in checkpoint_results
                  if reached_lifecycle(r, "emerging")])
     n_p10 = sum(1 for p in perturbations if p.get("retained_10"))
     n_p20 = sum(1 for p in perturbations if p.get("retained_20"))
-    n_neg = len(negatives)
     aggregate = {
         "scorable_targets": scorable_count,
-        "matched_negative_controls": n_neg,
-        "negatives_per_target_avg": round(n_neg / scorable_count, 3)
-        if scorable_count else None,
+        "explicit_negative_rows": n_neg_rows,
+        "explicit_negatives_per_positive_avg": round(
+            n_neg_rows / scorable_count, 3) if scorable_count else None,
+        "explicit_negative_emerging_rate": round(neg_rate, 3)
+        if neg_rate is not None else None,
+        "matched_comparator_rows": len(comparators),
+        "matched_comparator_emerging_rate": round(cmp_rate, 3)
+        if cmp_rate is not None else None,
         "candidate_recall_scorable": round(len(cand) / scorable_count, 3)
         if scorable_count else None,
         "emerging_recall_scorable": round(len(emg) / scorable_count, 3)
@@ -1059,8 +1164,6 @@ def aggregate_metrics(checkpoint_results, negatives, perturbations,
                                                     lambda r:
                                                     reached_lifecycle(
                                                         r, "emerging")),
-        "matched_negative_emerging_rate": round(neg_rate, 3)
-        if neg_rate is not None else None,
         "perturbation10_retention": round(
             n_p10 / len(perturbations), 3) if perturbations else None,
         "perturbation20_retention": round(
@@ -1075,9 +1178,13 @@ def aggregate_metrics(checkpoint_results, negatives, perturbations,
             n_cand, scorable_count) if scorable_count else None,
         "emerging_recall_scorable": wilson_interval(
             n_emg, scorable_count) if scorable_count else None,
-        "matched_negative_emerging_rate": wilson_interval(
-            sum(1 for n in negatives if n["emerging_by_T60"]), n_neg)
-        if negatives else None,
+        "explicit_negative_emerging_rate": wilson_interval(
+            sum(1 for n in explicit_negatives
+                if n["emerging_by_T60"]), n_neg_rows)
+        if n_neg_rows else None,
+        "matched_comparator_emerging_rate": wilson_interval(
+            sum(1 for n in comparators if n["emerging_by_T60"]),
+            len(comparators)) if comparators else None,
         "perturbation10_retention": wilson_interval(
             n_p10, len(perturbations)) if perturbations else None,
         "perturbation20_retention": wilson_interval(
@@ -1098,16 +1205,17 @@ def _per_checkpoint_totals(checkpoint_results):
 
 def apply_verdict_v2(aggregate: dict,
                      baseline_comparison: dict | None) -> str:
-    """Verdict-v2: sample sufficiency gates substantive interpretation.
-
-    INSUFFICIENT_EVIDENCE (and no PASS/PARTIAL/FAIL evaluation) when:
-    scorable targets < 20, OR matched negative controls < 40, OR
-    controls/target < 2.0. Otherwise the frozen substantive verdict-v1
-    thresholds decide PASS/PARTIAL/FAIL unchanged."""
+    """Verdict-v2 (v4 label semantics): sample sufficiency gates
+    substantive interpretation. INSUFFICIENT_EVIDENCE when scorable
+    targets < 20, OR explicit negative rows < 40, OR explicit negatives
+    per positive < 2.0 (automatic comparators never count toward
+    sufficiency). Otherwise the frozen substantive thresholds decide,
+    with explicit_negative_emerging_rate as the selectivity authority
+    (unchanged 0.20 / 0.50 bars)."""
     gate = VERDICT_RULES["INSUFFICIENT_EVIDENCE"]
     scorable = aggregate.get("scorable_targets") or 0
-    negatives = aggregate.get("matched_negative_controls") or 0
-    per_target = aggregate.get("negatives_per_target_avg")
+    negatives = aggregate.get("explicit_negative_rows") or 0
+    per_target = aggregate.get("explicit_negatives_per_positive_avg")
     if (scorable < gate["min_scorable_targets"]
             or negatives < gate["min_matched_negative_controls"]
             or (per_target is not None
@@ -1120,7 +1228,9 @@ def apply_verdict(aggregate: dict, baseline_comparison: dict | None) -> str:
     rules = VERDICT_RULES["PASS"]
     cr = aggregate.get("candidate_recall_scorable") or 0
     er = aggregate.get("emerging_recall_scorable") or 0
-    nr = aggregate.get("matched_negative_emerging_rate") or 0
+    # v4: explicit labeled negatives are the selectivity authority;
+    # automatic comparators never drive the verdict
+    nr = aggregate.get("explicit_negative_emerging_rate") or 0
     p20 = aggregate.get("perturbation20_retention") or 0
     beats = (baseline_comparison or {}).get("policy_beats_baselines")
     fail = VERDICT_RULES["FAIL"]

@@ -28,6 +28,17 @@ import evaluate_concept_discovery as ev  # noqa: E402
 from ef import concept_discovery as cd  # noqa: E402
 from ef import concept_registry as cr  # noqa: E402
 
+def _load_targets_local(path):
+    """Local legacy-targets loader (evaluator-v4 removed load_targets;
+    concluded-campaign diagnostics keep a self-contained copy)."""
+    import json as _json
+    payload = _json.loads(Path(path).read_text(encoding="utf-8"))
+    out = []
+    for t in payload.get("targets", []):
+        t.setdefault("aliases", [])
+        out.append(t)
+    return out
+
 PLAN_PATH = Path("P:/.data/yt-is/ef/concept-discovery-calibration/"
                  "v2-policy-family/preregistered-plan.json")
 PLAN_SHA256 = "bb1c02999ef36f5ad474ea0b7336e8d3514d9e141f64508e51314b768d4f221a"
@@ -152,7 +163,7 @@ def extract() -> None:
     digest = hashlib.sha256(PLAN_PATH.read_bytes()).hexdigest()
     if digest != PLAN_SHA256:
         sys.exit(f"plan hash mismatch: {digest}; refusing to run")
-    targets = ev.load_targets(HOLDOUT)
+    targets = _load_targets_local(HOLDOUT)
     scor = {s["target_id"]: s["T"] for s in
             json.loads((ART / "target-scorability.json").read_text())}
     negs = json.loads((ART / "negative-controls.json").read_text())
@@ -365,7 +376,7 @@ def compute_formal_matched_t30() -> set:
     cache = CAL / "formal-matched-t30-cache.json"
     if cache.exists():
         return set(json.loads(cache.read_text(encoding="utf-8")))
-    targets = ev.load_targets(HOLDOUT)
+    targets = _load_targets_local(HOLDOUT)
     scor = {s["target_id"]: s["T"] for s in
             json.loads((ART / "target-scorability.json").read_text())}
     out = []
