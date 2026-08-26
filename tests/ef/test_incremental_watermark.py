@@ -166,3 +166,33 @@ def test_test_terminal_rows_still_excluded(hermetic):
     r = freshness.incremental_update(batch_limit=10)
     assert r["processed"] == 0
     assert r["added"] == 0
+
+
+def test_watermark_advances_when_boundary_tie_has_ineligible_rows(hermetic):
+    """The boundary count must apply the batch's eligibility predicates:
+    an ineligible row (here: an excluded source) sharing the boundary
+    timestamp used to pin the watermark below it forever, stalling all
+    later indexing. Caught by the codex /tp lens 2026-08-25."""
+    # eligible: 2 rows at T2; boundary T3 has 2 eligible + 1 EXCLUDED-source row
+    for vid in ("v1", "v2"):
+        _add_row(hermetic, vid, "2026-01-02T00:00:00Z")
+    for vid in ("v3", "v4"):
+        _add_row(hermetic, vid, "2026-01-03T00:00:00Z")
+    conn = sqlite3.connect(hermetic["tdb"])
+    conn.execute(
+        "insert into transcript_cache (cache_key, video_id, lang, source,"
+        " transcript, cached_at, terminal_id) values (?,?,?,?,?,?,?)",
+        ("inelig:en:reddit", "inelig", "en", "reddit", TEXT,
+         "2026-01-03T00:00:00Z", "term-1"))
+    conn.commit()
+    conn.close()
+
+    # batch_limit 4 selects every eligible row incl. both T3 rows; the
+    # ineligible reddit row must NOT keep boundary_total above the
+    # selected count — the watermark advances to T3, not stuck at T2
+    r = freshness.incremental_update(batch_limit=4)
+    assert r["processed"] == 4
+    assert r["indexed_watermark"] == "2026-01-03T00:00:00Z"
+    # and the next pass is a no-op (nothing left past the watermark)
+    r2 = freshness.incremental_update(batch_limit=4)
+    assert r2["processed"] == 0
