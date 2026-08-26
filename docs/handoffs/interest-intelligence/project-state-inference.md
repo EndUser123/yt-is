@@ -98,26 +98,37 @@ full-coverage bootstrap implementer passes
 
 ## Next action
 
-- 2026-08-26: [seen] Interest-recovery gate EVALUATED (fresh evaluator,
-  preregistration interest-recovery-v1 frozen pre-scoring) and FAILED.
-  Aggregate: legacy top-25 baseline recovered 1/42 known interests
-  (narrow half 0/14, provenance valid 1.0, explicit-negative rate 0.50
-  after the review-fixed rescore, 0.083 pre-fix); the full-coverage bootstrap completed 0/3 attempts — every
-  attempt failed closed on provider contract violations (dangling
-  related_to references twice, invalid temporal_state enum once) before
-  reconciliation. Full-coverage recall is therefore unavailable, not
-  merely low. Deterministic-replay stability of scoring verified
-  identical; the four preregistered perturbation schemes were not
-  executable without a completed bootstrap run.
-- Structural finding: the bootstrap's fail-closed validation is working
-  as designed (nothing invalid persisted), but per-batch provider
-  noncompliance with the strict fragment contract makes a 13-batch run
-  plus reconciliation unable to complete. The bottleneck is provider
-  contract compliance at the batch seam, not coverage planning.
-- Recommendation optimization remains blocked. Next architecture fork:
-  either raise batch-level provider contract compliance (prompt-side
-  compliance engineering, NOT semantic tuning — e.g. structural
-  few-shot, repair-and-retry of invalid batches, or per-field
-  validation relaxation decisions owned by the architect) or accept the
-  legacy arm's output as the only completable inference and re-scope
-  the gate. Both are architect decisions; the evaluator did not tune.
+- 2026-08-26 (architect correction, same day): the interest-recovery
+  evaluation recorded below used the WRONG ground truth. Evaluator
+  interest-recovery-v1 treated Discovery temporal-emergence artifacts
+  (holdout-v4 targets curated for retrospective concept-emergence from
+  raw-corpus PRODUCT|TECH|ORG|CONCEPT; case-control paired negatives)
+  as a known-Interest/Goal/InformationNeed/Question holdout. They are
+  not: they establish no operator-confirmed Interests, Goals,
+  Information Needs, or Questions and no explicit negatives for
+  Interest inference.
+- Classification: INVALID_EVALUATION_GROUND_TRUTH. All label-dependent
+  metrics from that run (1/42 recall_all, 0.036 supported recall, narrow
+  0/14, explicit-negative rate 0.50) are WRONG_GROUND_TRUTH_DIAGNOSTIC_ONLY;
+  its FAIL verdict is INVALID_FOR_INTEREST_RECOVERY. The Interest
+  semantic-recall gate remains UNRESOLVED / NOT YET VALIDLY RUN.
+- Valid retained finding (label-free):
+  FULL_COVERAGE_INFERENCE_COMPLETION_FAILURE — 3 attempted full-coverage
+  bootstrap runs, 0 completed; every failure occurred before
+  reconciliation/persistence (two dangling related_to violations, one
+  invalid temporal_state enum); fail-closed validation correctly
+  prevented invalid persistence. Inference-completion reliability can be
+  repaired independently, without any private Interest label access.
+- Recommendation optimization remains blocked because valid Interest
+  recall is still unknown.
+- Required next lane: dedicated Interest ground-truth curation
+  (operator-confirmed Interests, Goals, Information Needs, Questions),
+  contamination-separated from this evaluator session, which has seen
+  private Discovery labels and is retired from all inference tuning and
+  Interest holdout curation/evaluation.
+- Historical record of the invalidated run: [seen] interest-recovery-v1
+  preregistered pre-scoring; legacy top-25 baseline produced one valid
+  payload (12 interests) while the bootstrap failed completion 3 times;
+  perturbation schemes unexecutable without a completed bootstrap run;
+  deterministic-replay stability verified. Those numbers carry no
+  Interest-recovery meaning.
