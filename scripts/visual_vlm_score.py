@@ -173,6 +173,7 @@ def run_mmx_vision(url: str, *, timeout_s: float = 60.0) -> dict | None:
         capture_output=True,
         text=True,
         timeout=timeout_s,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if proc.returncode != 0:
         raise RuntimeError(f"mmx exit {proc.returncode}: {proc.stderr.strip()[:200]}")
