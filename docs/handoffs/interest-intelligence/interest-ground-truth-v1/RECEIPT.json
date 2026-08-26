@@ -1,0 +1,39 @@
+{
+  "receipt": "interest-intelligence-holdout-v1",
+  "agent": "zcode",
+  "curated_at_utc": "2026-08-26",
+  "result": "INTEREST_GROUND_TRUTH_READY",
+  "private_artifact": {
+    "path": ".data/yt-is/private/interest-intelligence-holdout-v1.json",
+    "git_tracked": false,
+    "bytes": 22227,
+    "sha256": "97cb8d59ec201fbd39f3ce526b6dae705e1cc49d402558ac0283abb55362b542"
+  },
+  "counts": {
+    "positives_interest": 5,
+    "positives_goal": 3,
+    "positives_information_need": 2,
+    "positives_question": 2,
+    "negatives_explicit": 7,
+    "unknown_ledger_groups": 2
+  },
+  "distributions": {
+    "label_authority": {
+      "OPERATOR_CONFIRMED": 8,
+      "OPERATOR_STRONGLY_IMPLIED_BY_MULTIPLE_EXPLICIT_STATEMENTS": 4
+    },
+    "interest_temporal": {
+      "durable": 3,
+      "active": 2
+    }
+  },
+  "attestation": {
+    "inference_outputs_inspected_for_label_selection": false,
+    "discovery_holdouts_used_as_labels": false,
+    "discovery_retrospective_holdout_v4_used": false,
+    "architect_or_llm_inference_promoted_to_labels": false,
+    "labels_derived_only_from_operator_statements_and_operator_authored_artifacts": true
+  },
+  "evaluator_gate": "do not open private holdout until evaluator metric plan and inference implementation are frozen",
+  "next_decision": "FRESH EVALUATOR REQUIRED after inference reliability is frozen"
+}
