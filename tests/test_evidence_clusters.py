@@ -274,3 +274,43 @@ def test_readonly_connections(catalog_path, monkeypatch):
     monkeypatch.setattr(ec.sqlite3, "connect", guarded)
     ec.evidence_cluster_inventory(catalog_path=catalog_path)
     ec.hydrate_evidence_clusters([1000], catalog_path=catalog_path)
+
+
+def test_connections_are_closed_not_just_committed(catalog_path, tmp_path,
+                                                   monkeypatch):
+    """`with sqlite3.connect(...)` commits/rollbacks but never CLOSES; the
+    module's entry points ran on connections left open to the GC. Every
+    connection opened by inventory/hydration/coverage must be closed when
+    the call returns."""
+    import gc
+    opened = []
+    real_catalog = ec._catalog
+
+    def spy(*a, **k):
+        c = real_catalog(*a, **k)
+        opened.append(c)
+        return c
+
+    monkeypatch.setattr(ec, "_catalog", spy)
+    batch = tmp_path / "batch.sqlite"
+    b = sqlite3.connect(batch)
+    b.executescript("""
+        CREATE TABLE channel_metadata (channel_id TEXT);
+        CREATE TABLE channel_blocklist (channel_id TEXT);
+        CREATE TABLE video_catalog (video_id TEXT);
+        CREATE TABLE analysis_status (status TEXT);
+    """)
+    b.commit()
+    b.close()
+    monkeypatch.setattr(ec, "BATCH", batch)
+
+    ec.evidence_cluster_inventory(catalog_path=catalog_path)
+    ec.hydrate_evidence_clusters([1000], catalog_path=catalog_path)
+    chain = ec.coverage_chain()
+    assert chain["tracked_channels"] == 0  # batch fixture is queryable
+
+    gc.collect()
+    assert opened, "expected _catalog to be exercised"
+    for c in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            c.execute("select 1")     # closed connections refuse queries

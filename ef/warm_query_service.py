@@ -62,11 +62,17 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
 
         if parsed.path == "/health":
-            try:
-                q = get_query()
-                self._json(200, {"status": "ready", "model": "warm"})
-            except Exception as e:
-                self._json(503, {"status": "warming", "error": str(e)[:100]})
+            # Honest readiness: before the encoder canary passes, /query
+            # refuses with 503, so health must not claim ready either
+            # (the 2026-08-23 incident: queries failing behind "ready").
+            if not _warm_ok.is_set():
+                self._json(503, {"status": "warming", "model": "loading"})
+            else:
+                try:
+                    q = get_query()
+                    self._json(200, {"status": "ready", "model": "warm"})
+                except Exception as e:
+                    self._json(503, {"status": "warming", "error": str(e)[:100]})
 
         elif parsed.path == "/candidates/approve":
             # parse_qs/quote_plus come from the module import: a local
@@ -95,7 +101,16 @@ class Handler(BaseHTTPRequestHandler):
             if not query_text:
                 self._json(400, {"error": "missing q parameter"})
                 return
-            top_k = int(params.get("top_k", ["8"])[0])
+            top_k_raw = params.get("top_k", ["8"])[0]
+            try:
+                top_k = int(top_k_raw)
+            except ValueError:
+                self._json(400, {"error": f"invalid top_k: {top_k_raw[:20]}"})
+                return
+            # Bound the retrieval limit: an unvalidated int both crashes
+            # this handler uncaught and lets one request ask qdrant for
+            # an unbounded number of rows.
+            top_k = max(1, min(top_k, 100))
             channel_id = params.get("channel_id", [None])[0]
             fmt = params.get("format", ["json"])[0]
 
@@ -2129,11 +2144,18 @@ def _chs_search(query: str, top_k: int = 3) -> list[dict]:
 
 
 def is_running() -> bool:
-    """Check if the warm query service is already running."""
+    """Check if a warm query service process is answering on the port.
+
+    Any HTTP response counts — 200 ready or 503 still-warming both prove
+    a live server, so the double-start guard holds through warm-up (when
+    /health is an honest 503)."""
+    import urllib.error
     import urllib.request
     try:
         with urllib.request.urlopen(f"http://{HOST}:{PORT}/health", timeout=2) as r:
             return r.status == 200
+    except urllib.error.HTTPError as e:
+        return e.code == 503
     except Exception:
         return False
 

@@ -6,7 +6,7 @@ Verifies: channel_metadata table creation, set_channel_metadata, get_channel_met
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(r"P:\\\\\\\packages\\yt-is").absolute()))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from csf.batch_status import (
     set_channel_metadata,

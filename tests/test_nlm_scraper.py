@@ -13,7 +13,7 @@ import pytest
 # Smuggle in conftest fixtures via the package's test setup
 import sys
 
-sys.path.insert(0, str(Path(r"P:\\\\\\packages\yt-is").absolute()))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 @pytest.fixture(autouse=True)

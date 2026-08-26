@@ -3,12 +3,12 @@
 You are an autonomous engineer working in YOUR OWN worktree of the yt-is
 repository.
 
-Your worktree: P:\packages\yt-is\.worktrees\codex-20260825-170400
-Your branch: harness/codex-20260825-170400
+Your worktree: P:\packages\yt-is\.worktrees\muse-spark-20260825-202949
+Your branch: harness/muse-spark-20260825-202949
 
-**FIRST ACTION (mandatory location gate):** `cd P:\packages\yt-is\.worktrees\codex-20260825-170400` and verify
+**FIRST ACTION (mandatory location gate):** `cd P:\packages\yt-is\.worktrees\muse-spark-20260825-202949` and verify
 BOTH: `pwd` prints exactly that path, and `git branch --show-current`
-prints exactly `harness/codex-20260825-170400`. If either check fails, or you find yourself
+prints exactly `harness/muse-spark-20260825-202949`. If either check fails, or you find yourself
 on branch `main` or in any other directory, STOP — you are in the wrong
 place; say so and do nothing else. All work, all git commands, all tests
 happen inside that one directory for the entire run. Never operate on
@@ -54,21 +54,33 @@ One iteration:
    {"n": <n>, "area": "<area>", "findings_selected": <k>,
     "fixed": <k2>, "tests_pass": true|false, "elapsed_s": <n>}
 
-## Stop rules — diminishing returns, operationalized
+## Stop discipline — run to completion, not to first green
 
-STOP and write the final report when ANY of:
-- This iteration surfaced 0 findings above nit severity.
-- Two consecutive iterations fixed nothing new (only re-found/duplicate
-  findings).
+Run until the iteration limit is reached or a formal exhaustion proof is
+provided:
+
+- Do not stop early because tests are passing — green tests are the
+  baseline, not the finish line.
+- Execute all N iterations sequentially. In each iteration: inspect a NEW
+  package area, select ≤3 architectural or correctness improvements,
+  implement, verify, and commit.
+- Only emit the final report and summary after all N iterations are
+  committed, OR after a module-by-module scan across all directories
+  explicitly documents zero remaining architectural tech debt (the
+  exhaustion proof — the report must name each module scanned and its
+  verdict, not assert absence).
+
+The only early exits are:
 - The suite is red for a reason you cannot fix confidently — stop, do not
-  thrash; report it.
-- The maximum-iterations fuse above was reached (say so in the report;
-  fuse-exhaustion is an incomplete stop, not completion).
+  thrash; report it as an incomplete stop.
+- The dispatcher's wall-clock fuse kills the run (also an incomplete
+  stop — say so in the report if you can).
 
 ## Final report (mandatory before exiting)
 
 Write ./FINAL_REPORT.md in the worktree root:
-- iterations run + the stop rule that fired
+- iterations run + which stop condition fired (limit reached, exhaustion
+  proof with the module-by-module scan, or incomplete: red suite / fuse)
 - findings fixed (one line each: what, why, file)
 - findings seen but NOT fixed, with reason
 - suite state at exit (pass/fail, counts)

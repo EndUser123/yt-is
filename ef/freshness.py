@@ -167,28 +167,80 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         left join status.analysis_status a on a.video_id = t.video_id
         left join status.channel_metadata cm on cm.channel_id = a.channel_id
         where t.cached_at > ? and length(t.transcript) >= 100
-          and t.terminal_id not like 'test%'
+          and (t.terminal_id is null or t.terminal_id not like 'test%')
           and t.source not in ('reddit','hackernews','discord','rss',
                                'github','podcast','dht-artifact','newsletter')
         order by t.cached_at asc limit ?
     """, (iw, batch_limit)).fetchall()]
+    # Tie-completion pass: a tie LARGER than batch_limit can never be
+    # cleared by ordinary batching — every run re-selects the same first
+    # batch_limit rows, hash-skips them, and holds the watermark below
+    # the tie forever, stalling all later indexing (stall traced by the
+    # /tp panel 2026-08-25; live shape: 7106-row tie vs default 2000).
+    # When the split tie fits the completion cap, fetch the remaining
+    # eligible boundary rows in one bounded pass; the content-hash
+    # short-circuit makes overlap with already-selected rows harmless.
+    TIE_COMPLETION_MAX = 100_000
+    _SEL = """select t.video_id, t.lang, t.source, t.cached_at, t.transcript,
+               a.title, a.channel_id, a.published_at, a.duration,
+               cm.channel_title
+        from transcript_cache t
+        left join status.analysis_status a on a.video_id = t.video_id
+        left join status.channel_metadata cm on cm.channel_id = a.channel_id
+        where %s and length(t.transcript) >= 100
+          and (t.terminal_id is null or t.terminal_id not like 'test%%')
+          and t.source not in ('reddit','hackernews','discord','rss',
+                               'github','podcast','dht-artifact','newsletter')"""
+
+    def _eligible_boundary_count(ts, quarantined):
+        q = ("select count(*) from transcript_cache where cached_at = ?"
+             " and length(transcript) >= 100"
+             " and (terminal_id is null or terminal_id not like 'test%')"
+             " and source not in ('reddit','hackernews','discord','rss',"
+             "'github','podcast','dht-artifact','newsletter')"
+             + (" and video_id not in (%s)" % ",".join("?" * len(quarantined))
+                if quarantined else ""))
+        return conn.execute(q, (ts, *quarantined)).fetchone()[0]
+
+    boundary_total = 0
+    if rows:
+        quarantined = tuple(authority.QUARANTINED_VIDEO_IDS)
+        boundary_ts = rows[-1]["cached_at"]
+        boundary_total = _eligible_boundary_count(boundary_ts, quarantined)
+        at_boundary = sum(1 for r in rows if r["cached_at"] == boundary_ts)
+        if at_boundary < boundary_total <= TIE_COMPLETION_MAX:
+            tie_sql = _SEL % "t.cached_at = ?"
+            seen = {(r["video_id"], r["lang"], r["source"]) for r in rows}
+            extra = [dict(r) for r in conn.execute(
+                tie_sql, (boundary_ts,)).fetchall()
+                if (r["video_id"], r["lang"], r["source"]) not in seen]
+            rows.extend(extra)
+        elif boundary_total > TIE_COMPLETION_MAX:
+            print(f"  WARNING: cached_at tie of {boundary_total:,} rows "
+                  f"exceeds tie-completion cap {TIE_COMPLETION_MAX:,}; "
+                  f"watermark held below it — rerun with a larger "
+                  f"batch_limit", flush=True)
     conn.close()
     rows = [r for r in rows if r["video_id"] not in authority.QUARANTINED_VIDEO_IDS]
 
-    cat = catalog.connect()
-    enc = embedding.BGEM3Dual()
-    qc = server.client()
-    fts = sqlite3.connect(str(EF_DATA / "fts5.sqlite"), timeout=30.0)
-    fts.execute("PRAGMA busy_timeout=30000")
+    # Resource acquisition lives INSIDE the error-recording try: a
+    # connection-time qdrant/catalog failure used to propagate with no
+    # last_indexing_error recorded and no status emitted — silently
+    # breaking the fetch-isolation contract this function promises.
+    cat = enc = qc = fts = None
     added = updated = deleted = 0
     new_wm = iw
     try:
+        cat = catalog.connect()
+        enc = embedding.BGEM3Dual()
+        qc = server.client()
+        fts = sqlite3.connect(str(EF_DATA / "fts5.sqlite"), timeout=30.0)
+        fts.execute("PRAGMA busy_timeout=30000")
         for row in rows:
             eu = authority.build_eu(row)
             prior = cat.execute(
                 "select content_hash from eu where eu_id=?", (eu.eu_id,)).fetchone()
             if prior and prior[0] == eu.content_hash:
-                new_wm = row["cached_at"]
                 continue
             if prior:
                 # source revision: drop stale chunk points, rewrite
@@ -218,7 +270,22 @@ def incremental_update(batch_limit: int = 2000) -> dict:
             catalog.store_eus(cat, [eu], generation=gen, build_id=build_id)
             catalog.store_chunks(cat, chunks)
             fts.commit()
-            new_wm = row["cached_at"]
+
+        # Watermark tie guard: if the batch limit split a cached_at tie,
+        # advancing to the boundary timestamp would make the unselected
+        # rows invisible to the next run's `cached_at > watermark` —
+        # permanently unindexed. Hold the watermark below the boundary
+        # instead; the next run re-selects the whole tie and the
+        # content-hash short-circuit keeps it idempotent.
+        if rows:
+            boundary = rows[-1]["cached_at"]
+            at_boundary = sum(1 for r in rows if r["cached_at"] == boundary)
+            if at_boundary < boundary_total:
+                earlier = [r["cached_at"] for r in rows
+                           if r["cached_at"] < boundary]
+                new_wm = earlier[-1] if earlier else iw
+            else:
+                new_wm = boundary
 
         # deletion reconciliation: catalog EUs missing from authority
         # (single shared scan — per-EU connection opens caused disk I/O
@@ -260,24 +327,15 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         emit_status()
         raise
     finally:
-        fts.close()
-        cat.close()
+        if fts is not None:
+            fts.close()
+        if cat is not None:
+            cat.close()
 
 
 def models_ids(chunk_ids: list[str]):
     from qdrant_client import models
     return models.PointIdsList(points=[ps.point_id(c) for c in chunk_ids])
-
-
-def _eu_missing_from_authority(eu_id: str) -> bool:
-    vid = eu_id.split(":")[0]
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
-    try:
-        return conn.execute(
-            "select 1 from transcript_cache where video_id=? limit 1",
-            (vid,)).fetchone() is None
-    finally:
-        conn.close()
 
 
 def _legacy_generations():
