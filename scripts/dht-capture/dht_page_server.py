@@ -23,7 +23,8 @@ sys.path.insert(0, str(REPO))
 
 from ef.warm_query_service import (  # noqa: E402
     DHT_CATALOG, _dht_selection, _dht_save_selection, _render_dht_page,
-    _render_graph_page, _render_interests_page, _render_today_page)
+    _render_graph_page, _render_interests_page, _render_today_page,
+    handle_feedback_post)
 
 import json  # noqa: E402
 
@@ -55,20 +56,9 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/today":
             self._serve_html(_render_today_page())
         elif parsed.path == "/feedback":
-            params = parse_qs(parsed.query)
-            try:
-                from ef.personal_graph import record_feedback
-                ok = record_feedback(
-                    (params.get("surface") or [""])[0],
-                    (params.get("kind") or [""])[0],
-                    (params.get("id") or [""])[0],
-                    (params.get("v") or [""])[0],
-                    (params.get("note") or [""])[0])
-                self._serve_json({"ok": ok} if ok
-                                 else {"error": "invalid verdict"},
-                                 200 if ok else 400)
-            except Exception as e:
-                self._serve_json({"error": str(e)[:200]}, 500)
+            # POST-only since the 2026-08-26 feedback contract hardening.
+            self._serve_json(
+                {"error": "feedback requires POST with JSON body"}, 405)
         elif parsed.path == "/graph":
             q = (parse_qs(parsed.query).get("q") or [""])[0]
             body = _render_graph_page(q).encode("utf-8")
@@ -139,6 +129,22 @@ class Handler(BaseHTTPRequestHandler):
                         f"{(r.stdout + r.stderr)[-400:]}")
         else:
             self._t(404, "not found (try /dht)")
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/feedback":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                length = 0
+            if length <= 0 or length > 64 * 1024:
+                return self._serve_json(
+                    {"error": "missing or oversized feedback body"}, 400)
+            status, body = handle_feedback_post(
+                self.headers, self.rfile.read(length),
+                self.headers.get("Host", ""))
+            return self._serve_json(body, status)
+        self._t(404, "not found")
 
     def _t(self, code, msg):
         body = msg.encode("utf-8")
