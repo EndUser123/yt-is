@@ -125,11 +125,14 @@ class ProductionQuery:
         out: list[str] = []
         for i in range(0, len(ids), self.FTS_CHANNEL_BATCH):
             batch = ids[i:i + self.FTS_CHANNEL_BATCH]
-            points = qc.retrieve(
-                self.collection,
-                ids=[ps.point_id(c) for c in batch],
-                with_payload=True)
-            for p in points:
+            pids = [ps.point_id(c) for c in batch]
+            points = qc.retrieve(self.collection, ids=pids, with_payload=True)
+            # qdrant does not guarantee response order matches request
+            # order; restore BM25 rank so early-exit picks the best rows,
+            # not whichever the server returned first (reviewer finding,
+            # run-7c80ca562a7d)
+            rank = {pid: rk for rk, pid in enumerate(pids)}
+            for p in sorted(points, key=lambda pt: rank.get(pt.id, 1 << 30)):
                 if p.payload.get("channel_id") == channel_id:
                     out.append(p.payload["chunk_id"])
                     if len(out) >= limit:

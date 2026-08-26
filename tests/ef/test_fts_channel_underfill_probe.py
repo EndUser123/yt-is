@@ -93,8 +93,11 @@ def mixed(monkeypatch, tmp_path):
     filler = " ".join(f"fillerword{i}" for i in range(60))
     for i in range(10):
         cid = f"a{i:02d}"
+        # fillerWordQ: letters-only camel token (weak-identifier shape,
+        # no digit -> not strong-ident) present ONLY in chanA docs, so a
+        # query on it routes ambiguous and the literal leg is all chanA
         conn.execute("insert into chunks(text, chunk_id) values (?, ?)",
-                     (f"{filler} {PHRASE} {filler}", cid))
+                     (f"{filler} fillerWordQ {PHRASE} {filler}", cid))
         payloads[cid] = _payload(cid, "chanA")
     conn.commit()
     conn.close()
@@ -140,10 +143,10 @@ def test_ambiguous_route_returns_full_results_for_matching_channel(patched_clien
     """Ambiguous single token (dual-lane): the literal subgroup must come
     from the channel-restricted lane, not a post-truncation drop."""
     q = _make(patched_client)
-    # weak-identifier shape (internal case shift) -> ambiguous route;
-    # fillerword tokens exist only in chanA's long docs, so the literal
-    # leg is entirely chanA and must survive restriction
-    res = q.relevant("fillerWord5", limit=8, channel_id="chanA")
+    # letters-only camel token (internal case shift, no digits) ->
+    # ambiguous route; fillerWordQ exists only in chanA docs, so the
+    # literal leg is entirely chanA and must survive restriction
+    res = q.relevant("fillerWordQ", limit=8, channel_id="chanA")
     assert len(res) >= 1, (
         f"underfilled: got {len(res)} for a channel holding 10 matches")
     assert all(r.channel_id == "chanA" for r in res)
