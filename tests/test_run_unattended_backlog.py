@@ -6,8 +6,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
 
 import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_MODULE_PATH = _REPO_ROOT / "scripts" / "run_unattended_backlog.py"
+sys.path.insert(0, str(_REPO_ROOT))
+loaded_module = sys.modules.get("scripts.run_unattended_backlog")
+if loaded_module is not None and Path(loaded_module.__file__).resolve() != _MODULE_PATH.resolve():
+    del sys.modules["scripts.run_unattended_backlog"]
 
 import scripts.run_unattended_backlog as mod
 
@@ -1360,13 +1368,13 @@ def test_timeout_terminates_coordinator_tree_and_preserves_logs(tmp_path: Path, 
         returncode = 124
 
         def communicate(self, timeout=None):
-            if timeout is not None:
+            if timeout is not None and timeout < mod.POST_TERMINATION_DRAIN_TIMEOUT_S:
                 raise TimeoutError("not used")
             return "after-timeout", "stderr-after-timeout"
 
     class TimeoutProcess(FakeProcess):
         def communicate(self, timeout=None):
-            if timeout is not None:
+            if timeout is not None and timeout < mod.POST_TERMINATION_DRAIN_TIMEOUT_S:
                 raise subprocess.TimeoutExpired([], timeout, output="partial", stderr="err")
             return super().communicate(timeout)
 
@@ -1386,6 +1394,41 @@ def test_timeout_terminates_coordinator_tree_and_preserves_logs(tmp_path: Path, 
         (tmp_path / "chunk-0001" / "supervisor_runtime.json").read_text(encoding="utf-8")
     )
     assert runtime_receipt["status"] == "terminated_timeout"
+
+
+def test_timeout_drain_is_bounded_when_pipe_stays_open(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path, execute=True)
+    communicate_timeouts: list[float | None] = []
+
+    class StuckPipeProcess:
+        pid = 1234
+        returncode = 124
+
+        def communicate(self, timeout=None):
+            communicate_timeouts.append(timeout)
+            if timeout is None:
+                raise AssertionError("timeout cleanup must not use unbounded communicate")
+            raise subprocess.TimeoutExpired(
+                [], timeout, output=b"bounded-output", stderr=b"bounded-error"
+            )
+
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *args, **kwargs: StuckPipeProcess())
+    monkeypatch.setattr(mod, "_terminate_process_tree", lambda process: None)
+
+    with pytest.raises(subprocess.TimeoutExpired) as raised:
+        mod._invoke_coordinator(config, tmp_path / "chunk-0001", timeout_s=0.01)
+
+    assert len(communicate_timeouts) >= 2
+    assert all(timeout is not None for timeout in communicate_timeouts)
+    assert communicate_timeouts[-1] == mod.POST_TERMINATION_DRAIN_TIMEOUT_S
+    assert raised.value.output == "bounded-output"
+    assert raised.value.stderr == "bounded-error"
+    assert (
+        tmp_path / "chunk-0001" / "supervisor.stdout.txt"
+    ).read_text(encoding="utf-8") == "bounded-output"
+    assert (
+        tmp_path / "chunk-0001" / "supervisor.stderr.txt"
+    ).read_text(encoding="utf-8") == "bounded-error"
 
 
 def test_until_empty_requires_execute(tmp_path: Path) -> None:
