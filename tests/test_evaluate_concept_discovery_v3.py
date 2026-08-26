@@ -31,9 +31,9 @@ def receipt(tmp_path_factory):
 
 # --- versioning + policy pinning -----------------------------------------
 
-def test_evaluator_version_is_v3():
-    assert ev.EVALUATOR_VERSION == "retrospective-evaluator-v3"
-    assert ev.ARTIFACT_SCHEMA_VERSION == "concept-discovery-eval-v3"
+def test_evaluator_version_is_v4():
+    assert ev.EVALUATOR_VERSION == "retrospective-evaluator-v4"
+    assert ev.ARTIFACT_SCHEMA_VERSION == "concept-discovery-eval-v4"
     assert ev.TARGET_POLICY_VERSION == "burst-policy-v2"
 
 
@@ -146,8 +146,8 @@ def test_baselines_aligned_same_units():
     rows = [
         {"kind": "target", "A": True, "B": False, "emerging": True},
         {"kind": "target", "A": True, "B": False, "emerging": False},
-        {"kind": "control", "A": False, "B": False, "emerging": False},
-        {"kind": "control", "A": False, "B": False, "emerging": False},
+        {"kind": "negative", "A": False, "B": False, "emerging": False},
+        {"kind": "negative", "A": False, "B": False, "emerging": False},
     ]
     cmp = ev._compare_baselines(rows)
     assert cmp["policy_target_rate"] == 0.5
@@ -200,7 +200,7 @@ def test_labels_not_parsed_before_formal_claim(tmp_path, monkeypatch):
     labels (structural: claim precedes load in run_evaluation)."""
     src = Path(ev.__file__).read_text(encoding="utf-8")
     i_claim = src.index("claim_formal_holdout(")
-    i_load = src.index("targets = load_targets(")
+    i_load = src.index("case_control = load_case_control(")
     assert i_claim < i_load
 
 
@@ -231,5 +231,5 @@ def test_candidate_perturbation_metric_preserved():
          "emerging_total": 0}]}]
     negs = [{"emerging_by_T60": False}] * 4
     pert = [{"retained_10": True, "retained_20": True}] * 2
-    agg = ev.aggregate_metrics(cps, negs, pert, 1)
+    agg = ev.aggregate_metrics(cps, negs, [], pert, 1)
     assert agg["perturbation20_retention"] == 1.0

@@ -1,5 +1,27 @@
 # yt-is Personal Intelligence — Discovery / Concept Intelligence State
-Updated: 2026-08-26 v2 shadow implemented; evaluator-v3 diagnostic control-rate axis FAILED; freeze withheld
+Updated: 2026-08-26 evaluator-v4 explicit-negative diagnostic: V2_SELECTIVITY_FAILURE_CONFIRMED; scope reconciliation applied; no freeze
+
+## Discovery subsystem scope (architect reconciliation 2026-08-26)
+
+burst-policy-v1/v2 and the retrospective case-control evaluation own
+TEMPORAL CONCEPT EMERGENCE only. Discovery independently contains:
+A. open-world concept candidate discovery; B. temporal emergence / trend
+episodes (this workstream's current evaluation); C. semantic-step-outward
+adjacency discovery (machinery exists, generation shallow); D. cross-
+domain bridge / relationship-emergence discovery (concept_relations is
+storage substrate only; bridge detection not yet a first-class
+detector); E. external horizon discovery (70/20/10 known/adjacent/
+wildcard INITIAL policy preserved; wildcard queries currently
+software-centric); F. downstream personal utility / regret ranking
+(recommendation workstream). Preserved distinctions: Concept != Interest;
+durable memory != durable salience; world signal != personal relevance;
+internal != external discovery. Higher-order relevance center (durable
+personal agency / leverage / resilience / optionality) is recorded but
+CONCRETE OPERATIONAL ANCHORS, not this sentence, drive query generation.
+The explicit-negative/evaluator-v4 question is narrowly: does temporal-
+emergence policy v2 discriminate persistent emerging episodes from
+comparable explicit non-emerging episodes — NOT overall Discovery
+false-positive rate.
 
 ## Goal & constraints
 
@@ -292,7 +314,98 @@ Updated: 2026-08-26 v2 shadow implemented; evaluator-v3 diagnostic control-rate 
   FORMAL run. Promotion requires a NEW unseen holdout after any future
   v2 implementation; holdout-v4 can never be promotion evidence again.
 
+- 2026-08-26: [seen] ARCHITECT AMENDMENT (scope reconciliation)
+  applied: burst-policy-v1/v2 + retrospective case-control evaluation own
+  TEMPORAL CONCEPT EMERGENCE only; Discovery independently contains
+  open-world candidate discovery, temporal emergence, semantic adjacency
+  (shallow), cross-domain bridges (concept_relations substrate only, not
+  a proven detector), external horizon (70/20/10 INITIAL policy;
+  software-centric wildcards), and downstream utility/regret ranking.
+  Concept != Interest; memory != salience; world signal != personal
+  relevance; internal != external. Relevance center (agency/leverage/
+  resilience/optionality) recorded but operational anchors drive
+  queries. Stale cross-workstream PROJECT_STATE.md rewritten. The
+  explicit-negative question is the NARROW temporal-emergence
+  discrimination question, not overall-Discovery false positives.
+- 2026-08-26: [seen] V3 comparator audit (aggregate only): 125 rows but
+  only 33 UNIQUE comparator concepts (one reused 19x; multiplicity
+  1-19); row-weighted emerging rate 0.344, unique-level 0.636
+  (21/33), target-pair-weighted 0.349. 6 of the 21 promoted unique
+  comparators (28.6%) satisfy the raw Tier-C persistence conjunction
+  over [T,T+120] — unlabeled-positive contamination. Matching-axes
+  audit at T-30: source_diversity is degenerate (mean 1.0 both cohorts
+  — acquisition modality, not publisher independence); evidence/channel
+  counts and age differ materially (comparators row-weighted mean
+  76.8 EUs vs positives 37.5). Evaluator-v3's 0.344 was an
+  OUTCOME-UNLABELED comparator rate, not a measured false-positive
+  rate.
+- 2026-08-26: [seen] EXPLICIT-NEGATIVE ground truth built under
+  preregistered policy explicit-negative-v1 (sha256 1e454421...,
+  frozen before any negative identity or v2 outcome was inspected):
+  124 negatives paired to the 42 positives (2.95/positive; one target
+  NEGATIVE_CONTROL_INSUFFICIENT with 1), matched ONLY on pre-T-30 EU
+  mass, channels, age; negatives fail the Tier-C persistence
+  conjunction over [T,T+120] and satisfy the hard-negative activity
+  requirement; no cross-target reuse. Private artifact:
+  P:/.data/yt-is/private/discovery-retrospective-case-control-v4-
+  diagnostic.json (TRAINING_DIAGNOSTIC_ONLY, never formal, never
+  promotion evidence).
+- 2026-08-26: [seen] EVALUATOR-V4 implemented (retrospective-evaluator-
+  v4): case-control formal schema (positive_targets + curator-supplied
+  negative_targets, both parsed only after the formal claim);
+  explicit_negative_emerging_rate is the selectivity AUTHORITY
+  (unchanged 0.20/0.50 bars); evaluator-v3's automatic comparators
+  retained as matched_comparator_emerging_rate (secondary diagnostic,
+  never drives verdict); sufficiency >=40 explicit negatives and >=2.0
+  per positive (comparators excluded); baselines aligned on the
+  explicit labeled cohorts; single-use ledger semantics unchanged plus
+  YTIS_FORMAL_LEDGER_PATH test override (regression test added; the
+  cd9733d9 synthetic-claim incident class cannot recur).
+- 2026-08-26: [seen] EVALUATOR-V4 NON_BLIND_DIAGNOSTIC on the paired v4
+  case-control set (ledger untouched; no FORMAL): positives 42,
+  candidate recall 1.000, emerging recall 0.833 [0.694,0.917];
+  EXPLICIT-NEGATIVE emerging rate 0.581 [0.493,0.664] (72/124) —
+  EXCEEDS the 0.20 pass-like axis decisively; comparators 125 rows at
+  0.344 (secondary); perturbation10 0.976, perturbation20 0.952;
+  policy separation 0.253 vs baseline A 0.053 / baseline B 0.0.
+  DECISION: V2_SELECTIVITY_FAILURE_CONFIRMED. Per packet: STOP — no
+  tuning, no freeze, return to architect. v2 parameters unchanged;
+  production default remains burst-policy-v1.
+- 2026-08-26: [seen] CONTROL-METRIC POSTMORTEM. (1) Of the 0.344
+  comparator rate, 28.6% of promoted unique comparators are
+  positive-like by raw future evidence (unlabeled-positive
+  contamination). (2) v2 emerging rate among VALID explicit negatives
+  is 0.581; among positive-like comparators 0.60 — v2 fires at similar
+  rates regardless of post-anchor persistence. (3) The 0.344 is a
+  mixture, but DOMINATED by genuine over-promotion relative to the
+  persistence ground truth, not mainly contamination. Mechanism
+  (identified, NOT tuned): the v2 60-day recent window at anchor
+  checkpoints still contains the pre-anchor evidence on which the
+  negative was matched, so two-consecutive-positive promotion can
+  complete before post-anchor silence matters.
+- 2026-08-26: [seen] BLINDED SEMANTIC AUDIT (diagnostic only, 2
+  independent fresh-context reviewers, 16 items: 4 positives / 4
+  promoted negatives / 4 non-promoted negatives / 4 promoted
+  comparators; class and outcome hidden): inter-reviewer agreement
+  75% (12/16). Blinded humans judged only 1/4 sampled POSITIVES
+  GENUINE_EMERGING_OR_RESURGENT (3/4 STABLE_BACKGROUND), 0/4 promoted
+  negatives genuine, 1/4 promoted comparators genuine, and flagged
+  NOISE_OR_EXTRACTION_ARTIFACT concepts on both sides (generic labels
+  like "rings"/"Apple", single-publisher marketing streams, discord
+  bulk captures, a nonsense label "Rege"). Bounded interpretation: the
+  semantic notion of "emerging" diverges from both the v2 posterior
+  AND the raw persistence ground truth; concept-extraction quality is
+  itself a load-bearing weakness. Does not alter the mechanical
+  labels or the pass bar.
+
 ## Next action (calibration concluded)
+
+ARCHITECT DECISION REQUIRED: V2_SELECTIVITY_FAILURE_CONFIRMED under
+explicit-negative ground truth (narrow temporal-emergence scope). v2
+parameters untouched; no freeze; no second policy search. Evidence in
+hand for the next packet: pre-anchor window contamination mechanism,
+comparator reuse artifact, semantic-audit concept-quality findings.
+
 
 ARCHITECT DECISION REQUIRED: NO_SIMPLE_POLICY_SUPPORTED — the simple
 count/ratio/channel family is insufficient. Next-stage options are in

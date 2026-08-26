@@ -80,8 +80,18 @@ def build_catalog(path, *, with_target=True, burst="2026-08"):
     return path
 
 
-def write_targets(path, targets):
-    Path(path).write_text(json.dumps({"targets": targets}), encoding="utf-8")
+def write_targets(path, targets, negatives=None):
+    """v4 case-control schema: positives plus synthetic explicit
+    negatives (the steady old 'Legacy Widget' entity)."""
+    if negatives is None:
+        negatives = [
+            {"negative_id": f"neg-{i}", "canonical_name": "Legacy Widget",
+             "aliases": [], "domain": "unlabeled",
+             "paired_positive_id": t["target_id"], "anchor_T": "2026-01-01"}
+            for i, t in enumerate(targets) for _ in range(2)]
+    Path(path).write_text(json.dumps({
+        "positive_targets": targets,
+        "negative_targets": negatives}), encoding="utf-8")
     return path
 
 
@@ -214,7 +224,7 @@ def test_full_evaluation_synthetic(receipt, tmp_path):
     # verdict present; with 1 scorable target the v2 sufficiency gate
     # must return INSUFFICIENT_EVIDENCE (no PASS/PARTIAL/FAIL evaluation)
     assert aggregate["verdict"] == "INSUFFICIENT_EVIDENCE"
-    assert aggregate["matched_negative_controls"] >= 0
+    assert aggregate["explicit_negative_rows"] >= 0
     assert aggregate["wilson_95"]["candidate_recall_scorable"]["n"] == 1
     # production files untouched by the run
     ev.verify_frozen(receipt)
@@ -249,8 +259,8 @@ def test_baseline_comparison_and_verdict():
     rows = [
         {"kind": "target", "A": True, "B": True, "emerging": True},
         {"kind": "target", "A": True, "B": True, "emerging": True},
-        {"kind": "control", "A": True, "B": True, "emerging": False},
-        {"kind": "control", "A": True, "B": True, "emerging": False},
+        {"kind": "negative", "A": True, "B": True, "emerging": False},
+        {"kind": "negative", "A": True, "B": True, "emerging": False},
     ]
     cmp = ev._compare_baselines(rows)
     assert cmp["policy_separation"] == 1.0
@@ -266,7 +276,7 @@ def test_baseline_comparison_and_verdict():
     bad_sep = {"policy_beats_baselines": False}
     assert ev.apply_verdict(good, bad_sep) == "FAIL"
     wide = {"candidate_recall_scorable": 0.9, "emerging_recall_scorable":
-            0.9, "matched_negative_emerging_rate": 0.6,
+            0.9, "explicit_negative_emerging_rate": 0.6,
             "perturbation20_retention": 0.9}
     assert ev.apply_verdict(wide, cmp) == "FAIL"
     mid = {"candidate_recall_scorable": 0.9, "emerging_recall_scorable":
@@ -289,7 +299,7 @@ def test_aggregate_metrics_math():
         {"checkpoint": "T-30", "matched": [], "candidates_total": 5,
          "emerging_total": 0},
     ]}]
-    agg = ev.aggregate_metrics(cps, [], [], 2)
+    agg = ev.aggregate_metrics(cps, [], [], [], 2)
     assert agg["candidate_recall_scorable"] == 0.5
     assert agg["emerging_recall_scorable"] == 0.5
     assert agg["median_time_to_candidate_days"] == 0
@@ -467,8 +477,8 @@ def test_formal_label_required_for_consumption(receipt, tmp_path):
 
 def _agg(scorable, negatives, per_target=None, **kw):
     a = {"scorable_targets": scorable,
-         "matched_negative_controls": negatives,
-         "negatives_per_target_avg": per_target if per_target is not None
+         "explicit_negative_rows": negatives,
+         "explicit_negatives_per_positive_avg": per_target if per_target is not None
          else (round(negatives / scorable, 3) if scorable else None),
          "candidate_recall_scorable": 0.9, "emerging_recall_scorable": 0.9,
          "matched_negative_emerging_rate": 0.0,
@@ -494,7 +504,7 @@ def test_verdict_v2_sufficiency_gates():
     assert ev.apply_verdict_v2(
         _agg(25, 60, emerging_recall_scorable=0.2), beats) == "PARTIAL"
     assert ev.apply_verdict_v2(
-        _agg(25, 60, matched_negative_emerging_rate=0.6), beats) == "FAIL"
+        _agg(25, 60, explicit_negative_emerging_rate=0.6), beats) == "FAIL"
 
 
 def test_wilson_interval_fixtures():
@@ -518,17 +528,18 @@ def test_aggregate_includes_wilson_intervals():
          "candidates_total": 3, "emerging_total": 1}]}]
     negs = [{"emerging_by_T60": False}] * 4
     pert = [{"retained_10": True, "retained_20": True}] * 2
-    agg = ev.aggregate_metrics(cps, negs, pert, 1)
+    agg = ev.aggregate_metrics(cps, negs, [], pert, 1)
     w = agg["wilson_95"]
     assert set(w) == {"candidate_recall_scorable",
                       "emerging_recall_scorable",
-                      "matched_negative_emerging_rate",
+                      "explicit_negative_emerging_rate",
+                      "matched_comparator_emerging_rate",
                       "perturbation10_retention",
                       "perturbation20_retention"}
-    assert w["matched_negative_emerging_rate"]["k"] == 0
+    assert w["explicit_negative_emerging_rate"]["k"] == 0
     assert w["perturbation10_retention"]["hi"] == 1.0
-    assert agg["matched_negative_controls"] == 4
-    assert agg["negatives_per_target_avg"] == 4.0
+    assert agg["explicit_negative_rows"] == 4
+    assert agg["explicit_negatives_per_positive_avg"] == 4.0
 
 
 def test_production_discovery_hashes_unchanged(receipt):

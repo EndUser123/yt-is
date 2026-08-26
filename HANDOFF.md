@@ -207,6 +207,19 @@ Open items (operator-held unless noted):
    the post-08-20 cohort (expect pass-rate recovery per the falsifier);
    the 08-17..19 wave needs thumbnail backfill (i.ytimg.com/vi/<id>/default.jpg)
    or a watermark reset to ever pass.
+   RESOLVED-REPLACED (2026-08-25 late, operator-directed): the legacy text
+   gate was measured against VLM ground truth and failed both checks — 0/60
+   recent completes pass it, and Spearman ρ=0.133 vs MiniMax-VLM thumbnail
+   density (22/24 dense videos in the text score's BOTTOM bin). Superseded
+   by `scripts/visual_vlm_score.py` (a2f5e285): MMX vision scores thumbnails
+   via URL (no downloads — 30/hr ceiling never binds on intake), density>=5
+   enqueues at created_at epoch 1998 with profile='vlm', claiming ahead of
+   all legacy rows. Live first night: 60 scored/0 failures/24 enqueued;
+   worker processed 2 end-to-end (artifacts+OCR). Remaining 22 vlm jobs in
+   worker run vlm-batch-1; intake batch 2 (120 more) in flight. Standing
+   cadence NOT yet scheduled — operator decision pending (recommend nightly
+   scoring post-06:00-sync + bounded worker window). Wiki:
+   visual-intake-vlm-calibration-20260825.
 
 ## Active workstream — Personal Intelligence (2026-08-24)
 
@@ -347,6 +360,20 @@ Shared next gate:
   0.344 > 0.20 pass-like axis -> STOPPED BEFORE FREEZE per packet.
   No freeze receipt; no tuning; architect decision required. Design
   doc docs/design/discovery-burst-policy-v2.md; benchmark v2 1.25x v1.
+- [seen] 2026-08-26 scope reconciliation + explicit-negative ground
+  truth (policy 1e454421..., 124 negatives) + evaluator-v4 (explicit
+  negatives drive selectivity; comparators demoted to secondary
+  diagnostic; ledger test override added). v4 NON_BLIND_DIAGNOSTIC:
+  candidate recall 1.0, emerging recall 0.833, perturbation20 0.952,
+  separation 0.253 > baselines — but EXPLICIT-NEGATIVE emerging rate
+  0.581 [0.493,0.664] >> 0.20 -> V2_SELECTIVITY_FAILURE_CONFIRMED.
+  STOP: no tuning, no freeze, architect decision required. Postmortem:
+  comparator contamination 28.6% of promoted uniques, but failure
+  dominated by genuine over-promotion (mechanism: pre-anchor evidence
+  inside the 60d window completes consecutive-positive promotion).
+  Blinded semantic audit (75% agreement) flags concept-extraction
+  quality as load-bearing. v1 remains production default; v2 params
+  unchanged; ledger untouched.
   Details: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
 
 ## Current authoritative snapshot (2026-08-12)
