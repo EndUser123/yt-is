@@ -1,4 +1,10 @@
-{"n": 1, "area": "tests/contract-drift", "findings_selected": 3, "fixed": 3, "tests_pass": false, "elapsed_s": 438}
-{"n": 2, "area": "scripts/supervisor", "findings_selected": 3, "fixed": 3, "tests_pass": true, "elapsed_s": 1120}
-{"n": 3, "area": "csf/batch_status", "findings_selected": 3, "fixed": 3, "tests_pass": true, "elapsed_s": 480}
-{"n": 4, "area": "csf/csf_logging", "findings_selected": 1, "fixed": 1, "tests_pass": true, "elapsed_s": 430}
+{"n": 1, "area": "ef/warm_query_service.py + tests/test_run_dht_ingest.py", "findings_selected": 3, "fixed": 3, "tests_pass": true, "elapsed_s": 2160, "commit": "5fc4caec"}
+{"n": 2, "area": "ef/concept_registry.py", "findings_selected": 2, "fixed": 2, "tests_pass": true, "elapsed_s": 1500, "commit": "e954dd9b"}
+{"n": 3, "area": "ef/freshness.py", "findings_selected": 3, "fixed": 3, "tests_pass": true, "elapsed_s": 2100, "commit": "3770356b"}
+{"n": 4, "area": "ef/query.py + ef/graph_query.py", "findings_selected": 2, "fixed": 2, "tests_pass": true, "elapsed_s": 1800, "commit": "2197a8e6"}
+{"n": 5, "area": "ef/evidence_clusters.py", "findings_selected": 1, "fixed": 1, "tests_pass": true, "elapsed_s": 1200, "commit": "9d4bccc0"}
+{"n": 6, "area": "csf test drift (sharded_lane, c4_auth, quota)", "findings_selected": 3, "fixed": 3, "tests_pass": true, "elapsed_s": 2400, "commit": "1b7f63c1"}
+{"n": 7, "area": "tests/ sys.path sweep (30 files)", "findings_selected": 1, "fixed": 1, "tests_pass": true, "elapsed_s": 900, "commit": "807c4f92"}
+{"n": 8, "area": "ef/freshness.py + tests/ef/test_incremental_operations.py", "findings_selected": 2, "fixed": 2, "tests_pass": true, "elapsed_s": 1500, "commit": "ac2fa779"}
+{"n": 9, "area": "ef/query_server.py", "findings_selected": 1, "fixed": 1, "tests_pass": true, "elapsed_s": 900, "commit": "70663b10"}
+{"n": 10, "area": "closeout: exhaustion scan + FINAL_REPORT.md + artifacts", "findings_selected": 0, "fixed": 0, "tests_pass": true, "elapsed_s": 300, "commit": "883695ac"}

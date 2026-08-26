@@ -19,6 +19,7 @@ import json
 import re
 import sqlite3
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -319,7 +320,11 @@ def _append_event(
     run_id: str | None,
 ) -> None:
     ts = _now()
-    event_id = "evt_" + _short_digest(concept_id, field, new_value, ts)
+    # The digest alone is not unique: two transitions of the same field to
+    # the same value within one second collide on the PK and fail the
+    # INSERT. Events are append-only receipts, not replay-deduped, so a
+    # random suffix is safe here (unlike observation/episode ids).
+    event_id = "evt_" + _short_digest(concept_id, field, new_value, ts) + uuid.uuid4().hex[:8]
     conn.execute(
         "INSERT INTO concept_state_events (event_id, concept_id, field, old_value,"
         " new_value, reason, method, discovery_run_id, ts) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -333,27 +338,50 @@ def merge_concepts(
     merged_id: str,
     run_id: str | None = None,
 ) -> None:
-    """Explicit-only merge: move aliases/observations/episodes/links to the
-    survivor, mark the merged concept lifecycle='obsolete' with a state event.
-    Refuses self-merge."""
+    """Explicit-only merge: move aliases/observations/episodes/links/relations
+    to the survivor, mark the merged concept lifecycle='obsolete' with a state
+    event. Rows that would collide with an existing survivor row (same
+    normalized alias, same interest link, same relation edge) are dropped —
+    the survivor already covers them. Refuses self-merge."""
     if survivor_id == merged_id:
         raise RegistryError("cannot merge a concept with itself")
     for cid in (survivor_id, merged_id):
         if conn.execute("SELECT 1 FROM concepts WHERE concept_id = ?", (cid,)).fetchone() is None:
             raise RegistryError(f"unknown concept: {cid}")
+    # OR IGNORE keeps the merge alive when the survivor already holds the
+    # same key; whatever remains attached to merged_id afterwards is a
+    # duplicate the survivor covers, dropped instead of left dangling on an
+    # obsolete concept.
     conn.execute(
-        "UPDATE concept_aliases SET concept_id = ? WHERE concept_id = ?", (survivor_id, merged_id)
+        "UPDATE OR IGNORE concept_aliases SET concept_id = ? WHERE concept_id = ?",
+        (survivor_id, merged_id),
     )
+    conn.execute("DELETE FROM concept_aliases WHERE concept_id = ?", (merged_id,))
+    conn.execute(
+        "UPDATE OR IGNORE concept_interest_links SET concept_id = ? WHERE concept_id = ?",
+        (survivor_id, merged_id),
+    )
+    conn.execute("DELETE FROM concept_interest_links WHERE concept_id = ?", (merged_id,))
+    # Relations move on both edge directions; a merged->survivor edge becomes
+    # a survivor self-loop, so those are removed after the move.
+    conn.execute(
+        "UPDATE OR IGNORE concept_relations SET src_concept_id = ? WHERE src_concept_id = ?",
+        (survivor_id, merged_id),
+    )
+    conn.execute(
+        "UPDATE OR IGNORE concept_relations SET dst_concept_id = ? WHERE dst_concept_id = ?",
+        (survivor_id, merged_id),
+    )
+    conn.execute("DELETE FROM concept_relations WHERE src_concept_id = ? OR dst_concept_id = ?",
+                 (merged_id, merged_id))
+    conn.execute("DELETE FROM concept_relations WHERE src_concept_id = ? AND dst_concept_id = ?",
+                 (survivor_id, survivor_id))
     conn.execute(
         "UPDATE concept_observations SET concept_id = ? WHERE concept_id = ?",
         (survivor_id, merged_id),
     )
     conn.execute(
         "UPDATE trend_episodes SET concept_id = ? WHERE concept_id = ?", (survivor_id, merged_id)
-    )
-    conn.execute(
-        "UPDATE concept_interest_links SET concept_id = ? WHERE concept_id = ?",
-        (survivor_id, merged_id),
     )
     old = conn.execute(
         "SELECT lifecycle_state FROM concepts WHERE concept_id = ?", (merged_id,)

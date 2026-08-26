@@ -312,7 +312,10 @@ def check_worktree_shrink() -> str | None:
             proc = subprocess.run(
                 ["git", "-C", repo, "worktree", "list", "--porcelain"],
                 capture_output=True, text=True, timeout=30,
-                creationflags=NO_WINDOW,
+                # inline getattr idiom (line 81 pattern): a bare NO_WINDOW
+                # name was never defined — NameError on every tick, and the
+                # no-visible-console ratchet counts the spawn as bare
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             if proc.returncode != 0:
                 continue  # probe failure: skip this repo this tick

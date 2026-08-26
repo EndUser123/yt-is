@@ -7,7 +7,11 @@ Verifies: CLI call count tracking, free-only mode switch, threshold enforcement.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(r"P:\\\\\\\packages\\yt-is").absolute()))
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import csf.quota_tracker as _qt
 
 from csf.quota_tracker import (
     _DEFAULT_DAILY_QUOTA,
@@ -20,8 +24,21 @@ from csf.quota_tracker import (
     set_free_only_mode,
 )
 
-# Shared DB path for testing
-_TEST_DB_PATH = Path("P:\\\\\\.data/yt-is/quota/test_quota.sqlite")
+
+@pytest.fixture(autouse=True)
+def _hermetic_quota_db(tmp_path, monkeypatch):
+    """Redirect quota storage to a tmp DB.
+
+    The production quota DB (P:/.data/yt-is/quota.sqlite) is written by
+    live pipeline workers; these tests increment the counter 500+ times
+    and flip free_only_mode, which previously (a) raced production
+    writers into order-dependent failures and (b) corrupted live quota
+    state - free_only_mode=True makes production skip CLI transcript
+    fallbacks."""
+    monkeypatch.setattr(_qt, "_SHARED_DB_PATH", tmp_path / "quota.sqlite")
+    monkeypatch.setattr(_qt, "_quota_storage", None)
+    yield
+    monkeypatch.setattr(_qt, "_quota_storage", None)
 
 
 class TestQuotaTracking:
