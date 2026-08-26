@@ -72,13 +72,17 @@ class ProductionQuery:
         and the raw dense/sparse fused ids (positions imply both legs)."""
         qv, qlw = self._encode(query_text)
         idxs = sorted(qlw.keys())
+        # both prefetch legs take the channel filter: unfiltered legs fill
+        # the fusion pool with other channels' points and the post-fusion
+        # query_filter then shrinks channel-restricted results (same defect
+        # fixed in ef.query.HybridQuery)
         prefetch = [
             models.Prefetch(query=[float(x) for x in qv],
-                            using=ps.DENSE_NAME, limit=100),
+                            using=ps.DENSE_NAME, limit=100, filter=flt),
             models.Prefetch(query=models.SparseVector(
                 indices=[int(t) for t in idxs],
                 values=[float(qlw[t]) for t in idxs]),
-                using=ps.LEX_NAME, limit=100),
+                using=ps.LEX_NAME, limit=100, filter=flt),
         ]
         res = (qc or server.client()).query_points(
             collection_name=self.collection, prefetch=prefetch,
@@ -161,7 +165,8 @@ class ProductionQuery:
             idxs = sorted(lw.keys())
             d_leg = qc.query_points(
                 self.collection, query=[float(x) for x in qv],
-                using=ps.DENSE_NAME, limit=100, with_payload=True).points
+                using=ps.DENSE_NAME, limit=100, with_payload=True,
+                query_filter=flt).points
             s_leg = qc.query_points(
                 self.collection, query=models.SparseVector(
                     indices=[int(t) for t in idxs],
