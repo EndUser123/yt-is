@@ -70,31 +70,28 @@ def parse_gemini_json(text: str) -> dict | None:
     """Extract the rubric JSON from a Gemini reply, or None.
 
     Gemini usually complies with minified-JSON-only but sometimes wraps in
-    prose or ```json fences (same extraction pattern as
-    build_interest_graph.run_inference).
+    prose or ```json fences. raw_decode from each '{' handles braces inside
+    string values (a naive find('}') truncates those into failed parses).
     """
-    for opener, closer in (("{", "}"), ("```json", "```")):
-        start = 0
-        while True:
-            i = text.find(opener, start)
-            if i < 0:
-                break
-            j = text.find(closer, i + len(opener))
-            if j < 0:
-                break
-            candidate = text[i : (i + len(opener)) if opener == "```json" else (j + 1)]
-            if opener == "```json":
-                candidate = text[i + len(opener) : j]
-            try:
-                obj = json.loads(candidate)
-            except ValueError:
-                start = j
-                continue
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        first_newline = stripped.find("\n")
+        if first_newline >= 0:
+            stripped = stripped[first_newline + 1 :]
+        if stripped.rstrip().endswith("```"):
+            stripped = stripped.rstrip()[:-3]
+    decoder = json.JSONDecoder()
+    idx = stripped.find("{")
+    while idx >= 0:
+        try:
+            obj, _ = decoder.raw_decode(stripped, idx)
             if isinstance(obj, dict):
                 verdict = _validate(obj)
                 if verdict:
                     return verdict
-            start = j
+        except ValueError:
+            pass
+        idx = stripped.find("{", idx + 1)
     return None
 
 
@@ -254,41 +251,43 @@ def analyze_batch(
 
     analyzed = failures = 0
     consecutive = 0
-    for video_id in video_ids:
-        if consecutive >= max_consecutive_failures:
-            print(f"stopping: {consecutive} consecutive failures", file=sys.stderr)
-            break
-        try:
-            verdict = call_gemini_video(api_key, video_id)
-        except Exception as exc:  # noqa: BLE001 - per-item isolation by design
-            failures += 1
-            consecutive += 1
-            print(f"{video_id}: FAILED {exc}", file=sys.stderr)
+    try:
+        for video_id in video_ids:
+            if consecutive >= max_consecutive_failures:
+                print(f"stopping: {consecutive} consecutive failures", file=sys.stderr)
+                break
+            try:
+                verdict = call_gemini_video(api_key, video_id)
+            except Exception as exc:  # noqa: BLE001 - per-item isolation by design
+                failures += 1
+                consecutive += 1
+                print(f"{video_id}: FAILED {exc}", file=sys.stderr)
+                time.sleep(gap_s)
+                continue
+            consecutive = 0
+            conn.execute(
+                """INSERT OR REPLACE INTO visual_gemini_scores
+                   (video_id, model, density, summary, has_code, has_diagram,
+                    has_chart, talking_head, raw, analyzed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+                (
+                    video_id,
+                    MODEL,
+                    verdict["density"],
+                    verdict["summary"],
+                    verdict["has_code"],
+                    verdict["has_diagram"],
+                    verdict["has_chart"],
+                    verdict["talking_head"],
+                    json.dumps(verdict),
+                ),
+            )
+            conn.commit()
+            analyzed += 1
+            print(f"{video_id}: video_density={verdict['density']} {verdict['summary'] or ''}"[:150])
             time.sleep(gap_s)
-            continue
-        consecutive = 0
-        conn.execute(
-            """INSERT OR REPLACE INTO visual_gemini_scores
-               (video_id, model, density, summary, has_code, has_diagram,
-                has_chart, talking_head, raw, analyzed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-            (
-                video_id,
-                MODEL,
-                verdict["density"],
-                verdict["summary"],
-                verdict["has_code"],
-                verdict["has_diagram"],
-                verdict["has_chart"],
-                verdict["talking_head"],
-                json.dumps(verdict),
-            ),
-        )
-        conn.commit()
-        analyzed += 1
-        print(f"{video_id}: video_density={verdict['density']} {verdict['summary'] or ''}"[:150])
-        time.sleep(gap_s)
-    conn.close()
+    finally:
+        conn.close()
     return {"requested": len(video_ids), "analyzed": analyzed, "failures": failures}
 
 
