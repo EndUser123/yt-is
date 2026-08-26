@@ -347,3 +347,90 @@ def test_http_cross_origin_rejected(server, db):
     assert conn.execute("SELECT COUNT(*) FROM feedback_events"
                         ).fetchone()[0] == 0
     conn.close()
+
+
+# ------------------------------------------------- evaluation annotations
+
+def test_annotation_preserves_raw_event_and_is_additive(db):
+    r = pg.record_feedback_event("today", "cluster", "cluster:1",
+                                 "wrong_inference", db_path=db)
+    fid = r["feedback_event_id"]
+    before = pg.get_feedback_event(fid, db_path=db)
+    a = pg.annotate_feedback_event(
+        fid, "test_probe", reason="live contract verification", db_path=db)
+    assert a["ok"] and not a["duplicate"]
+    after = pg.get_feedback_event(fid, db_path=db)
+    # raw event fields byte/semantically intact; annotation arrived additively
+    for k in before:
+        if k != "annotations":
+            assert after[k] == before[k], k
+    assert len(after["annotations"]) == 1
+    assert after["annotations"][0]["annotation_type"] == "test_probe"
+    assert after["annotations"][0]["exclude_from_evaluation"] == 1
+
+
+def test_evaluation_read_excludes_annotated_probe(db):
+    r = pg.record_feedback_event("today", "cluster", "cluster:1",
+                                 "wrong_inference", db_path=db)
+    probe = r["feedback_event_id"]
+    real = pg.record_feedback_event("today", "doc", "video:abc",
+                                    "useful", db_path=db)
+    pg.annotate_feedback_event(probe, "test_probe", db_path=db)
+    rows = pg.feedback_events_for_evaluation(db_path=db)
+    ids = [e["feedback_event_id"] for e in rows]
+    assert ids == [real["feedback_event_id"]]
+    # audit mode: everything back, annotated row flagged
+    audit = pg.feedback_events_for_evaluation(include_excluded=True,
+                                              db_path=db)
+    assert len(audit) == 2
+    by_id = {e["feedback_event_id"]: e for e in audit}
+    assert by_id[probe]["excluded"] == 1
+    assert by_id[real["feedback_event_id"]]["excluded"] == 0
+    # raw single-event access still sees the probe
+    assert pg.get_feedback_event(probe, db_path=db)["verdict"] \
+        == "wrong_inference"
+
+
+def test_annotation_idempotent_and_conflicting(db):
+    r = pg.record_feedback_event("today", "cluster", "cluster:1",
+                                 "useful", db_path=db)
+    fid = r["feedback_event_id"]
+    a1 = pg.annotate_feedback_event(fid, "test_probe", reason="x",
+                                    db_path=db)
+    a2 = pg.annotate_feedback_event(fid, "test_probe", reason="x",
+                                    db_path=db)
+    assert a1["ok"] and a2["ok"] and a2["duplicate"] is True
+    assert a1["annotation_id"] == a2["annotation_id"]
+    conflict = pg.annotate_feedback_event(fid, "test_probe", reason="y",
+                                          db_path=db)
+    assert conflict["ok"] is False and "reuse" in conflict["error"]
+    # second annotation type on the same event is legitimate
+    a3 = pg.annotate_feedback_event(fid, "operator_reviewed", db_path=db)
+    assert a3["ok"] and not a3["duplicate"]
+    unknown = pg.annotate_feedback_event("fe_missing", "test_probe",
+                                         db_path=db)
+    assert unknown["ok"] is False and "unknown" in unknown["error"]
+
+
+def test_annotation_does_not_alter_workflow_state(db):
+    r = pg.record_feedback_event("today", "doc", "video:abc", "save",
+                                 db_path=db)
+    st1 = pg.get_workflow_state("doc", "video:abc", db_path=db)
+    pg.annotate_feedback_event(r["feedback_event_id"], "test_probe",
+                               db_path=db)
+    st2 = pg.get_workflow_state("doc", "video:abc", db_path=db)
+    assert st2 == st1
+    ev = pg.get_feedback_event(r["feedback_event_id"], db_path=db)
+    assert ev["verdict"] == "save"
+
+
+def test_unannotated_feedback_remains_in_evaluation_default(db):
+    keep = []
+    for i in range(3):
+        r = pg.record_feedback_event("today", "doc", f"video:{i}",
+                                     "useful", db_path=db)
+        keep.append(r["feedback_event_id"])
+    pg.annotate_feedback_event(keep[0], "test_probe", db_path=db)
+    rows = pg.feedback_events_for_evaluation(item_kind="doc", db_path=db)
+    # same-second events share an occurred_at value; compare as a set
+    assert {e["feedback_event_id"] for e in rows} == set(keep[1:])
