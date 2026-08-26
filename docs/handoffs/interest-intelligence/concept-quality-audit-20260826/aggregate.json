@@ -1,0 +1,736 @@
+{
+ "concepts": {
+  "A001": {
+   "final": "TOO_SPECIFIC_OR_EPHEMERAL",
+   "r1": "TOO_SPECIFIC_OR_EPHEMERAL",
+   "r2": "TOO_SPECIFIC_OR_EPHEMERAL",
+   "kind": "entity_concept",
+   "ev": 10,
+   "pub": 4
+  },
+  "A002": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "AMBIGUOUS",
+   "kind": "entity_concept",
+   "ev": 0,
+   "pub": 0
+  },
+  "A003": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "entity_concept",
+   "ev": 5910,
+   "pub": 594
+  },
+  "A004": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 5,
+   "pub": 4
+  },
+  "A005": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 112,
+   "pub": 6
+  },
+  "A006": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 10,
+   "pub": 1
+  },
+  "A007": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 4,
+   "pub": 3
+  },
+  "A008": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 179,
+   "pub": 22
+  },
+  "A009": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 11,
+   "pub": 2
+  },
+  "A010": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 3,
+   "pub": 3
+  },
+  "A011": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "entity_concept",
+   "ev": 0,
+   "pub": 0
+  },
+  "A012": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 1127,
+   "pub": 272
+  },
+  "A013": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 8,
+   "pub": 6
+  },
+  "A014": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 22,
+   "pub": 2
+  },
+  "A015": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "entity_concept",
+   "ev": 0,
+   "pub": 0
+  },
+  "A016": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 31,
+   "pub": 7
+  },
+  "A017": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_SPECIFIC_OR_EPHEMERAL",
+   "r2": "TOO_GENERIC",
+   "kind": "entity_concept",
+   "ev": 5,
+   "pub": 3
+  },
+  "A018": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 69,
+   "pub": 27
+  },
+  "A019": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 243,
+   "pub": 49
+  },
+  "A020": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "TOO_GENERIC",
+   "kind": "entity_concept",
+   "ev": 72,
+   "pub": 43
+  },
+  "A021": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 8,
+   "pub": 1
+  },
+  "A022": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 144,
+   "pub": 23
+  },
+  "A023": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "entity_concept",
+   "ev": 0,
+   "pub": 0
+  },
+  "A024": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 616,
+   "pub": 92
+  },
+  "A025": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 168,
+   "pub": 9
+  },
+  "A026": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "entity_concept",
+   "ev": 49,
+   "pub": 28
+  },
+  "A027": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 55,
+   "pub": 16
+  },
+  "A028": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 81,
+   "pub": 22
+  },
+  "A029": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 49,
+   "pub": 26
+  },
+  "A030": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 6,
+   "pub": 1
+  },
+  "A031": {
+   "final": "TOO_GENERIC",
+   "r1": "GOOD_CONCEPT",
+   "r2": "TOO_GENERIC",
+   "kind": "entity_concept",
+   "ev": 114,
+   "pub": 17
+  },
+  "A032": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "AMBIGUOUS",
+   "kind": "entity_concept",
+   "ev": 0,
+   "pub": 0
+  },
+  "A033": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 154,
+   "pub": 17
+  },
+  "A034": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 66,
+   "pub": 34
+  },
+  "A035": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 9,
+   "pub": 6
+  },
+  "A036": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 45,
+   "pub": 2
+  },
+  "A037": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 642,
+   "pub": 152
+  },
+  "A038": {
+   "final": "ALIAS_FRAGMENT",
+   "r1": "ALIAS_FRAGMENT",
+   "r2": "ALIAS_FRAGMENT",
+   "kind": "entity_concept",
+   "ev": 4,
+   "pub": 3
+  },
+  "A039": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 48,
+   "pub": 29
+  },
+  "A040": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 73,
+   "pub": 33
+  },
+  "A041": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 26,
+   "pub": 4
+  },
+  "A042": {
+   "final": "TYPE_ERROR",
+   "r1": "TOO_GENERIC",
+   "r2": "TYPE_ERROR",
+   "kind": "entity_concept",
+   "ev": 3,
+   "pub": 3
+  },
+  "A043": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "AMBIGUOUS",
+   "kind": "entity_concept",
+   "ev": 0,
+   "pub": 0
+  },
+  "A044": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "entity_concept",
+   "ev": 297,
+   "pub": 109
+  },
+  "A045": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 5,
+   "pub": 4
+  },
+  "A046": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 9,
+   "pub": 1
+  },
+  "A047": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "AMBIGUOUS",
+   "kind": "entity_concept",
+   "ev": 0,
+   "pub": 0
+  },
+  "A048": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 6,
+   "pub": 3
+  },
+  "A049": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 110,
+   "pub": 1
+  },
+  "A050": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 181,
+   "pub": 1
+  },
+  "A051": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "entity_concept",
+   "ev": 156,
+   "pub": 60
+  },
+  "B001": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 1964,
+   "pub": 1019
+  },
+  "B002": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 651,
+   "pub": 628
+  },
+  "B003": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 97,
+   "pub": 97
+  },
+  "B004": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "cluster_concept",
+   "ev": 58,
+   "pub": 57
+  },
+  "B005": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 67,
+   "pub": 59
+  },
+  "B006": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "cluster_concept",
+   "ev": 58,
+   "pub": 18
+  },
+  "B007": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "TOO_SPECIFIC_OR_EPHEMERAL",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "cluster_concept",
+   "ev": 41,
+   "pub": 22
+  },
+  "B008": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 2575,
+   "pub": 859
+  },
+  "B009": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 52,
+   "pub": 45
+  },
+  "B010": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 542,
+   "pub": 415
+  },
+  "B011": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "TOO_SPECIFIC_OR_EPHEMERAL",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "cluster_concept",
+   "ev": 66,
+   "pub": 39
+  },
+  "B012": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 1002,
+   "pub": 969
+  },
+  "B013": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "EXTRACTION_ARTIFACT",
+   "kind": "cluster_concept",
+   "ev": 92,
+   "pub": 38
+  },
+  "B014": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 145,
+   "pub": 110
+  },
+  "B015": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 1169,
+   "pub": 651
+  },
+  "B016": {
+   "final": "GOOD_CONCEPT",
+   "r1": "GOOD_CONCEPT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 157,
+   "pub": 108
+  },
+  "B017": {
+   "final": "TOO_GENERIC",
+   "r1": "GOOD_CONCEPT",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 54,
+   "pub": 18
+  },
+  "B018": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 279,
+   "pub": 278
+  },
+  "B019": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 68,
+   "pub": 23
+  },
+  "B020": {
+   "final": "TOO_GENERIC",
+   "r1": "GOOD_CONCEPT",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 1420,
+   "pub": 1063
+  },
+  "B021": {
+   "final": "TOO_GENERIC",
+   "r1": "GOOD_CONCEPT",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 2420,
+   "pub": 1853
+  },
+  "B022": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 394,
+   "pub": 244
+  },
+  "B023": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 1345,
+   "pub": 292
+  },
+  "B024": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 456,
+   "pub": 409
+  },
+  "B025": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 1060,
+   "pub": 145
+  },
+  "B026": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 479,
+   "pub": 196
+  },
+  "B027": {
+   "final": "TOO_GENERIC",
+   "r1": "GOOD_CONCEPT",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 1083,
+   "pub": 794
+  },
+  "B028": {
+   "final": "EXTRACTION_ARTIFACT",
+   "r1": "EXTRACTION_ARTIFACT",
+   "r2": "GOOD_CONCEPT",
+   "kind": "cluster_concept",
+   "ev": 448,
+   "pub": 388
+  },
+  "B029": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 1407,
+   "pub": 1191
+  },
+  "B030": {
+   "final": "TOO_GENERIC",
+   "r1": "TOO_GENERIC",
+   "r2": "TOO_GENERIC",
+   "kind": "cluster_concept",
+   "ev": 187,
+   "pub": 163
+  }
+ },
+ "relations": {
+  "R001": "SUPPORTED_RELATION",
+  "R002": "SUPPORTED_RELATION",
+  "R003": "SUPPORTED_RELATION",
+  "R004": "SUPPORTED_RELATION",
+  "R005": "SUPPORTED_RELATION",
+  "R006": "SUPPORTED_RELATION",
+  "R007": "SUPPORTED_RELATION",
+  "R008": "SUPPORTED_RELATION",
+  "R009": "WEAK_OR_UNSUPPORTED",
+  "R010": "SUPPORTED_RELATION",
+  "R011": "SUPPORTED_RELATION",
+  "R012": "WEAK_OR_UNSUPPORTED",
+  "R013": "WEAK_OR_UNSUPPORTED",
+  "R014": "SUPPORTED_RELATION",
+  "R015": "SUPPORTED_RELATION",
+  "R016": "WEAK_OR_UNSUPPORTED",
+  "R017": "SUPPORTED_RELATION",
+  "R018": "SUPPORTED_RELATION",
+  "R019": "SUPPORTED_RELATION",
+  "R020": "SUPPORTED_RELATION",
+  "R021": "WEAK_OR_UNSUPPORTED",
+  "R022": "SUPPORTED_RELATION",
+  "R023": "WEAK_OR_UNSUPPORTED",
+  "R024": "WEAK_OR_UNSUPPORTED",
+  "R025": "SUPPORTED_RELATION",
+  "R026": "SUPPORTED_RELATION",
+  "R027": "SUPPORTED_RELATION",
+  "R028": "SUPPORTED_RELATION",
+  "R029": "WEAK_OR_UNSUPPORTED",
+  "R030": "SUPPORTED_RELATION",
+  "R031": "SUPPORTED_RELATION",
+  "R032": "WEAK_OR_UNSUPPORTED",
+  "R033": "SUPPORTED_RELATION",
+  "R034": "SUPPORTED_RELATION",
+  "R035": "SUPPORTED_RELATION",
+  "R036": "SUPPORTED_RELATION",
+  "R037": "SUPPORTED_RELATION",
+  "R038": "SUPPORTED_RELATION",
+  "R039": "WEAK_OR_UNSUPPORTED",
+  "R040": "WEAK_OR_UNSUPPORTED",
+  "R041": "SUPPORTED_RELATION",
+  "R042": "SUPPORTED_RELATION",
+  "R043": "SUPPORTED_RELATION",
+  "R044": "SUPPORTED_RELATION",
+  "R045": "WEAK_OR_UNSUPPORTED",
+  "R046": "WEAK_OR_UNSUPPORTED",
+  "R047": "SUPPORTED_RELATION",
+  "R048": "SUPPORTED_RELATION",
+  "R049": "WEAK_OR_UNSUPPORTED",
+  "R050": "SUPPORTED_RELATION",
+  "R051": "SUPPORTED_RELATION",
+  "R052": "SUPPORTED_RELATION",
+  "R053": "SUPPORTED_RELATION",
+  "R054": "SUPPORTED_RELATION",
+  "R055": "SUPPORTED_RELATION",
+  "R056": "SUPPORTED_RELATION",
+  "R057": "WEAK_OR_UNSUPPORTED",
+  "R058": "WEAK_OR_UNSUPPORTED",
+  "R059": "WEAK_OR_UNSUPPORTED",
+  "R060": "SUPPORTED_RELATION"
+ },
+ "agreement": {
+  "concepts_exact": 0.8024691358024691,
+  "relations_exact": 0.8166666666666667,
+  "trend_exact": 0.9333333333333333
+ },
+ "trends": {
+  "T001": "ARTIFACT",
+  "T002": "GOOD",
+  "T003": "GOOD",
+  "T004": "EPHEMERAL",
+  "T005": "GOOD",
+  "T006": "GOOD",
+  "T007": "GOOD",
+  "T008": "TOO_GENERIC",
+  "T009": "GOOD",
+  "T010": "GOOD",
+  "T011": "GOOD",
+  "T012": "ARTIFACT",
+  "T013": "GOOD",
+  "T014": "GOOD",
+  "T015": "GOOD"
+ }
+}

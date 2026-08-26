@@ -91,3 +91,22 @@ this evaluator; conflation of the two gates is removed.
   stop) or (stop without freeze, return to architect).
 - Do NOT implement adjacency, bridge discovery, external expansion, or
   dashboard work in that packet.
+
+## Concept/KG extraction quality audit (2026-08-26, agent: zcode)
+
+Cold-start blinded audit of the production concept/KG substrate (full report:
+docs/handoffs/interest-intelligence/concept-quality-audit-20260826/AUDIT-REPORT.md;
+raw private packets under .data/yt-is/ef/concept-quality-audit-20260826/, uncommitted).
+Decision: CONCEPT_LAYER_PARTIAL. Headline: adjudicated concept good-rate 0.56 overall
+(entity 0.69, cluster 0.33); relations 0.72 supported (no wrong-direction/duplicate/
+type errors in sample); reviewer agreement 0.80/0.82; methodology review APPROVE_WITH_NOTES.
+Key structural facts: the Concept Registry (concepts/aliases/observations/relations
+tables) is deployed in CODE ONLY — no production DB contains registry tables; the
+audited substrate is entities/kg_nodes/kg_edges/topic_clusters/trend_alerts in
+catalog.sqlite. Corpus-wide: 388/7390 extracted entities survive FTS qualification
+(5.3%); 67/388 graph entity nodes orphaned; 52% of EUs undated (discord bulk capture);
+779 casefold-collision entity names (no alias layer); 5/15 sampled trend labels
+byte-duplicate cluster labels. Root causes RC1-RC6 and discriminating experiments
+E1-E5 (evidence floor + distinct-source count, label polysemy gate, cluster relabel,
+discord date policy, registry deploy-or-descope) are in the report. No production,
+extraction, schema, or data changes were made.
