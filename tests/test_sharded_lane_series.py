@@ -123,8 +123,37 @@ def test_load_lane_configs_accepts_same_browser_root_with_distinct_directories(t
     assert lanes[1].coordinator_profile == "default"
 
 
-def test_pro_free_lane_config_uses_dedicated_browser_roots():
-    config_path = Path("P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_lanes.json")
+def _lane_json(lane, account_class, profiles, browser_root,
+               browser_directory, state_root, prefix):
+    return {
+        "lane": lane,
+        "account_class": account_class,
+        "workers": len(profiles),
+        "notebooklm_profiles": list(profiles),
+        "browser_profile_root": browser_root,
+        "browser_profile_directory": browser_directory,
+        "worker_state_root": state_root,
+        "notebook_prefix": prefix,
+    }
+
+
+def test_pro_free_lane_config_uses_dedicated_browser_roots(tmp_path):
+    # hermetic rebuild of the pro/free lane pair: the old version read
+    # P:\packages\yt-is\.logs\... artifacts from the MAIN checkout, so the
+    # suite only passed on the operator machine with those artifacts present
+    config_path = tmp_path / "pro_free_lanes.json"
+    config_path.write_text(json.dumps([
+        _lane_json("a_hominidae_pro", "pro",
+                   [f"ytis-pro-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-pro", "Profile",
+                   str(tmp_path / "pro_states"),
+                   "benchmark-shard-a-hominidae-pro"),
+        _lane_json("troup_hominidae_free", "free",
+                   [f"ytis-free-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free", "Default",
+                   str(tmp_path / "free_states"),
+                   "benchmark-shard-troup-hominidae-free"),
+    ]), encoding="utf-8")
     lanes = load_lane_configs(config_path)
 
     assert len(lanes) == 2
@@ -164,8 +193,25 @@ def test_load_lane_configs_repairs_overescaped_windows_paths(tmp_path):
     )
 
 
-def test_pro_free_hotmail_lane_config_includes_second_free_account():
-    config_path = Path("P:\\\\\\packages/yt-is/.logs/sharded_lane_series/pro_free_hotmail_lanes.json")
+def test_pro_free_hotmail_lane_config_includes_second_free_account(tmp_path):
+    config_path = tmp_path / "pro_free_hotmail_lanes.json"
+    config_path.write_text(json.dumps([
+        _lane_json("a_hominidae_pro", "pro",
+                   [f"ytis-pro-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-pro", "Profile",
+                   str(tmp_path / "pro_states"),
+                   "benchmark-shard-a-hominidae-pro"),
+        _lane_json("troup_hominidae_free", "free",
+                   [f"ytis-free1-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free", "Default",
+                   str(tmp_path / "free1_states"),
+                   "benchmark-shard-troup-hominidae-free"),
+        _lane_json("brsthomson_hotmail_free", "free",
+                   [f"ytis-free2-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free-2", "Default",
+                   str(tmp_path / "free2_states"),
+                   "benchmark-shard-brsthomson-hotmail-free"),
+    ]), encoding="utf-8")
     lanes = load_lane_configs(config_path)
 
     assert len(lanes) == 3
@@ -182,8 +228,15 @@ def test_pro_free_hotmail_lane_config_includes_second_free_account():
     assert lanes[2].browser_profile_directory == "Default"
 
 
-def test_free_only_lane_config_uses_free_account_route():
-    config_path = Path("P:\\\\\\packages/yt-is/.logs/sharded_lane_series/free_only_lanes.json")
+def test_free_only_lane_config_uses_free_account_route(tmp_path):
+    config_path = tmp_path / "free_only_lanes.json"
+    config_path.write_text(json.dumps([
+        _lane_json("troup_hominidae_free", "free",
+                   [f"ytis-free1-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free", "Default",
+                   str(tmp_path / "free_states"),
+                   "benchmark-shard-troup-hominidae-free"),
+    ]), encoding="utf-8")
     (lane,) = load_lane_configs(config_path)
 
     assert lane.lane == "troup_hominidae_free"

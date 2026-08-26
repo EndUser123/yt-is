@@ -221,18 +221,20 @@ class TestRefreshReasonEmptyAccount:
 
 
 # ---------------------------------------------------------------------------
-# Falsifier: family refresh/sync must use a live session check. The
-# previous ``source_session_checker=lambda _profile: True`` short-circuited
-# the live checker; C4-B removes that and passes None so the default
-# live checker is used.
+# Falsifier: family refresh must run the live session check. The
+# pre-2026-08-22 ``source_session_checker=lambda _profile: True`` sentinel
+# short-circuited the live checker; the worker-fleet sync machinery was
+# retired in 4a3d19aa and the check is now a direct call inside
+# ``_refresh_family_nlm_auth_session``.
 # ---------------------------------------------------------------------------
 
 
 class TestFamilyRefreshUsesLiveSessionCheck:
-    """sync_worker_profiles is called with ``source_session_checker=None``
-    inside ``_refresh_family_nlm_auth_session``. The default
-    ``_source_session_ok`` path then runs ``profile_session_matches_expected``
-    against the source profile before credentials are copied to siblings."""
+    """Family refresh runs ``profile_session_matches_expected(source,
+    expected)`` after the CDP refresh and before any session is cached;
+    the session store is fingerprint-bound to the family's expected email.
+    These tests pin the post-4a3d19aa mechanism (the old class patched the
+    deleted ``sync_worker_profiles`` API and errored at setup)."""
 
     @pytest.fixture(autouse=True)
     def _reset(self, monkeypatch):
@@ -247,8 +249,9 @@ class TestFamilyRefreshUsesLiveSessionCheck:
         with nlm_batch.nlm_auth_guard._AUTH_CHECK_CACHE_LOCK:
             nlm_batch.nlm_auth_guard._AUTH_CHECK_CACHE.clear()
 
-    def test_family_refresh_does_not_pass_lambda_true_to_sync_worker_profiles(self):
-        """Direct call: the lambda: True sentinel must be gone."""
+    def test_family_refresh_runs_live_session_check(self):
+        """Direct call: refresh succeeds but the live check fails -> the
+        refresh is not trusted and no session is stored."""
         from csf.nlm_worker_auth import DEFAULT_FAMILIES
 
         family = DEFAULT_FAMILIES[1]
@@ -259,53 +262,73 @@ class TestFamilyRefreshUsesLiveSessionCheck:
             expected_email=family.expected_email,
         )
 
-        captured_sync_kwargs: dict = {}
+        with mock.patch("csf.nlm_worker_auth.refresh_source_profile", return_value=True):
+            with mock.patch(
+                "csf.nlm_worker_auth.profile_session_matches_expected",
+                return_value=False,
+            ) as live_check:
+                with mock.patch("csf.nlm_batch.nlm_auth_guard.auth_check_cache_store") as store:
+                    result = nlm_batch._refresh_family_nlm_auth_session(
+                        auth_context, family, timeout_s=1.0
+                    )
 
-        def mock_sync_worker_profiles(*args, **kwargs):
-            captured_sync_kwargs.update(kwargs)
-            return None
+        assert result is False, "a failed live session check must fail the refresh"
+        live_check.assert_called_once_with(
+            family.source_profile, family.expected_email
+        )
+        assert not store.called, "no session may be cached on a failed check"
+
+    def test_family_refresh_success_binds_expected_email(self):
+        """Passing path: the stored session is fingerprint-bound to the
+        family's expected email, so a later cache hit cannot authorize a
+        different account."""
+        from csf.nlm_worker_auth import DEFAULT_FAMILIES
+
+        family = DEFAULT_FAMILIES[1]
+        auth_context = nlm_batch._NLMAuthContext(
+            profile=family.source_profile,
+            login_profile_args=["--profile", family.source_profile],
+            requires_profile=True,
+            expected_email=family.expected_email,
+        )
 
         with mock.patch("csf.nlm_worker_auth.refresh_source_profile", return_value=True):
-            with mock.patch("csf.nlm_worker_auth.sync_worker_profiles", side_effect=mock_sync_worker_profiles):
-                with mock.patch("csf.nlm_batch.nlm_auth_guard.auth_check_cache_store"):
+            with mock.patch(
+                "csf.nlm_worker_auth.profile_session_matches_expected",
+                return_value=True,
+            ):
+                with mock.patch("csf.nlm_batch.nlm_auth_guard.auth_check_cache_store") as store:
                     result = nlm_batch._refresh_family_nlm_auth_session(
                         auth_context, family, timeout_s=1.0
                     )
 
         assert result is True
-        assert "source_session_checker" in captured_sync_kwargs
-        checker = captured_sync_kwargs["source_session_checker"]
-        assert checker is None, (
-            "Family refresh must pass source_session_checker=None so the "
-            "default live checker (profile_session_matches_expected) runs. "
-            "Got: %r" % (checker,)
-        )
+        store.assert_called_once()
+        assert store.call_args.kwargs.get("verified_account") == family.expected_email
 
     def test_family_refresh_via_ensure_nlm_auth_uses_live_check(self, monkeypatch):
-        """End-to-end: ``_ensure_nlm_auth`` for a known worker profile must
-        route through family refresh and pass None to sync_worker_profiles."""
-        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "ytis-pro-worker-03")
+        """End-to-end: ``_ensure_nlm_auth`` for a mapped source profile
+        routes through family refresh with the live check and never falls
+        back to a bare ``login --check``."""
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "troup.hominidae")
         monkeypatch.setenv("YTIS_NLM_AUTH_NONINTERACTIVE", "1")
-
-        sync_calls: list = []
-
-        def mock_sync_worker_profiles(**kwargs):
-            sync_calls.append(kwargs)
-            return None
+        monkeypatch.delenv("YTIS_NLM_ACCOUNT_PROFILE", raising=False)
 
         with mock.patch("csf.nlm_worker_auth.refresh_source_profile", return_value=True):
-            with mock.patch("csf.nlm_worker_auth.sync_worker_profiles", side_effect=mock_sync_worker_profiles):
-                with mock.patch(
-                    "csf.nlm_batch.run_nlm",
-                    side_effect=AssertionError(
-                        "family auth should not use bare login --check"
-                    ),
-                ):
-                    result = nlm_batch._ensure_nlm_auth()
+            with mock.patch(
+                "csf.nlm_worker_auth.profile_session_matches_expected",
+                return_value=True,
+            ):
+                with mock.patch("csf.nlm_batch.nlm_auth_guard.auth_check_cache_store"):
+                    with mock.patch(
+                        "csf.nlm_batch.run_nlm",
+                        side_effect=AssertionError(
+                            "family auth should not use bare login --check"
+                        ),
+                    ):
+                        result = nlm_batch._ensure_nlm_auth()
 
         assert result is True
-        assert sync_calls, "family sync must have been invoked"
-        assert sync_calls[0]["source_session_checker"] is None
 
 
 # ---------------------------------------------------------------------------
