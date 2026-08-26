@@ -149,8 +149,25 @@ Open items (operator-held unless noted):
    = 89% with Markets/Finance at zero; both original motivations were fixed
    by 5f8faaab and 0ddb0b48). 30-day fetch-share falsifier defined.
    Operator word pending.
-2. 128,834 video_catalog rows sit on blocked channels; purge is an
-   explicit operator call (`scripts/purge_channels.py` exists).
+2. ~~Blocked-channel purge~~ EXECUTED 2026-08-26 00:26Z (operator
+   directive, third ask): purge_channels.py over the full blocklist —
+   deleted 541,166 analysis_status rows, 1,045 channel_metadata rows,
+   5,047 transcript_cache docs, 10,814 EF chunks/clusters/qdrant points,
+   3 visual dirs. Receipts: .logs/purge/purge-20260826T002602Z.json
+   (+dry-run 002538Z). Post-state: complete 258,299 / pending 437,368
+   (pre-defer) / channel_metadata 1,820. Restore net: G: restic + 03:30
+   cold backups.
+2b. Whisper-parking EXECUTED 2026-08-26 00:31Z (operator directive):
+   scripts/defer_no_captions.py --apply moved 434,366 no-caption pending
+   rows to terminal status='deferred_audio' — pending (3,002) now means
+   'a worker exists'. Reverse: update analysis_status set
+   status='pending' where status='deferred_audio'.
+2c. Twitter/X LIVE 2026-08-26 00:30Z: the 12 operator-approved starter
+   handles (config/twitter_starter_accounts.txt, approved 2026-08-20)
+   registered as rsshub feeds (route verified serving real RSS); first
+   sync delivered 233 docs within minutes; nightly 06:00 sync owns it
+   (12 accounts x 75s pacing). The prior 'blocked' reading was a stale
+   probe against a dead route.
 3. ~~Watcher flags stale chunk dirs from 2026-08-20~~ RESOLVED 2026-08-25
    04:48Z: e31216ed's sweep-ledger consumption classifies the ledgered
    deletion as EXPIRED_BY_POLICY; the alert self-resolved.
