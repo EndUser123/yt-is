@@ -39,6 +39,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -430,6 +431,142 @@ def check_workspace_integrity() -> str | None:
     return " | ".join(problems[:3]) + (" …" if len(problems) > 3 else "")
 
 
+def check_extended_surfaces() -> str | None:
+    """Operator directive 2026-08-26: 'make sure we are watching them' — the
+    completeness pass for surfaces NOT covered by earlier checks. All
+    stateless (no baselines). Sub-checks, each fail-open on its own errors:
+
+    A. grok-repo real deletions (~/.grok git, excluding state/session churn)
+    B. skill-mirror gaps (P:/.agents canonical vs ~/.grok/skills)
+    C. repo sync drift (P:/, yt-is, ~/.grok: behind>50 or ahead>20 unpushed)
+    D. yt-is tracked files missing on disk (file-eater class, second repo)
+    E. MCP service liveness (TCP :8321-8324 from WinSW configs)
+    F. restic freshness (newest snapshot log rc=0 within 40 min)
+    G. P:/ and C:/ disk free (<20GB alerts)
+    H. pending unregistered automations (.data/ops/pending-automations.md)
+    I. stale git index.lock files (any repo, >10 min old)
+    """
+    problems: list[str] = []
+    home = Path.home()
+    NO_WIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+    def _git(repo: Path, *args: str):
+        try:
+            return subprocess.run(["git", "-C", str(repo), *args],
+                                  capture_output=True, text=True, timeout=30,
+                                  creationflags=NO_WIN)
+        except (subprocess.TimeoutExpired, OSError):
+            class _Fail:
+                returncode = 1
+                stdout = ""
+            return _Fail()
+
+    # A. grok real deletions
+    p = _git(home / ".grok", "status", "--porcelain")
+    if p.returncode == 0:
+        real = [l[3:] for l in p.stdout.splitlines()
+                if l[:2] in (" D", "D ")
+                and not l[3:].startswith(("hooks/state/", "sessions/"))
+                and not l[3:].endswith(".jsonl")]
+        if real:
+            problems.append(f"~/.grok real deletions: {len(real)} "
+                            f"[{' '.join(real[:3])}] — restore: "
+                            f"git -C ~/.grok checkout -- <path>")
+    # B. skill-mirror gaps
+    canon = Path("P:/.agents/skills")
+    grok_sk = home / ".grok/skills"
+    gaps = 0
+    if canon.is_dir() and grok_sk.is_dir():
+        for lib in canon.glob("*/__lib/*.py"):
+            # lib.parents[1] = the skill dir (lib.parent is __lib itself)
+            if not (grok_sk / lib.parents[1].name / "__lib"
+                    / lib.name).exists():
+                gaps += 1
+    if gaps:
+        problems.append(f"skill-mirror gaps: {gaps} canonical __lib files "
+                        f"absent from ~/.grok/skills — restore: copy from "
+                        f"P:/.agents/skills/<name>/__lib/")
+    # C. repo sync drift
+    for repo, name in ((Path("P:/"), "P:/"),
+                       (Path("P:/packages/yt-is"), "yt-is"),
+                       (home / ".grok", "~/.grok")):
+        _git(repo, "fetch", "origin", "main", "--quiet")
+        behind = _git(repo, "rev-list", "--count", "HEAD..origin/main")
+        ahead = _git(repo, "rev-list", "--count", "origin/main..HEAD")
+        try:
+            b, a = int(behind.stdout.strip()), int(ahead.stdout.strip())
+        except ValueError:
+            continue
+        if b > 50:
+            problems.append(f"{name}: {b} commits BEHIND origin/main — "
+                            f"stale-checkout class; run sync_main.py")
+        elif a > 20:
+            problems.append(f"{name}: {a} commits ahead unpushed — "
+                            f"run sync_main.py to publish")
+    # D. yt-is tracked-missing
+    p = _git(Path("P:/packages/yt-is"),
+             "ls-tree", "-r", "--name-only", "main")
+    if p.returncode == 0:
+        yis = Path("P:/packages/yt-is")
+        missing = [f for f in p.stdout.splitlines()
+                   if f.strip() and "__pycache__" not in f
+                   and f.endswith((".py", ".md"))
+                   and not (yis / f).exists()]
+        if missing:
+            problems.append(f"yt-is: {len(missing)} tracked files missing "
+                            f"[{' '.join(missing[:3])}]")
+    # E. MCP liveness (TCP connect, 2s)
+    import socket
+    dead = []
+    for port, svc in ((8321, "search_wiki"), (8322, "search_chat"),
+                      (8323, "search_web"), (8324, "ef_warm_query")):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
+                pass
+        except OSError:
+            dead.append(svc)
+    if dead:
+        problems.append(f"MCP services DOWN: {', '.join(dead)} — "
+                        f"search/EF silently degraded; check WinSW services")
+    # F. restic freshness
+    logs = sorted(Path("P:/.data/logs/restic").glob("snapshot-*.log")) \
+        if Path("P:/.data/logs/restic").is_dir() else []
+    if logs:
+        newest = logs[-1]
+        age_h = (time.time() - newest.stat().st_mtime) / 3600
+        if age_h > 0.75:
+            problems.append(f"restic: newest snapshot log {age_h:.1f}h old "
+                            f"— 15-min task stalled?")
+    # G. P:/ and C:/ free space
+    for drive, label in (("P:/", "P:"), ("C:/", "C:")):
+        try:
+            u = shutil.disk_usage(drive)
+            if u.free / 1024 ** 3 < 20:
+                problems.append(f"{label} drive low: "
+                                f"{u.free / 1024 ** 3:.0f}GB free")
+        except OSError:
+            pass
+    # H. pending automations
+    if Path("P:/.data/ops/pending-automations.md").is_file():
+        problems.append("unregistered automations pending — see "
+                        "P:/.data/ops/pending-automations.md")
+    # I. stale index.lock
+    for repo, name in ((Path("P:/"), "P:/"),
+                       (Path("P:/packages/yt-is"), "yt-is"),
+                       (home / ".grok", "~/.grok")):
+        lock = repo / ".git" / "index.lock"
+        try:
+            if lock.exists() and time.time() - lock.stat().st_mtime > 600:
+                problems.append(f"{name}: index.lock stale "
+                                f"({(time.time() - lock.stat().st_mtime) / 60:.0f} min) "
+                                f"— clear it to unblock git")
+        except OSError:
+            pass
+    if not problems:
+        return None
+    return " | ".join(problems[:4]) + (" …" if len(problems) > 4 else "")
+
+
 def run_once(
     *,
     state_path: Path | None,
@@ -480,6 +617,10 @@ def run_once(
     integrity_alert = check_workspace_integrity()
     if integrity_alert:
         lines.append(f"[integrity] {integrity_alert}")
+
+    surfaces_alert = check_extended_surfaces()
+    if surfaces_alert:
+        lines.append(f"[surfaces] {surfaces_alert}")
 
     if lines:
         content = (
