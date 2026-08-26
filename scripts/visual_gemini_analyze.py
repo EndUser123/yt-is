@@ -169,9 +169,12 @@ def call_gemini_video(
                 raise RuntimeError(f"unparseable reply: {text[:150]}")
             return verdict
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode(errors="replace")
-            last_err = f"HTTP {exc.code}: {body[:150]}"
-            if exc.code == 429 and ("billing" in body or "current quota" in body):
+            # err_body, NOT `body`: that name is the request payload from the
+            # enclosing scope — shadowing it made every retry post the prior
+            # error's decoded text instead of the JSON (2026-08-26 batch bug).
+            err_body = exc.read().decode(errors="replace")
+            last_err = f"HTTP {exc.code}: {err_body[:150]}"
+            if exc.code == 429 and ("billing" in err_body or "current quota" in err_body):
                 # Daily quota, not a per-minute spike — retries cannot help.
                 raise GeminiQuotaExceeded(last_err)
             if exc.code not in RETRY_STATUS:
