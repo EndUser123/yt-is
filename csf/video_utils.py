@@ -76,11 +76,13 @@ def extract_frames(
     target_count = max(int(duration * fps), 1)
     target_count = min(target_count, max_frames)
 
+    created_temp_dir = False
     if out_dir is not None:
         temp_dir = Path(out_dir)
         temp_dir.mkdir(parents=True, exist_ok=True)
     else:
         temp_dir = Path(tempfile.mkdtemp(prefix="video_frames_"))
+        created_temp_dir = True
 
     cmd = [
         "ffmpeg",
@@ -95,27 +97,39 @@ def extract_frames(
     ]
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError as exc:
-        raise RuntimeError("ffmpeg not found on PATH") from exc
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("ffmpeg not found on PATH") from exc
 
-    if result.returncode != 0:
-        raise NonFatalAnalysisError(
-            f"ffmpeg frame extraction failed for {video_path} "
-            f"(return code {result.returncode}): {result.stderr[:500]}"
-        )
+        if result.returncode != 0:
+            raise NonFatalAnalysisError(
+                f"ffmpeg frame extraction failed for {video_path} "
+                f"(return code {result.returncode}): {result.stderr[:500]}"
+            )
 
-    frames = sorted(temp_dir.glob("frame_*.jpg"))
+        frames = sorted(temp_dir.glob("frame_*.jpg"))
 
-    if not frames:
-        raise NonFatalAnalysisError(
-            f"No frames extracted for {video_path} — "
-            f"ffmpeg produced 0 output files"
-        )
+        if not frames:
+            raise NonFatalAnalysisError(
+                f"No frames extracted for {video_path} — "
+                f"ffmpeg produced 0 output files"
+            )
 
-    # Return only up to the computed target count
-    return frames[:target_count]
+        # Return only up to the computed target count
+        return frames[:target_count]
+    except BaseException:
+        if (
+            created_temp_dir
+            and temp_dir.exists()
+            and temp_dir != Path(tempfile.gettempdir())
+            and temp_dir.name.startswith("video_frames_")
+        ):
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise

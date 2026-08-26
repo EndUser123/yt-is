@@ -9,7 +9,9 @@ from unittest import mock
 import pytest
 
 # Ensure the package is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from csf.video_utils import extract_frames
 from csf.providers import NonFatalAnalysisError
@@ -174,4 +176,33 @@ class TestExtractFrames:
 
                 sig_handlers = [s for s, h in handler_registered if s == signal.SIGTERM]
                 assert not sig_handlers
+
+    def test_extract_frames_invalid_fps_raises_value_error(self):
+        """Non-positive fps raises ValueError."""
+        with pytest.raises(ValueError, match="fps must be positive"):
+            extract_frames("video.mp4", fps=0)
+        with pytest.raises(ValueError, match="fps must be positive"):
+            extract_frames("video.mp4", fps=-1.5)
+
+    def test_extract_frames_invalid_max_frames_raises_value_error(self):
+        """Non-positive max_frames raises ValueError."""
+        with pytest.raises(ValueError, match="max_frames must be positive"):
+            extract_frames("video.mp4", max_frames=0)
+        with pytest.raises(ValueError, match="max_frames must be positive"):
+            extract_frames("video.mp4", max_frames=-5)
+
+    @mock.patch("subprocess.run")
+    def test_temp_dir_cleaned_up_on_failure(self, mock_run, tmp_path: Path):
+        """When extract_frames fails, newly created temp dir is cleaned up."""
+        mock_run.return_value = self._mock_ffmpeg_result(returncode=1, stderr="fail")
+        target_temp = tmp_path / "video_frames_created_temp"
+        target_temp.mkdir()
+
+        with (
+            mock.patch("csf.video_utils._parse_duration_ffmpeg", return_value=1.0),
+            mock.patch("tempfile.mkdtemp", return_value=str(target_temp)),
+        ):
+            with pytest.raises(NonFatalAnalysisError):
+                extract_frames("video.mp4")
+            assert not target_temp.exists()
 
