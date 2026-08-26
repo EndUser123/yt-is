@@ -3224,12 +3224,15 @@ approved), agy infrastructure at 298ea36d (review runs 9caef895f992
 REJECTED a dropped-hunk blocker -> fixed -> 922a68025e13 approved).
 Suite on integrated tree: 2320 passed / 0 failed / 2 xfailed.
 
-WARNING to the session working in the primary checkout: your working
-tree's ef/warm_query_service.py (edited ~7h ago, TTL-cache feature) is
-based on PRE-fa29eea8 code and silently reverts the integrated /query
-top_k validation and honest-/health ordering in the LIVE service (it
-restarted on your working tree at ~03:30). Rebase your in-flight work
-onto current main before landing. Also: strict-xfail pins for the FTS
+RESOLVED 2026-08-26: the in-flight warm_query_service edit was
+captured verbatim (P:/packages/yt-is/.data/preserved/
+sibling-ttl-20260826.diff + full file copy), its feature set ported
+onto current main through the review gates (run-0aa0471966cf approved;
+the three pre-fa29eea8 regression hunks dropped), the primary file
+synced to main, and the service restarted + verified live (honest
+warming->ready health, top_k 400, channel-filtered exact query 8/8
+matching). The original session can diff its preserved copy against
+main to see exactly what was and wasn't carried. Also: strict-xfail pins for the FTS
 channel-underfill defect (0/8 results for a channel holding 10 matches)
 live in tests/ef/test_fts_channel_underfill_probe.py — the fix is the
 named follow-up task (bounded-overfetch design in its commit message).
