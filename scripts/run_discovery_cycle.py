@@ -109,7 +109,7 @@ def run_cycle(
     *,
     skip_sync: bool = False,
     allow_spend: bool = False,
-    open_review_page: bool = True,
+    open_review_page: bool = False,
 ) -> tuple[bool, dict[str, object]]:
     from csf.categorize import CATEGORIES
 
@@ -212,8 +212,9 @@ def run_cycle(
         steps.append({"step": "sync", "skipped": "run_sync false or --skip-sync"})
 
     # 7. Review page: always build after classification so the operator's
-    # manual pass is one double-click away; open it unless suppressed
-    # (scheduled runs pass --no-open).
+    # manual pass is one double-click away. NEVER auto-open: the default-open
+    # popped the operator's browser uninvited (2026-08-25); opening is a
+    # deliberate act (--open or settings "open_review_page": true).
     if ok and bool(settings.get("build_review_page", True)):
         build = _run_step(
             "build_review_page",
@@ -226,7 +227,7 @@ def run_cycle(
             run_dir,
         )
         steps.append(build)
-        if build["ok"] and open_review_page and bool(settings.get("open_review_page", True)):
+        if build["ok"] and open_review_page and bool(settings.get("open_review_page", False)):
             import subprocess as _sp
 
             try:
@@ -259,9 +260,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Authorize YouTube Data API spending for this cycle's discovery steps (per-run, dies with the process).",
     )
     parser.add_argument(
-        "--no-open",
+        "--open",
         action="store_true",
-        help="Build the review page but do not open a browser (for scheduled runs).",
+        help="Also open the built review page in the browser (default: never auto-open).",
     )
     args = parser.parse_args(argv)
 
@@ -283,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
         run_dir,
         skip_sync=args.skip_sync,
         allow_spend=args.allow_spend,
-        open_review_page=not args.no_open,
+        open_review_page=args.open,
     )
     report["created_at"] = datetime.now(timezone.utc).isoformat()
     report["settings_path"] = str(args.settings)
