@@ -1,5 +1,5 @@
 # yt-is Personal Intelligence — Discovery / Concept Intelligence State
-Updated: 2026-08-25 by formal-v4 evaluator + calibration experiment (NO_SIMPLE_POLICY_SUPPORTED)
+Updated: 2026-08-25 + stateful bakeoff (BAYESIAN_EPISODES_SUPPORTED, v2 spec proposed)
 
 ## Goal & constraints
 
@@ -297,6 +297,46 @@ Updated: 2026-08-25 by formal-v4 evaluator + calibration experiment (NO_SIMPLE_P
 ARCHITECT DECISION REQUIRED: NO_SIMPLE_POLICY_SUPPORTED — the simple
 count/ratio/channel family is insufficient. Next-stage options are in
 the packet's future-classes list; do not expand the frozen grid.
+
+- 2026-08-25: [seen] Stateful burst bakeoff EXECUTED (preregistered
+  plan sha256 a04ee198... frozen before results; consumed v4 as
+  TRAINING_DIAGNOSTIC_ONLY; artifacts under
+  P:/.data/yt-is/ef/concept-discovery-calibration/stateful-burst-v1/).
+  Donors assessed in discovery-burst-model-donors.md: pybursts Kleinberg
+  (MIT, dormant 2014) ported locally with a disclosed intra-bin-fraction
+  adaptation (pybursts rejects duplicate offsets — the plan's
+  incompatibility clause was invoked BEFORE any result); BOCD rejected
+  (sparse-stream unfit).
+- 2026-08-25: [seen] Results. Decay candidate D30-1.5 (half-life 30d,
+  support >= 1.5, lifetime >= 2): candidate recall 0.9048 at 79.1 mean
+  candidates (v1: 0.714 @ 67; hard-window C3: 1.0 @ 95.7).
+  Gamma-Poisson episodes (recent 60d vs prior 180d, Gamma(0.5,0.5)
+  prior, multiplier 1.5, threshold 0.80, channel floor 1, persistence
+  episodes): FULL-V4 emerging recall 0.5476, control emerging 0.0714,
+  separation 0.4762, perturbation20 candidate retention 0.8333
+  (emerging retention 0.381). 5-fold grouped OOF: emerging recall
+  0.5295, control 0.0717, separation 0.4578, candidate recall 0.9062;
+  the SAME configuration was selected in all 5 folds. 13/36 Bayesian
+  variants qualified. Kleinberg: never qualified in any fold (max
+  emerging recall 0.4048; Pareto only). Ablations: persistence is the
+  decisive component (OFF -> control rate 0.246, fails the 0.20 axis);
+  channel floor inert at floor 1; raw/distinct/capped counts nearly
+  identical (no single-publisher inflation). Conclusion class:
+  BAYESIAN_EPISODES_SUPPORTED.
+- 2026-08-25: [seen] Proposed burst-policy-v2 spec recorded at
+  stateful-burst-v1/proposed-burst-policy-v2.md (decay candidate +
+  Gamma-Poisson episodes + persistence lifecycle; source_types audit
+  only). NOT implemented. No production/evaluator/ledger/holdout
+  changes; no FORMAL run. holdout-v4 remains training-only forever;
+  promotion requires a NEW unseen holdout (fresh curator, fresh
+  evaluator) after v2 implementation and freeze.
+
+## Next action (stateful bakeoff concluded)
+
+ARCHITECT DECISION REQUIRED: approve/reject implementation of the
+proposed burst-policy-v2 specification. Independence boundary after
+freeze: fresh curator -> new unseen holdout -> different fresh
+evaluator.
 
 ## Next action
 
