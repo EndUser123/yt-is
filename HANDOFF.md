@@ -360,6 +360,20 @@ Shared next gate:
   0.344 > 0.20 pass-like axis -> STOPPED BEFORE FREEZE per packet.
   No freeze receipt; no tuning; architect decision required. Design
   doc docs/design/discovery-burst-policy-v2.md; benchmark v2 1.25x v1.
+- [seen] 2026-08-26 scope reconciliation + explicit-negative ground
+  truth (policy 1e454421..., 124 negatives) + evaluator-v4 (explicit
+  negatives drive selectivity; comparators demoted to secondary
+  diagnostic; ledger test override added). v4 NON_BLIND_DIAGNOSTIC:
+  candidate recall 1.0, emerging recall 0.833, perturbation20 0.952,
+  separation 0.253 > baselines — but EXPLICIT-NEGATIVE emerging rate
+  0.581 [0.493,0.664] >> 0.20 -> V2_SELECTIVITY_FAILURE_CONFIRMED.
+  STOP: no tuning, no freeze, architect decision required. Postmortem:
+  comparator contamination 28.6% of promoted uniques, but failure
+  dominated by genuine over-promotion (mechanism: pre-anchor evidence
+  inside the 60d window completes consecutive-positive promotion).
+  Blinded semantic audit (75% agreement) flags concept-extraction
+  quality as load-bearing. v1 remains production default; v2 params
+  unchanged; ledger untouched.
   Details: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
 
 ## Current authoritative snapshot (2026-08-12)

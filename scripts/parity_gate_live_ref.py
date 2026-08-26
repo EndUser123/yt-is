@@ -24,6 +24,17 @@ import evaluate_concept_discovery as ev  # noqa: E402
 from ef import burst_policy_v2 as bp2  # noqa: E402
 from ef import concept_discovery as cd  # noqa: E402
 
+def _load_targets_local(path):
+    """Local legacy-targets loader (evaluator-v4 removed load_targets;
+    concluded-campaign diagnostics keep a self-contained copy)."""
+    import json as _json
+    payload = _json.loads(Path(path).read_text(encoding="utf-8"))
+    out = []
+    for t in payload.get("targets", []):
+        t.setdefault("aliases", [])
+        out.append(t)
+    return out
+
 ART = Path("P:/.data/yt-is/ef/concept-discovery-eval/"
            "eval-20260825T114338-FORMAL")
 CAL = Path("P:/.data/yt-is/ef/concept-discovery-calibration/"
@@ -36,7 +47,7 @@ OFFSET = {"T-30": -30, "T": 0, "T+7": 7, "T+14": 14, "T+30": 30,
 
 def main():
     import sqlite3
-    targets = ev.load_targets(HOLDOUT)
+    targets = _load_targets_local(HOLDOUT)
     scor = {s["target_id"]: s["T"] for s in
             json.loads((ART / "target-scorability.json").read_text())}
     cat = sqlite3.connect(
