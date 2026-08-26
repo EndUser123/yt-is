@@ -47,10 +47,15 @@ def save_state(st: dict) -> None:
 
 
 def authority_watermark() -> str:
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
+    from csf.db_utils import open_sqlite_ro
+
+    db_path = authority.get_transcripts_db_path()
+    if not db_path.exists():
+        return ""
+    conn = open_sqlite_ro(db_path)
     try:
-        return conn.execute(
-            "select max(cached_at) from transcript_cache").fetchone()[0] or ""
+        row = conn.execute("select max(cached_at) from transcript_cache").fetchone()
+        return row[0] or "" if row else ""
     finally:
         conn.close()
 
@@ -64,12 +69,19 @@ def compute_lag(indexed_wm: str) -> dict:
     30s: the full-WAL count costs ~6s against the live 1.4GB DB and is
     polled repeatedly by status emission and staleness modes."""
     import time as _t
+    from csf.db_utils import open_sqlite_ro
+
     now = _t.monotonic()
     if (_LAG_CACHE["wm"] == indexed_wm
             and _LAG_CACHE["result"] is not None
             and now - _LAG_CACHE["at"] < _LAG_CACHE_S):
         return dict(_LAG_CACHE["result"])
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
+
+    db_path = authority.get_transcripts_db_path()
+    if not db_path.exists():
+        return {"index_lag_count": 0, "oldest_unindexed_at": None, "oldest_unindexed_age_s": None}
+
+    conn = open_sqlite_ro(db_path)
     try:
         n, oldest = conn.execute(
             "select count(*), min(cached_at) from transcript_cache "
