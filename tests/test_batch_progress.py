@@ -9,7 +9,7 @@ from unittest import mock
 
 import pytest
 
-sys.path.insert(0, str(Path(r"P:\\\\\\\packages\\yt-is").absolute()))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from csf.batch import analyze_videos_parallel
 
