@@ -98,7 +98,26 @@ full-coverage bootstrap implementer passes
 
 ## Next action
 
-Run a fresh, contamination-separated evaluator comparing the preserved top-25
-baseline against the full-coverage bootstrap on the private known-interest
-set, including perturbation/stability tests. Recommendation-ranking
-optimization remains blocked until that semantic recall gate passes.
+- 2026-08-26: [seen] Interest-recovery gate EVALUATED (fresh evaluator,
+  preregistration interest-recovery-v1 frozen pre-scoring) and FAILED.
+  Aggregate: legacy top-25 baseline recovered 1/42 known interests
+  (narrow half 0/14, provenance valid 1.0, explicit-negative rate 0.50
+  after the review-fixed rescore, 0.083 pre-fix); the full-coverage bootstrap completed 0/3 attempts — every
+  attempt failed closed on provider contract violations (dangling
+  related_to references twice, invalid temporal_state enum once) before
+  reconciliation. Full-coverage recall is therefore unavailable, not
+  merely low. Deterministic-replay stability of scoring verified
+  identical; the four preregistered perturbation schemes were not
+  executable without a completed bootstrap run.
+- Structural finding: the bootstrap's fail-closed validation is working
+  as designed (nothing invalid persisted), but per-batch provider
+  noncompliance with the strict fragment contract makes a 13-batch run
+  plus reconciliation unable to complete. The bottleneck is provider
+  contract compliance at the batch seam, not coverage planning.
+- Recommendation optimization remains blocked. Next architecture fork:
+  either raise batch-level provider contract compliance (prompt-side
+  compliance engineering, NOT semantic tuning — e.g. structural
+  few-shot, repair-and-retry of invalid batches, or per-field
+  validation relaxation decisions owned by the architect) or accept the
+  legacy arm's output as the only completable inference and re-scope
+  the gate. Both are architect decisions; the evaluator did not tune.
