@@ -123,15 +123,25 @@ def ensure_vlm_table(conn: sqlite3.Connection) -> None:
 
 
 def select_candidates(
-    conn: sqlite3.Connection, *, days: int, limit: int
+    conn: sqlite3.Connection, *, days: int, limit: int, include_queued: bool = False
 ) -> list[tuple[str, str | None]]:
+    """Recent completes for scoring.
+
+    The thumbnail URL is constructible from video_id alone, so NULL-thumbnail
+    rows (the 08-17..19 ingest wave is 100% NULL) are still scoreable — do
+    not filter on the column. ``include_queued`` scores already-queued videos
+    too (signal completeness); enqueue stays guarded by the one-job-per-video
+    invariant, so re-enqueue is impossible.
+    """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    queued_clause = "" if include_queued else (
+        "AND NOT EXISTS (SELECT 1 FROM visual_jobs v WHERE v.video_id = a.video_id)"
+    )
     rows = conn.execute(
-        """SELECT a.video_id, a.thumbnail FROM analysis_status a
+        f"""SELECT a.video_id, a.thumbnail FROM analysis_status a
            WHERE a.status = 'complete'
              AND a.updated_at >= ?
-             AND a.thumbnail IS NOT NULL
-             AND NOT EXISTS (SELECT 1 FROM visual_jobs v WHERE v.video_id = a.video_id)
+             {queued_clause}
              AND NOT EXISTS (SELECT 1 FROM visual_vlm_scores s WHERE s.video_id = a.video_id)
            ORDER BY a.updated_at DESC
            LIMIT ?""",
@@ -191,6 +201,7 @@ def score_batch(
     min_density: int,
     gap_s: float,
     max_consecutive_failures: int,
+    include_queued: bool = False,
 ) -> dict:
     conn = sqlite3.connect(str(db_path), timeout=10.0)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -198,7 +209,7 @@ def score_batch(
     ensure_vlm_table(conn)
     run_v3_visual_queue_migration(db_path)
 
-    candidates = select_candidates(conn, days=days, limit=limit)
+    candidates = select_candidates(conn, days=days, limit=limit, include_queued=include_queued)
     scored = enqueued = failures = 0
     consecutive = 0
     for video_id, thumb_url in candidates:
@@ -386,6 +397,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-density", type=int, default=5)
     parser.add_argument("--gap-s", type=float, default=0.5)
     parser.add_argument("--max-consecutive-failures", type=int, default=5)
+    parser.add_argument("--include-queued", action="store_true",
+                        help="also score videos already in visual_jobs (signal completeness; "
+                             "re-enqueue stays blocked by the one-job-per-video invariant)")
     parser.add_argument("--calibrate", action="store_true",
                         help="print calibration summary from existing scores, no API calls")
     args = parser.parse_args(argv)
@@ -401,6 +415,7 @@ def main(argv: list[str] | None = None) -> int:
             min_density=args.min_density,
             gap_s=args.gap_s,
             max_consecutive_failures=args.max_consecutive_failures,
+            include_queued=args.include_queued,
         )
     print(json.dumps(result, indent=1))
     return 0
