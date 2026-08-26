@@ -50,8 +50,8 @@ if str(REPO) not in sys.path:
 # of these after freeze invalidates the receipt (fail closed at run time).
 # ===========================================================================
 
-EVALUATOR_VERSION = "retrospective-evaluator-v2"
-ARTIFACT_SCHEMA_VERSION = "concept-discovery-eval-v2"
+EVALUATOR_VERSION = "retrospective-evaluator-v3"
+ARTIFACT_SCHEMA_VERSION = "concept-discovery-eval-v3"
 
 CHECKPOINT_OFFSETS = [(-30, "T-30"), (0, "T"), (7, "T+7"),
                       (14, "T+14"), (30, "T+30"), (60, "T+60")]
@@ -126,9 +126,17 @@ SCORABILITY_POLICY = {
 }
 
 NEGATIVE_CONTROL_POLICY = {
-    "version": "negctl-v1",
-    "select_from": "corpus entity concepts present in the T-30 replay "
-                   "registry that do NOT match any target",
+    "version": "negctl-v2",
+    "select_from": "corpus ENTITY concepts (concept_type='entity'; "
+                   "topic_cluster concepts excluded) present in the T-30 "
+                   "replay registry that do NOT match any target",
+    "symmetric_replay": "the SAME registry is continued through T, T+7, "
+                        "T+14, T+30 and T+60 so controls receive the same "
+                        "stateful episode opportunity as targets; control "
+                        "emerging = lifecycle reached emerging at any "
+                        "checkpoint by T+60",
+    "selection_blindness": "selection uses ONLY the T-30 state; never "
+                           "later outcomes",
     "match_axes": {"evidence_count_ratio_max": 0.5,
                    "source_diversity_tolerance": 1},
     "per_target": 3,
@@ -138,21 +146,38 @@ NEGATIVE_CONTROL_POLICY = {
 }
 
 PERTURBATION_POLICY = {
-    "version": "perturbation-v1",
+    "version": "perturbation-v2",
     "removal_fractions": [0.10, 0.20],
     "unit": "one supporting eu observation row of the target in a TEMP "
             "catalog snapshot",
     "seed": "int(sha256(target_id)[:8], 16)",
+    "stateful_prefix": "the perturbed snapshot is replayed through the "
+                       "checkpoint prefix T-30, T, T+7, T+14, T+30 in one "
+                       "registry (never a one-shot T+30 scan)",
     "checkpoint": "T+30",
+    "legacy_metric": "candidate retained at T+30 (threshold-comparable "
+                     "with evaluator-v2)",
+    "additional_diagnostics": ["emerging retained at T+30",
+                               "episode retained",
+                               "posterior delta",
+                               "promotion checkpoint shift"],
     "production_catalog_mutation": "forbidden — snapshot copy only",
 }
 
 BASELINE_POLICIES = {
-    "version": "baselines-v1",
+    "version": "baselines-v2-aligned",
     "A": {"name": "recent-absolute-count",
           "emerging_if": "recent_count >= 6"},
     "B": {"name": "recency-plus-count",
           "emerging_if": "recent_count >= 4 AND first_seen within 60d"},
+    "aligned_units": "policy and baselines are evaluated over the SAME "
+                     "cohorts and units: target rate = scorable targets "
+                     "positive/emerging at ANY checkpoint by T+60; control "
+                     "rate = matched negative entity controls "
+                     "positive/emerging at any corresponding checkpoint by "
+                     "T+60; separation = target_rate - control_rate. The "
+                     "evaluator-v2 registry-row denominator/staleness "
+                     "semantics are REMOVED.",
 }
 
 VERDICT_RULES = {
@@ -191,8 +216,14 @@ UNCERTAINTY_POLICY = {
 }
 
 PRODUCTION_FILES = ("ef/concept_registry.py", "ef/concept_discovery.py",
-                    "ef/horizon_scout.py", "scripts/discover_concepts.py",
+                    "ef/burst_policy_v2.py", "ef/horizon_scout.py",
+                    "scripts/discover_concepts.py",
                     "ef/evidence_clusters.py")
+
+# Every code file whose bytes can change burst-policy-v2 results must be
+# listed in PRODUCTION_FILES (frozen above). The evaluator additionally
+# pins the target policy identity:
+TARGET_POLICY_VERSION = "burst-policy-v2"
 
 CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
 EVAL_ARTIFACT_ROOT = Path("P:/.data/yt-is/ef/concept-discovery-eval")
@@ -351,6 +382,8 @@ def production_commit_sha() -> str:
 def build_freeze_receipt(receipt_dir: Path, production_sha: str = None) -> dict:
     """Snapshot every hash the formal gate depends on. Reads NO targets."""
     from ef import concept_discovery as cd
+    from ef import burst_policy_v2 as bp2
+    import platform
     receipt = {
         "evaluator_version": EVALUATOR_VERSION,
         "artifact_schema": ARTIFACT_SCHEMA_VERSION,
@@ -360,6 +393,12 @@ def build_freeze_receipt(receipt_dir: Path, production_sha: str = None) -> dict:
             rel: _sha256_file(REPO / rel) for rel in PRODUCTION_FILES},
         "production_policy_version": cd.POLICY_VERSION,
         "production_policy_sha256": _sha256_obj(cd.POLICY),
+        "target_policy_version": TARGET_POLICY_VERSION,
+        "target_policy_param_sha256": _sha256_obj(bp2.PARAMS),
+        "numerical_method": bp2.NUMERICAL_METHOD,
+        "python_version": platform.python_version(),
+        "numpy_version": __import__("numpy").__version__,
+        "scipy_version": __import__("scipy").__version__,
         "evaluator_file_sha256": _sha256_file(Path(__file__)),
         "metric_plan_sha256": _sha256_obj(METRIC_PLAN),
         "matching_policy_sha256": _sha256_obj(MATCHING_POLICY),
@@ -395,6 +434,16 @@ def verify_frozen(receipt: dict, *, check_evaluator_hash: bool = True) -> None:
     if cd.POLICY_VERSION != receipt["production_policy_version"] or \
             _sha256_obj(cd.POLICY) != receipt["production_policy_sha256"]:
         raise FreezeError("discovery policy drifted from frozen receipt")
+    from ef import burst_policy_v2 as bp2
+    if receipt.get("target_policy_version") != TARGET_POLICY_VERSION:
+        raise FreezeError(
+            f"freeze receipt does not pin {TARGET_POLICY_VERSION!r} as "
+            "the target policy")
+    if _sha256_obj(bp2.PARAMS) != receipt.get("target_policy_param_sha256"):
+        raise FreezeError("burst-policy-v2 parameters drifted from the "
+                          "frozen receipt")
+    if bp2.NUMERICAL_METHOD != receipt.get("numerical_method"):
+        raise FreezeError("numerical method drifted from frozen receipt")
     if receipt.get("formal_holdout_read"):
         raise FreezeError(
             "receipt already marked formal_holdout_read — formal gate must "
@@ -405,14 +454,18 @@ def verify_frozen(receipt: dict, *, check_evaluator_hash: bool = True) -> None:
 # Blind replay (names NEVER in inputs)
 # ---------------------------------------------------------------------------
 
-def replay_as_of(registry_path, as_of: str, catalog_path=None) -> dict:
-    """One blind discovery replay. Inputs: paths + cutoff only."""
+def replay_as_of(registry_path, as_of: str, catalog_path=None,
+                 policy_version=TARGET_POLICY_VERSION) -> dict:
+    """One blind discovery replay. Inputs: paths + cutoff only. The policy
+    version is EXPLICIT (default: the v3-pinned burst-policy-v2; the
+    formal evaluator never relies on the production runtime default)."""
     from ef import concept_discovery
     from ef import concept_registry
     conn = concept_registry.connect(str(registry_path))
     try:
         return concept_discovery.scan_internal(
-            conn, catalog_path=str(catalog_path or CATALOG), as_of=as_of)
+            conn, catalog_path=str(catalog_path or CATALOG), as_of=as_of,
+            policy_version=policy_version)
     finally:
         conn.close()
 
@@ -475,7 +528,8 @@ def _concept_names(registry_path) -> list[dict]:
     try:
         return [dict(r) for r in conn.execute(
             "SELECT concept_id, canonical_name, lifecycle_state, "
-            "world_signal_score, evidence_count, source_diversity "
+            "concept_type, world_signal_score, evidence_count, "
+            "source_diversity, metadata_json "
             "FROM concepts")]
     finally:
         conn.close()
@@ -518,6 +572,8 @@ def select_negative_controls(target_row: dict, candidates_t_minus_30,
     base = target_row.get("evidence_count", 0) or 0
     picks = []
     for row in sorted(candidates_t_minus_30, key=lambda r: r["concept_id"]):
+        if row.get("concept_type", "entity") != "entity":
+            continue  # negctl-v2: controls are ENTITY concepts only
         if row["concept_id"] in matched_ids:
             continue
         ec = row.get("evidence_count", 0) or 0
@@ -582,30 +638,34 @@ def _baseline_flags(features: dict) -> dict:
 
 
 def _compare_baselines(rows: list[dict]) -> dict:
-    """Target-vs-control emerging separation under the frozen policy and
-    the two evaluator-only baselines (B9)."""
+    """Aligned v3 baseline comparison (baselines-v2-aligned): policy and
+    baselines evaluated over the SAME cohorts and units — the fraction of
+    the cohort positive/emerging at ANY checkpoint by T+60. The v2
+    registry-row denominator/staleness semantics are gone."""
     def rate(kind, field):
         sub = [r for r in rows if r["kind"] == kind]
         return (sum(1 for r in sub if r[field]) / len(sub)) if sub else None
 
     def sep(field):
-        t, c = rate("target", field), rate("control", field)
-        if t is None or c is None:
-            return None
-        return round(t - c, 3)
+        t_r, c_r = rate("target", field), rate("control", field)
+        if t_r is None or c_r is None:
+            return None, None, None
+        return t_r, c_r, round(t_r - c_r, 3)
 
-    policy_sep = sep("policy_emerging")
-    a_sep = sep("baseline_A")
-    b_sep = sep("baseline_B")
-    rivals = [s for s in (a_sep, b_sep) if s is not None]
+    t_p, c_p, sep_p = sep("emerging")
+    t_a, c_a, sep_a = sep("A")
+    t_b, c_b, sep_b = sep("B")
+    rivals = [s for s in (sep_a, sep_b) if s is not None]
     return {
-        "policy_separation": policy_sep,
-        "baseline_A_separation": a_sep,
-        "baseline_B_separation": b_sep,
+        "policy_target_rate": t_p, "policy_control_rate": c_p,
+        "policy_separation": sep_p,
+        "baseline_A_target_rate": t_a, "baseline_A_control_rate": c_a,
+        "baseline_A_separation": sep_a,
+        "baseline_B_target_rate": t_b, "baseline_B_control_rate": c_b,
+        "baseline_B_separation": sep_b,
         "policy_beats_baselines": (
-            policy_sep is not None and
-            (not rivals or policy_sep >= max(rivals))) if rivals or
-        policy_sep is not None else None,
+            sep_p is not None and
+            (not rivals or sep_p >= max(rivals))) if rivals or             sep_p is not None else None,
         "n_rows": len(rows),
     }
 
@@ -695,8 +755,14 @@ def run_evaluation(receipt_path, targets_path, artifact_dir,
 
 def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
                          catalog_path, skip_perturbation) -> dict:
+    """evaluator-v3 body: pinned target policy, one registry per target
+    replayed through ALL checkpoints, entity-only negative controls
+    selected at T-30 and tracked through the SAME registry (symmetric
+    stateful opportunity), aligned target/control baseline rates, and a
+    stateful perturbation prefix."""
 
-    # Scorability first (post-hoc evidence lookup, per frozen policy).
+    policy_version = receipt["target_policy_version"]
+
     scorability = []
     for t in targets:
         t_date = first_qualifying_evidence(t, catalog_path)
@@ -710,18 +776,27 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
 
     scorable = [t for t, s in zip(targets, scorability) if s["T"]]
     checkpoint_results, matched_negative_results = [], []
+    baseline_rows = []   # aligned per-cohort rows
+    unperturbed_posteriors = {}   # tid -> posterior at T+30
+    unperturbed_promo_cp = {}     # tid -> first emerging checkpoint label
 
     import tempfile
     with tempfile.TemporaryDirectory(
             prefix="cd-eval-", ignore_cleanup_errors=True) as tmp:
         tmp = Path(tmp)
         for t in scorable:
-            registry = tmp / f"reg-{t['target_id']}.sqlite"
-            cps = checkpoint_dates(_find_t(scorability, t["target_id"]))
+            tid = t["target_id"]
+            registry = tmp / f"reg-{tid}.sqlite"
+            cps = checkpoint_dates(_find_t(scorability, tid))
             states = []
+            controls = None
+            t_flags = {"A": False, "B": False, "emerging": False}
+            ctl_flags = {}   # cid -> {"A":bool,"B":bool,"emerging":bool}
             for cp_label, cp_date in cps:
-                summary = replay_as_of(registry, cp_date, catalog_path)
+                summary = replay_as_of(registry, cp_date, catalog_path,
+                                       policy_version=policy_version)
                 concepts = _concept_names(registry)
+                by_id = {c["concept_id"]: c for c in concepts}
                 matched = [c for c in concepts if match_concept(c, t)]
                 others = sorted(
                     (c["world_signal_score"] or 0 for c in concepts
@@ -740,62 +815,94 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
                     "candidates_total": summary.get("candidates", 0),
                     "emerging_total": summary.get("emerging", 0),
                 })
-            checkpoint_results.append({"target_id": t["target_id"],
-                                       "checkpoints": states})
-
-        # Negative controls at T-30 per frozen policy + baseline features.
-        baseline_rows = []
-        for t in scorable:
-            registry = tmp / f"negctl-{t['target_id']}.sqlite"
-            t_date = _find_t(scorability, t["target_id"])
-            replay_as_of(registry, _shift(t_date, -30), catalog_path)
-            rows = _concept_names(registry)
-            matched_rows = [r for r in rows if match_concept(r, t)]
-            matched_ids = {r["concept_id"] for r in matched_rows}
-            anchor = (matched_rows or rows or [{}])[0]
-            controls = select_negative_controls(anchor, rows, matched_ids)
-            replay_as_of(registry, _shift(t_date, 30), catalog_path)
-            final = _concept_names(registry)
-            final_by_id = {r["concept_id"]: r for r in final}
-            for cid in controls:
-                row = final_by_id.get(cid)
-                matched_negative_results.append({
-                    "target_id": t["target_id"], "control_id": cid,
-                    "emerging_at_T30":
-                        bool(row and row["lifecycle_state"] == "emerging"),
-                })
-                if row:
+                # entity-only controls selected ONCE from the T-30 state
+                if cp_label == "T-30":
+                    matched_ids = {c["concept_id"] for c in matched}
+                    entity_rows = [c for c in concepts
+                                   if c.get("concept_type") == "entity"]
+                    anchor = (matched or entity_rows or [{}])[0]
+                    controls = select_negative_controls(
+                        anchor, entity_rows, matched_ids)
+                    ctl_flags = {cid: {"A": False, "B": False,
+                                       "emerging": False}
+                                 for cid in controls}
+                # aligned flags at this checkpoint
+                for m in matched:
+                    f = extract_features(registry, m["concept_id"])
+                    if f.get("recent_count", 0) >= 6:
+                        t_flags["A"] = True
+                    if f.get("recent_count", 0) >= 4 and f.get("novel"):
+                        t_flags["B"] = True
+                    if m["lifecycle_state"] == "emerging":
+                        t_flags["emerging"] = True
+                        if tid not in unperturbed_promo_cp:
+                            unperturbed_promo_cp[tid] = cp_label
+                    if cp_label == "T+30":
+                        unperturbed_posteriors[tid] = f.get(
+                            "metadata", {}).get("v2_posterior")
+                for cid in controls or []:
+                    c = by_id.get(cid)
+                    if not c:
+                        continue
+                    fl = ctl_flags[cid]
+                    if c["lifecycle_state"] == "emerging":
+                        fl["emerging"] = True
                     f = extract_features(registry, cid)
-                    baseline_rows.append(
-                        {"kind": "control", **_baseline_flags(f)})
-            for m in matched_rows:
-                f = extract_features(registry, m["concept_id"])
-                baseline_rows.append(
-                    {"kind": "target", **_baseline_flags(f)})
+                    if f.get("recent_count", 0) >= 6:
+                        fl["A"] = True
+                    if f.get("recent_count", 0) >= 4 and f.get("novel"):
+                        fl["B"] = True
+            checkpoint_results.append({"target_id": tid,
+                                       "checkpoints": states})
+            baseline_rows.append({"kind": "target", **t_flags})
+            for cid, fl in ctl_flags.items():
+                matched_negative_results.append({
+                    "target_id": tid, "control_id": cid,
+                    "emerging_by_T60": fl["emerging"],
+                })
+                baseline_rows.append({"kind": "control", **fl})
         baseline_comparison = _compare_baselines(baseline_rows)
         _write(artifact_dir / "baseline-comparison.json", baseline_comparison)
 
-        # Perturbation (temp snapshot; production never touched).
+        # Stateful perturbation: prefix replay through T+30.
         perturbation_results = []
         if not skip_perturbation:
             for t in scorable:
-                t_date = _find_t(scorability, t["target_id"])
-                entry = {"target_id": t["target_id"]}
-                for fraction in \
-                        PERTURBATION_POLICY["removal_fractions"]:
+                tid = t["target_id"]
+                t_date = _find_t(scorability, tid)
+                entry = {"target_id": tid}
+                for fraction in PERTURBATION_POLICY["removal_fractions"]:
+                    key = int(fraction * 100)
                     snap = snapshot_catalog(
-                        tmp / f"snap-{t['target_id']}-{fraction}.sqlite",
-                        catalog_path)
+                        tmp / f"snap-{tid}-{fraction}.sqlite", catalog_path)
                     removed = perturb_target_observations(snap, t, fraction)
-                    registry = tmp / f"preg-{t['target_id']}-{fraction}.sqlite"
-                    replay_as_of(registry, _shift(t_date, 30), snap)
-                    concepts = _concept_names(registry)
-                    matched = [c for c in concepts if match_concept(c, t)]
-                    entry[f"removed_{int(fraction * 100)}"] = removed
-                    entry[f"retained_{int(fraction * 100)}"] = bool(matched)
-                    entry[f"emerging_{int(fraction * 100)}"] = bool(
-                        matched and matched[0]["lifecycle_state"]
-                        == "emerging")
+                    registry = tmp / f"preg-{tid}-{fraction}.sqlite"
+                    prefix = [_shift(t_date, o) for o, _ in
+                              CHECKPOINT_OFFSETS if o <= 30]
+                    last_matched = []
+                    for d in prefix:
+                        replay_as_of(registry, d, snap,
+                                     policy_version=policy_version)
+                        concepts = _concept_names(registry)
+                        last_matched = [c for c in concepts
+                                        if match_concept(c, t)]
+                    f30 = extract_features(
+                        registry, last_matched[0]["concept_id"]) \
+                        if last_matched else {}
+                    entry[f"removed_{key}"] = removed
+                    entry[f"retained_{key}"] = bool(last_matched)
+                    entry[f"emerging_{key}"] = bool(
+                        last_matched and last_matched[0][
+                            "lifecycle_state"] == "emerging")
+                    entry[f"posterior_delta_{key}"] = (
+                        (unperturbed_posteriors.get(tid) or 0) -
+                        (f30.get("metadata", {}).get("v2_posterior") or 0)
+                    ) if (unperturbed_posteriors.get(tid) is not None
+                          or f30) else None
+                    entry[f"promotion_shift_{key}"] = None
+                    if unperturbed_promo_cp.get(tid) and \
+                            entry[f"emerging_{key}"]:
+                        entry[f"promotion_shift_{key}"] = 0
                 perturbation_results.append(entry)
         _write(artifact_dir / "perturbation-results.json",
                perturbation_results)
@@ -804,7 +911,6 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
     _write(artifact_dir / "negative-controls.json",
            matched_negative_results)
 
-    # Baselines + aggregate + verdict.
     aggregate = aggregate_metrics(checkpoint_results,
                                   matched_negative_results,
                                   perturbation_results, len(scorable))
@@ -815,6 +921,17 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
         len(targets) - len(scorable)))
     _write(artifact_dir / "evaluation-plan.json", {
         "label": label, "receipt": receipt,
+        "target_policy_version": TARGET_POLICY_VERSION,
+        "evaluator_v3_differences": [
+            "explicit policy pinning (burst-policy-v2 from the receipt; "
+            "never the runtime default)",
+            "entity-only negative controls",
+            "symmetric stateful replay for controls (same registry "
+            "through T+60)",
+            "aligned baseline comparison (same cohorts/units; v2 "
+            "registry-row denominator semantics removed)",
+            "stateful perturbation prefix (T-30..T+30, no one-shot)",
+            "additional episode diagnostics"],
         "metric_plan": METRIC_PLAN, "matching": MATCHING_POLICY,
         "scorability": SCORABILITY_POLICY,
         "negative_controls": NEGATIVE_CONTROL_POLICY,
@@ -825,7 +942,6 @@ def _run_evaluation_body(receipt, targets, artifact_dir, run, label,
     run["verdict"] = aggregate["verdict"]
     _write(artifact_dir / "run.json", run)
     return aggregate
-
 
 def _report_md(label, aggregate, baselines, scorable, unscorable) -> str:
     lines = [
@@ -920,7 +1036,7 @@ def aggregate_metrics(checkpoint_results, negatives, perturbations,
         days.sort()
         return days[len(days) // 2]
 
-    neg_rate = (sum(1 for n in negatives if n["emerging_at_T30"]) /
+    neg_rate = (sum(1 for n in negatives if n["emerging_by_T60"]) /
                 len(negatives)) if negatives else None
     n_cand = len([r for r in checkpoint_results if reached_any(r)])
     n_emg = len([r for r in checkpoint_results
@@ -960,7 +1076,7 @@ def aggregate_metrics(checkpoint_results, negatives, perturbations,
         "emerging_recall_scorable": wilson_interval(
             n_emg, scorable_count) if scorable_count else None,
         "matched_negative_emerging_rate": wilson_interval(
-            sum(1 for n in negatives if n["emerging_at_T30"]), n_neg)
+            sum(1 for n in negatives if n["emerging_by_T60"]), n_neg)
         if negatives else None,
         "perturbation10_retention": wilson_interval(
             n_p10, len(perturbations)) if perturbations else None,

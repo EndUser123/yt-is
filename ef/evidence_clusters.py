@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
@@ -98,7 +99,7 @@ def evidence_cluster_inventory(min_member_count: int = 40,
     computed here: it is hydration-only work.
     """
     # "Dashboard top-N stays allowed; inference bootstrap top-N is not."
-    with _catalog(catalog_path) as c:
+    with closing(_catalog(catalog_path)) as c:
         total_non_series, series_n = c.execute(
             "SELECT SUM(is_series = 0), SUM(is_series = 1)"
             " FROM topic_clusters").fetchone()
@@ -187,7 +188,7 @@ def hydrate_evidence_clusters(cluster_ids, min_member_count: int = 40,
     ids = sorted({int(i) for i in cluster_ids})
     if not ids:
         return []
-    with _catalog(catalog_path) as c:
+    with closing(_catalog(catalog_path)) as c:
         rows = c.execute(
             "SELECT cluster_id, label, member_count, video_count,"
             " top_terms, is_series FROM topic_clusters"
@@ -407,7 +408,8 @@ def coverage_chain() -> dict:
     """Corpus universe → acquisition → indexed → evidence → clusters.
     The review's prerequisite: an absent interest may be missing data,
     not absent interest. Every /interests render carries this chain."""
-    with sqlite3.connect(f"file:{BATCH}?mode=ro", uri=True, timeout=30) as b:
+    with closing(sqlite3.connect(f"file:{BATCH}?mode=ro", uri=True,
+                               timeout=30)) as b:
         b.execute("PRAGMA busy_timeout=30000")
         tracked = b.execute(
             "SELECT COUNT(*) FROM channel_metadata").fetchone()[0]
@@ -418,7 +420,7 @@ def coverage_chain() -> dict:
         complete = b.execute(
             "SELECT COUNT(*) FROM analysis_status WHERE status='complete'"
         ).fetchone()[0]
-    with _catalog() as c:
+    with closing(_catalog()) as c:
         indexed = c.execute("SELECT COUNT(*) FROM eu").fetchone()[0]
         clusters = c.execute(
             "SELECT COUNT(*) FROM topic_clusters WHERE is_series=0"

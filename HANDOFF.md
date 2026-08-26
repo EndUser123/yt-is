@@ -350,6 +350,16 @@ Shared next gate:
   stateful-burst-v1/proposed-burst-policy-v2.md — NOT implemented;
   architect approval required; promotion needs a NEW unseen holdout
   after freeze. No production/evaluator/ledger changes.
+- [seen] 2026-08-26 burst-policy-v2 SHADOW implemented (default remains
+  v1); closed-form posterior adopted (6.6e-13 parity vs GL-256, zero
+  decision diffs); parity gate PASS vs live-catalog reference (0/0);
+  evaluator-v3 implemented (pinned policy, entity-only symmetric
+  controls, aligned baselines, stateful perturbation). v4
+  NON_BLIND_DIAGNOSTIC: candidate recall 1.0, emerging recall 0.833,
+  perturbation20 0.952, separation 0.489 — BUT control emerging rate
+  0.344 > 0.20 pass-like axis -> STOPPED BEFORE FREEZE per packet.
+  No freeze receipt; no tuning; architect decision required. Design
+  doc docs/design/discovery-burst-policy-v2.md; benchmark v2 1.25x v1.
   Details: `docs/handoffs/interest-intelligence/project-state-discovery.md`.
 
 ## Current authoritative snapshot (2026-08-12)

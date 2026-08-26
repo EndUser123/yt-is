@@ -19,35 +19,6 @@ from csf.sharded_lane_series import (
 )
 
 
-def _lane_entry(
-    tmp_path: Path,
-    *,
-    lane: str,
-    account_class: str,
-    profiles: tuple[str, ...],
-    browser_root: str,
-    browser_profile_directory: str,
-) -> dict[str, object]:
-    """Build a hermetic lane-config entry for parser tests."""
-    return {
-        "lane": lane,
-        "account_class": account_class,
-        "workers": len(profiles),
-        "notebooklm_profile_prefix": profiles[0].rsplit("-", 1)[0],
-        "notebooklm_profiles": list(profiles),
-        "browser_profile_root": str(tmp_path / "browser" / browser_root),
-        "browser_profile_directory": browser_profile_directory,
-        "worker_state_root": str(tmp_path / "states" / lane),
-        "notebook_prefix": f"benchmark-shard-{lane}",
-    }
-
-
-def _write_lane_config(tmp_path: Path, entries: list[dict[str, object]]) -> Path:
-    path = tmp_path / "lanes.json"
-    path.write_text(json.dumps(entries), encoding="utf-8")
-    return path
-
-
 def test_load_lane_configs_requires_distinct_profile_and_state_namespaces(tmp_path):
     config_path = tmp_path / "lanes.json"
     config_path.write_text(
@@ -152,38 +123,37 @@ def test_load_lane_configs_accepts_same_browser_root_with_distinct_directories(t
     assert lanes[1].coordinator_profile == "default"
 
 
+def _lane_json(lane, account_class, profiles, browser_root,
+               browser_directory, state_root, prefix):
+    return {
+        "lane": lane,
+        "account_class": account_class,
+        "workers": len(profiles),
+        "notebooklm_profiles": list(profiles),
+        "browser_profile_root": browser_root,
+        "browser_profile_directory": browser_directory,
+        "worker_state_root": state_root,
+        "notebook_prefix": prefix,
+    }
+
+
 def test_pro_free_lane_config_uses_dedicated_browser_roots(tmp_path):
-    config_path = _write_lane_config(
-        tmp_path,
-        [
-            _lane_entry(
-                tmp_path,
-                lane="a_hominidae_pro",
-                account_class="pro",
-                profiles=(
-                    "ytis-pro-worker-01",
-                    "ytis-pro-worker-02",
-                    "ytis-pro-worker-03",
-                    "ytis-pro-worker-04",
-                ),
-                browser_root="notebooklm-pro",
-                browser_profile_directory="Profile",
-            ),
-            _lane_entry(
-                tmp_path,
-                lane="troup_hominidae_free",
-                account_class="free",
-                profiles=(
-                    "ytis-free-worker-01",
-                    "ytis-free-worker-02",
-                    "ytis-free-worker-03",
-                    "ytis-free-worker-04",
-                ),
-                browser_root="notebooklm-free",
-                browser_profile_directory="Default",
-            ),
-        ],
-    )
+    # hermetic rebuild of the pro/free lane pair: the old version read
+    # P:\packages\yt-is\.logs\... artifacts from the MAIN checkout, so the
+    # suite only passed on the operator machine with those artifacts present
+    config_path = tmp_path / "pro_free_lanes.json"
+    config_path.write_text(json.dumps([
+        _lane_json("a_hominidae_pro", "pro",
+                   [f"ytis-pro-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-pro", "Profile",
+                   str(tmp_path / "pro_states"),
+                   "benchmark-shard-a-hominidae-pro"),
+        _lane_json("troup_hominidae_free", "free",
+                   [f"ytis-free-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free", "Default",
+                   str(tmp_path / "free_states"),
+                   "benchmark-shard-troup-hominidae-free"),
+    ]), encoding="utf-8")
     lanes = load_lane_configs(config_path)
 
     assert len(lanes) == 2
@@ -224,35 +194,24 @@ def test_load_lane_configs_repairs_overescaped_windows_paths(tmp_path):
 
 
 def test_pro_free_hotmail_lane_config_includes_second_free_account(tmp_path):
-    config_path = _write_lane_config(
-        tmp_path,
-        [
-            _lane_entry(
-                tmp_path,
-                lane="a_hominidae_pro",
-                account_class="pro",
-                profiles=tuple(f"ytis-pro-worker-{i:02d}" for i in range(1, 5)),
-                browser_root="notebooklm-pro",
-                browser_profile_directory="Profile",
-            ),
-            _lane_entry(
-                tmp_path,
-                lane="troup_hominidae_free",
-                account_class="free",
-                profiles=tuple(f"ytis-free-worker-{i:02d}" for i in range(1, 5)),
-                browser_root="notebooklm-free",
-                browser_profile_directory="Default",
-            ),
-            _lane_entry(
-                tmp_path,
-                lane="brsthomson_hotmail_free",
-                account_class="free",
-                profiles=tuple(f"ytis-free2-worker-{i:02d}" for i in range(1, 5)),
-                browser_root="notebooklm-free-2",
-                browser_profile_directory="Default",
-            ),
-        ],
-    )
+    config_path = tmp_path / "pro_free_hotmail_lanes.json"
+    config_path.write_text(json.dumps([
+        _lane_json("a_hominidae_pro", "pro",
+                   [f"ytis-pro-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-pro", "Profile",
+                   str(tmp_path / "pro_states"),
+                   "benchmark-shard-a-hominidae-pro"),
+        _lane_json("troup_hominidae_free", "free",
+                   [f"ytis-free1-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free", "Default",
+                   str(tmp_path / "free1_states"),
+                   "benchmark-shard-troup-hominidae-free"),
+        _lane_json("brsthomson_hotmail_free", "free",
+                   [f"ytis-free2-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free-2", "Default",
+                   str(tmp_path / "free2_states"),
+                   "benchmark-shard-brsthomson-hotmail-free"),
+    ]), encoding="utf-8")
     lanes = load_lane_configs(config_path)
 
     assert len(lanes) == 3
@@ -270,19 +229,14 @@ def test_pro_free_hotmail_lane_config_includes_second_free_account(tmp_path):
 
 
 def test_free_only_lane_config_uses_free_account_route(tmp_path):
-    config_path = _write_lane_config(
-        tmp_path,
-        [
-            _lane_entry(
-                tmp_path,
-                lane="troup_hominidae_free",
-                account_class="free",
-                profiles=tuple(f"ytis-free1-worker-{i:02d}" for i in range(1, 5)),
-                browser_root="notebooklm-free",
-                browser_profile_directory="Default",
-            ),
-        ],
-    )
+    config_path = tmp_path / "free_only_lanes.json"
+    config_path.write_text(json.dumps([
+        _lane_json("troup_hominidae_free", "free",
+                   [f"ytis-free1-worker-0{i}" for i in range(1, 5)],
+                   "P:/.data/yt-is/browser/notebooklm-free", "Default",
+                   str(tmp_path / "free_states"),
+                   "benchmark-shard-troup-hominidae-free"),
+    ]), encoding="utf-8")
     (lane,) = load_lane_configs(config_path)
 
     assert lane.lane == "troup_hominidae_free"
@@ -2242,4 +2196,5 @@ def test_main_reports_versioned_invalidated_summary(tmp_path, monkeypatch):
     ])
 
     assert result == 1
+
 

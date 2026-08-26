@@ -134,10 +134,12 @@ def test_discovery_inputs_never_contain_names(receipt, tmp_path, monkeypatch):
     captured = []
     real = cd.scan_internal
 
-    def spy(conn, catalog_path=None, as_of=None, run_id=None):
+    def spy(conn, catalog_path=None, as_of=None, run_id=None,
+            policy_version=None):
         captured.append({"catalog_path": str(catalog_path),
                          "as_of": as_of})
-        return real(conn, catalog_path=catalog_path, as_of=as_of)
+        return real(conn, catalog_path=catalog_path, as_of=as_of,
+                    policy_version=policy_version)
 
     monkeypatch.setattr(cd, "scan_internal", spy)
     cat = build_catalog(tmp_path / "cat.sqlite")
@@ -245,14 +247,10 @@ def test_negative_controls_deterministic(tmp_path):
 
 def test_baseline_comparison_and_verdict():
     rows = [
-        {"kind": "target", "baseline_A": True, "baseline_B": True,
-         "policy_emerging": True},
-        {"kind": "target", "baseline_A": True, "baseline_B": True,
-         "policy_emerging": True},
-        {"kind": "control", "baseline_A": True, "baseline_B": True,
-         "policy_emerging": False},
-        {"kind": "control", "baseline_A": True, "baseline_B": True,
-         "policy_emerging": False},
+        {"kind": "target", "A": True, "B": True, "emerging": True},
+        {"kind": "target", "A": True, "B": True, "emerging": True},
+        {"kind": "control", "A": True, "B": True, "emerging": False},
+        {"kind": "control", "A": True, "B": True, "emerging": False},
     ]
     cmp = ev._compare_baselines(rows)
     assert cmp["policy_separation"] == 1.0
@@ -518,7 +516,7 @@ def test_aggregate_includes_wilson_intervals():
         {"checkpoint": "T", "matched": [{"concept_id": "x",
          "lifecycle": "emerging", "world_signal": 0.5, "percentile": .9}],
          "candidates_total": 3, "emerging_total": 1}]}]
-    negs = [{"emerging_at_T30": False}] * 4
+    negs = [{"emerging_by_T60": False}] * 4
     pert = [{"retained_10": True, "retained_20": True}] * 2
     agg = ev.aggregate_metrics(cps, negs, pert, 1)
     w = agg["wilson_95"]

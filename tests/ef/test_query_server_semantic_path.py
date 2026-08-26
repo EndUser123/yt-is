@@ -109,12 +109,35 @@ def test_semantic_route_respects_channel_filter(patched):
     assert res == []
 
 
-def test_comparison_route_filters_both_qdrant_legs(patched):
-    pts = [_point("v1:transcript#0", "v1", 0.9)]
-    fake = patched(pts)
+def test_channel_filter_applies_to_every_retrieval_leg(patched):
+    """The filter must reach the prefetch legs, not just the fused query:
+    unfiltered legs fill the fusion pool with other channels' points."""
+    fake = patched([_point("v1:transcript#0", "v1", 0.9)])
     q = _make_query()
+    q.relevant("another question", limit=2, channel_id="chanA")
+    assert fake.calls, "expected qdrant traffic"
+    for call in fake.calls:
+        assert call.get("query_filter") is not None, \
+            f"fused query unfiltered: {call}"
+        for leg in call.get("prefetch", []):
+            assert leg.filter is not None, f"prefetch leg unfiltered: {leg}"
 
-    q.relevant("cats versus dogs", limit=1, channel_id="chanA")
 
-    assert len(fake.calls) == 2
-    assert fake.calls[0]["query_filter"] is fake.calls[1]["query_filter"]
+def test_comparison_route_filters_both_legs(patched):
+    fake = patched([_point("v1:transcript#0", "v1", 0.9)])
+    q = _make_query()
+    q.relevant("rust vs zig performance", limit=2, channel_id="chanA")
+    assert fake.calls, "comparison route must query qdrant"
+    for call in fake.calls:
+        assert call.get("query_filter") is not None, \
+            f"comparison leg unfiltered: {call}"
+
+
+def test_no_channel_filter_means_unfiltered_legs(patched):
+    fake = patched([_point("v1:transcript#0", "v1", 0.9)])
+    q = _make_query()
+    q.relevant("another question", limit=2)
+    for call in fake.calls:
+        assert call.get("query_filter") is None
+        for leg in call.get("prefetch", []):
+            assert leg.filter is None

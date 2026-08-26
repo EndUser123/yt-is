@@ -68,7 +68,8 @@ def cmd_internal_scan(a) -> int:
     try:
         run_dir = _run_dir(a.artifact_dir)
         summary = concept_discovery.scan_internal(
-            conn, catalog_path=a.catalog, as_of=a.as_of)
+            conn, catalog_path=a.catalog, as_of=a.as_of,
+            policy_version=getattr(a, "policy_version", None))
         _write_json(run_dir / "run.json", summary)
         _write_json(run_dir / "candidate-summary.json", {
             "candidates": [dict(r) for r in
@@ -315,6 +316,10 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("internal-scan")
     p.add_argument("--as-of", default=None)
+    p.add_argument("--policy-version", default="burst-policy-v1",
+                   choices=["burst-policy-v1", "burst-policy-v2"],
+                   help="explicit policy selection; default remains "
+                        "burst-policy-v1 until formal v2 promotion")
     p.set_defaults(fn=cmd_internal_scan)
 
     p = sub.add_parser("list")

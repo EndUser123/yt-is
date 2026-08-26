@@ -14,7 +14,7 @@ Acceptance: All tests pass via `pytest tests/test_transcript_i18n.py`.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(r"P:\\\\\\\packages\\yt-is").absolute()))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from unittest import mock
 import pytest
