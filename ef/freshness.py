@@ -167,11 +167,20 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         left join status.analysis_status a on a.video_id = t.video_id
         left join status.channel_metadata cm on cm.channel_id = a.channel_id
         where t.cached_at > ? and length(t.transcript) >= 100
-          and t.terminal_id not like 'test%'
+          and (t.terminal_id is null or t.terminal_id not like 'test%')
           and t.source not in ('reddit','hackernews','discord','rss',
                                'github','podcast','dht-artifact','newsletter')
         order by t.cached_at asc limit ?
     """, (iw, batch_limit)).fetchall()]
+    # Total rows sharing the batch boundary timestamp: needed after the
+    # loop to know whether the batch limit split a cached_at tie (bulk
+    # imports write thousands of rows per second; the live authority has
+    # 7106-row ties).
+    boundary_total = 0
+    if rows:
+        boundary_total = conn.execute(
+            "select count(*) from transcript_cache where cached_at = ?",
+            (rows[-1]["cached_at"],)).fetchone()[0]
     conn.close()
     rows = [r for r in rows if r["video_id"] not in authority.QUARANTINED_VIDEO_IDS]
 
@@ -188,7 +197,6 @@ def incremental_update(batch_limit: int = 2000) -> dict:
             prior = cat.execute(
                 "select content_hash from eu where eu_id=?", (eu.eu_id,)).fetchone()
             if prior and prior[0] == eu.content_hash:
-                new_wm = row["cached_at"]
                 continue
             if prior:
                 # source revision: drop stale chunk points, rewrite
@@ -218,7 +226,22 @@ def incremental_update(batch_limit: int = 2000) -> dict:
             catalog.store_eus(cat, [eu], generation=gen, build_id=build_id)
             catalog.store_chunks(cat, chunks)
             fts.commit()
-            new_wm = row["cached_at"]
+
+        # Watermark tie guard: if the batch limit split a cached_at tie,
+        # advancing to the boundary timestamp would make the unselected
+        # rows invisible to the next run's `cached_at > watermark` —
+        # permanently unindexed. Hold the watermark below the boundary
+        # instead; the next run re-selects the whole tie and the
+        # content-hash short-circuit keeps it idempotent.
+        if rows:
+            boundary = rows[-1]["cached_at"]
+            at_boundary = sum(1 for r in rows if r["cached_at"] == boundary)
+            if at_boundary < boundary_total:
+                earlier = [r["cached_at"] for r in rows
+                           if r["cached_at"] < boundary]
+                new_wm = earlier[-1] if earlier else iw
+            else:
+                new_wm = boundary
 
         # deletion reconciliation: catalog EUs missing from authority
         # (single shared scan — per-EU connection opens caused disk I/O
@@ -267,17 +290,6 @@ def incremental_update(batch_limit: int = 2000) -> dict:
 def models_ids(chunk_ids: list[str]):
     from qdrant_client import models
     return models.PointIdsList(points=[ps.point_id(c) for c in chunk_ids])
-
-
-def _eu_missing_from_authority(eu_id: str) -> bool:
-    vid = eu_id.split(":")[0]
-    conn = sqlite3.connect(f"file:{authority.TRANSCRIPTS_DB}?mode=ro", uri=True)
-    try:
-        return conn.execute(
-            "select 1 from transcript_cache where video_id=? limit 1",
-            (vid,)).fetchone() is None
-    finally:
-        conn.close()
 
 
 def _legacy_generations():
