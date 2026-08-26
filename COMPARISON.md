@@ -156,3 +156,25 @@ infrastructure neither other run attempted.
    lanes; the FTS lanes' post-filter truncation is untested); (c)
    codex's worktree-restoration incident (recommendation #1 in its
    report: protect live worktrees from cleanup jobs).
+
+## CORRECTIONS (post-review addendum, applied after external critique)
+
+1. **Codex attribution frame violated.** This document's own rule —
+   compare each run only above its merge-base — was not applied to
+   codex's scores: 524ff667/f0be4360/3b43c030/49f9cd6f are ancestors of
+   base 8884e8aa and already on main, yet were credited in the matrix
+   and in codex's uniqueness score. Above-base, codex contributes
+   3c20b8a4 + closeout only. Corrected above-base codex scores:
+   finding 3 · correctness 4 · coverage 3 · honesty 5 · uniqueness 2
+   = 17 (was 20). Ordering unchanged. The root-cause statement stands
+   (three RUNS independently fixed the same dht/c4/lane drift); the
+   above-base overlap is two-way (agy + muse). Merge-conflict
+   prediction unaffected: main carries codex's versions of those files.
+2. **Artifact commits counted separately.** muse-spark above-base at
+   comparison time: 11 = 9 iteration + 1 closeout + 1 comparison;
+   12 after the FTS probe (88b2d1a5).
+3. **Mode resolution hardening.** Participant mode rested on in-session
+   creation receipts (tool-call provenance) — sound here, but not
+   externally checkable; artifact familiarity alone is spoofable. The
+   compare template's ladder now requires creation receipts and git
+   authorship match.
