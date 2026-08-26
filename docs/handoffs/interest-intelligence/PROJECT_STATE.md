@@ -134,3 +134,25 @@ byte-duplicate cluster labels. Root causes RC1-RC6 and discriminating experiment
 E1-E5 (evidence floor + distinct-source count, label polysemy gate, cluster relabel,
 discord date policy, registry deploy-or-descope) are in the report. No production,
 extraction, schema, or data changes were made.
+
+
+## E1 executed: evidence-backed entity admission + publisher accounting (2026-08-26, agent: zcode)
+
+Decision E1_SUPPORTED; implemented and migrated via deterministic KG rebuild (full
+report: concept-quality-audit-20260826/E1-REPORT.md). Root cause verified in code:
+entity_corpus admission ran on LLM self-reported mention sums with no evidence floor,
+while the builder materialized a node for every corpus row independently of the
+per-EU FTS edge staging. All 67 orphans classified mechanically:
+QUALIFICATION_DEFECT 53 / NO_SUPPORT_CURRENT 13 / STALE_GRAPH_HAS_SUPPORT_NOW 1.
+Counterfactual (frozen snapshot): Arm A 388 nodes vs Arm B 313, edges identical;
+75 zero-support nodes removed, zero supported edges lost by the floor. Frozen-sample
+re-audit (same policy hash): 7 sampled entities removed, all EXTRACTION_ARTIFACT,
+0 GOOD; good-rate 0.686 -> 0.795. Production after rebuild: entity nodes 388 -> 313,
+orphans 67 -> 0, mentioned_in 91,670 -> 102,454 (delta is index drift shared by any
+rebuild), double-rebuild receipt identical. Independent-publisher accounting stored on
+every entity node as meta_json.evidence (discord=guild identity, hackernews/newsletter=
+explicit UNKNOWN, YouTube modalities share UC id); AUDIT FEATURE ONLY, never a gate.
+Downstream inputs: TE/interest/adjacency/shadow-anchor pools UNCHANGED (measured);
+warm-query entity browse list shrinks by exactly the 75 artifacts. Concept Registry
+NOT deployed; E2 (polysemy gate + alias fold), E3 (cluster relabel), E4 (Discord date
+policy), E5 (registry deploy-or-descope) remain deferred to architect.
