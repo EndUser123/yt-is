@@ -146,7 +146,13 @@ def call_gemini_video(
                     ]
                 }
             ],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300},
+            "generationConfig": {
+                "temperature": 0.2,
+                # 300 truncated replies mid-JSON when the default thinking pass
+                # consumed the output budget (2026-08-26); thinking off.
+                "maxOutputTokens": 1024,
+                "thinkingConfig": {"thinkingBudget": 0},
+            },
         }
     ).encode()
     url = f"{API_BASE}/models/{MODEL}:generateContent?key={api_key}"
