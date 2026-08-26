@@ -121,6 +121,10 @@ def _validate(obj: dict) -> dict | None:
     }
 
 
+class GeminiQuotaExceeded(RuntimeError):
+    """Daily/billing quota exhausted (HTTP 429 plan message) — stop the batch."""
+
+
 def call_gemini_video(
     api_key: str,
     video_id: str,
@@ -165,7 +169,11 @@ def call_gemini_video(
                 raise RuntimeError(f"unparseable reply: {text[:150]}")
             return verdict
         except urllib.error.HTTPError as exc:
-            last_err = f"HTTP {exc.code}: {exc.read().decode()[:150]}"
+            body = exc.read().decode(errors="replace")
+            last_err = f"HTTP {exc.code}: {body[:150]}"
+            if exc.code == 429 and ("billing" in body or "current quota" in body):
+                # Daily quota, not a per-minute spike — retries cannot help.
+                raise GeminiQuotaExceeded(last_err)
             if exc.code not in RETRY_STATUS:
                 raise RuntimeError(last_err)
         except (urllib.error.URLError, TimeoutError, ValueError, RuntimeError) as exc:
@@ -259,6 +267,10 @@ def analyze_batch(
                 break
             try:
                 verdict = call_gemini_video(api_key, video_id)
+            except GeminiQuotaExceeded as exc:
+                failures += 1
+                print(f"{video_id}: QUOTA EXCEEDED, stopping batch: {exc}", file=sys.stderr)
+                break
             except Exception as exc:  # noqa: BLE001 - per-item isolation by design
                 failures += 1
                 consecutive += 1
