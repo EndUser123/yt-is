@@ -1,5 +1,5 @@
 # yt-is Personal Intelligence — Discovery / Concept Intelligence State
-Updated: 2026-08-25 + stateful bakeoff (BAYESIAN_EPISODES_SUPPORTED, v2 spec proposed)
+Updated: 2026-08-26 v2 shadow implemented; evaluator-v3 diagnostic control-rate axis FAILED; freeze withheld
 
 ## Goal & constraints
 
@@ -331,7 +331,58 @@ the packet's future-classes list; do not expand the frozen grid.
   promotion requires a NEW unseen holdout (fresh curator, fresh
   evaluator) after v2 implementation and freeze.
 
+- 2026-08-26: [seen] burst-policy-v2 IMPLEMENTED as a SHADOW policy
+  (ef/burst_policy_v2.py pure module; explicit policy_version dispatch in
+  scan_internal; CLI --policy-version; default remains burst-policy-v1).
+  Numerical method: closed form P = 1 - I_{c/(1+c)}(a_r,a_b) via
+  scipy betainc, validated vs calibrated GL-256 at max err 6.6e-13 with
+  ZERO decision differences (all v4 points, full sweep, 0.70/0.80/0.99
+  boundaries) — adopted; no parameter changed. Episodes persist in the
+  EXISTING trend_episodes table; ranking score preserved from v1 (v2
+  ranking calibration OPEN). Production parity gate vs a drift-free
+  live-catalog stateless reference: 0 candidate and 0 emerging
+  disagreements (PASS; earlier diffs vs the calibration snapshot traced
+  to catalog drift — matched entities' EU rows were re-ingested after
+  calibration). Design doc: docs/design/discovery-burst-policy-v2.md.
+- 2026-08-26: [seen] evaluator-v3 implemented (retrospective-evaluator-
+  v3): explicit burst-policy-v2 pinning from the freeze receipt
+  (parameter hash + numerical method + python/numpy/scipy versions),
+  entity-only negative controls selected at T-30, symmetric stateful
+  replay of controls through T+60 in the same registry, ALIGNED
+  baseline comparison (same cohorts/units; v2 registry-row denominator
+  semantics removed), stateful perturbation prefix T-30..T+30 with the
+  legacy candidate-retention metric preserved plus episode/posterior
+  diagnostics. Verdict thresholds, sufficiency gate, single-use ledger,
+  Wilson intervals unchanged.
+- 2026-08-26: [seen] v4 NON_BLIND_DIAGNOSTIC under evaluator-v3
+  (artifacts eval-20260826T005921-NON_BLIND_DIAGNOSTIC; ledger untouched,
+  no FORMAL): 42/42 scorable; candidate recall 1.000; emerging recall
+  0.833 [0.694,0.917]; ENTITY controls 125; control emerging rate 0.344
+  [0.266,0.431] — EXCEEDS the <=0.20 pass-like axis; perturbation10
+  0.976; perturbation20 0.952; policy separation 0.489 vs baseline A
+  -0.05 / baseline B 0.0 (policy_beats_baselines true). Per the packet:
+  an axis FAILED -> STOPPED before freeze. NO freeze receipt created; no
+  v2 tuning; no threshold changes. Evidence for the architect: under
+  symmetric stateful replay, 34% of evidence-mass-matched entity
+  controls also promote; the target-control margin (0.49) is strong but
+  the absolute control rate fails the frozen bar. Candidate directions
+  (NOT explored here): channel floor, signal threshold, control-
+  selection matching axes, promotion persistence strictness.
+- 2026-08-26: implementation published (SHADOW; production default
+  remains burst-policy-v1). Incident disclosure: one synthetic-file
+  hash (cd9733d9...) was claimed in the formal holdout ledger by a
+  pre-fix test bug (label FORMAL from a unit test; status
+  FAILED_AFTER_CONSUMPTION); it is a tmp synthetic targets file, can
+  never match a real holdout, and the ledger was not edited.
+
 ## Next action (stateful bakeoff concluded)
+
+ARCHITECT DECISION REQUIRED: v3 diagnostic control-rate axis FAILED
+(0.344 > 0.20). Do not freeze v2. Choose: adjust control-selection
+matching axes / revisit promotion strictness via a NEW calibration
+packet, or accept and revisit architecture. holdout-v4 remains
+training-only; the promotion path (fresh curator -> new unseen holdout
+-> different fresh evaluator) is unchanged but blocked on this axis.
 
 ARCHITECT DECISION REQUIRED: approve/reject implementation of the
 proposed burst-policy-v2 specification. Independence boundary after

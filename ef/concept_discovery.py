@@ -20,6 +20,14 @@ deterministic, so identical scans are idempotent.
 POLICY / POLICY_VERSION: the windows, floors, and weights below are INITIAL
 policy values (burst-policy-v1), chosen for mechanical defensibility — NOT
 tuned optima. Changes to them require a new POLICY_VERSION and replay.
+
+burst-policy-v2 (SHADOW, calibrated 2026-08-25 on consumed holdout-v4 as
+TRAINING_DIAGNOSTIC_ONLY; architect-approved): Gamma-Poisson rate-change
+signal + persistence episodes via ef/burst_policy_v2.py. It is explicitly
+selectable via scan_internal(policy_version="burst-policy-v2") but is NOT
+the default until it passes a completely new unseen formal holdout. The
+formal evaluator must pin the policy version from its freeze receipt,
+never rely on this module's default.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from ef import burst_policy_v2 as bp2
 from ef import concept_registry as cr
 from ef.evidence_clusters import evidence_cluster_inventory
 
@@ -273,15 +282,188 @@ def _link_relevance(
         )
 
 
+def _scan_entity_v2(registry_conn, node_id, obs, label, as_of, as_of_d,
+                    run_id, summary) -> None:
+    """burst-policy-v2 entity path: decayed candidate gate, Gamma-Poisson
+    rate-change signal, persistence episodes in the EXISTING
+    trend_episodes table. Ranking score is preserved from v1 (v2 ranking
+    calibration is OPEN); lifecycle promotion depends only on the v2
+    policy."""
+    concept_id = cr.concept_identity_id("entity", label)
+    row = _existing_state(registry_conn, concept_id)
+    meta = {}
+    if row is not None and row["metadata_json"]:
+        try:
+            loaded = json.loads(row["metadata_json"])
+            if isinstance(loaded, dict):
+                meta = loaded
+        except (TypeError, ValueError):
+            meta = {}
+    dec = bp2.evaluate(obs, as_of_d, meta.get("v2_evals"))
+    current = row["lifecycle_state"] if row else None
+    stats = _stats_for(obs, as_of_d)  # ranking score + audit features
+    ep = cr.active_episode(registry_conn, concept_id)
+    if not dec["candidate"] and not dec["positive"]:
+        # Persist the negative evaluation so a later scan can see the
+        # consecutive-negative COOL transition even after support decays
+        # below the candidate gate (otherwise cool is unreachable).
+        if row is not None:
+            evals = [e for e in meta.get("v2_evals", [])
+                     if e.get("as_of") != as_of][-1:]
+            evals.append(dec["eval"])
+            if ep is not None and dec["cool"]:
+                cr.close_trend_episode(registry_conn, ep["episode_id"],
+                                       ended_at=as_of, state="cooled")
+            if dec["cool"] and current in ("emerging", "active"):
+                cr.set_lifecycle(
+                    registry_conn, concept_id, "cooling",
+                    reason=f"burst-policy-v2 episode cooled at {as_of}",
+                    run_id=run_id)
+                current = "cooling"
+            _preserve_upsert(
+                registry_conn,
+                label,
+                "entity",
+                first_seen=dec["first_seen"],
+                last_seen=stats["last_seen"],
+                lifecycle_state=current,
+                world_signal_score=row["world_signal_score"],
+                metadata={
+                    "discovery_method": "entity_burst_v2",
+                    "policy": bp2.POLICY_VERSION,
+                    "node_id": node_id,
+                    "recent_count": dec["recent_count_30d"],
+                    "baseline_count": dec["k_base"],
+                    "channels": dec["channels"],
+                    "source_types": stats["source_types"],
+                    "smoothed_ratio": round(stats["smoothed_ratio"], 4),
+                    "v2_support": dec["support"],
+                    "v2_candidate": dec["candidate"],
+                    "v2_lifetime": dec["lifetime"],
+                    "v2_k_recent": dec["k_recent"],
+                    "v2_posterior": dec["posterior"],
+                    "v2_evals": evals,
+                },
+            )
+        return
+    score = _world_signal(stats, as_of_d)
+    if dec["promote"]:
+        target = "emerging"
+    elif current == "emerging" and dec["cool"]:
+        target = "cooling"
+    elif current == "emerging" and not dec["continue_active"]:
+        target = "cooling"
+    else:
+        target = current or "candidate"
+    evals = [e for e in meta.get("v2_evals", [])
+             if e.get("as_of") != as_of][-1:]
+    evals.append(dec["eval"])
+    _preserve_upsert(
+        registry_conn,
+        label,
+        "entity",
+        first_seen=dec["first_seen"],
+        last_seen=stats["last_seen"],
+        lifecycle_state=target,
+        world_signal_score=score,
+        metadata={
+            "discovery_method": "entity_burst_v2",
+            "policy": bp2.POLICY_VERSION,
+            "node_id": node_id,
+            "recent_count": dec["recent_count_30d"],
+            "baseline_count": dec["k_base"],
+            "channels": dec["channels"],
+            "source_types": stats["source_types"],  # audit only
+            "smoothed_ratio": round(stats["smoothed_ratio"], 4),
+            "v2_support": dec["support"],
+            "v2_candidate": dec["candidate"],
+            "v2_lifetime": dec["lifetime"],
+            "v2_k_recent": dec["k_recent"],
+            "v2_posterior": dec["posterior"],
+            "v2_evals": evals,
+        },
+    )
+    if target != current:
+        cr.set_lifecycle(
+            registry_conn, concept_id, target,
+            reason=f"burst-policy-v2: support={dec['support']} "
+                   f"posterior={dec['posterior']} channels={dec['channels']}",
+            run_id=run_id)
+    if dec["positive"] and ep is None:
+        cr.open_trend_episode(
+            registry_conn, concept_id, started_at=as_of,
+            baseline_rate=round(dec["k_base"] / (bp2.PARAMS[
+                    "baseline_window_days"] / bp2.PARAMS["time_unit_days"]), 4),
+            policy_version=bp2.POLICY_VERSION,
+            evidence={"run_id": run_id, "as_of": as_of,
+                      "k_recent": dec["k_recent"], "k_base": dec["k_base"],
+                      "posterior": dec["posterior"]})
+        ep = cr.active_episode(registry_conn, concept_id)
+    if ep is not None:
+        if dec["positive"] or dec["continue_active"]:
+            prev_peak = ep["peak_at"]
+            peak = as_of if (dec["promote"] or prev_peak is None or
+                             (ep["acceleration"] or 0) <= dec["posterior"])                 else prev_peak
+            cr.update_trend_episode(
+                registry_conn, ep["episode_id"],
+                recent_rate=round(dec["k_recent"] / (bp2.PARAMS[
+                    "recent_window_days"] / bp2.PARAMS["time_unit_days"]), 4),
+                acceleration=dec["posterior"],
+                source_diversity=stats["source_types"],
+                independent_source_count=dec["channels"],
+                novelty_score=1.0 if (as_of_d - date.fromisoformat(
+                    dec["first_seen"])).days <= POLICY[
+                    "novelty_first_seen_days"] else 0.0,
+                last_active_at=as_of,
+                peak_at=peak,
+                evidence={"run_id": run_id, "as_of": as_of,
+                          "support": dec["support"],
+                          "posterior": dec["posterior"],
+                          "k_recent": dec["k_recent"],
+                          "k_base": dec["k_base"],
+                          "promote": dec["promote"]})
+        elif dec["cool"]:
+            cr.close_trend_episode(registry_conn, ep["episode_id"],
+                                   ended_at=as_of, state="cooled")
+    if target == "emerging":
+        summary["emerging"] += 1
+    elif target == "candidate":
+        summary["candidates"] += 1
+    elif target == "cooling":
+        summary["cooling"] += 1
+    cr.record_observation(
+        registry_conn, concept_id,
+        source_kind="internal_scan",
+        source_id=node_id,
+        observed_at=as_of,
+        title=label,
+        evidence_ref=node_id,
+        run_id=run_id,
+        metadata={
+            "discovery_method": "entity_burst_v2",
+            "policy": bp2.POLICY_VERSION,
+            "support": dec["support"],
+            "posterior": dec["posterior"],
+            "channels": dec["channels"],
+            "world_signal": round(score, 4),
+        },
+    )
+
+
 def scan_internal(
     registry_conn: sqlite3.Connection,
     catalog_path: Any = None,
     as_of: str | None = None,
     run_id: str | None = None,
+    policy_version: str | None = None,
 ) -> dict:
     """One internal discovery scan. Reads the EF catalog (read-only),
     writes concepts/observations/episodes into the registry connection.
-    Everything is computed strictly from observations dated <= as_of."""
+    Everything is computed strictly from observations dated <= as_of.
+
+    policy_version: "burst-policy-v1" (production default) or
+    "burst-policy-v2" (shadow). Explicit selection only; unknown
+    versions raise."""
     t0 = time.time()
     as_of = as_of or time.strftime("%Y-%m-%d", time.gmtime())
     as_of_d = date.fromisoformat(as_of)
@@ -290,8 +472,11 @@ def scan_internal(
             f"{as_of}\x1f{catalog_path}".encode("utf-8")
         ).hexdigest()[:8]
         run_id = f"run_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}_{digest}"
+    policy_version = policy_version or POLICY_VERSION
+    if policy_version not in ("burst-policy-v1", "burst-policy-v2"):
+        raise ValueError(f"unknown policy_version: {policy_version!r}")
     cr.record_discovery_run(
-        registry_conn, run_id, "internal_scan", POLICY_VERSION, as_of
+        registry_conn, run_id, "internal_scan", policy_version, as_of
     )
 
     summary = {
@@ -327,9 +512,14 @@ def scan_internal(
     managed: dict[str, str] = {}  # node_id -> concept_id
     for node_id, obs in entity_obs.items():
         label = obs[0]["label"]
-        stats = _stats_for(obs, as_of_d)
         concept_id = cr.concept_identity_id("entity", label)
         managed[node_id] = concept_id
+        if policy_version == "burst-policy-v2":
+            _scan_entity_v2(
+                registry_conn, node_id, obs, label, as_of, as_of_d,
+                run_id, summary)
+            continue
+        stats = _stats_for(obs, as_of_d)
         if stats["recent_count"] < POLICY["candidate_min_recent"]:
             continue  # handled by decay below
         score = _world_signal(stats, as_of_d)
@@ -454,6 +644,8 @@ def scan_internal(
                 meta = {}
         if meta.get("discovery_method") != "entity_burst":
             continue
+        if meta.get("policy", POLICY_VERSION) != POLICY_VERSION:
+            continue  # v2 concepts are managed by the v2 scan path
         concept_id = row["concept_id"]
         state = row["lifecycle_state"]
         if state in ("emerging", "active"):
