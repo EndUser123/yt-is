@@ -10,6 +10,7 @@ and source breakdowns, and co-mentioned entities.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
@@ -35,7 +36,7 @@ def search_nodes(q: str, limit: int = 15) -> list[dict]:
     q = (q or "").strip()
     if not q:
         return []
-    with _connect() as c:
+    with closing(_connect()) as c:
         rows = c.execute(
             """SELECT node_id, kind, label, weight FROM kg_nodes
                WHERE kind IN ('entity', 'channel')
@@ -53,7 +54,7 @@ def search_nodes(q: str, limit: int = 15) -> list[dict]:
 
 
 def entity_view(node_id: str, doc_limit: int = 12) -> dict:
-    with _connect() as c:
+    with closing(_connect()) as c:
         node = c.execute(
             "SELECT node_id, kind, label, weight FROM kg_nodes "
             "WHERE node_id = ?", (node_id,)).fetchone()
@@ -148,7 +149,7 @@ def entity_view(node_id: str, doc_limit: int = 12) -> dict:
 
 
 def channel_view(node_id: str, ent_limit: int = 15) -> dict:
-    with _connect() as c:
+    with closing(_connect()) as c:
         node = c.execute(
             "SELECT node_id, kind, label, weight FROM kg_nodes "
             "WHERE node_id = ?", (node_id,)).fetchone()

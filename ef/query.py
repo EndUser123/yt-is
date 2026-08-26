@@ -54,7 +54,12 @@ class HybridQuery:
         res = self.client.query_points(
             collection_name=COLLECTION,
             prefetch=[
-                models.Prefetch(query=dense_vec, using=DENSE_NAME, limit=limit * 3),
+                # both legs take the channel filter: an unfiltered dense
+                # prefetch fills the fusion pool with other channels'
+                # points, and the post-fusion query_filter then shrinks
+                # channel-restricted results below the requested limit
+                models.Prefetch(query=dense_vec, using=DENSE_NAME,
+                                limit=limit * 3, filter=flt),
                 models.Prefetch(query=models.SparseVector(indices=sidx, values=sval),
                                 using=SPARSE_NAME, limit=limit * 3, filter=flt),
             ],
@@ -69,6 +74,7 @@ class HybridQuery:
         dense_ids = {p.id for p in self.client.query_points(
             collection_name=COLLECTION,
             query=dense_vec, using=DENSE_NAME, limit=limit * 3,
+            query_filter=flt,
         ).points}
         sparse_ids = {p.id for p in self.client.query_points(
             collection_name=COLLECTION,
