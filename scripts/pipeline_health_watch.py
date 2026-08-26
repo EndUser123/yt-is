@@ -368,6 +368,68 @@ def check_backup_volume(min_free_gb: float = 100.0) -> str | None:
     return None
 
 
+def check_workspace_integrity() -> str | None:
+    """Mechanical missing-things detector (2026-08-26): two STATELESS checks
+    that catch the file-eater class without baselines or luck.
+
+    (1) Manifest diff: files git says exist under .agents (hooks, scripts,
+    skills, registry) but are ABSENT on disk — the shared primary's
+    stale-HEAD + sweep class that ate adapters/skills/rca silently.
+    (2) Dangling registrations: hook commands in the zcode host config
+    whose script files do not exist (the console-storm's fuel).
+    """
+    problems: list[str] = []
+    # (1) manifest diff — git truth vs disk
+    proc = subprocess.run(
+        ["git", "-C", "P:/", "ls-tree", "-r", "--name-only", "main", "--",
+         ".agents/hooks", ".agents/scripts", ".agents/skills",
+         ".agents/registry"],
+        capture_output=True, text=True, timeout=60,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if proc.returncode == 0:
+        missing = [p for p in proc.stdout.splitlines()
+                   if p.strip() and not (Path("P:/") / p).exists()]
+        # __pycache__/.lkg churn is expected; only source files count
+        missing = [p for p in missing if "__pycache__" not in p]
+        if missing:
+            shown = "; ".join(missing[:5])
+            more = f" (+{len(missing) - 5} more)" if len(missing) > 5 else ""
+            problems.append(f"{len(missing)} git-tracked .agents files "
+                            f"missing on disk [{shown}{more}] — file-eater "
+                            f"class (2026-08-26); restore: git checkout "
+                            f"main -- <paths>")
+    # (2) dangling hook registrations
+    cfg_path = Path.home() / ".zcode" / "cli" / "config.json"
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        cmds: list[str] = []
+
+        def _collect(node) -> None:
+            if isinstance(node, dict):
+                c = node.get("command")
+                if isinstance(c, str):
+                    cmds.append(c)
+                for v in node.values():
+                    _collect(v)
+            elif isinstance(node, list):
+                for v in node:
+                    _collect(v)
+
+        _collect(cfg.get("hooks", {}))
+        import re as _re
+        for cmd in cmds:
+            for m in _re.finditer(r'"([A-Za-z]:[\\/][^"]+?\.py)"', cmd):
+                script = Path(m.group(1))
+                if not script.exists():
+                    problems.append(f"hook registration points at missing "
+                                    f"script: {script}")
+    except (OSError, ValueError):
+        pass  # config unreadable — restic + hooks themselves surface that
+    if not problems:
+        return None
+    return " | ".join(problems[:3]) + (" …" if len(problems) > 3 else "")
+
+
 def run_once(
     *,
     state_path: Path | None,
@@ -414,6 +476,10 @@ def run_once(
     volume_alert = check_backup_volume()
     if volume_alert:
         lines.append(f"[volume] {volume_alert}")
+
+    integrity_alert = check_workspace_integrity()
+    if integrity_alert:
+        lines.append(f"[integrity] {integrity_alert}")
 
     if lines:
         content = (
