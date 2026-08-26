@@ -1,4 +1,7 @@
 import json
+import logging
+import queue
+import threading
 from pathlib import Path
 
 from csf import csf_logging
@@ -78,3 +81,28 @@ def test_write_jsonl_entry_falls_back_for_an_untrusted_directory(
 
     assert (package_fallback / "fallback-trace.jsonl").exists()
     assert not (tmp_path / "outside" / "fallback-trace.jsonl").exists()
+
+
+def test_queue_listener_survives_a_record_write_failure(tmp_path, monkeypatch) -> None:
+    log_queue: queue.Queue[logging.LogRecord] = queue.Queue()
+    listener = csf_logging._create_queue_listener(log_queue, tmp_path / "events.jsonl")
+    processed: list[str] = []
+    second_record_processed = threading.Event()
+
+    def write_record(record: logging.LogRecord) -> None:
+        if record.getMessage() == "first":
+            raise OSError("temporary sink failure")
+        processed.append(record.getMessage())
+        second_record_processed.set()
+
+    monkeypatch.setattr(listener, "_write_record", write_record)
+    listener.start()
+    log_queue.put(logging.LogRecord("test", logging.INFO, __file__, 1, "first", (), None))
+    log_queue.put(logging.LogRecord("test", logging.INFO, __file__, 2, "second", (), None))
+
+    try:
+        assert second_record_processed.wait(timeout=1.0)
+    finally:
+        listener.stop()
+
+    assert processed == ["second"]

@@ -23,6 +23,7 @@ from csf.batch_status import (
     get_source,
     is_channel_blocked,
     promote_batch_status_db,
+    run_v2_cross_db_backfill,
     summarize_video_ids,
     is_complete,
     mark_complete,
@@ -40,6 +41,7 @@ from csf.batch_status import (
     get_status_batch,
     BatchEntry,
 )
+from csf import batch_status as batch_status_mod
 from csf.channel_identity import ChannelIdentity
 from csf.playlist_imports import (
     import_video_batch,
@@ -562,6 +564,82 @@ class TestGetStatusBatch:
         result = get_status_batch(["vid1", "nonexistent"], db_path=_TEST_DB_PATH)
         assert "vid1" in result
         assert result["nonexistent"] is None
+
+    def test_get_status_batch_handles_more_than_sqlite_parameter_limit(self, tmp_path):
+        """Large manifests are split instead of exceeding SQLite's bind limit."""
+        db_path = tmp_path / "batch_status.sqlite"
+        ids = [f"bulk-{index:04d}" for index in range(1_200)]
+        result = set_status_batch(
+            [BatchEntry(video_id=video_id, status="complete") for video_id in ids],
+            db_path=db_path,
+        )
+
+        assert result == SetStatusBatchResult(ok_count=1_200, fail_count=0)
+        statuses = get_status_batch(ids + ["bulk-missing"], db_path=db_path)
+        assert len(statuses) == 1_201
+        assert all(statuses[video_id] == "complete" for video_id in ids)
+        assert statuses["bulk-missing"] is None
+
+
+def test_write_connection_sets_busy_timeout_before_wal(monkeypatch, tmp_path):
+    statements: list[str] = []
+
+    class FakeConnection:
+        def execute(self, statement, *params):
+            statements.append(statement)
+            return self
+
+    connection = FakeConnection()
+    monkeypatch.setattr(
+        batch_status_mod.sqlite3,
+        "connect",
+        lambda *args, **kwargs: connection,
+    )
+
+    storage = batch_status_mod._BatchStatusStorage(
+        db_path=tmp_path / "batch_status.sqlite",
+        ensure_schema=False,
+    )
+    assert storage._get_conn() is connection
+    assert statements[:2] == [
+        "PRAGMA busy_timeout=5000",
+        "PRAGMA journal_mode=WAL",
+    ]
+
+
+def test_v2_backfill_parameterizes_attach_path(tmp_path):
+    batch_db = tmp_path / "batch.sqlite"
+    transcripts_db = tmp_path / "transcript's.sqlite"
+
+    transcript_conn = sqlite3.connect(transcripts_db)
+    transcript_conn.execute(
+        """CREATE TABLE transcript_cache (
+            cache_key TEXT PRIMARY KEY,
+            video_id TEXT,
+            lang TEXT,
+            source TEXT,
+            transcript TEXT,
+            cached_at TEXT
+        )"""
+    )
+    transcript_conn.execute(
+        "INSERT INTO transcript_cache VALUES (?, ?, ?, ?, ?, ?)",
+        ("cache-key", "video-1", "en", "test", "non-empty transcript", "2026-01-01T00:00:00Z"),
+    )
+    transcript_conn.commit()
+    transcript_conn.close()
+
+    batch_conn = sqlite3.connect(batch_db)
+    batch_conn.executescript(
+        (Path(__file__).resolve().parents[1] / "csf" / "migrations" / "v2_split_states.sql")
+        .read_text(encoding="utf-8")
+    )
+    batch_conn.close()
+
+    counts = run_v2_cross_db_backfill(batch_db, transcripts_db)
+
+    assert counts["transcript_cache_rows"] == 1
+    assert counts["transcript_artifacts"] == 1
 
 
 class TestGetEntriesForSourceDetails:

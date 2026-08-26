@@ -161,7 +161,8 @@ class ProductionQuery:
             idxs = sorted(lw.keys())
             d_leg = qc.query_points(
                 self.collection, query=[float(x) for x in qv],
-                using=ps.DENSE_NAME, limit=100, with_payload=True).points
+                using=ps.DENSE_NAME, limit=100, with_payload=True,
+                query_filter=flt).points
             s_leg = qc.query_points(
                 self.collection, query=models.SparseVector(
                     indices=[int(t) for t in idxs],
