@@ -193,6 +193,70 @@ def test_merge_concepts(conn):
         cr.merge_concepts(conn, survivor, survivor)
 
 
+def test_merge_survives_alias_and_link_collisions(conn):
+    """The survivor already holding the same normalized alias or interest
+    link used to crash the row moves with a raw IntegrityError."""
+    survivor = cr.upsert_concept(conn, "Alpha Runtime", "runtime")
+    dupe = cr.upsert_concept(conn, "Alfa Runtime", "runtime")
+    cr.add_alias(conn, survivor, "alpha")
+    cr.add_alias(conn, dupe, "Alpha")  # same normalized form as survivor's
+    cr.link_concept_interest(conn, survivor, "int-1", method="semantic")
+    cr.link_concept_interest(conn, dupe, "int-1", method="semantic")
+    cr.merge_concepts(conn, survivor, dupe)
+    assert cr.get_concept(conn, dupe)["lifecycle_state"] == "obsolete"
+    assert cr.resolve_alias(conn, "alpha") == survivor
+    assert conn.execute(
+        "SELECT COUNT(*) c FROM concept_aliases WHERE concept_id = ?",
+        (survivor,)).fetchone()["c"] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) c FROM concept_interest_links WHERE concept_id = ?",
+        (survivor,)).fetchone()["c"] == 1
+
+
+def test_merge_moves_relations_and_drops_self_loop(conn):
+    a = cr.upsert_concept(conn, "A Concept", "t")
+    survivor = cr.upsert_concept(conn, "B Concept", "t")
+    dupe = cr.upsert_concept(conn, "C Concept", "t")
+    cr.record_concept_relation(conn, dupe, a, "relates_to", 0.5, "llm")
+    # dupe -> survivor edge would become a survivor self-loop after merge
+    cr.record_concept_relation(conn, dupe, survivor, "broader_than", 0.6, "llm")
+    cr.merge_concepts(conn, survivor, dupe)
+    rows = {
+        (r["src_concept_id"], r["dst_concept_id"])
+        for r in conn.execute(
+            "SELECT src_concept_id, dst_concept_id FROM concept_relations")
+    }
+    assert rows == {(survivor, a)}
+    assert conn.execute(
+        "SELECT COUNT(*) c FROM concept_relations WHERE src_concept_id = ?"
+        " OR dst_concept_id = ?", (dupe, dupe)).fetchone()["c"] == 0
+
+
+def test_merge_relation_edge_collision_keeps_single_row(conn):
+    survivor = cr.upsert_concept(conn, "A Concept", "t")
+    dupe = cr.upsert_concept(conn, "B Concept", "t")
+    c = cr.upsert_concept(conn, "C Concept", "t")
+    cr.record_concept_relation(conn, survivor, c, "relates_to", 0.9, "llm")
+    cr.record_concept_relation(conn, dupe, c, "relates_to", 0.4, "llm")
+    cr.merge_concepts(conn, survivor, dupe)
+    rows = conn.execute(
+        "SELECT confidence FROM concept_relations WHERE src_concept_id = ?"
+        " AND dst_concept_id = ?", (survivor, c)).fetchall()
+    assert len(rows) == 1  # survivor's stronger edge wins; no UNIQUE crash
+
+
+def test_state_events_same_second_no_collision(conn):
+    """Two same-field same-value transitions within one second used to
+    collide on the evt_ PK and fail the second INSERT."""
+    cid = cr.upsert_concept(conn, "Fast Mover", "t")
+    cr.set_lifecycle(conn, cid, "emerging", reason="r1")
+    cr.set_lifecycle(conn, cid, "active", reason="r2")
+    cr.set_lifecycle(conn, cid, "emerging", reason="r3")  # back, same second
+    assert conn.execute(
+        "SELECT COUNT(*) c FROM concept_state_events WHERE concept_id = ?",
+        (cid,)).fetchone()["c"] == 3
+
+
 def test_relation_replay_no_duplicate(conn):
     a = cr.upsert_concept(conn, "A Concept", "t")
     b = cr.upsert_concept(conn, "B Concept", "t")
