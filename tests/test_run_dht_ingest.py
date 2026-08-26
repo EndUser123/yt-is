@@ -6,7 +6,7 @@ databases. No Discord, no tracker.exe, no live services.
 Coverage:
 - `introspect_messages_table` heuristics across DHT schema variants
 - `ingest_archive` happy path, idempotency, 100-message windowing
-- `discover_archives` candidate-directory resolution (no live archive needed)
+- `discover_archive` glob resolution (no live archive needed)
 - edge cases: missing content columns, empty archives, multi-channel
 """
 
@@ -130,15 +130,6 @@ def dht(tmp_path, monkeypatch):
     tdb.commit()
     tdb.close()
     return mod
-
-
-def _ingest(mod, archive: Path) -> dict:
-    """Call the streaming API with a fixture-owned transcript connection."""
-    tdb = sqlite3.connect(mod.TDB)
-    try:
-        return mod.ingest_archive(archive, tdb)
-    finally:
-        tdb.close()
 
 
 def _msgs(n, *, ch="100", user="u1", prefix="hello world", id_offset=0):

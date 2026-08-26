@@ -19,35 +19,6 @@ from csf.sharded_lane_series import (
 )
 
 
-def _lane_entry(
-    tmp_path: Path,
-    *,
-    lane: str,
-    account_class: str,
-    profiles: tuple[str, ...],
-    browser_root: str,
-    browser_profile_directory: str,
-) -> dict[str, object]:
-    """Build a hermetic lane-config entry for parser tests."""
-    return {
-        "lane": lane,
-        "account_class": account_class,
-        "workers": len(profiles),
-        "notebooklm_profile_prefix": profiles[0].rsplit("-", 1)[0],
-        "notebooklm_profiles": list(profiles),
-        "browser_profile_root": str(tmp_path / "browser" / browser_root),
-        "browser_profile_directory": browser_profile_directory,
-        "worker_state_root": str(tmp_path / "states" / lane),
-        "notebook_prefix": f"benchmark-shard-{lane}",
-    }
-
-
-def _write_lane_config(tmp_path: Path, entries: list[dict[str, object]]) -> Path:
-    path = tmp_path / "lanes.json"
-    path.write_text(json.dumps(entries), encoding="utf-8")
-    return path
-
-
 def test_load_lane_configs_requires_distinct_profile_and_state_namespaces(tmp_path):
     config_path = tmp_path / "lanes.json"
     config_path.write_text(
@@ -2225,4 +2196,5 @@ def test_main_reports_versioned_invalidated_summary(tmp_path, monkeypatch):
     ])
 
     assert result == 1
+
 
