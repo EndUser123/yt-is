@@ -254,7 +254,12 @@ class _QueueListener:
                 record = self._queue.get(timeout=0.05)
             except queue.Empty:
                 continue
-            self._write_record(record)
+            try:
+                self._write_record(record)
+            except Exception:
+                # A transient or unwritable log sink must not kill the
+                # listener thread and silently drop every later record.
+                pass
         # Drain any remaining items after stop is signaled
         self._drain_queue()
 

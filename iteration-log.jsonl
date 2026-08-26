@@ -1,3 +1,4 @@
 {"n": 1, "area": "tests/contract-drift", "findings_selected": 3, "fixed": 3, "tests_pass": false, "elapsed_s": 438}
 {"n": 2, "area": "scripts/supervisor", "findings_selected": 3, "fixed": 3, "tests_pass": true, "elapsed_s": 1120}
 {"n": 3, "area": "csf/batch_status", "findings_selected": 3, "fixed": 3, "tests_pass": true, "elapsed_s": 480}
+{"n": 4, "area": "csf/csf_logging", "findings_selected": 1, "fixed": 1, "tests_pass": true, "elapsed_s": 430}
