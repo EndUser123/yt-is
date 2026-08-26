@@ -184,14 +184,19 @@ def incremental_update(batch_limit: int = 2000) -> dict:
     conn.close()
     rows = [r for r in rows if r["video_id"] not in authority.QUARANTINED_VIDEO_IDS]
 
-    cat = catalog.connect()
-    enc = embedding.BGEM3Dual()
-    qc = server.client()
-    fts = sqlite3.connect(str(EF_DATA / "fts5.sqlite"), timeout=30.0)
-    fts.execute("PRAGMA busy_timeout=30000")
+    # Resource acquisition lives INSIDE the error-recording try: a
+    # connection-time qdrant/catalog failure used to propagate with no
+    # last_indexing_error recorded and no status emitted — silently
+    # breaking the fetch-isolation contract this function promises.
+    cat = enc = qc = fts = None
     added = updated = deleted = 0
     new_wm = iw
     try:
+        cat = catalog.connect()
+        enc = embedding.BGEM3Dual()
+        qc = server.client()
+        fts = sqlite3.connect(str(EF_DATA / "fts5.sqlite"), timeout=30.0)
+        fts.execute("PRAGMA busy_timeout=30000")
         for row in rows:
             eu = authority.build_eu(row)
             prior = cat.execute(
@@ -283,8 +288,10 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         emit_status()
         raise
     finally:
-        fts.close()
-        cat.close()
+        if fts is not None:
+            fts.close()
+        if cat is not None:
+            cat.close()
 
 
 def models_ids(chunk_ids: list[str]):
