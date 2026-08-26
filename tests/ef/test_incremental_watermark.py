@@ -132,14 +132,19 @@ def test_watermark_does_not_advance_past_split_tie(hermetic):
     _add_row(hermetic, "v6", "2026-01-04T00:00:00Z")
 
     r1 = freshness.incremental_update(batch_limit=4)
-    assert r1["processed"] == 4
-    # old code advanced to T3 here, orphaning v5 forever
-    assert r1["indexed_watermark"] == "2026-01-02T00:00:00Z"
+    # the tie-completion pass absorbs the whole split boundary tie:
+    # 4 selected + v5 completed = 5 processed, watermark reaches T3
+    assert r1["processed"] == 5
+    assert r1["added"] == 5
+    assert r1["indexed_watermark"] == "2026-01-03T00:00:00Z"
 
+    # the T4 row past the boundary lands on the next run
     r2 = freshness.incremental_update(batch_limit=10)
-    assert r2["processed"] == 4          # v3, v4 hash-skip; v5, v6 added
-    assert r2["added"] == 2
-    assert r2["indexed_watermark"] == "2026-01-04T00:00:00Z"
+    assert r2["processed"] == 1
+    assert r2["added"] == 1
+    r3 = freshness.incremental_update(batch_limit=10)
+    assert r3["processed"] == 0
+    assert r3["indexed_watermark"] == "2026-01-04T00:00:00Z"
 
     cat = hermetic["open_cat"]()
     n = cat.execute("select count(*) from eu").fetchone()[0]
@@ -196,3 +201,28 @@ def test_watermark_advances_when_boundary_tie_has_ineligible_rows(hermetic):
     # and the next pass is a no-op (nothing left past the watermark)
     r2 = freshness.incremental_update(batch_limit=4)
     assert r2["processed"] == 0
+
+
+def test_watermark_advances_when_tie_exceeds_batch_limit(hermetic):
+    """A tie LARGER than batch_limit must not stall ingestion: the guard
+    used to re-select the same first batch_limit rows forever, hash-skip
+    them, and never advance — nothing at or after the tie was ever
+    indexed. Falsifier from the spawn lens of the /tp panel, 2026-08-25
+    (live shape: 7106-row tie vs default batch_limit 2000)."""
+    T2 = "2026-01-02T00:00:00Z"
+    for vid in ("v1", "v2"):
+        _add_row(hermetic, vid, T2)
+    for i in range(25):                      # 25-row tie, batch_limit 10
+        _add_row(hermetic, f"t{i:02d}", "2026-01-03T00:00:00Z")
+    _add_row(hermetic, "after", "2026-01-04T00:00:00Z")
+
+    r1 = freshness.incremental_update(batch_limit=10)
+    # the tie-completion pass swallows the whole 25-row tie in run 1;
+    # the boundary row past the tie lands on run 2
+    assert r1["indexed_watermark"] == "2026-01-03T00:00:00Z"
+    assert r1["added"] == 27
+    r2 = freshness.incremental_update(batch_limit=10)
+    assert r2["processed"] == 1
+    assert r2["indexed_watermark"] == "2026-01-04T00:00:00Z"
+    r3 = freshness.incremental_update(batch_limit=10)
+    assert r3["processed"] == 0              # nothing stuck behind

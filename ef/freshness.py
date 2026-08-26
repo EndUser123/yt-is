@@ -172,19 +172,27 @@ def incremental_update(batch_limit: int = 2000) -> dict:
                                'github','podcast','dht-artifact','newsletter')
         order by t.cached_at asc limit ?
     """, (iw, batch_limit)).fetchall()]
-    # Total ELIGIBLE rows sharing the batch boundary timestamp: needed
-    # after the loop to know whether the batch limit split a cached_at
-    # tie (bulk imports write thousands of rows per second; the live
-    # authority has 7106-row ties). The count MUST apply the same
-    # eligibility predicates as the selection — an ineligible row (short
-    # transcript, test terminal, excluded source, quarantined video)
-    # sharing the boundary would otherwise make at_boundary <
-    # boundary_total forever and pin the watermark below the timestamp,
-    # stalling all later indexing (caught by the codex /tp lens,
-    # 2026-08-25).
-    boundary_total = 0
-    if rows:
-        quarantined = tuple(authority.QUARANTINED_VIDEO_IDS)
+    # Tie-completion pass: a tie LARGER than batch_limit can never be
+    # cleared by ordinary batching — every run re-selects the same first
+    # batch_limit rows, hash-skips them, and holds the watermark below
+    # the tie forever, stalling all later indexing (stall traced by the
+    # /tp panel 2026-08-25; live shape: 7106-row tie vs default 2000).
+    # When the split tie fits the completion cap, fetch the remaining
+    # eligible boundary rows in one bounded pass; the content-hash
+    # short-circuit makes overlap with already-selected rows harmless.
+    TIE_COMPLETION_MAX = 100_000
+    _SEL = """select t.video_id, t.lang, t.source, t.cached_at, t.transcript,
+               a.title, a.channel_id, a.published_at, a.duration,
+               cm.channel_title
+        from transcript_cache t
+        left join status.analysis_status a on a.video_id = t.video_id
+        left join status.channel_metadata cm on cm.channel_id = a.channel_id
+        where %s and length(t.transcript) >= 100
+          and (t.terminal_id is null or t.terminal_id not like 'test%%')
+          and t.source not in ('reddit','hackernews','discord','rss',
+                               'github','podcast','dht-artifact','newsletter')"""
+
+    def _eligible_boundary_count(ts, quarantined):
         q = ("select count(*) from transcript_cache where cached_at = ?"
              " and length(transcript) >= 100"
              " and (terminal_id is null or terminal_id not like 'test%')"
@@ -192,8 +200,26 @@ def incremental_update(batch_limit: int = 2000) -> dict:
              "'github','podcast','dht-artifact','newsletter')"
              + (" and video_id not in (%s)" % ",".join("?" * len(quarantined))
                 if quarantined else ""))
-        boundary_total = conn.execute(
-            q, (rows[-1]["cached_at"], *quarantined)).fetchone()[0]
+        return conn.execute(q, (ts, *quarantined)).fetchone()[0]
+
+    boundary_total = 0
+    if rows:
+        quarantined = tuple(authority.QUARANTINED_VIDEO_IDS)
+        boundary_ts = rows[-1]["cached_at"]
+        boundary_total = _eligible_boundary_count(boundary_ts, quarantined)
+        at_boundary = sum(1 for r in rows if r["cached_at"] == boundary_ts)
+        if at_boundary < boundary_total <= TIE_COMPLETION_MAX:
+            tie_sql = _SEL % "t.cached_at = ?"
+            seen = {(r["video_id"], r["lang"], r["source"]) for r in rows}
+            extra = [dict(r) for r in conn.execute(
+                tie_sql, (boundary_ts,)).fetchall()
+                if (r["video_id"], r["lang"], r["source"]) not in seen]
+            rows.extend(extra)
+        elif boundary_total > TIE_COMPLETION_MAX:
+            print(f"  WARNING: cached_at tie of {boundary_total:,} rows "
+                  f"exceeds tie-completion cap {TIE_COMPLETION_MAX:,}; "
+                  f"watermark held below it — rerun with a larger "
+                  f"batch_limit", flush=True)
     conn.close()
     rows = [r for r in rows if r["video_id"] not in authority.QUARANTINED_VIDEO_IDS]
 
