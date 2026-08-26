@@ -28,6 +28,7 @@ Schema reality vs the original plan (verified via PRAGMA table_info
 Node kinds and edge relations:
     ent:<name>  kind 'entity'  weight = entity_corpus.chunk_count
                 label = entity name, meta_json {"type": PERSON/ORG/...}
+                plus an "evidence" audit block (see below)
                 (entity_corpus.label is the TYPE — putting it in kg_nodes.label
                 collapses 388 entities into ~6 identical display labels)
     chan:<id>   kind 'channel' label = channel_title, weight = eu doc count
@@ -36,6 +37,29 @@ Node kinds and edge relations:
     mentioned_in  ent -> eu    weight = FTS chunk matches in that eu (>= 2)
     in_channel    eu  -> chan  weight = 1
     of_source     chan -> src  weight = 1
+
+Evidence-backed entity admission (E1, concept-quality audit follow-up):
+an entity KG node exists ONLY if at least one qualifying EU supports it,
+i.e. the FTS staging produced >= 1 mentioned_in row for that name. Entities
+that qualify corpus-wide but have zero qualifying EUs are NOT admitted —
+this removes the orphan-node class (nodes whose only claim was an LLM
+self-reported mention count). Admission is an invariant, not a popularity
+threshold: no >1-EU floor is applied.
+
+Independent-publisher accounting (AUDIT FEATURE ONLY — never a gate):
+meta_json["evidence"] on entity nodes carries:
+    distinct_eu          qualifying supporting EUs
+    distinct_publishers  distinct publisher identities among them
+    publishers_known     same, excluding UNKNOWN identities
+publisher identity semantics (documented, not invented):
+    discord            -> "disc_guild:<guild_name>" (channel_title holds the
+                          guild/server; one server may own many channels)
+    hackernews         -> UNKNOWN ("hn" is one aggregator field)
+    newsletter         -> UNKNOWN (channel_id is empty)
+    everything else    -> channel_id verbatim; YouTube-class acquisition
+                          modalities (notebooklm/ytdlp/selenium/whisper)
+                          share the UC channel_id, so modality ≠ publisher
+UNKNOWN identity is stored explicitly, never fabricated into independence.
 
 Concurrency: the catalog is shared and WAL, with other services writing
 concurrently. The expensive FTS staging runs on the write connection in temp
@@ -62,6 +86,7 @@ from pathlib import Path
 CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
 FTS = Path("P:/.data/yt-is/ef/fts5.sqlite")
 MIN_EDGE_WEIGHT = 2  # skip mentioned_in edges with fewer matched chunks
+UNKNOWN_PUBLISHER = "__UNKNOWN__"
 LOCK_RETRY_SLEEP_S = 30.0
 
 CREATE_NODES = """
@@ -96,6 +121,53 @@ def _connect_rw(catalog: Path) -> sqlite3.Connection:
     # Big page cache: staging does ~1M PK dives into the chunk b-tree.
     conn.execute("PRAGMA cache_size=-262144")
     return conn
+
+
+def publisher_identity(source, channel_id, channel_title):
+    """Map an EU to its independent-publisher identity.
+
+    Documented semantics (see module docstring): discord collapses to the
+    guild/server, aggregator sources with no real per-publisher field are
+    UNKNOWN, and YouTube-class acquisition modalities share the UC channel
+    id so that modality never masquerades as publisher diversity.
+    """
+    cid = (channel_id or "").strip()
+    if source == "discord":
+        guild = (channel_title or "").strip()
+        return f"disc_guild:{guild}" if guild else UNKNOWN_PUBLISHER
+    if source in ("hackernews", "newsletter") or not cid:
+        return UNKNOWN_PUBLISHER
+    return cid
+
+
+def _stage_publisher_map(conn: sqlite3.Connection) -> None:
+    """Fill TEMP pub_map(eu_id, pub_id) for eus touched by staging."""
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS pub_map ("
+        "eu_id TEXT PRIMARY KEY, pub_id TEXT NOT NULL)")
+    conn.execute("DELETE FROM pub_map")
+    rows = conn.execute(
+        "SELECT DISTINCT s.eu_id, eu.source, eu.channel_id, eu.channel_title "
+        "FROM ent_eu s JOIN main.eu eu ON eu.eu_id = s.eu_id").fetchall()
+    conn.executemany(
+        "INSERT OR REPLACE INTO pub_map VALUES (?, ?)",
+        [(r[0], publisher_identity(r[1], r[2], r[3])) for r in rows])
+
+
+def _stage_entity_pub(conn: sqlite3.Connection) -> None:
+    """Aggregate per-entity audit counts from ent_eu x pub_map."""
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS entity_pub ("
+        "entity TEXT PRIMARY KEY, distinct_eu INTEGER NOT NULL, "
+        "distinct_publishers INTEGER NOT NULL, publishers_known INTEGER NOT NULL)")
+    conn.execute("DELETE FROM entity_pub")
+    conn.execute(
+        "INSERT INTO entity_pub "
+        "SELECT s.entity, COUNT(DISTINCT s.eu_id), "
+        "       COUNT(DISTINCT p.pub_id), "
+        "       COUNT(DISTINCT CASE WHEN p.pub_id <> ? THEN p.pub_id END) "
+        "FROM ent_eu s JOIN pub_map p ON p.eu_id = s.eu_id "
+        "GROUP BY s.entity", (UNKNOWN_PUBLISHER,))
 
 
 def _fts_phrase(name: str) -> str | None:
@@ -145,13 +217,16 @@ def _stage_entity_edges(conn: sqlite3.Connection, fts: Path) -> int:
         if i % 50 == 0:
             print(f"  staged {i}/{total} entities", flush=True)
     conn.execute("DETACH DATABASE fts")
+    _stage_publisher_map(conn)
+    _stage_entity_pub(conn)
     return staged
 
 
 def _plan_counts(conn: sqlite3.Connection) -> dict:
     """Planned node/edge counts from SELECTs over staging + source tables."""
     valid_chan = "channel_id IS NOT NULL AND channel_id <> ''"
-    ent = conn.execute("SELECT COUNT(*) FROM entity_corpus").fetchone()[0]
+    # Evidence-backed admission: only staged entities become nodes.
+    ent = conn.execute("SELECT COUNT(*) FROM entity_pub").fetchone()[0]
     chan = conn.execute(
         f"SELECT COUNT(*) FROM (SELECT 1 FROM eu WHERE {valid_chan} "
         "GROUP BY channel_id)").fetchone()[0]
@@ -186,11 +261,21 @@ def _write_phase(conn: sqlite3.Connection) -> None:
         conn.execute("DROP TABLE IF EXISTS kg_nodes")
         conn.execute(CREATE_NODES)
         conn.execute(CREATE_EDGES)
-        # Entity nodes: weight = total corpus mentions (entity_corpus.chunk_count).
+        # Entity nodes: evidence-backed admission only (entity_pub holds
+        # exactly the names with >= 1 qualifying EU). weight = corpus
+        # chunk_count when known; meta carries the type plus the audit
+        # evidence block (distinct EU count and independent-publisher
+        # counts — accounting only, never used as a gate).
         conn.execute(
             "INSERT INTO kg_nodes (node_id, kind, label, weight, meta_json) "
-            "SELECT 'ent:' || entity, 'entity', entity, chunk_count, "
-            "'{\"type\": \"' || label || '\"}' FROM entity_corpus")
+            "SELECT 'ent:' || ep.entity, 'entity', ep.entity, "
+            "       COALESCE(ec.chunk_count, 0), "
+            "       '{\"type\": \"' || COALESCE(ec.label, 'CONCEPT') || "
+            "'\", \"evidence\": {\"distinct_eu\": ' || ep.distinct_eu || "
+            "', \"distinct_publishers\": ' || ep.distinct_publishers || "
+            "', \"publishers_known\": ' || ep.publishers_known || '}}' "
+            "FROM entity_pub ep "
+            "LEFT JOIN entity_corpus ec ON ec.entity = ep.entity")
         # Channel nodes: weight = doc (eu) count; label = channel_title.
         conn.execute(
             "INSERT INTO kg_nodes (node_id, kind, label, weight, meta_json) "

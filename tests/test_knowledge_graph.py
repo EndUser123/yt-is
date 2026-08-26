@@ -53,7 +53,7 @@ def _build_catalog(tmp_path: Path) -> Path:
     Channels: C1 (2 docs, youtube), C2 (1 doc, reddit); eu5 has an empty
     channel_id but source youtube. PyTorch matches 2 chunks in eu1, 1 in
     eu2 (filtered: <2), 2 in eu3, 2 in eu5. Kafka matches only 1 chunk
-    anywhere (filtered). Bedrock has no FTS matches (node, no edges).
+    anywhere (no qualifying EU). Bedrock has no FTS matches at all.
     'Lonely' exists only in `entities`, not entity_corpus (excluded).
     """
     cat = tmp_path / "catalog.sqlite"
@@ -129,8 +129,8 @@ def _rows(tmp_path: Path, sql: str):
 
 
 EXPECTED_RECEIPT = {
-    "nodes": 10,
-    "by_kind": {"entity": 3, "channel": 2, "source": 2, "eu": 3},
+    "nodes": 8,
+    "by_kind": {"entity": 1, "channel": 2, "source": 2, "eu": 3},
     "edges": 7,
     "by_relation": {"mentioned_in": 3, "in_channel": 2, "of_source": 2},
 }
@@ -142,13 +142,12 @@ def test_node_kinds_labels_and_weights(tmp_path):
     nodes = {r[0]: r[1:] for r in _rows(
         tmp_path, "SELECT node_id, kind, label, weight FROM kg_nodes")}
     assert set(nodes) == {
-        "ent:PyTorch", "ent:Kafka", "ent:Bedrock",
+        "ent:PyTorch",
         "chan:C1", "chan:C2", "src:youtube", "src:reddit",
         "eu:eu1", "eu:eu3", "eu:eu5"}
     # Entity nodes: weight = total corpus mentions, label = the entity
     # NAME (the type lives in meta_json, not label).
     assert nodes["ent:PyTorch"] == ("entity", "PyTorch", 7.0)
-    assert nodes["ent:Bedrock"] == ("entity", "Bedrock", 0.0)
     # Channel nodes: label = title, weight = doc count.
     assert nodes["chan:C1"] == ("channel", "Chan One", 2.0)
     assert nodes["chan:C2"] == ("channel", "Chan Two", 1.0)
@@ -157,6 +156,115 @@ def test_node_kinds_labels_and_weights(tmp_path):
     assert nodes["src:reddit"] == ("source", None, 1.0)
     # eu nodes: weight 0; eu2 excluded (only 1 PyTorch chunk -> no edge).
     assert nodes["eu:eu1"] == ("eu", None, 0.0)
+
+
+def test_zero_support_entities_are_not_admitted(tmp_path):
+    """The evidence-backed invariant: no qualifying EU -> no entity node.
+
+    Kafka has FTS matches but never >= 2 chunks in one EU; Bedrock has no
+    matches at all. Neither may become a kg node, however large its
+    entity_corpus row claims to be.
+    """
+    _run(tmp_path)
+    ghosts = _rows(
+        tmp_path, "SELECT node_id FROM kg_nodes "
+        "WHERE node_id IN ('ent:Kafka', 'ent:Bedrock')")
+    assert ghosts == []
+
+
+def test_evidence_audit_block_and_publisher_semantics(tmp_path):
+    """meta_json evidence block counts distinct EUs and publishers.
+
+    PyTorch qualifies in eu1/eu3/eu5: publishers are C1 (youtube), C2
+    (reddit), and UNKNOWN (eu5 empty channel). Accounting only — never a
+    gate, so all three supporting EUs and both known publishers appear.
+    """
+    import json
+
+    _run(tmp_path)
+    meta = json.loads(_rows(
+        tmp_path,
+        "SELECT meta_json FROM kg_nodes WHERE node_id = 'ent:PyTorch'")[0][0])
+    ev = meta["evidence"]
+    assert ev["distinct_eu"] == 3
+    assert ev["distinct_publishers"] == 3
+    assert ev["publishers_known"] == 2
+    assert meta["type"] == "TECH"
+
+
+def test_modality_does_not_masquerade_as_publisher(tmp_path):
+    """Two acquisition modalities over one channel count as ONE publisher."""
+    cat = _build_catalog(tmp_path)
+    conn = sqlite3.connect(cat)
+    # eu6 mirrors eu1's channel C1 through a second acquisition path.
+    conn.execute(
+        "INSERT INTO eu (eu_id, video_id, channel_id, channel_title, source) "
+        "VALUES ('eu6', 'v6', 'C1', 'Chan One', 'whisper')")
+    conn.executemany(
+        "INSERT INTO chunk VALUES (?, ?, 0, 10)",
+        [("g1", "eu6"), ("g2", "eu6")])
+    conn.commit()
+    conn.close()
+    fts = _build_fts(tmp_path)
+    fconn = sqlite3.connect(fts)
+    fconn.executemany(
+        "INSERT INTO chunks(text, chunk_id) VALUES (?, ?)",
+        [("PyTorch whisper a", "g1"), ("PyTorch whisper b", "g2")])
+    fconn.commit()
+    fconn.close()
+    build_knowledge_graph(cat, fts)
+    import json
+
+    ev = json.loads(_rows(
+        tmp_path,
+        "SELECT meta_json FROM kg_nodes WHERE node_id = 'ent:PyTorch'")[0][0]
+    )["evidence"]
+    # eu6 is a qualifying EU, but its channel is already counted via eu1:
+    # distinct_eu grows 3 -> 4 while publisher counts stay put.
+    assert ev["distinct_eu"] == 4
+    assert ev["distinct_publishers"] == 3
+    assert ev["publishers_known"] == 2
+
+
+def test_evidence_removal_then_restoration(tmp_path):
+    """Deterministic lifecycle: withdraw support -> node gone; restore
+    support -> identical node/edge set returns."""
+    cat = _build_catalog(tmp_path)
+    fts = _build_fts(tmp_path)
+    build_knowledge_graph(cat, fts)
+    before = sorted(_rows(
+        tmp_path, "SELECT node_id, kind, label, weight, meta_json "
+                  "FROM kg_nodes")) + \
+             sorted(_rows(tmp_path, "SELECT * FROM kg_edges"))
+    # Withdraw ALL PyTorch text from the corpus (evidence removal).
+    fconn = sqlite3.connect(fts)
+    fconn.execute("DELETE FROM chunks")
+    fconn.commit()
+    fconn.close()
+    receipt = build_knowledge_graph(cat, fts)
+    assert receipt["by_kind"].get("entity", 0) == 0
+    # No zero-evidence entity node survives.
+    assert _rows(
+        tmp_path,
+        "SELECT COUNT(*) FROM kg_nodes n WHERE kind='entity' AND NOT EXISTS "
+        "(SELECT 1 FROM kg_edges e WHERE e.src_id = n.node_id)") == [(0,)]
+    # Restore the identical evidence rows: the graph returns deterministically.
+    conn2 = sqlite3.connect(fts)
+    for text, cid in [
+            ("PyTorch rocks", "a1"), ("PyTorch again", "a2"),
+            ("Kafka event", "d1"), ("PyTorch once", "b1"),
+            ("PyTorch there", "c1"), ("PyTorch more", "c2"),
+            ("PyTorch alpha", "f1"), ("PyTorch beta", "f2")]:
+        conn2.execute("INSERT INTO chunks(text, chunk_id) VALUES (?, ?)",
+                      (text, cid))
+    conn2.commit()
+    conn2.close()
+    build_knowledge_graph(cat, fts)
+    after = sorted(_rows(
+        tmp_path, "SELECT node_id, kind, label, weight, meta_json "
+                  "FROM kg_nodes")) + \
+            sorted(_rows(tmp_path, "SELECT * FROM kg_edges"))
+    assert after == before
 
 
 def test_edges_and_low_count_filtering(tmp_path):
@@ -203,7 +311,7 @@ def test_idempotent_rebuild(tmp_path):
     strip = lambda r: {k: v for k, v in r.items() if k != "seconds"}  # noqa: E731
     assert strip(first) == strip(second) == EXPECTED_RECEIPT
     # Tables were rebuilt, not appended: same totals as one fresh build.
-    assert _rows(tmp_path, "SELECT COUNT(*) FROM kg_nodes") == [(10,)]
+    assert _rows(tmp_path, "SELECT COUNT(*) FROM kg_nodes") == [(8,)]
     assert _rows(tmp_path, "SELECT COUNT(*) FROM kg_edges") == [(7,)]
 
 
