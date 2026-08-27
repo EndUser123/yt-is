@@ -1,0 +1,6 @@
+.venv/
+.venv2/
+__pycache__/
+*.sqlite*
+fastembed_cache/
+models/
