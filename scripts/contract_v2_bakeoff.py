@@ -675,11 +675,14 @@ def run_arm(arm: str, artifact_dir: str | None) -> int:
             invoke=make_prose_recon_adapter(recon_ledger),
             stage_writer=lambda s, rec_, base=root / "reconciliation":
             ib._write_json(base / f"monolith-stage-{s:02d}.json", rec_))
-    except big.InferenceContractError as exc:
-        # genuine provider/recon contract defect -> receipted arm result
+    except Exception as exc:
+        # genuine provider/recon contract defect OR unexpected harness
+        # error -> receipted arm result either way (review minor folded
+        # into AMENDMENT 2: flake and ReconciliationContractError classes
+        # included). Classified by type name for taxonomy honesty.
         return _finish(root, arm,
                        {"completed": False,
-                        "why": f"monolith_recon_contract_{exc}"[:400]},
+                        "why": f"{type(exc).__name__}: {exc}"[:400]},
                        recon_ledger, rel, t0,
                        extra={"phase1": p1["metrics"],
                               "phase1_rows": p1["rows"],
