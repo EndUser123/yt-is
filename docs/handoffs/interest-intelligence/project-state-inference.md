@@ -121,3 +121,27 @@ full-coverage bootstrap implementer passes
   validation relaxation decisions owned by the architect) or accept the
   legacy arm's output as the only completable inference and re-scope
   the gate. Both are architect decisions; the evaluator did not tune.
+
+---
+
+# 2026-08-27 UPDATE — contract architecture v2 (sess_ab0a0135)
+
+Contract architecture generation v2 executed per architect packet. Prior
+verdict CONTRACT_RELIABILITY_NOT_SUPPORTED stands for the monolithic
+contract; a decomposed architecture was built, preregistered frozen
+(contract-architecture-v2-preregistration.md), measured live on the same
+unlabeled corpus + plan_01b09359b3f05784, and completed ALL six success
+requirements including 3/3 clean-root full-coverage shadow bootstraps.
+
+DECISION: DECOMPOSED_CONTRACT_SUPPORTED (shadow-only wiring live;
+`scripts/contract_v2_bakeoff.py --shadow [N]`; persistence unreachable
+by construction — canonical promotion still requires the operator's
+Interest ground-truth curation lane + valid semantic-recall gate).
+
+Evidence: contract-architecture-v2-results.md. Freeze+amendments:
+959cd1ad, 831944e5, 4008a701, 02f56240. Reviews run-60dee6f5bb3d /
+2104809e6a0f / e383c0c54d89 / 3b7dad037e99 / da0916a65d1d.
+Key facts: decomposed phase-1 = 39/39 defect-free across arms;
+monolithic reconciliation >=4 live failures across bakeoff-1+v2
+(definitive); decomposed reconciliation zero silent loss across arm and
+all 3 shadows; endpoint rejects uniqueItems and nested $defs.
