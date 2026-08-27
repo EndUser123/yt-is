@@ -784,16 +784,55 @@ def report_mode(root: str) -> int:
     return 0
 
 
+SHADOW_COUNT_DEFAULT = 3
+
+
+def run_shadow(count: int) -> int:
+    """SHADOW-ONLY wiring of the supported decomposed arm (packet:
+
+    'wire it into SHADOW only first'; canonical persistence is
+    UNREACHABLE by construction here — this pipeline never touches any
+    store primitive). N clean-root full-coverage shadow bootstraps,
+    each under its own unique runs/shadow-v2-* root.
+    """
+    failures = 0
+    count = max(1, int(count))   # review minor: --shadow 0 is vacuous
+    for i in range(1, count + 1):
+        stamp = time.strftime("%Y%m%dT%H%M%S")
+        uid = uuid.uuid4().hex[:8]
+        shadow_root = (big.ARTIFACT_ROOT / "runs" /
+                       f"shadow-v2-{i}of{count}-{stamp}_{uid}")
+        rc = run_arm("D3", str(shadow_root))
+        mfile = shadow_root / "metrics.json"
+        metrics = json.loads(mfile.read_text(encoding="utf-8"))             if mfile.exists() else {"result": {"completed": False}}
+        ok = bool(metrics["result"].get("completed"))
+        print(f"[shadow] {i}/{count}: "
+              f"{'COMPLETE' if ok else 'FAILED'} -> {shadow_root}")
+        if not ok:
+            failures += 1
+    print(f"[shadow] {count - failures}/{count} complete "
+          f"(3/3 required)")
+    return 1 if failures else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--arm", choices=["D1", "D2", "D3"], required=True)
+    ap.add_argument("--arm", choices=["D1", "D2", "D3"])
     ap.add_argument("--artifact-dir", default=None)
     g2 = ap.add_mutually_exclusive_group(required=True)
     g2.add_argument("--run", action="store_true")
+    g2.add_argument("--shadow", nargs="?", type=int,
+                    const=SHADOW_COUNT_DEFAULT, default=None,
+                    metavar="N", dest="shadow_n",
+                    help="SHADOW-ONLY decomposed bootstraps xN")
     g2.add_argument("--report", metavar="DIR")
     a = ap.parse_args(argv)
     if a.report:
         return report_mode(a.report)
+    if a.shadow_n is not None:
+        return run_shadow(a.shadow_n)
+    if not a.arm:
+        ap.error("--run requires --arm D1|D2|D3")
     return run_arm(a.arm, a.artifact_dir)
 
 
