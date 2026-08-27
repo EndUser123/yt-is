@@ -172,3 +172,48 @@ def test_prefilter_respects_cutoff_window_with_keywords():
                                                   prefilter=True)]
     assert "stale-kw" not in picked
     assert picked == ["fresh-kw"]
+
+
+def test_score_batch_quota_stop(tmp_path):
+    """MiniMax Token-Plan dry raises VLMQuotaExceeded mid-loop; score_batch
+    must stop immediately with quota_stopped=True and close its connection."""
+    import sqlite3
+
+    import scripts.visual_vlm_score as v
+    from scripts.visual_vlm_score import VLMQuotaExceeded
+
+    db = tmp_path / "b.sqlite"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE analysis_status (video_id TEXT PRIMARY KEY, channel_id TEXT,
+            status TEXT, updated_at TEXT, thumbnail TEXT, title TEXT,
+            description TEXT);
+        CREATE TABLE video_catalog (video_id TEXT PRIMARY KEY);
+        CREATE TABLE visual_jobs (job_id INTEGER PRIMARY KEY, video_id TEXT UNIQUE);
+        CREATE TABLE visual_vlm_scores (video_id TEXT PRIMARY KEY);
+        INSERT INTO video_catalog VALUES ('q1'), ('q2');
+        INSERT INTO analysis_status VALUES ('q1','c','complete','2026-08-27T00:00:00+00:00',NULL,NULL,NULL);
+        INSERT INTO analysis_status VALUES ('q2','c','complete','2026-08-26T00:00:00+00:00',NULL,NULL,NULL);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    calls = {"n": 0}
+
+    def fake_vision(url):
+        calls["n"] += 1
+        raise VLMQuotaExceeded("Token Plan usage limit reached")
+
+    orig = v.run_mmx_vision
+    v.run_mmx_vision = fake_vision
+    try:
+        result = v.score_batch(
+            db, days=30, limit=10, min_density=5, gap_s=0,
+            max_consecutive_failures=5,
+        )
+    finally:
+        v.run_mmx_vision = orig
+    assert calls["n"] == 1, "quota stop must break after first dry call"
+    assert result["quota_stopped"] is True and result["scored"] == 0

@@ -117,8 +117,50 @@ def _dependency_satisfied(conn: sqlite3.Connection, job: dict) -> tuple[bool, st
     return False, f"dependency '{req}' has no terminal completion after {job['due_at']}"
 
 
+# Recurring enrollment: kind -> (interval_s, params). Each tick, when a kind
+# has no un-finished row and its last terminal finished_at is older than the
+# interval, a new due row is inserted. Backups intentionally NOT here
+# (recovery rail stays outside this process's failure domain).
+RECURRING = {
+    "podcast_sync": {"interval_s": 6 * 3600, "params": {"limit": 2}},
+}
+
+
+def ensure_recurring(conn: sqlite3.Connection) -> int:
+    """Insert due rows for recurring kinds whose interval has elapsed."""
+    now = _utcnow()
+    inserted = 0
+    for kind, cfg in RECURRING.items():
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM pipeline_jobs WHERE kind = ? AND finished_at IS NULL",
+            (kind,),
+        ).fetchone()[0]
+        if pending:
+            continue
+        last = conn.execute(
+            "SELECT MAX(finished_at) FROM pipeline_jobs WHERE kind = ?",
+            (kind,),
+        ).fetchone()[0]
+        if last and last > _cutoff_iso(cfg["interval_s"]):
+            continue
+        enqueue(conn, kind=kind, params=cfg["params"])
+        inserted += 1
+    return inserted
+
+
+def _cutoff_iso(seconds_ago: float) -> str:
+    return time.strftime(
+        "%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - seconds_ago)
+    )
+
+
 def claim_next(conn: sqlite3.Connection) -> dict | None:
-    """Claim one due job (oldest first). Returns None when nothing is due."""
+    """Claim one due job (oldest first). Returns None when nothing is due.
+
+    The claim UPDATE restates eligibility in its WHERE so two dispatcher
+    processes cannot both take one row (review run-3c02bee5d927 F1);
+    rowcount==0 falls through to the next candidate.
+    """
     rows = conn.execute(
         """SELECT id, kind, params_json, due_at, attempt_count, max_attempts, requires
            FROM pipeline_jobs
@@ -130,9 +172,10 @@ def claim_next(conn: sqlite3.Connection) -> dict | None:
     now = _utcnow()
     for jid, kind, params_json, due_at, attempts, max_attempts, requires in rows:
         if attempts >= max_attempts:
-            conn.execute(
+            cur = conn.execute(
                 """UPDATE pipeline_jobs SET finished_at = ?, outcome = 'failed_terminal',
-                       error_class = 'attempts_exhausted' WHERE id = ?""",
+                       error_class = 'attempts_exhausted'
+                   WHERE id = ? AND finished_at IS NULL""",
                 (now, jid),
             )
             conn.commit()
@@ -143,9 +186,15 @@ def claim_next(conn: sqlite3.Connection) -> dict | None:
         ok, why = _dependency_satisfied(conn, job)
         if not ok:
             continue  # leave unclaimed; it becomes eligible without retry cost
-        conn.execute("UPDATE pipeline_jobs SET claimed_at = ?, attempt_count = ? "
-                     "WHERE id = ?", (now, attempts + 1, jid))
+        cur = conn.execute(
+            """UPDATE pipeline_jobs SET claimed_at = ?, attempt_count = ?
+               WHERE id = ? AND finished_at IS NULL
+                 AND (claimed_at IS NULL OR claimed_at <= ?)""",
+            (now, attempts + 1, jid, now),
+        )
         conn.commit()
+        if cur.rowcount != 1:
+            continue  # lost a race with another claimant; move on
         job["attempt_count"] += 1
         return job
     return None
@@ -225,6 +274,7 @@ def spec_backoff(spec: dict) -> float:
 
 
 def tick(conn: sqlite3.Connection) -> int:
+    ensure_recurring(conn)
     ran = 0
     while True:
         job = claim_next(conn)
