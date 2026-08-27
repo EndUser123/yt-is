@@ -37,6 +37,10 @@ RECONCILIATION_DECISIONS = ("kept", "merged", "discarded")
 CONFIDENCE_MIN = 0.0
 CONFIDENCE_MAX = 1.0
 
+# CONTRACT ARCHITECTURE v2 vocabularies (2026-08-27 packet)
+RELATION_ACTIONS = ("distinct", "merged", "drop_noise")
+PHASE1_OBJECT_TYPES = ("interest", "question", "regret")
+
 
 def _nullable_str() -> dict:
     return {"anyOf": [{"type": "string"}, {"type": "null"}]}
@@ -95,11 +99,17 @@ def _interest_schema() -> dict:
     }
 
 
-def inference_output_schema() -> dict:
-    """Provider-native strict output schema for one inference payload."""
+def _v2_result_schema() -> dict:
+    """Result-object body WITHOUT its own '$defs' key.
+
+    Callers own the '$defs' layer (AMENDMENT 3: the reconciliation
+    wrapper previously embedded inference_output_schema()'s whole dict,
+    producing nested '$defs' that the provider endpoint rejects with
+    HTTP 400). Every $ref below resolves against the caller's TOP-level
+    '$defs'.
+    """
     return {
         "type": "object",
-        "$defs": {"interest": _interest_schema()},
         "properties": {
             "inferred_interests": {
                 "type": "array", "items": {"$ref": "#/$defs/interest"},
@@ -143,18 +153,30 @@ def inference_output_schema() -> dict:
     }
 
 
+def inference_output_schema() -> dict:
+    """Provider-native strict output schema for one inference payload."""
+    return {
+        "type": "object",
+        "$defs": {"interest": _interest_schema()},
+        "properties": _v2_result_schema()["properties"],
+        "required": _v2_result_schema()["required"],
+        "additionalProperties": False,
+    }
+
+
 def reconciliation_output_schema() -> dict:
     """Strict output schema for one reconciliation group call.
 
-    Wraps the same v2 result under 'final' plus fragment dispositions.
-    Disposition contracts that require judgment (resolution to final
-    interest names, coverage of input fragments) remain in
-    validate_reconciliation; the schema only pins shape and vocabularies.
+    Single-level '$defs': interest / v2_result / disposition all sit at
+    the root and every $ref resolves there. Constraint content equals the
+    embedded-payload form used before AMENDMENT 3 (which the endpoint
+    rejected); only reference layout changed.
     """
     return {
         "type": "object",
         "$defs": {
-            "v2_result": inference_output_schema(),
+            "interest": _interest_schema(),
+            "v2_result": _v2_result_schema(),
             "disposition": {
                 "type": "object",
                 "properties": {
@@ -285,3 +307,149 @@ def _json_type_name(value) -> str:
     if isinstance(value, dict):
         return "object"
     return type(value).__name__
+
+
+# ---------------------------------------------------------------------------
+# CONTRACT v2 (2026-08-27): decomposed object/relation/grouping schemas
+# ---------------------------------------------------------------------------
+# Phase 1 emits INDEPENDENT semantic objects: interests carry NO parent /
+# related_to, questions carry NO interest reference, regret candidates carry
+# NO related_interests. Every phase-1 object is independently validatable.
+# Relations and merge-groupings live in their own constrained calls; all
+# references resolve against MECHANICALLY assigned IDs, never LLM-invented.
+# Single-level $defs only (the endpoint 400s on nesting — bakeoff
+# AMENDMENT 3 finding).
+
+def _interest_v2_schema() -> dict:
+    """Phase-1 interest: the semantic fields only, no relational fields."""
+    base = _interest_schema()
+    return {
+        "type": "object",
+        "properties": {k: v for k, v in base["properties"].items()
+                       if k not in ("parent", "related_to")},
+        "required": [r for r in base["required"]
+                     if r not in ("parent", "related_to")],
+        "additionalProperties": False,
+    }
+
+
+def _question_v2_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "status": {"type": "string",
+                       "enum": list(QUESTION_STATUSES)},
+        },
+        "required": ["text", "status"],
+        "additionalProperties": False,
+    }
+
+
+def _regret_v2_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "topic": {"type": "string"},
+            "why": {"type": "string"},
+            "label": {"type": "string", "enum": list(REGRET_LABELS)},
+            "confidence": _confidence(),
+            "cluster_ids": _cluster_ids(unique=False),
+        },
+        "required": ["topic", "why", "label", "confidence",
+                     "cluster_ids"],
+        "additionalProperties": False,
+    }
+
+
+def phase1_output_schema() -> dict:
+    """Strict output schema for one decomposed object-stage call."""
+    return {
+        "type": "object",
+        "$defs": {
+            "interest": _interest_v2_schema(),
+            "question": _question_v2_schema(),
+            "regret": _regret_v2_schema(),
+        },
+        "properties": {
+            "inferred_interests": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/interest"},
+                "minItems": 1},
+            "questions": {
+                "type": "array", "items": {"$ref": "#/$defs/question"}},
+            "regret_candidates": {
+                "type": "array", "items": {"$ref": "#/$defs/regret"}},
+        },
+        "required": ["inferred_interests", "questions",
+                     "regret_candidates"],
+        "additionalProperties": False,
+    }
+
+
+def relation_output_schema() -> dict:
+    """Strict output schema for one relation-stage call.
+
+    The provider returns ONLY relationships between mechanically assigned
+    IDs supplied in the prompt. Endpoint existence and typing are verified
+    mechanically afterwards; this schema pins shape, ID types, and pair
+    vocabulary.
+    """
+
+    def id_pair(a: str, b: str) -> dict:
+        return {"type": "object",
+                "properties": {a: {"type": "string"},
+                               b: {"type": "string"}},
+                "required": [a, b],
+                "additionalProperties": False}
+
+    return {
+        "type": "object",
+        "properties": {
+            "parent_edges": {"type": "array",
+                             "items": id_pair("child_id", "parent_id")},
+            "related_edges": {"type": "array",
+                              "items": id_pair("source_id", "target_id")},
+            "question_links": {"type": "array",
+                               "items": id_pair("question_id",
+                                                "interest_id")},
+            "regret_links": {"type": "array",
+                             "items": id_pair("regret_id", "interest_id")},
+        },
+        "required": ["parent_edges", "related_edges", "question_links",
+                     "regret_links"],
+        "additionalProperties": False,
+    }
+
+
+def grouping_output_schema() -> dict:
+    """Strict output schema for decomposed-reconciliation grouping.
+
+    Members reference mechanically assigned source-object IDs; every
+    input ID must appear in exactly one group (verified mechanically —
+    zero silent loss).
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "groups": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "members": {"type": "array",
+                                    "minItems": 1,
+                                    "items": {"type": "string"}},
+                        "action": {"type": "string",
+                                   "enum": list(RELATION_ACTIONS)},
+                        "canonical_name": _nullable_str(),
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["members", "action", "canonical_name",
+                                 "reason"],
+                    "additionalProperties": False,
+                }},
+        },
+        "required": ["groups"],
+        "additionalProperties": False,
+    }

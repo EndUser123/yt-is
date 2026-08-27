@@ -1,0 +1,95 @@
+{
+  "artifact_swaps": {
+    "large": 0,
+    "medium": 8,
+    "small": 4
+  },
+  "coverage": {
+    "artifact_suspect": 17,
+    "bucket_large": 8,
+    "bucket_medium": 22,
+    "bucket_small": 15,
+    "durable": 29,
+    "n": 45,
+    "recency_heavy": 16,
+    "srcdiv_high": 23,
+    "srcdiv_low": 22
+  },
+  "freeze_sha256": "f5f57ea54ea06b6a9e2ce807a07529c7e4eb72593840b81fa2b6408a33190010",
+  "policy": {
+    "artifact_swap_seats_per_bucket": 8,
+    "cells": "size x source_diversity(>=3 families)",
+    "quota": {
+      "large": 8,
+      "medium": 22,
+      "small": 15
+    }
+  },
+  "policy_version": "v2",
+  "seed": "e3-sample-v1",
+  "selection": {
+    "large": [
+      167,
+      248,
+      0,
+      182,
+      288,
+      161,
+      304,
+      183
+    ],
+    "medium": [
+      100,
+      260,
+      226,
+      338,
+      228,
+      292,
+      85,
+      208,
+      71,
+      249,
+      112,
+      43,
+      117,
+      271,
+      236,
+      259,
+      242,
+      330,
+      274,
+      316,
+      217,
+      322
+    ],
+    "small": [
+      9,
+      207,
+      33,
+      72,
+      12,
+      19,
+      159,
+      205,
+      80,
+      47,
+      198,
+      30,
+      201,
+      166,
+      175
+    ]
+  },
+  "shortages": {
+    "large": [
+      {
+        "cell": "high",
+        "deficit": 2,
+        "refilled": 2,
+        "residual": 0
+      }
+    ],
+    "medium": [],
+    "small": []
+  }
+}

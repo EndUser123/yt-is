@@ -502,7 +502,73 @@ proposed burst-policy-v2 specification. Independence boundary after
 freeze: fresh curator -> new unseen holdout -> different fresh
 evaluator.
 
-## Next action
+# yt-is Personal Intelligence — Discovery / Concept Intelligence State
+Updated: 2026-08-26 Discovery slice B model-generation bakeoff executed under frozen preregistration: NO_NEW_MODEL_SUPPORTED; no freeze; production default unchanged
+
+## Discovery slice B — Temporal Emergence (modelgen-v1, 2026-08-26)
+
+Scope note: everything in this section is slice B (temporal emergence)
+ONLY, not overall Discovery.
+
+- [seen] V2_SELECTIVITY_FAILURE_CONFIRMED retained (evaluator-v4
+  explicit-negative diagnostic); root mechanism = recent-window reuse of
+  trigger/pre-anchor evidence as confirmation before post-trigger
+  evidence can matter.
+- [seen] Semantic contract + arm/variant/metric preregistration FROZEN
+  and committed (5d93fe2c) BEFORE any model-family outcome:
+  docs/handoffs/interest-intelligence/episode-semantics-contract-
+  20260826.md and temporal-emergence-modelgen-preregistration-
+  20260826.md. Invariant: evidence that OPENS an episode may not CONFIRM
+  it (strict post-open cutoff). Amendment A1 discloses parity
+  re-anchoring after catalog drift and completion of the preregistered
+  re-arm clause. Contract erratum E1 records the dd+240d baseline-exit
+  discontinuity with an outcome-insensitivity probe.
+- [seen] Harness acceptance: byte-level subject equality vs a receipt-
+  pinned same-day NON_BLIND rerun of the FROZEN evaluator on the current
+  catalog (36/42 recall, 75/124 negative rate, 0 mismatches over 124
+  negatives; candidate recall identical 42/42). Deltas vs the published
+  morning artifact are catalog drift, enumerated per sid.
+- [seen] Compared families (consumed v4 data, TRAINING_DIAGNOSTIC):
+  Arm A burst-policy-v2 reference (0.8571 / 0.6048 / sep 0.2523);
+  Arm B post-trigger confirmation x five frozen variants;
+  Arm C explicit episode-state machine (= B/EU1-W30 core + fields,
+  CONTINUING/COOLING/CLOSED);
+  Arm D two-signal (burst opening x independent post-open density).
+  Result table lives in temporal-emergence-modelgen-results-20260826.md.
+  Headline: high-recall variants fail selectivity (neg 0.35-0.51),
+  selective variants fail recall (CHANNELNEW pos 0.429, armD pos 0.357 /
+  neg 0.097 / sep 0.2604-beats-A); NO family co-satisfies the frozen
+  bars. First-pass single-shot accounting had collapsed negatives to
+  0.040-0.169 at recall 0.310-0.381 — the strictness/recall frontier is
+  the structural finding.
+- [seen] Mechanical receipts: CASE P/N fixtures separate cleanly while
+  Arm A promotes both (documented failure reference); future-leak inert;
+  duplicate-publisher clones never corroborate (causal 0 defects);
+  replay determinism byte-identical; perturbation20 armD retained 0.867.
+- [seen] Segmentation insight: post-open evidence PRESENCE by T+60 is
+  nearly universal on both cohorts (41/42 positives, 123/124 negatives) —
+  presence separates nothing; density/channel-novelty carry all signal,
+  and median confirmation delays (~4 months) expose a corpus valid-time
+  density ceiling for early confirmation.
+- DECISION (preregistered mapping applied verbatim):
+  NO_NEW_MODEL_SUPPORTED. No shadow implementation built this session.
+- Production default unchanged (burst-policy-v1); v1/v2 files untouched;
+  evaluator/formal ledger untouched; no new holdout curated or consumed;
+  holdout-v4 remains training-only forever.
+- Next-stage options recorded for the architect (results doc §fork):
+  O1 precision-mode armD profile as later SHADOW read-model ranking;
+  O2 ground-truth label semantics revision first (blinded audit showed
+  label-vs-local-emergence divergence caps any time-local model);
+  O3 acquisition-side valid-time density gap rather than threshold work.
+
+## Next action (supersedes stale blocks below)
+
+Architect decision required on the model-generation fork above.
+Promotion path unchanged: any future candidate freezes implementation +
+parameters + evaluator FIRST, then fresh curator -> NEW unseen holdout ->
+different fresh evaluator.
+
+## Historical next actions (pre-bakeoff, kept for provenance)
 
 Architect-approved Discovery calibration experiment on consumed
 holdout-v4 as TRAINING/DIAGNOSTIC evidence, followed by a completely

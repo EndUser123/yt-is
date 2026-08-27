@@ -1,0 +1,186 @@
+{
+  "_meta": {
+    "kind": "temporal-eu-time-policy-decision",
+    "version": 1,
+    "agent": "zcode",
+    "created": "2026-08-27T04:20:53Z",
+    "packet": "undated-EU temporal semantics diagnostic (NEW IMPLEMENTER OPTIONAL)",
+    "constraints": [
+      "no burst-policy-v1/v2 changes",
+      "no Temporal Emergence model changes",
+      "no Interest inference changes",
+      "no Recommendation changes",
+      "production NOT migrated"
+    ],
+    "frozen_run": {
+      "dir": "P:\\packages\\yt-is\\.logs\\temporal-time-policy\\timepolicy-20260826T-01",
+      "snapshot_rows": {
+        "eu": 266945,
+        "kg_nodes": 313,
+        "kg_edges": 102454
+      },
+      "snapshot_sha256_head": "431ef88e14187e9a"
+    }
+  },
+  "decision": "MIXED_SOURCE_POLICY_SUPPORTED",
+  "corpus": {
+    "total_eus": 266945,
+    "dated": 225149,
+    "undated": 41796,
+    "undated_by_source": {
+      "notebooklm": 13110,
+      "discord": 27740,
+      "dht-artifact": 732,
+      "hackernews": 74,
+      "rss": 66,
+      "ytdlp": 57,
+      "whisper": 2,
+      "github": 8,
+      "newsletter": 6,
+      "podcast": 1
+    },
+    "discord_true_event_year_mix": {
+      "2019": 95,
+      "2020": 715,
+      "2021": 4161,
+      "2022": 6873,
+      "2023": 11753,
+      "2024": 2592,
+      "2025": 481,
+      "2026": 1209
+    },
+    "discord_capture_vs_valid_lag": {
+      "p50_days": 1262,
+      "p95_days": 1904,
+      "max_days": 2653,
+      "over_2y_fraction": 0.935
+    },
+    "entity_mention_reach": {
+      "mentions_total": 102454,
+      "mentions_from_undated_eus": 43589,
+      "entities_touched_by_undated": 245,
+      "total_entities": 313
+    }
+  },
+  "field_semantics": {
+    "youtube(authority)": {
+      "published_at": "VALID_TIME (analysis_status.published_at, YouTube metadata)",
+      "captured_at": "RECORDED_TIME (transcript cached_at)"
+    },
+    "youtube(13,110 undated block)": {
+      "published_at": "UNKNOWN (missing upstream; NOT internally recoverable: analysis_status empty, video_catalog carries no publish column)",
+      "captured_at": "RECORDED_TIME"
+    },
+    "discord_dht_windows": {
+      "published_at": "UNSET BY CODE (ingest_connectors.py hardcodes published=\"\" despite metadata first_ts/last_ts)",
+      "captured_at": "RECORDED_TIME \u2014 bulk capture days 2026-08-21..25"
+    },
+    "dht_artifact": {
+      "published_at": "UNSET BY CODE (message_id lost as 0 in downloads-table extraction path)",
+      "captured_at": "RECORDED_TIME"
+    },
+    "reddit_hn_rss_github_newsletter_podcast": {
+      "published_at": "VALID_TIME when present (connector meta created_utc/created_at/published/date); small parse-miss residual (74/66/57/8/6)",
+      "captured_at": "RECORDED_TIME"
+    }
+  },
+  "current_behavior": {
+    "obs_date_rule": "substr(COALESCE(NULLIF(published_at,\"\"),captured_at),1,10) (ef/concept_discovery._entity_observations)",
+    "effect": "All 28,472 undated Discord EUs enter recency windows at ingestion days (93.5% carry true events >2 years old) -> fabricated late-August-2026 burst across 245/313 tracked entities (78%)."
+  },
+  "recovery_experiment": {
+    "discord_windows": {
+      "coverage": "27879/27879 cache rows (100%)",
+      "method": "metadata first_ts (DHT messages.timestamp epoch-ms)",
+      "validation": "121/121 sampled windows equal snowflake-decoded anchor id (delta 0 ms)",
+      "classification": "VALID_TIME exact",
+      "assumption": "archive timestamp column read as epoch-ms; live values validated across 2019-11..2026-08; older ISO-string export format handled by normalizer"
+    },
+    "dht_artifact": {
+      "coverage": "732/732",
+      "method_primary": "raw archive attachments.normalized_url bridge -> messages.timestamp (exact)",
+      "method_fallback": "CDN url attachment-snowflake decode (APPROXIMATE, sub-minute skew)",
+      "validation": "sample bridge timestamp == url-snowflake date (2022-11-06 sample); synthetic sha256 attachment ids never decoded",
+      "classification": "VALID_TIME (exact / approximate flagged per row)"
+    },
+    "notebooklm_block": {
+      "recoverable_from_internal_stores": false,
+      "evidence": "0/13110 present in analysis_status.published_at; video_catalog has no published column"
+    }
+  },
+  "counterfactual": {
+    "engine": "production scoring code verbatim (ef.concept_discovery._stats_for/_is_emerging/_world_signal, ef.burst_policy_v2.evaluate) on frozen snapshots",
+    "policy_modifications": "none (POLICY/PARAMS untouched)",
+    "import_shim_note": "ef.concept_discovery currently fails import (missing evidence_cluster_inventory export); inert shim used solely to access scoring functions; flag recorded in every replay result file",
+    "sweep": "2026-05-01..2026-08-26 (evaluation dates: month starts + mid-month checkpoints, daily for the final 9 days)",
+    "final_day": "2026-08-26",
+    "arms": {
+      "a_current": {
+        "entities_with_obs": 313,
+        "mentions_total": 102454,
+        "v1_emerging_entities": 112,
+        "v2_positive_entities": 176,
+        "v2_candidate_evaluations_sum": 3053,
+        "v2_promote_events_sum": 1414
+      },
+      "b_exclude": {
+        "entities_with_obs": 306,
+        "mentions_total": 58865,
+        "v1_emerging_entities": 9,
+        "v2_positive_entities": 39,
+        "v2_candidate_evaluations_sum": 2609,
+        "v2_promote_events_sum": 600
+      },
+      "c_recover": {
+        "entities_with_obs": 313,
+        "mentions_total": 102454,
+        "v1_emerging_entities": 21,
+        "v2_positive_entities": 100,
+        "v2_candidate_evaluations_sum": 2979,
+        "v2_promote_events_sum": 1185
+      },
+      "d_interval_end": {
+        "entities_with_obs": 313,
+        "mentions_total": 102454,
+        "v1_emerging_entities": 22,
+        "v2_positive_entities": 101,
+        "v2_candidate_evaluations_sum": 2992,
+        "v2_promote_events_sum": 1207
+      }
+    },
+    "key_findings": [
+      "A fabricates 112 v1-emerging entities vs 21 under correct semantics (-81%); v2-positive 176->100 (-43%)",
+      "v2 promote events over sweep: A 1414 vs C 1185 (-229 false promotes)",
+      "first_seen shifts: 53/313 entities become older under C",
+      "exclusion (B) destroys signal: 9 v1-emerging / 39 v2-positive vs C 21/100 \u2014 recovery preserves ~2.5x temporal support",
+      "interval sensitivity negligible: D interval-end differs from C by <=1 entity (22 vs 21 / 101 vs 100)"
+    ]
+  },
+  "bitemporal_requirements": {
+    "knowledge_as_of_effect_found": true,
+    "divergence_examples": {
+      "c_recover_v1_emerging_by_day": {
+        "2026-05-01": [
+          5,
+          0
+        ],
+        "2026-08-15": [
+          11,
+          0
+        ]
+      }
+    },
+    "late_arrival_mentions_in_scope_c": 97353,
+    "conclusion": "Retrospective replays require BOTH world-as-of (valid_time<=t) AND knowledge-as-of (recorded_time<=t). Pure-valid-time replay pretends late-ingested evidence was always known (97k mentions scope under C)."
+  },
+  "decision_rationale": "Discord/DHT valid time mechanically recoverable with validated exactness for windows and flagged approximation for artifacts; unrecoverable blocks exist (notebooklm 13,110) and must not silently substitute captured_at.",
+  "proposed_migration_NOT_APPLIED": {
+    "design": "No-history-rewrite: populate recovered times through provenance-carrying columns/table (original value preserved; recovery method/source/version/confidence recorded; idempotent rebuild). Reuse or mirror the bitemporal pattern documented here; keep arm-B semantics (exclusion from temporal features) for genuinely unknown-valid rows.",
+    "gate": "Return-to-architect decision before any production change; this artifact is the consumable input for the Temporal Emergence model-generation lane."
+  },
+  "tests": {
+    "file": "packages/yt-is/tests/test_temporal_time_policy.py",
+    "count": 14,
+    "covers": "packet-required synthetic cases 1-7 + recovery-method matrix + bitemporal suppression"
+  }
+}
