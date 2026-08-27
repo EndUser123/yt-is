@@ -135,3 +135,45 @@ phase independence real (relation/generation defects cannot corrupt
 phase-1 stores); accounting equality enforced; no semantic rewriting in
 assembly; sanitizer R-1 cannot resurrect dropped edges; prompt-equivalence
 guard active; artifact isolation unchanged; artifacts under runs/bakeoff-v2 dirs.
+
+## AMENDMENT 2 (2026-08-27, mid-bakeoff; containment + shadow plan)
+
+Two genuine live defects were receipted fail-closed during measured runs:
+(1) D2 first attempt crashed uncaught when the monolithic reconciliation
+tree's provider output carried an invented interest with empty
+cluster_ids; (2) the D2 rerun crashed on ReconciliationContractError
+(unresolvable target_interest). Both belong to the class the packet
+requires to become RECEIPTED arm results, so run_reconciliation_tree in
+the D1/D2 path is now wrapped `except Exception` -> classified _finish
+row (type name recorded). Additionally: write_schemas persists and
+returns inference-output-schema.json, which the post-recon one-shot
+reference-repair closure attaches. Reviewed: run-2104809e6a0f,
+run-e383c0c54d89.
+
+### Live receipts (pre-shadow)
+
+- D1: phase-1 13/13 COMPLETE (218 interests, ZERO schema or semantic
+  defects); relation stage strict-failed after 1 endpoint violation +
+  1 exhausted repair -> receipted fail-closed (frozen D1 semantics).
+- D2: phase-1 13/13 twice; both attempts then receipted fail-closed on
+  distinct genuine monolithic-recon provider defects (empty cluster_ids;
+  unresolvable target_interest).
+- D3: phase-1 13/13 COMPLETE (210 interests, zero defects); grouping
+  coverage-retry engaged once; relation stage = 1 call, 154 valid edges,
+  32 quarantined optional edges (receipted), 0 repairs, 1 required-link
+  failure receipted-and-excluded; decomposed assembly COMPLETED through
+  the STRICT FROZEN validator: 328 objects in / 410 explicit
+  dispositions / 262 canonical objects.
+
+Frozen success requirements 1-6 verified for D3 => provisional decision
+DECOMPOSED_CONTRACT_SUPPORTED, PENDING the shadow gate below.
+
+### Shadow gate implementation
+
+Host script: `scripts/contract_v2_bakeoff.py --shadow [N]` (N defaults
+3, clamped >= 1) — runs N clean-root full-coverage decomposed
+bootstraps sequentially under ARTIFACT_ROOT/runs/shadow-v2-<i>ofN-<ts>_
+<uid>/ (uniqueness by index+timestamp+uuid), printing PER-SHADOW
+COMPLETE/FAILED and exiting nonzero unless 3/3 complete. Persistence is
+UNREACHABLE by construction: no store primitive exists on this path
+(reviewed; all reachable sqlite seams are mode=ro readers).
