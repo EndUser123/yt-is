@@ -667,13 +667,24 @@ def run_arm(arm: str, artifact_dir: str | None) -> int:
         leaf_rows.append((fid, o))
 
     t1 = time.monotonic()
-    tree = big.run_reconciliation_tree(
-        fragments, list(plan.eligible_cluster_ids), provider="codex",
-        timeout=TIMEOUT_S,
-        prompt_path=root / "reconciliation" / "tree-group.txt",
-        invoke=make_prose_recon_adapter(recon_ledger),
-        stage_writer=lambda s, rec_, base=root / "reconciliation":
-        ib._write_json(base / f"monolith-stage-{s:02d}.json", rec_))
+    try:
+        tree = big.run_reconciliation_tree(
+            fragments, list(plan.eligible_cluster_ids), provider="codex",
+            timeout=TIMEOUT_S,
+            prompt_path=root / "reconciliation" / "tree-group.txt",
+            invoke=make_prose_recon_adapter(recon_ledger),
+            stage_writer=lambda s, rec_, base=root / "reconciliation":
+            ib._write_json(base / f"monolith-stage-{s:02d}.json", rec_))
+    except big.InferenceContractError as exc:
+        # genuine provider/recon contract defect -> receipted arm result
+        return _finish(root, arm,
+                       {"completed": False,
+                        "why": f"monolith_recon_contract_{exc}"[:400]},
+                       recon_ledger, rel, t0,
+                       extra={"phase1": p1["metrics"],
+                              "phase1_rows": p1["rows"],
+                              "relations": rel_metrics,
+                              "recon_ledger": recon_ledger})
 
     # ---- R-1 sanitation + strict gate ----
     leafid_to_source_name = {
