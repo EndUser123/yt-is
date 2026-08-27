@@ -57,7 +57,7 @@
     },
     "entity_mention_reach": {
       "mentions_total": 102454,
-      "mentions_from_undated_sources": 40062,
+      "mentions_from_undated_eus": 43589,
       "entities_touched_by_undated": 245,
       "total_entities": 313
     }
@@ -93,7 +93,8 @@
       "coverage": "27879/27879 cache rows (100%)",
       "method": "metadata first_ts (DHT messages.timestamp epoch-ms)",
       "validation": "121/121 sampled windows equal snowflake-decoded anchor id (delta 0 ms)",
-      "classification": "VALID_TIME exact"
+      "classification": "VALID_TIME exact",
+      "assumption": "archive timestamp column read as epoch-ms; live values validated across 2019-11..2026-08; older ISO-string export format handled by normalizer"
     },
     "dht_artifact": {
       "coverage": "732/732",
@@ -111,7 +112,7 @@
     "engine": "production scoring code verbatim (ef.concept_discovery._stats_for/_is_emerging/_world_signal, ef.burst_policy_v2.evaluate) on frozen snapshots",
     "policy_modifications": "none (POLICY/PARAMS untouched)",
     "import_shim_note": "ef.concept_discovery currently fails import (missing evidence_cluster_inventory export); inert shim used solely to access scoring functions; flag recorded in every replay result file",
-    "sweep": "2026-05-01..2026-08-26 (weekly/mid-month cadence, daily last week)",
+    "sweep": "2026-05-01..2026-08-26 (evaluation dates: month starts + mid-month checkpoints, daily for the final 9 days)",
     "final_day": "2026-08-26",
     "arms": {
       "a_current": {
