@@ -296,8 +296,13 @@ def test_run_inference_validates_and_writes_artifact(
     assert meta["requested_model"] == "gpt-5.6-luna"
     assert meta["prompt_version"] == big.PROMPT_VERSION
     assert meta["result_hash"] == big.canonical_result_hash(payload)
-    assert (tmp_path / "result.json").read_text(encoding="utf-8") == \
-        json.dumps(payload, indent=2, ensure_ascii=False)
+    # result files carry the validation envelope: a raw provider payload
+    # is never written without its run_id + validated status stamp
+    blob = json.loads(
+        (tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert blob["payload"] == payload
+    assert blob["validation_status"] == "validated"
+    assert blob["result_hash"] == meta["result_hash"]
     assert seen["cmd"][0] == "codex"
     assert seen["creationflags"], "no-window creationflags required"
 
