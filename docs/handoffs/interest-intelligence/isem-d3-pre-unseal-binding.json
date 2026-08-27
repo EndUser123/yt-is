@@ -1,0 +1,164 @@
+{
+ "document_kind": "ISEM_D3_PRE_UNSEAL_BINDING",
+ "created_utc": "2026-08-27T16:51:52",
+ "status": "BOUND_WAITING_ON_FRESH_PRE_UNSEAL_REVIEW",
+ "evaluator": {
+  "identity": "isem_v1 (ARCHITECT_AMENDMENT_1 frozen core)",
+  "freeze_lineage": {
+   "candidate_commit": "02fd3a7e",
+   "integration_commit": "ff9696ee",
+   "bookkeeping_commit": "a91bdec1",
+   "amendment": "BINDING_AMENDMENT_2 (this candidate branch head)"
+  },
+  "canonical_artifact_hashes": [
+   {
+    "path": "ef/eval_interest_semantic.py",
+    "sha256": "a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503"
+   },
+   {
+    "path": "scripts/eval_interest_holdout.py",
+    "sha256": "1098e891fb81a116914f153f88c8767dfd28822a0f5194d4573a33597e0ff82c"
+   },
+   {
+    "path": "tests/test_eval_interest_semantic.py",
+    "sha256": "ed33641277b1038d443cbc8941c1e8193df9de8198097be4584c5e65ffdc2b14"
+   },
+   {
+    "path": "ef/isem_d3_binding.py",
+    "sha256": "e34eae4414423c5654497528ca7e8bc41e9f54a1a9393e78642446864e25cf6c"
+   },
+   {
+    "path": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
+    "sha256": "7b0a3c651adfdb7f59c248e27b0aa4d9bd78a37ee7600823ba3bf836a051dbf0"
+   }
+  ],
+  "freeze_receipt_sha256": "52ea3d80b21aad41ffeeb186803073942ad6063f9bca6a99fc396ef251ba7726",
+  "judge_prompts_sha256": {
+   "positive": "733e24b5fb2ad9cf7c70e55e435f349c5b7e189398c2fc11b6344e4592825ccc",
+   "negative_interest": "9bd66cc82f8a6394dad08d7bdb15304928049d973ed00a784368e38375fb7fd8"
+  },
+  "min_n_per_type": 5
+ },
+ "inference_freeze": {
+  "architecture": "D3_DECOMPOSED",
+  "freeze_commit": "f7bd24fdb917aa5e35112d0b2f2eae1c2129bf59",
+  "implementation_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+  "runtime_configuration": {
+   "provider": "codex CLI",
+   "provider_cli_version": "codex-cli 0.149.1",
+   "model": "gpt-5.6-luna",
+   "reasoning_effort": "medium",
+   "structured_output_mode": "codex exec --output-schema <file>",
+   "schema_artifact_hashes_shadow_common": {
+    "grouping-output-schema.json": "fc257d0b3a7d4d42876455b743cc3791366664796bdd1e7771ba9eb5d7de83c0",
+    "inference-output-schema.json": "4d15c291d5e9e587857570051614c2e6a3fafeedccf50258a72cf12b486fae75",
+    "phase1-output-schema.json": "ae732819fd9bbf414ca4ed590f334140b4fd11265a9dd37d74ba196ea1514715",
+    "relation-output-schema.json": "6090b55f9a32ab443b64add453af662d5d7ecb783774dbb320786ee47b3ce175"
+   },
+   "semantic_prompt_template_source": "PHASE-1 prompt = PROMPT_TEMPLATE semantic head (drift-guard tested verbatim against the frozen template) + phase-1 contract block from ef/contract_v2.py at manifest blob hashes; per-call prompt files persisted under each runs phase1/prompts/",
+   "relation_prompt_template_source": "RELATION_PROMPT_TEMPLATE in ef/contract_v2.py (manifest); per-call inventories embedded per run under relations/prompts/",
+   "grouping_prompt_template_source": "GROUPING_PROMPT_TEMPLATE in scripts/contract_v2_bakeoff.py (manifest)",
+   "retry_bounds": "single exec-class retry (nonzero exit | timeout 580s | missing agent_message); semantic failures never retried; MAX_REFERENCE_REPAIR_ATTEMPTS=2",
+   "quarantine_rules_version": "contract_v2.verify_relations edge_iter quarantine + deterministic DAG containment (AMENDMENT-2-reviewed code)",
+   "relation_rules_version": "id-pair endpoint/type vocabulary; receipted optional-edge quarantine; required-link explicit exclusion receipts",
+   "final_validator_version": "validate_inference v2.1-contract-fidelity (unmodified gate), build_interest_graph.py manifest blob",
+   "batch_size_max_per_call": 25,
+   "cluster_universe_count": 319,
+   "plan_id": "plan_01b09359b3f05784",
+   "FROZEN_PLAN_ID": "plan_01b09359b3f05784",
+   "config_identity_complete": true
+  }
+ },
+ "contestants": [
+  {
+   "run_id": "shadow_1",
+   "run_root": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-1of3-20260827T034448_1ddfc488",
+   "expected_sha256": "8eafbfd8cf05bb3931dd0c93393f1c6a0bbeeadde8cc911bc641d37b860fea00",
+   "reconstructed_sha256": "8eafbfd8cf05bb3931dd0c93393f1c6a0bbeeadde8cc911bc641d37b860fea00",
+   "byte_exact": true,
+   "strict_validator": "PASSED validate_inference (build_interest_graph, frozen manifest blob)",
+   "counts": {
+    "objects_in": 303,
+    "canonical_objects": 225,
+    "explicit_dispositions": 376,
+    "quarantined_edges": 1,
+    "required_link_failures": 1
+   }
+  },
+  {
+   "run_id": "shadow_2",
+   "run_root": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-2of3-20260827T044315_3d641bca",
+   "expected_sha256": "acbbda7c9c9cee141b7d97d35571dd75eafb46db79da38f18cef04785d041462",
+   "reconstructed_sha256": "acbbda7c9c9cee141b7d97d35571dd75eafb46db79da38f18cef04785d041462",
+   "byte_exact": true,
+   "strict_validator": "PASSED validate_inference (build_interest_graph, frozen manifest blob)",
+   "counts": {
+    "objects_in": 329,
+    "canonical_objects": 307,
+    "explicit_dispositions": 445,
+    "quarantined_edges": 3,
+    "required_link_failures": 1
+   }
+  },
+  {
+   "run_id": "shadow_3",
+   "run_root": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-3of3-20260827T052454_8a84db25",
+   "expected_sha256": "277a1a3af5c22537a1785b48d4f3668c8d9820e9c378f96fb5a04a4a49addc48",
+   "reconstructed_sha256": "277a1a3af5c22537a1785b48d4f3668c8d9820e9c378f96fb5a04a4a49addc48",
+   "byte_exact": true,
+   "strict_validator": "PASSED validate_inference (build_interest_graph, frozen manifest blob)",
+   "counts": {
+    "objects_in": 326,
+    "canonical_objects": 288,
+    "explicit_dispositions": 406,
+    "quarantined_edges": 3,
+    "required_link_failures": 2
+   }
+  }
+ ],
+ "binding_identity_sha256": "ed65ea19e6a2ee68ce675bde28552c9211ca3df1809a63f51430fbba740cac37",
+ "reconstruction": {
+  "procedure": "DETERMINISTIC_ASSEMBLY_REPLAY_V1",
+  "implementation_module": "ef/isem_d3_binding.py",
+  "implementation_sha256": "e34eae4414423c5654497528ca7e8bc41e9f54a1a9393e78642446864e25cf6c",
+  "serialization_recipe": "json.dumps(sort_keys,compact,ensure_ascii=False)",
+  "provider_calls": "ZERO",
+  "holdout_opened": "NO",
+  "note": "The v2 shadow driver never persisted assembled finals; contestant identity is deterministic replay of frozen committed code over the frozen provider artifacts. A hash mismatch is fatal (CONTESTANT_RECONSTRUCTION_MISMATCH): no replacement runs, no reruns."
+ },
+ "expected_holdout": {
+  "path_class": "SEALED — never opened by this binding",
+  "public_sha256": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f"
+ },
+ "binding_rule": {
+  "ISEM_MUST_SCORE_ALL_THREE_FROZEN_OUTPUTS": true,
+  "REPEATABLE_PERFECT": "YES iff shadow_1 AND shadow_2 AND shadow_3 Interest finite-set conformance = PERFECT; any IMPERFECT -> NO. No majority vote; no best-run selection; no rerun after labels are opened.",
+  "minor_denominator_rule": "Goal / InformationNeed / Question reported per run; no promotion threshold invented for their tiny denominators"
+ },
+ "outcome_families": {
+  "A_finite_set_correctness": "ISEM finite-set conformance over the sealed holdout (post-unseal, single scoring run)",
+  "B_generalization_evidence": "ISEM MIN_N_PER_TYPE=5 PASS/FAIL-gated SUFFICIENT/INSUFFICIENT evidence (orthogonal to A)",
+  "C_run_to_run_semantic_stability": "Already-measured label-free instability stands: exact 3-way Interest intersection 8 of union 500 (IoU 0.016). Descriptive only; not a reason to alter D3; known-set success must not hide it."
+ },
+ "amendment": {
+  "name": "BINDING_AMENDMENT_2",
+  "findings": {
+   "F1": "support carries the same explicit holdout authorization boundary as score (FIXED, see tests: F1 support tests)",
+   "F2": "full superseded-hash ledger recorded in AMENDMENT_2_D3_BINDING.md; reviewed working-tree (CRLF) hashes vs canonical landed (LF) repo-content hashes kept distinct; no historical receipt rewritten (COMPLETE)",
+   "F3": "zero-scorable-positives + own-type matching negative regression tests added (TEST_ADDED)"
+  },
+  "amendment_file_hashes": {
+   "ef/isem_d3_binding.py": "e34eae4414423c5654497528ca7e8bc41e9f54a1a9393e78642446864e25cf6c",
+   "scripts/bind_isem_d3.py": "f70ec7da6813c851c38423acc9a533213e81670565df9e0e2519920fb72484a3",
+   "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/AMENDMENT_2_D3_BINDING.md": "357410b0d19fa4a1996afe993cc9b03876e33abeb9927b4c71ef68f675b960e6"
+  },
+  "tests_hash": {
+   "tests/test_eval_interest_semantic.py": "ed33641277b1038d443cbc8941c1e8193df9de8198097be4584c5e65ffdc2b14",
+   "tests/test_isem_d3_binding.py": "c9bcf783d735df8e01b2342960f343d8469fc57e3accaa489ad87f5b827c40b2"
+  }
+ },
+ "review": {
+  "review_performed": "NO — FRESH REVIEW REQUIRED",
+  "next_step": "ARCHITECT PENDING"
+ }
+}
