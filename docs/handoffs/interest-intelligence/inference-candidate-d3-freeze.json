@@ -1,0 +1,295 @@
+{
+  "document_kind": "INFERENCE_CANDIDATE_D3_FREEZE",
+  "created_by_session": "sess_ab0a0135-9c07-432c-af42-c9305e09195e",
+  "created_local_time": "2026-08-27T07:06:16",
+  "selected_architecture": "D3_DECOMPOSED",
+  "selected_code_commit": "02f56240fc33d6cbfc493e1e25bb70742b416144",
+  "results_receipt_commit": "5c6e41662235f0ae98d57e5f1f6d489611976f3a",
+  "commit_chain_full_shas": [
+    "959cd1ad883dda3bca903cca05e81a6990f090c9",
+    "831944e5ce541c747235c02421decfeec9d52500",
+    "4008a7013fc0a5d7da2a06dd1292816de888479a",
+    "02f56240fc33d6cbfc493e1e25bb70742b416144"
+  ],
+  "implementation_manifest": [
+    {
+      "path": "ef/contract_v2.py",
+      "git_blob_sha": "6b481de215d3556b06362853675df32910de2a16",
+      "content_sha256": "65bcb7dca34685fd71204d83b4122b1a995112f77db79bbc6aae85b973385cc0"
+    },
+    {
+      "path": "ef/inference_contract.py",
+      "git_blob_sha": "11f75070fa190e81674af00a43740b12e6be86c3",
+      "content_sha256": "a249fdaed91e7ee01f2123e13e22093cb58cd2d17e58ddae5acb736d4157f4ce"
+    },
+    {
+      "path": "ef/evidence_clusters.py",
+      "git_blob_sha": "8d243590fdf5df98adb8b58f1fba38eddbc8b7a8",
+      "content_sha256": "fd5d56095f592ce3e48f9d2e4cebbc2db40fbf8631e99937e43355af2188263a"
+    },
+    {
+      "path": "ef/interest_candidates.py",
+      "git_blob_sha": "21afb0222b950d509d84cc843db62e6521e77889",
+      "content_sha256": "4b1a07065fd7aee294987dc2d11a9f90cfd57bc03ffb125170dc6e73553033d5"
+    },
+    {
+      "path": "scripts/build_interest_graph.py",
+      "git_blob_sha": "a9aa29c63772f7adfae87f7354b9d9a6b98587b3",
+      "content_sha256": "138458b447aaa72b8309c7174839c36f2bd27c682afbd74b9e7ed30031e89dd3"
+    },
+    {
+      "path": "scripts/contract_v2_bakeoff.py",
+      "git_blob_sha": "96b7d4272eaa0c5f5d0985b802aa87348288cc08",
+      "content_sha256": "9002d65043a3961129f57323c320e34582a8546acf28de8777d8d7d9937ed293"
+    }
+  ],
+  "implementation_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+  "excluded_from_manifest_note": "csf/paths.py (env loading) and personal_graph.py (store writer) are imported-or-present but NOT load-bearing for semantic output; the store path is unreachable on the shadow pipeline by construction",
+  "runtime_configuration": {
+    "provider": "codex CLI",
+    "provider_cli_version": "codex-cli 0.149.1",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "medium",
+    "structured_output_mode": "codex exec --output-schema <file>",
+    "schema_artifact_hashes_shadow_common": {
+      "grouping-output-schema.json": "fc257d0b3a7d4d42876455b743cc3791366664796bdd1e7771ba9eb5d7de83c0",
+      "inference-output-schema.json": "4d15c291d5e9e587857570051614c2e6a3fafeedccf50258a72cf12b486fae75",
+      "phase1-output-schema.json": "ae732819fd9bbf414ca4ed590f334140b4fd11265a9dd37d74ba196ea1514715",
+      "relation-output-schema.json": "6090b55f9a32ab443b64add453af662d5d7ecb783774dbb320786ee47b3ce175"
+    },
+    "semantic_prompt_template_source": "PHASE-1 prompt = PROMPT_TEMPLATE semantic head (drift-guard tested verbatim against the frozen template) + phase-1 contract block from ef/contract_v2.py at manifest blob hashes; per-call prompt files persisted under each runs phase1/prompts/",
+    "relation_prompt_template_source": "RELATION_PROMPT_TEMPLATE in ef/contract_v2.py (manifest); per-call inventories embedded per run under relations/prompts/",
+    "grouping_prompt_template_source": "GROUPING_PROMPT_TEMPLATE in scripts/contract_v2_bakeoff.py (manifest)",
+    "retry_bounds": "single exec-class retry (nonzero exit | timeout 580s | missing agent_message); semantic failures never retried; MAX_REFERENCE_REPAIR_ATTEMPTS=2",
+    "quarantine_rules_version": "contract_v2.verify_relations edge_iter quarantine + deterministic DAG containment (AMENDMENT-2-reviewed code)",
+    "relation_rules_version": "id-pair endpoint/type vocabulary; receipted optional-edge quarantine; required-link explicit exclusion receipts",
+    "final_validator_version": "validate_inference v2.1-contract-fidelity (unmodified gate), build_interest_graph.py manifest blob",
+    "batch_size_max_per_call": 25,
+    "cluster_universe_count": 319,
+    "plan_id": "plan_01b09359b3f05784",
+    "FROZEN_PLAN_ID": "plan_01b09359b3f05784",
+    "config_identity_complete": true
+  },
+  "contestant_outputs": {
+    "shadow_1": {
+      "run_root": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-1of3-20260827T034448_1ddfc488",
+      "start_stamp_from_dirname": "shadow-v2-1of3-20260827T034448",
+      "end_time_metrics_mtime": "2026-08-27T04:43:15",
+      "code_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+      "runtime_config_identity": "runtime_configuration block below (reconstructed from these artifacts)",
+      "payload_path": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-1of3-20260827T034448_1ddfc488 | RECONSTRUCTED via deterministic assembly replay of frozen provider artifacts (see reconstruction note)",
+      "payload_canonical_sha256": "8eafbfd8cf05bb3931dd0c93393f1c6a0bbeeadde8cc911bc641d37b860fea00",
+      "source_objects": 303,
+      "disposition_receipts": 376,
+      "canonical_objects": 225,
+      "validation_status": "PASSED strict frozen validate_inference - re-executed during freeze on the reconstructed payload",
+      "persistence_performed": false,
+      "counts_label_free": {
+        "interests": 153,
+        "questions": 52,
+        "regret_candidates": 19,
+        "goal_bearing": 152,
+        "information_need_bearing": 152
+      }
+    },
+    "shadow_2": {
+      "run_root": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-2of3-20260827T044315_3d641bca",
+      "start_stamp_from_dirname": "shadow-v2-2of3-20260827T044315",
+      "end_time_metrics_mtime": "2026-08-27T05:24:54",
+      "code_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+      "runtime_config_identity": "runtime_configuration block below (reconstructed from these artifacts)",
+      "payload_path": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-2of3-20260827T044315_3d641bca | RECONSTRUCTED via deterministic assembly replay of frozen provider artifacts (see reconstruction note)",
+      "payload_canonical_sha256": "acbbda7c9c9cee141b7d97d35571dd75eafb46db79da38f18cef04785d041462",
+      "source_objects": 329,
+      "disposition_receipts": 445,
+      "canonical_objects": 307,
+      "validation_status": "PASSED strict frozen validate_inference - re-executed during freeze on the reconstructed payload",
+      "persistence_performed": false,
+      "counts_label_free": {
+        "interests": 191,
+        "questions": 75,
+        "regret_candidates": 40,
+        "goal_bearing": 190,
+        "information_need_bearing": 190
+      }
+    },
+    "shadow_3": {
+      "run_root": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-3of3-20260827T052454_8a84db25",
+      "start_stamp_from_dirname": "shadow-v2-3of3-20260827T052454",
+      "end_time_metrics_mtime": "2026-08-27T06:10:18",
+      "code_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+      "runtime_config_identity": "runtime_configuration block below (reconstructed from these artifacts)",
+      "payload_path": "P:\\.data\\yt-is\\ef\\interest-inference\\runs\\shadow-v2-3of3-20260827T052454_8a84db25 | RECONSTRUCTED via deterministic assembly replay of frozen provider artifacts (see reconstruction note)",
+      "payload_canonical_sha256": "277a1a3af5c22537a1785b48d4f3668c8d9820e9c378f96fb5a04a4a49addc48",
+      "source_objects": 326,
+      "disposition_receipts": 406,
+      "canonical_objects": 288,
+      "validation_status": "PASSED strict frozen validate_inference - re-executed during freeze on the reconstructed payload",
+      "persistence_performed": false,
+      "counts_label_free": {
+        "interests": 209,
+        "questions": 48,
+        "regret_candidates": 29,
+        "goal_bearing": 208,
+        "information_need_bearing": 208
+      }
+    }
+  },
+  "binding_no_cherry_pick_rule": {
+    "ISEM_MUST_SCORE_ALL_THREE_FROZEN_OUTPUTS": true,
+    "REPEATABLE_PERFECT_rule": "PERFECT only if the Interest finite-set conformance result is PERFECT on shadow_1 AND shadow_2 AND shadow_3; any IMPERFECT -> REPEATABLE_PERFECT=NO; no majority vote; generalization sufficiency remains a separate evaluator output"
+  },
+  "label_free_stability_receipt": {
+    "interest_counts": {
+      "shadow_1": 153,
+      "shadow_2": 191,
+      "shadow_3": 209
+    },
+    "goal_bearing": {
+      "shadow_1": 152,
+      "shadow_2": 190,
+      "shadow_3": 208
+    },
+    "information_need_bearing": {
+      "shadow_1": 152,
+      "shadow_2": 190,
+      "shadow_3": 208
+    },
+    "question_counts": {
+      "shadow_1": 52,
+      "shadow_2": 75,
+      "shadow_3": 48
+    },
+    "regret_counts": {
+      "shadow_1": 19,
+      "shadow_2": 40,
+      "shadow_3": 29
+    },
+    "name_sets": {
+      "pairwise_jaccard": {
+        "1_2": 0.0683,
+        "1_3": 0.0493,
+        "2_3": 0.0582
+      },
+      "three_way_intersection": 8,
+      "union": 500,
+      "intersection_over_union": 0.016
+    },
+    "same_name_field_disagreements": {
+      "count_objects_with_any_disagreement": 8,
+      "detail": {
+        "ai-assisted software development": [
+          "kind",
+          "temporal_state",
+          "stance",
+          "confidence",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ],
+        "algorithmic and ai-assisted trading": [
+          "kind",
+          "confidence",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ],
+        "canadian retirement and tax planning": [
+          "confidence",
+          "observed_vs_inferred",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ],
+        "cryptocurrency markets": [
+          "confidence",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ],
+        "defense, aerospace, and military technology": [
+          "kind",
+          "confidence",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ],
+        "digital privacy and secure communications": [
+          "kind",
+          "confidence",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ],
+        "electric vehicles and battery technology": [
+          "confidence",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ],
+        "personal finance and wealth building": [
+          "confidence",
+          "goal",
+          "information_need",
+          "evidence_summary"
+        ]
+      }
+    },
+    "overlaps": {
+      "parent_edges": {
+        "sizes": {
+          "1": 42,
+          "2": 40,
+          "3": 34
+        },
+        "pairwise_jaccard": {
+          "1_2": 0.0,
+          "1_3": 0.0,
+          "2_3": 0.0137
+        }
+      },
+      "related_edges": {
+        "sizes": {
+          "1": 28,
+          "2": 35,
+          "3": 26
+        },
+        "pairwise_jaccard": {
+          "1_2": 0.0,
+          "1_3": 0.0,
+          "2_3": 0.0
+        }
+      },
+      "question_links": {
+        "sizes": {
+          "shadow_1": 52,
+          "shadow_2": 75,
+          "shadow_3": 48
+        },
+        "pairwise_jaccard": {
+          "1_2": 0.0,
+          "1_3": 0.0,
+          "2_3": 0.0
+        }
+      },
+      "regret_links": {
+        "sizes": {
+          "shadow_1": 19,
+          "shadow_2": 40,
+          "shadow_3": 28
+        },
+        "pairwise_jaccard": {
+          "1_2": 0.0,
+          "1_3": 0.0,
+          "2_3": 0.0
+        }
+      }
+    }
+  },
+  "final_payload_reconstruction_note": "The v2 shadow driver did not persist assembled finals to disk (defect recorded for a future lane). All provider outputs WERE persisted (phase1/*.validated.json, grouping/*.raw.jsonl, relations/prompts/*.raw.jsonl) and every post-provider step is a pure function in committed code; each contestant payload above was reconstructed by replaying committed assembly code over those frozen artifacts and re-passing the unmodified strict validator during this freeze. This is identity recovery of the three cited runs, not a replacement run.",
+  "ground_truth_boundary": {
+    "holdout_opened": false,
+    "private_paths_touched": [],
+    "semantic_tuning_after_shadow_gate": false
+  }
+}
