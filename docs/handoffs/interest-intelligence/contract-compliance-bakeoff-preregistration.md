@@ -229,3 +229,28 @@ Selection rule and DECISION mapping unchanged. This is a recorded
 provider-capability limitation relevant to the final reliability claim:
 strict structured output on this endpoint cannot express uniqueness
 constraints.
+
+## AMENDMENT 3 (2026-08-26, post-batch-phase; recon-only rerun authorized)
+
+The first full run (dir bakeoff-20260826T184845) completed all 39 batch
+calls but failed reconciliation in ALL arms for two unrelated reasons:
+
+1. Arms B/C: HTTP 400 on the RECONCILIATION wrapper schema. Root cause:
+   it embedded `inference_output_schema()` wholesale as `$defs.v2_result`,
+   producing NESTED `$defs` inside `$defs` — rejected by the endpoint
+   even though single-level `$defs`/`$ref` (batch schema) passed 26 live
+   calls. Fix: `reconciliation_output_schema()` rebuilt flat — one root
+   `$defs` {interest, v2_result, disposition}, every ref resolving there;
+   constraint content byte-equivalent in meaning. Accepted live by the
+   same endpoint after flattening.
+2. Arm A: provider rc=0 WITH agent_message but unparseable/truncated
+   JSON on its 115-fragment reconciliation group call — a REAL
+   contract/data point per protocol §4 (parse failure with message =
+   never retried), preserved verbatim in the failed run's taxonomy.
+
+Rerun procedure (--recon-from): rebuild each arm's fragments exactly from
+the failed run's per-call validated.json payloads (canonical inputs),
+re-execute ONLY the reconciliation trees under the fixed schema, and
+merge results into that run's metrics as `reconciliation_v2`. Batch-call
+evidence is untouched; arm comparison therefore still rests on the same
+39 frozen batch rows plus completed recon legs.

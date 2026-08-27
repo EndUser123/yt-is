@@ -95,11 +95,17 @@ def _interest_schema() -> dict:
     }
 
 
-def inference_output_schema() -> dict:
-    """Provider-native strict output schema for one inference payload."""
+def _v2_result_schema() -> dict:
+    """Result-object body WITHOUT its own '$defs' key.
+
+    Callers own the '$defs' layer (AMENDMENT 3: the reconciliation
+    wrapper previously embedded inference_output_schema()'s whole dict,
+    producing nested '$defs' that the provider endpoint rejects with
+    HTTP 400). Every $ref below resolves against the caller's TOP-level
+    '$defs'.
+    """
     return {
         "type": "object",
-        "$defs": {"interest": _interest_schema()},
         "properties": {
             "inferred_interests": {
                 "type": "array", "items": {"$ref": "#/$defs/interest"},
@@ -143,18 +149,30 @@ def inference_output_schema() -> dict:
     }
 
 
+def inference_output_schema() -> dict:
+    """Provider-native strict output schema for one inference payload."""
+    return {
+        "type": "object",
+        "$defs": {"interest": _interest_schema()},
+        "properties": _v2_result_schema()["properties"],
+        "required": _v2_result_schema()["required"],
+        "additionalProperties": False,
+    }
+
+
 def reconciliation_output_schema() -> dict:
     """Strict output schema for one reconciliation group call.
 
-    Wraps the same v2 result under 'final' plus fragment dispositions.
-    Disposition contracts that require judgment (resolution to final
-    interest names, coverage of input fragments) remain in
-    validate_reconciliation; the schema only pins shape and vocabularies.
+    Single-level '$defs': interest / v2_result / disposition all sit at
+    the root and every $ref resolves there. Constraint content equals the
+    embedded-payload form used before AMENDMENT 3 (which the endpoint
+    rejected); only reference layout changed.
     """
     return {
         "type": "object",
         "$defs": {
-            "v2_result": inference_output_schema(),
+            "interest": _interest_schema(),
+            "v2_result": _v2_result_schema(),
             "disposition": {
                 "type": "object",
                 "properties": {
