@@ -476,7 +476,7 @@ def run_mode(artifact_dir: str | None) -> int:
         for arm in ARMS:                     # interleaved per protocol §2
             try:
                 rec = execute_batch(arm, plan.plan_id, b.batch_id, rows,
-                                    calls, schema_paths)
+                                    calls, schema_paths["inference"])
             except Exception as exc:
                 # prereg §3: NO abort — a harness bug becomes one recorded
                 # failure-class row and the diagnostic keeps running
