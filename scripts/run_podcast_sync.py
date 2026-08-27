@@ -65,9 +65,12 @@ def _retry_locked(fn, attempts=4, delay_s=5.0):
 def get_feeds():
     conn = _rw(DB)
     try:
+        # Rotation: never-synced feeds first, then stalest last_synced — a
+        # small per-run episode limit cycles all feeds instead of always
+        # draining the first one.
         return conn.execute(
             "SELECT url, COALESCE(name, url) FROM podcast_feeds "
-            "ORDER BY added_at").fetchall()
+            "ORDER BY last_synced IS NOT NULL, last_synced, added_at").fetchall()
     except sqlite3.OperationalError:
         return []
     finally:

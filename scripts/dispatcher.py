@@ -66,7 +66,10 @@ WORKERS = {
         "argv": [sys.executable, "-X", "utf8",
                  str(REPO_ROOT / "scripts" / "run_podcast_sync.py"),
                  "--limit", "{limit}"],
-        "timeout_s": 2400,
+        # Two hour-plus episodes: download (yt-dlp) + GPU transcription both
+        # run inside this budget. 2400s timed out on the first real cycle
+        # (2026-08-27); 5400s covers worst-case stage caps with headroom.
+        "timeout_s": 5400,
         "defaults": {"limit": 2},
     },
     "noop_probe": {
