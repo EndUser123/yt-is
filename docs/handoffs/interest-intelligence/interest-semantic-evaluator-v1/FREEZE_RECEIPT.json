@@ -2,7 +2,7 @@
   "receipt": "isem_v1_freeze",
   "agent": "zcode",
   "host": "zcode",
-  "created_utc": "2026-08-26T21:50:13",
+  "created_utc": "2026-08-26T22:28:15",
   "status": "EVALUATOR_READY_WAITING_ON_INFERENCE_FREEZE",
   "candidate_inference_implementation": "NOT_YET_FROZEN",
   "sealed_holdout_public_hash_echo": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f",
@@ -27,7 +27,7 @@
   "frozen_artifacts": [
     {
       "path": "ef/eval_interest_semantic.py",
-      "sha256": "3321d8aa8369012413e16439273e415915c737eaab6369de55f73ac7b31150dd"
+      "sha256": "a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503"
     },
     {
       "path": "scripts/eval_interest_holdout.py",
@@ -35,11 +35,11 @@
     },
     {
       "path": "tests/test_eval_interest_semantic.py",
-      "sha256": "a7234474df8f8554c1953885bcd0333c8825986ef111133500bd493156c67ced"
+      "sha256": "bac1a1f0ba2793c6a3816734507cc94a2430f17d2496f3682a2aa99d9be11548"
     },
     {
       "path": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
-      "sha256": "f3bcd0e72bbafbd461b6e868ff755990544ac0215bbec83898bee112381f46fb"
+      "sha256": "7b0a3c651adfdb7f59c248e27b0aa4d9bd78a37ee7600823ba3bf836a051dbf0"
     }
   ],
   "gate_unseal_preconditions": [

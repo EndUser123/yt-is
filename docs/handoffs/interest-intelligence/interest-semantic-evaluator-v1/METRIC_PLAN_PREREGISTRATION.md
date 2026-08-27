@@ -275,6 +275,25 @@ PERFECT; (2) one miss yields INSUFFICIENT_EVIDENCE + IMPERFECT;
 negative does not affect Interest conformance; (5) zero scorable labels
 yields NOT_EVALUABLE.
 
-FREEZE_RECEIPT.json regenerated after this amendment; prior hash chain
-superseded by versioned hashes below it (amendment history preserved in
-git once landed).
+### Addendum (2026-08-27, post-landing bookkeeping — no policy change)
+
+Landing: commit `02fd3a7e` on lane agent/sess_8b2b8fbd…, integrated to
+main as `ff9696ee` (reviewed tree a6efd016, reviewer
+agent-reviewer-71042b81, run run-bc79ae6be0d4).
+
+Hash convention clarified: canonical freeze hashes are REPO CONTENT
+(git blob) hashes. The originally receipted ef/eval_interest_semantic.py
+(3321d8aa…) and tests/test_eval_interest_semantic.py (a7234474…) were
+disk-byte hashes of CRLF/mixed-EOL working copies; `core.autocrlf=input`
+normalized those files to LF at commit time (a lossless, deterministic
+byte transformation of identical logic). Landed canonical hashes:
+
+- ef/eval_interest_semantic.py      a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503
+- scripts/eval_interest_holdout.py  623ea5b80435321b5a0b4b12de5c8402ebfe7b4bc481eeae328f9a7c932d91f8
+- tests/test_eval_interest_semantic.py bac1a1f0ba2793c6a3816734507cc94a2430f17d2496f3682a2aa99d9be11548
+- METRIC_PLAN_PREREGISTRATION.md    f3bcd0e72bbafbd461b6e868ff755990544ac0215bbec83898bee112381f46fb
+
+Working-tree bytes equal these blob hashes after integration checkout;
+verify_manifest now reproduces them locally. The pre-normalization
+values are recorded here as historical disk variants and are SUPERSEDED.
+No metric-policy text changed in this addendum.
