@@ -391,6 +391,53 @@ async def bridge_paths_cypher(driver, group_id: str, uuid_a: str, uuid_b: str) -
     return [dict(r) for r in (res[0] if res else [])]
 
 
+def hop_source_sets(
+    snap: Snapshot, edge_map: dict[str, dict], path: dict
+) -> tuple[set[str], set[str]]:
+    """Sources behind each hop of a candidate bridge path (via episode backlinks)."""
+    out: dict[str, set[str]] = {}
+    for side in ("left_edge_uuids", "right_edge_uuids"):
+        srcs: set[str] = set()
+        for uid in path.get(side) or []:
+            e = edge_map.get(uid)
+            if e is None:
+                continue
+            for a in edge_assertions(snap, e):
+                if a.source_id:
+                    srcs.add(a.source_id)
+        out[side] = srcs
+    return out["left_edge_uuids"], out["right_edge_uuids"]
+
+
+def admits_bridge(
+    snap: Snapshot, edge_map: dict[str, dict], path: dict
+) -> tuple[bool, dict]:
+    """Delta-review D3: Arm-A-equivalent `adds_source` admission rule, shared
+    semantics with arm_a/store.py find_bridges: the far hop must contribute an
+    independent source NOT already present on the near side AND the aggregate
+    must meet the frozen SUPPORTED bar; a node merely related to both topics on
+    one strong side is not surfaced as the bridge."""
+    left, right = hop_source_sets(snap, edge_map, path)
+    combined = [
+        a
+        for side in ("left_edge_uuids", "right_edge_uuids")
+        for uid in path.get(side) or []
+        if (e := edge_map.get(uid)) is not None
+        for a in edge_assertions(snap, e)
+    ]
+    agg = support_state(combined)
+    adds = len(agg["distinct_sources"]) > max(len(left), len(right))
+    ok = bool(agg["status"] == "SUPPORTED" and adds)
+    detail = {
+        "src_left": sorted(left),
+        "src_right": sorted(right),
+        "aggregate_sources": agg["distinct_sources"],
+        "adds_source": bool(adds),
+        "aggregate_status": agg["status"],
+    }
+    return ok, detail
+
+
 def select_bridge_path(
     snap: Snapshot, paths: list[dict], fixture_entities: list[dict]
 ) -> tuple[dict | None, str]:
@@ -623,11 +670,25 @@ class B1Evaluator:
                                failure_class="F-identity",
                                notes="endpoint nodes did not resolve uniquely")
         paths = await bridge_paths_cypher(self.driver, self.group_id, t1[0], t2[0])
-        path, sel_reason = select_bridge_path(snap, paths, self.entities)
+        edge_map_pre = {e["uuid"]: e for e in snap.edges}
+        admissions = {}
+        admitted: list[dict] = []
+        for pth in paths:
+            ok_adm, detail = admits_bridge(snap, edge_map_pre, pth)
+            admissions[pth.get("bridge_uuid")] = detail
+            if ok_adm:
+                admitted.append(pth)
+        path, sel_reason = select_bridge_path(snap, admitted, self.entities)
         if path is None:
-            return case_result("X6", {"paths_found": []}, ok=False,
-                               failure_class="F-bridge",
-                               notes="no two-hop path T1-*-T2 exists in stored edges")
+            return case_result(
+                "X6",
+                {"paths_found": len(paths), "admitted": 0,
+                 "admission_detail": list(admissions.values())},
+                ok=False,
+                failure_class="F-bridge" if paths else "F-bridge",
+                notes=("no two-hop path T1-*-T2 exists in stored edges"
+                       if not paths else
+                       "paths exist but none passed the adds_source admission rule"))
         edge_map = {e["uuid"]: e for e in snap.edges}
         hops = {}
         combined: list[AssertionView] = []
@@ -659,7 +720,8 @@ class B1Evaluator:
             {"route": {"type": "path", "selection": sel_reason,
                        "via_bridge_node":
                        {"uuid": path.get("bridge_uuid"), "name": path.get("bridge_name")},
-                       "hop_edges": hops},
+                       "hop_edges": hops,
+                       "admission": admissions.get(path.get("bridge_uuid"))},
              "aggregate_claim": agg, "novelty_note": novelty},
             ok=bool(ok), failure_class=None if ok else "F-bridge",
             fallbacks=["cryogenic bridge identified by name token among Cypher result rows"])
@@ -727,14 +789,21 @@ class B1Evaluator:
             if check == "LITERAL2033":
                 view = value_reads(snap, cands, as_of=cp)
                 v33 = view["values"].get("2033")
+                v31 = view["values"].get("2031") or {}
                 ev_ts = [
                     dt_instant(ev.get("t"))
                     for val in view["values"].values()
                     for ev in (val.get("evidence") or [])
                 ]
                 leak = any(ts is not None and ts > cp for ts in ev_ts)
-                passed = bool(v33) and v33["status"] in ("SUPPORTED", "ASSERTED_ONLY")
-                state_out = view
+                # Delta-review D4: the frozen transition "2031 -> 2033" requires
+                # the superseded value NOT to remain a live candidate here
+                # (Arm A enforces exactly ["2033"] at this checkpoint).
+                old_gone = not v31 or not v31.get("evidence")
+                passed = (bool(v33) and v33["status"] in ("SUPPORTED", "ASSERTED_ONLY")
+                          and old_gone)
+                state_out = {**view,
+                             "superseded_2031_still_live": bool(not old_gone)}
             else:
                 st, used, leak = read_pred(cands, cp)
                 passed = check(st) and not leak
@@ -893,7 +962,7 @@ class B1Evaluator:
         err: str | None = None
         try:
             gen_n_res = await self.driver.execute_query(
-                "MATCH (e:Episodic {group_id: $g}) RETURN count(e) AS n", g=self.group_id())
+                "MATCH (e:Episodic {group_id: $g}) RETURN count(e) AS n", g=self.group_id)
             gen_n = gen_n_res[0][0]["n"]
             seq["A_reads_gen_N"] = gen_n
 
@@ -909,13 +978,13 @@ class B1Evaluator:
 
             replay = await self.driver.execute_query(
                 "MATCH (e:Episodic {group_id: $g}) RETURN count(e) AS n",
-                g=self.group_id())
+                g=self.group_id)
             seq["C_replay_count_after_B"] = replay[0][0]["n"]
 
             stale = await self.driver.execute_query(
                 "CREATE (s:Episodic {group_id: $g, uuid: 'stale-a-gen-n', "
                 "name: 'stale-A-write-against-gen-N'}) RETURN s.uuid AS uuid",
-                g=self.group_id())
+                g=self.group_id)
             accepted = bool(stale and stale[0])
             await self.driver.execute_query(
                 "MATCH (s:Episodic {uuid: 'stale-a-gen-n'}) DETACH DELETE s")
@@ -925,7 +994,10 @@ class B1Evaluator:
                 "isolation_level_found": "AUTOCOMMIT per query; lost-update window",
             }
             verdict = ("observed: stale write ACCEPTED silently; graphiti provides no "
-                       "concurrency control over FalkorDB; behavior recorded per frozen spec")
+                       "concurrency control over FalkorDB; behavior recorded per frozen spec"
+                       if accepted else
+                       "observed: stale write rejected by the backend; isolation "
+                       "behavior recorded per frozen spec")
         except Exception as e:  # noqa: BLE001 - record, never hide
             err = f"{type(e).__name__}: {e}"
             seq["runtime_probe"] = "BLOCKED (see runtime_error)"

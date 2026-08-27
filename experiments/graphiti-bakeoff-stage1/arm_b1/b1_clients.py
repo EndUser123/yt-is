@@ -30,7 +30,7 @@ from typing import Any
 
 # ------------------------------------------------------------------ pinned config
 LLM_BASE_URL = "http://127.0.0.1:8080/v1"
-LLM_MODEL = "nemotron-3.5-lightning-free"
+LLM_MODEL = "nemotron-3-5-lightning-free"  # canonical wire form (dotted alias 404s)
 SMALL_MODEL = LLM_MODEL
 LLM_TEMPERATURE = 0.0
 STRUCTURED_OUTPUT_MODE_DEFAULT = "json_schema"  # OpenAIGenericClient mode

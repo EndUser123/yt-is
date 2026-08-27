@@ -65,9 +65,39 @@ required).
 
 Status after all corrections: READY_FOR_FALKORDB_ENDPOINT.
 
+## C6. Delta review (fresh context, post-corrections)
+
+Verdict: APPROVE_WITH_NOTES. Verified: B1 genuinely exercises add_episode
+semantics with per-case attribution; B0 byte-preserved vs 7ea6142c;
+`sha256sum -c freeze-hashes.txt` clean; LOC uniform counts reproduce exactly
+(A 509/446, B0 411/175, B1 1130/458); ER-stress artifacts consistent; terminal
+readiness label judged correct.
+
+Defects found and FIXED before close-out (no frozen file touched):
+- D1 (high): x14_concurrency called `self.group_id()` as a method (3x) — X14
+  could never run at runtime even with an endpoint. Fixed to attribute access.
+- D2 (high-med): b1_clients.py pinned the dotted model alias that 404s via the
+  OpenAI client; now the live-verified canonical wire form
+  `nemotron-3-5-lightning-free`.
+- D3 (med): claimed adds_source bridge-admission was documented but absent from
+  B1 evaluation — now implemented (`admits_bridge`, shared semantics with
+  arm_a/store.py find_bridges), applied in X6/X8 path selection, per-path
+  admission detail recorded in results.
+- D4 (low-med): X11 01-20 checkpoint now also requires 2031 NOT to remain a
+  live candidate at the transition checkpoint (Arm A parity).
+- D5 (low): ER-stress B1 runbook rewritten to the pinned stack; driver
+  committed as real file er_stress/run_b1_er_stress.py importing
+  arm_b1.run_b1.build_graphiti.
+- D6 (low): CONFIG.md blockage narrative corrected to match results_run1.json.
+- D7 (info): x14 verdict string now branches on observed accept/reject.
+
+Verification after fixes: py_compile clean; selftest_mock rerun = 13/13
+read-only cases PASS with the new admission + strictness checks active; X14
+UNTESTABLE by design pending endpoint.
+
 ## Publication
 
 - Original commit 7ea6142c verified path-limited to experiments/graphiti-bakeoff-stage1/
   (13 files, 2455 insertions); pushed to origin/agent/sess_16885634-0d0a-47a6-a2ab-1a9072a020b9/graphiti-bakeoff-stage1;
   remote SHA = 7ea6142c (new branch, fast-forward).
-- Correction-round commit: see git log following this file's addition.
+- Correction-round commit: e405be3c (remote), delta-fix commit follows this file.

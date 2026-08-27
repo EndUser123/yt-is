@@ -35,9 +35,11 @@ no hand-built EntityNode/EntityEdge ingestion (that was the B0 diagnostic).
   client — always use the hyphenated canonical wire form.
 - LLM-call-count instrumentation is permanently in place (`CountingLLMClient`
   wrapper): per-prompt_name counts land in `results_run{N}.json`.
-- Calls per episode: NOT OBSERVED at freeze of this file — runs blocked before
-  the first LLM call because the FalkorDB endpoint does not exist on this host
-  (trace below). Static expectation from source, per add_episode: ~5-7 chat
+- Calls per episode: NOT OBSERVED (delta-review D6 corrected narrative): the
+  first attempted run blocked at the FalkorDB health-check / purge stage —
+  BEFORE any episode, LLM call, or per-case record; `results_run1.json`
+  accordingly contains the connection-refused trace and NO per-case rows.
+  Static expectation from source, per add_episode: ~5-7 chat
   calls (extract_nodes, dedup/resolve extracted nodes, extract_edges,
   edge-attribute extraction, node summaries), retried up to 4x each on
   JSON-decode failures via tenacity. Observed numbers will replace this line in
