@@ -287,6 +287,29 @@ def tick(conn: sqlite3.Connection) -> int:
     return ran
 
 
+def _acquire_instance_lock():
+    """Single-instance guard for loop mode (keepalive may relaunch anytime).
+
+    Returns the open lock handle when acquired, None when another resident
+    dispatcher holds it (keepalive then treats the system as healthy via
+    heartbeat). Lock lives next to the dispatch DB; OS releases on death.
+    """
+    import msvcrt
+
+    lock_path = DISPATCH_DB.with_suffix(".instance.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "a+b")
+    try:
+        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        fh.close()
+        return None
+    fh.seek(0)
+    fh.write(b"1")
+    fh.flush()
+    return fh
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--db-path", type=Path, default=None)
@@ -306,6 +329,11 @@ def main(argv=None) -> int:
         if args.once:
             n = tick(conn)
             print(json.dumps({"drained": n}))
+            return 0
+        lock = _acquire_instance_lock()
+        if lock is None:
+            print(json.dumps({"status": "already-running",
+                              "hint": "heartbeat is authoritative"}))
             return 0
         while True:
             tick(conn)
