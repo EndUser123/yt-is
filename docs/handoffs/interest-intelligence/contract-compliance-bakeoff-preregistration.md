@@ -211,3 +211,21 @@ rule, and DECISION mapping are unchanged. Corrections only:
 6. Retry scope narrowed to prereg §4 verbatim: exec-class = nonzero exit,
    timeout, missing agent message. A parse failure WITH an agent message
    present is a data point and is never retried.
+
+## AMENDMENT 2 (2026-08-26, pre-results; live provider bisect)
+
+The generated schema previously set `uniqueItems: true` on interest
+`cluster_ids` (mirroring validator dupes=True). Live bisection against
+codex gpt-5.6-luna structured output (2026-08-26) shows the endpoint
+rejects `uniqueItems` with HTTP 400 while accepting `minItems`,
+`$defs`/`$ref`, `enum`, numeric bounds, and anyOf-null unions. Provider
+enforcement is therefore NOT available for duplicate cluster ids.
+
+Change: `uniqueItems` removed from the generated schema. Enforcement of
+no-duplicate interest `cluster_ids` remains exactly where it was — the
+mechanical validator (`validate_inference`) — and violations there count
+as semantic failures (unrecoverable under every arm), never repairs.
+Selection rule and DECISION mapping unchanged. This is a recorded
+provider-capability limitation relevant to the final reliability claim:
+strict structured output on this endpoint cannot express uniqueness
+constraints.
