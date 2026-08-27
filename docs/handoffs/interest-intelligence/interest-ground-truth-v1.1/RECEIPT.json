@@ -1,0 +1,65 @@
+{
+  "receipt": "interest-intelligence-holdout-v1.1",
+  "agent": "zcode",
+  "closure_pass_at_utc": "2026-08-26",
+  "result": "INTEREST_GROUND_TRUTH_READY",
+  "supersession": {
+    "supersedes": "interest-intelligence-holdout-v1",
+    "v1_sha256_unchanged": "97cb8d59ec201fbd39f3ce526b6dae705e1cc49d402558ac0283abb55362b542",
+    "v1_status": "SUPERSEDED_BEFORE_FORMAL_EVALUATION",
+    "formal_evaluator_has_read_v1": false,
+    "no_consumption_evidence": [
+      "holdout ledger last run predates v1 creation by ~21h",
+      "zero content references outside curator session artifacts",
+      "zero private-file copies in any session worktree"
+    ]
+  },
+  "private_artifacts": {
+    "successor": {"path": ".data/yt-is/private/interest-intelligence-holdout-v1.1.json", "sha256": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f", "bytes": 33685},
+    "saturation_policy_prereg": {"path": ".data/yt-is/private/interest-ground-truth-v1.1-saturation-policy.json", "sha256": "3aa9640206c8dc2e84206cfffe8f4defd88d5db8ea0401837f789bae2d511d6e"},
+    "blinded_review_extract": {"path": ".data/yt-is/private/blinded-review-extract-v1.1.json", "sha256": "4a9bd3274888edde09b172e85328b1b4e0e4fab83aae2b953cbdab3b073cec21"}
+  },
+  "counts_by_semantic_type": {
+    "positives_formal": {"Interest": 4, "Goal": 1, "InformationNeed": 2, "Question": 2},
+    "positives_retyped_outside_interest_contract": {"WorkPreference": 1, "ImplementationConstraint": 2},
+    "negatives_typed": {"InterestNegative": 1, "GoalNegative": 0, "InformationNeedNegative": 0, "SourceNegative": 1, "ImplementationConstraintNegative": 3, "ToolOrMechanismPreference": 2, "StyleOrProcessPreference": 0, "AmbiguousNegative": 0}
+  },
+  "scoring_pairs_rule": "only InterestNegative scores Interest-classifier false positives; other negative classes score their matching semantic objects only",
+  "authority_distribution_over_formal_positives": {
+    "OPERATOR_CONFIRMED": 6,
+    "OPERATOR_STRONGLY_IMPLIED_BY_MULTIPLE_EXPLICIT_STATEMENTS": 3,
+    "note": "5 DISPUTED_RETAINED under preregistered rule (reviewer positions recorded in private artifact); non-formal retyped entries carry no contract authority value"
+  },
+  "scorability_distribution_all_positive_side_entries": {
+    "corpus_scorable": 4,
+    "corpus_unscorable": 0,
+    "unknown": 8
+  },
+  "saturation_receipt": {
+    "policy_hash": "3aa9640206c8dc2e84206cfffe8f4defd88d5db8ea0401837f789bae2d511d6e",
+    "stop_condition_reached": true,
+    "terminal_two_batches_zero_new_labels": true,
+    "batch_new_label_yields": [0, 0, 0, 0],
+    "contingency_batch_triggered": false
+  },
+  "fresh_context_review": {
+    "reviewer_context": "new subagent session, blinded extract only, inference outputs inaccessible",
+    "field_level_agreement": "71/76 fields (93.4%)",
+    "semantic_class_agreement": "19/19 including independent confirmation of all three retypings",
+    "disputes_dispositioned_by_preregistered_rule": 5,
+    "sample": "full enumeration: 19 labels + 4 rejected-borderline candidates, all reviewer-dismissals curator-concurring"
+  },
+  "sample_size_honesty": {
+    "interest_positives_n": 4,
+    "goal_positives_n": 1,
+    "statement": "SMALL; evaluator must be able to return INSUFFICIENT_EVIDENCE per semantic type; no PASS threshold invented here"
+  },
+  "attestation": {
+    "inference_outputs_inspected_for_label_selection_or_scoring": false,
+    "stale_12_interest_artifact_inspected": false,
+    "discovery_holdouts_used_as_labels": false,
+    "architect_or_llm_inference_promoted_to_labels": false
+  },
+  "evaluator_gate": "do not open private holdout until evaluator metric plan and inference implementation are frozen",
+  "next_decision": "RETIRE CURATOR IF READY (curator side complete); evaluator implementation remains the pending workstream"
+}
