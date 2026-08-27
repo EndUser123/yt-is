@@ -1,0 +1,8 @@
+{
+  "clusters": 319,
+  "distinct_eu_videos_available": 266945,
+  "frozen_at": "2026-08-27T00:33:49.069730+00:00",
+  "member_videos_with_eu": 191072,
+  "sha256_canonical_jsonl": "f5f57ea54ea06b6a9e2ce807a07529c7e4eb72593840b81fa2b6408a33190010",
+  "snapshot_path": "P:\\.data\\yt-is\\ef\\cluster-relabel-e3\\membership-frozen.jsonl.gz"
+}

@@ -1,0 +1,43 @@
+{
+  "stability": [
+    {
+      "arm": "A",
+      "n": 319,
+      "n_total_clusters": 319,
+      "coverage": 1.0,
+      "mean_cosine": 0.9116,
+      "median_cosine": 0.9729,
+      "frac_below_0.82": 0.2351,
+      "mean_token_jaccard": 0.8457,
+      "exact_same_label_rate": 0.4357
+    },
+    {
+      "arm": "B",
+      "n": 319,
+      "n_total_clusters": 319,
+      "coverage": 1.0,
+      "mean_cosine": 0.8962,
+      "median_cosine": 0.9246,
+      "frac_below_0.82": 0.2696,
+      "mean_token_jaccard": 0.732,
+      "exact_same_label_rate": 0.4295
+    },
+    {
+      "arm": "C",
+      "n": 134,
+      "n_total_clusters": 319,
+      "coverage": 0.4201,
+      "mean_cosine": 0.8402,
+      "median_cosine": 0.8656,
+      "frac_below_0.82": 0.3731,
+      "mean_token_jaccard": 0.5799,
+      "exact_same_label_rate": 0.2313
+    }
+  ],
+  "arm_c_nondeterminism": {
+    "groups": 0,
+    "bitwise_identical_group_rate": null,
+    "pairwise_cosine_mean": null,
+    "pairwise_cosine_min": null
+  }
+}
