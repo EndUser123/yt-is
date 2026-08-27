@@ -129,3 +129,45 @@ horizon_scout).
 Prohibitions maintained: no production acquisition/ranking change, no
 canonical semantic state mutation, no planner feature changes, no blinded
 usefulness judging run.
+
+## Amendment 2: scout DB-resolution wiring fix + fail-visible anchor state (2026-08-26)
+
+agent: zcode | scope: SCOUT_WIRING_GAP fix only | no semantic mutation
+
+### Changes
+
+1. `ef/horizon_scout.py _open_graph(None)` now resolves through the ONE
+   canonical seam, the `ef.personal_graph.CATALOG` constant — no second
+   hardcoded path. `build_scout_plan(None)` no longer raises TypeError.
+   Explicit caller paths (--graph-db/--db or direct args) always win;
+   overrides are never silently redirected to production.
+2. Anchor starvation is fail-visible: `ScoutPlan.anchor_state` =
+   READY|EMPTY with `degraded_reason = NO_ACCEPTED_PERSONAL_ANCHORS` when
+   zero accepted Interest/Goal/InformationNeed rows exist, serialized in
+   to_dict() so scout-plan.json artifacts distinguish legitimate wildcard
+   exploration from anchor-absent degradation. No fallback anchors are
+   fabricated; kg_nodes/topic_clusters remain SHADOW-only exploratory
+   mechanisms for the challenger planner, never Plan A anchors.
+3. CLI: `scout-plan` and `scout-run` print a WARNING line when EMPTY; the
+   wildcard anti-filter-bubble behavior is unchanged and intentional.
+
+### Verified
+
+- tests/test_scout_anchor_wiring.py: 11 focused tests covering canonical
+  resolution via pg.CATALOG, explicit override precedence, empty-tables
+  no-crash + diagnostics, serialization preservation, no fabricated
+  anchors, populated Interest/Goal/Need planning paths, zero network,
+  read-only semantic tables, CLI default resolution + override.
+- Full focused set: 51 passed (11 wiring + 29 horizon_scout +
+  11 shadow_discovery).
+- Live CLI smoke (`python scripts/discover_concepts.py scout-plan`, no DB
+  args): exit 0, wildcard plan, explicit EMPTY warning.
+
+### Status
+
+- USEFULNESS_EVALUATION_BLOCKED_ON_ACCEPTED_ANCHORS (unchanged).
+- No Interests/Goals/InformationNeeds/Questions/inference_runs rows were
+  created or modified; P:/tmp inference output NOT consumed; store() /
+  store_validated_inference() not called.
+- Future blinded usefulness judging MUST use a fresh-context evaluator:
+  this session built the challenger planner and cannot judge it.

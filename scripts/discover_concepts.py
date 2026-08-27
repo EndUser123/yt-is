@@ -164,6 +164,15 @@ def cmd_trend(a) -> int:
     return 0
 
 
+def _warn_anchor_state(plan) -> None:
+    """Make anchor starvation fail-visible: an EMPTY-anchor wildcard plan
+    must never look like legitimate broad exploration."""
+    if getattr(plan, "anchor_state", "READY") != "READY":
+        print(f"[plan] WARNING anchor_state={plan.anchor_state} "
+              f"degraded_reason={plan.degraded_reason} — wildcard-only "
+              "plan because accepted personal anchors are absent")
+
+
 def cmd_scout_plan(a) -> int:
     from ef.horizon_scout import build_scout_plan
     run_dir = _run_dir(a.artifact_dir)
@@ -171,6 +180,7 @@ def cmd_scout_plan(a) -> int:
     _write_json(run_dir / "scout-plan.json", plan.to_dict())
     for q in plan.queries:
         print(f"{q.query_id}  [{q.exploration}/{q.intent}]  {q.query}")
+    _warn_anchor_state(plan)
     print(f"[plan] {plan.plan_id}: {len(plan.queries)} queries -> "
           f"{run_dir / 'scout-plan.json'}")
     return 0
@@ -210,6 +220,7 @@ def cmd_scout_run(a) -> int:
     try:
         plan = build_scout_plan(a.graph_db or a.db,
                                 max_queries=a.max_queries)
+        _warn_anchor_state(plan)
         results = run_scout(plan, allow_search=True, tier=a.tier,
                             num_results=a.num_results)
         run_dir = _run_dir(a.artifact_dir)
