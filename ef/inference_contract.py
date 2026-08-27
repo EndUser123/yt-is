@@ -49,11 +49,16 @@ def _confidence() -> dict:
 
 
 def _cluster_ids(*, unique: bool) -> dict:
-    schema = {"type": "array", "items": {"type": "integer"},
-              "minItems": 1}
-    if unique:
-        schema["uniqueItems"] = True
-    return schema
+    # 2026-08-26 AMENDMENT 2: `uniqueItems` is HTTP-400-rejected by the
+    # codex/gpt-5.6-luna structured-output endpoint (bisected live;
+    # minItems/$ref/bounds accepted), so duplicates are NOT schema-blocked
+    # for any caller. The mechanical validator keeps enforcing
+    # no-duplicate interest cluster_ids (dupes=True semantics); regret
+    # candidates allow duplicates exactly as before. The `unique`
+    # argument is retained so call sites keep expressing intent.
+    del unique
+    return {"type": "array", "items": {"type": "integer"},
+            "minItems": 1}
 
 
 def _interest_schema() -> dict:
