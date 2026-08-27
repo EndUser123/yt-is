@@ -135,6 +135,7 @@ def build_snapshot(run_id: str) -> Path:
         dst.executemany("INSERT OR REPLACE INTO kg_nodes VALUES (?,?,?)",
                         rows)
         nn += len(rows)
+    ecur = src.cursor()
     ecur.arraysize = 100000
     ecur.execute(
         """SELECT m.src_id, m.dst_id, m.relation FROM kg_edges m
