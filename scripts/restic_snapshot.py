@@ -56,6 +56,17 @@ def main() -> int:
         log(f"[{datetime.now().isoformat()}] ERROR: restic not found at {RESTIC}")
         return 1
 
+    # Pre-run space check (watcher alert 2026-08-26: G: at 78GB free, a
+    # restic run can fail mid-write once the ~31GB repo + working set
+    # outgrow headroom). Abort BEFORE starting instead of failing mid-write.
+    import shutil as _shutil
+    _free = _shutil.disk_usage(Path(REPO).anchor or "G:/").free
+    if _free < 60 * 2**30:
+        log(f"[{datetime.now().isoformat()}] SKIP: G: only "
+            f"{_free / 2**30:.0f}GB free (<60GB floor) - freeing space is "
+            f"the operator call; retry next tick")
+        return 1
+
     env = dict(os.environ)
     env["RESTIC_REPOSITORY"] = REPO
     env["RESTIC_PASSWORD_FILE"] = PASSWORD_FILE
