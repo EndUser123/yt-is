@@ -49,6 +49,13 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from ef.inference_contract import conformance_errors  # noqa: E402
+from ef.inference_contract import KINDS, QUESTION_STATUSES, REGRET_LABELS  # noqa: E402
+from ef.inference_contract import OBSERVED_VS_INFERRED, STANCES  # noqa: E402
+from ef.inference_contract import TEMPORAL_STATES  # noqa: E402
+from ef.inference_contract import (inference_output_schema,  # noqa: E402
+                                   reconciliation_output_schema)
+
 MAX_CLUSTERS = 25          # LEGACY single-shot baseline only: one global
                            # top-25 breadth-ranked subset. Bootstrap replaces
                            # this truncation; kept for the evaluation baseline.
@@ -63,14 +70,6 @@ BOOTSTRAP_MAX_CLUSTERS_PER_CALL = 25
 MAX_FRAGMENTS_PER_RECONCILIATION = 40
 MAX_RECONCILIATION_STAGES = 8     # fail closed beyond this — never truncate
 ARTIFACT_ROOT = Path("P:/.data/yt-is/ef/interest-inference")
-
-KINDS = ("domain", "topic", "subtopic", "method", "monitor")
-TEMPORAL_STATES = ("durable", "active", "current_problem", "episodic",
-                   "emerging", "dormant")
-STANCES = ("curiosity", "learning", "project", "monitoring", "entertainment")
-OBSERVED_VS_INFERRED = ("observed", "inferred", "inferred_adjacent")
-QUESTION_STATUSES = ("open", "watching")
-REGRET_LABELS = ("inferred_adjacent",)
 
 
 class ProviderExecutionError(RuntimeError):
@@ -414,6 +413,179 @@ def canonical_result_hash(payload) -> str:
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Bounded reference repair (candidate Arm C; never wired in by default)
+# ---------------------------------------------------------------------------
+# Scope ceiling: contract-compliance only. A repair step NEVER decides which
+# interests exist, what they mean, or which evidence supports them — it may
+# only constrain dangling name references to names actually present in the
+# same payload. Optional relationship edges (related_to /
+# regret.related_interests) may be dropped deterministically because losing
+# an edge preserves the referenced objects' meaning. Required references
+# (questions.interest, parent) go through ONE bounded provider repair round
+# against an explicit valid-name list; anything beyond that fails closed.
+# Every mutation returns a receipt line. Enum/bounds/shape violations are
+# NOT repairable: with a strict output schema they should be impossible, so
+# their presence signals provider/schema enforcement failure.
+
+REFERENCE_REPAIRABLE_MARKERS = (
+    "related_to target not in returned interests",
+    "related_interests target not in returned interests",
+    "parent not in returned interests",
+    "interest not in returned interests",
+)
+MAX_REFERENCE_REPAIR_ATTEMPTS = 2
+
+
+def classify_contract_error(exc: Exception) -> str:
+    """'reference' if the violation is repairable-by-reference-only."""
+    text = str(exc)
+    for marker in REFERENCE_REPAIRABLE_MARKERS:
+        if marker in text:
+            return "reference"
+    return "other"
+
+
+def deterministic_reference_hygiene(payload: dict) -> tuple[dict, list]:
+    """Drop dangling optional-edge references; everything else untouched.
+
+    Returns (possibly-new payload, receipts). The payload is deep-copied;
+    input is never mutated.
+    """
+    import copy
+    cleaned = copy.deepcopy(payload)
+    receipts: list = []
+    names = {_norm_name(it["name"]) for it in cleaned["inferred_interests"]}
+
+    for i, it in enumerate(cleaned["inferred_interests"]):
+        kept = [t for t in it.get("related_to", [])
+                if _norm_name(t) in names]
+        dropped = [t for t in it.get("related_to", [])
+                   if _norm_name(t) not in names]
+        if dropped:
+            it["related_to"] = kept
+            for d in dropped:
+                receipts.append({"repair_type": "drop_dangling_related_to",
+                                 "container": f"inferred_interests[{i}]",
+                                 "dropped_target": d})
+    for i, rc in enumerate(cleaned["regret_candidates"]):
+        kept = [t for t in rc.get("related_interests", [])
+                if _norm_name(t) in names]
+        dropped = [t for t in rc.get("related_interests", [])
+                   if _norm_name(t) not in names]
+        if dropped:
+            rc["related_interests"] = kept
+            for d in dropped:
+                receipts.append({
+                    "repair_type": "drop_dangling_regret_related_interest",
+                    "container": f"regret_candidates[{i}]",
+                    "dropped_target": d})
+    return cleaned, receipts
+
+
+REPAIR_PROMPT_TEMPLATE = """You previously produced the JSON payload below. Mechanical validation found these exact referential defects:
+
+{errors}
+
+Valid interest names in this payload (authoritative, normalized case-insensitively):
+
+{valid_names}
+
+Repair ONLY the defective reference strings so they point at names from the valid list (fix casing/spelling to match an existing name, or repoint). Do NOT add, remove, rename, re-order, or reword any interest, question, regret candidate, evidence summary, cluster id, confidence value, kind, temporal_state, stance, or observed_vs_inferred. Do NOT drop items. Return ONLY the complete corrected JSON payload matching the same schema.
+
+PAYLOAD:
+
+{payload}
+"""
+
+
+def build_repair_prompt(payload: dict, errors: list[str]) -> str:
+    names = sorted({_norm_name(it["name"])
+                    for it in payload["inferred_interests"]})
+    return REPAIR_PROMPT_TEMPLATE.format(
+        errors="\n".join(f"- {e}" for e in errors),
+        valid_names="\n".join(f"- {n}" for n in names),
+        payload=json.dumps(payload, indent=1, ensure_ascii=False))
+
+
+def validated_reference_repair(payload: dict, supplied_cluster_ids,
+                               invoke, *, max_attempts: int =
+                               MAX_REFERENCE_REPAIR_ATTEMPTS):
+    """Boundedly repair reference-only contract violations via the provider.
+
+    invoke(prompt: str) -> dict must run the provider with the SAME strict
+    output schema applied. Returns (payload, receipts, attempts_used).
+    Raises InferenceContractError when the violation is outside the repair
+    scope or attempts are exhausted — the caller then fails closed.
+
+    Hard gates, both fail-closed: the incoming payload must be
+    structurally schema-clean (shape violations are enforcement failures,
+    never repairable), and the repaired payload must preserve the exact
+    normalized interest-name inventory (a repair may never decide which
+    interests exist).
+    """
+    schema_errs = conformance_errors(payload, inference_output_schema())
+    if schema_errs:
+        raise InferenceContractError(
+            "repair refused: payload is structurally schema-invalid "
+            "(provider/schema enforcement failure, not a reference "
+            f"defect): {schema_errs[:3]}")
+    receipts: list = []
+    supplied = set(supplied_cluster_ids)
+    try:
+        validate_inference(payload, supplied)
+        return payload, receipts, 0
+    except InferenceContractError as exc:
+        if classify_contract_error(exc) != "reference":
+            raise
+        errors = [f"{exc}"]
+        receipts.append({"repair_type": "validation_error",
+                         "error": str(exc)[:STDERR_DIAGNOSTIC_LIMIT]})
+
+    original_names = {_norm_name(it["name"])
+                      for it in payload["inferred_interests"]}
+    current = payload
+    for attempt in range(1, max_attempts + 1):
+        prompt = build_repair_prompt(current, errors)
+        try:
+            candidate = invoke(prompt)
+        except ProviderExecutionError:
+            raise
+        except InferenceContractError as exc:
+            raise InferenceContractError(
+                f"repair attempt {attempt} produced a non-reference "
+                f"violation; refusing to continue: {exc}") from exc
+        repaired_names = {_norm_name(it["name"])
+                          for it in candidate.get("inferred_interests", [])} \
+            if isinstance(candidate, dict) else set()
+        if repaired_names != original_names:
+            raise InferenceContractError(
+                f"repair attempt {attempt} altered the interest "
+                f"inventory (added={sorted(repaired_names -
+                                           original_names)[:3]}, "
+                f"removed={sorted(original_names -
+                                  repaired_names)[:3]}); failing closed")
+        try:
+            validate_inference(candidate, supplied)
+        except InferenceContractError as exc:
+            if classify_contract_error(exc) != "reference":
+                raise InferenceContractError(
+                    f"repaired payload violates contract beyond reference "
+                    f"scope; failing closed: {exc}") from exc
+            errors = [str(exc)[:STDERR_DIAGNOSTIC_LIMIT]]
+            receipts.append({"repair_type": "still_invalid_after_repair",
+                             "attempt": attempt,
+                             "error": errors[0]})
+            current = candidate
+            continue
+        receipts.append({"repair_type": "reference_repair_applied",
+                         "attempt": attempt})
+        return candidate, receipts, attempt
+    raise InferenceContractError(
+        f"reference repair did not converge within {max_attempts} "
+        "attempts; failing closed")
 
 
 # ---------------------------------------------------------------------------
@@ -761,13 +933,23 @@ def run_reconciliation_tree(fragments, plan_cluster_ids, provider="codex",
                             timeout: int = 580, prompt_path=None,
                             invoke=None, stage_writer=None,
                             max_per_call: int =
-                            MAX_FRAGMENTS_PER_RECONCILIATION):
+                            MAX_FRAGMENTS_PER_RECONCILIATION,
+                            repair_hook=None):
     """Bounded recursive reconciliation over ALL fragments.
 
     Returns {"final", "fragment_dispositions" (flattened to LEAF
     fragments), "stages" (raw per-stage records), "provider_calls"}.
     No arbitrary truncation: every leaf fragment retains an auditable
-    disposition chain to the final result."""
+    disposition chain to the final result.
+
+    repair_hook (default off): candidate Arm C only. Called as
+    hook(wrapper, group_fragments, stage=N, group_index=M) AFTER the
+    provider returns and BEFORE mechanical validation. Scope ceiling:
+    reference-only repair of ``wrapper["final"]``; fragment dispositions
+    are audit records and must never be altered by a hook. Hooks are part
+    of the contract-reliability experiment surface — no production caller
+    passes one until that gate is decided.
+    """
     leaf_records = sorted(fragments["interests"],
                           key=lambda f: f["fragment_id"])
     stage_records = []
@@ -789,6 +971,14 @@ def run_reconciliation_tree(fragments, plan_cluster_ids, provider="codex",
             wrapper = _reconcile_group(group, provider, timeout, prompt_file,
                                        invoke=invoke)
             provider_calls += 1
+            if repair_hook is not None:
+                wrapper = repair_hook(wrapper, group, stage=stage,
+                                      group_index=gi + 1)
+                if wrapper is None:
+                    raise ReconciliationContractError(
+                        "repair_hook returned no wrapper")
+            # Validation ALWAYS runs after any hook: a repair can never
+            # substitute for the mechanical contract check.
             validate_reconciliation(wrapper, group, plan_cluster_ids)
             record["dispositions"].extend(wrapper["fragment_dispositions"])
             if is_last:
