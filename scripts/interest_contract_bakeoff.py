@@ -499,7 +499,48 @@ def run_mode(artifact_dir: str | None) -> int:
             print(f"[bakeoff] {b.batch_id} {arm}: {rec['status']}"
                   f" ({rec['latency_s']}s)")
 
+    recon_results = _recon_for_arms(plan, arm_fragments, schema_paths,
+                                    recon_dir)
+    print(json.dumps({a: {"status": r["status"]}
+                      for a, r in recon_results.items()}, indent=2))
+    metrics = {
+        "generated_at": stamp,
+        "plan_id": plan.plan_id,
+        "eligible_clusters": len(plan.eligible_cluster_ids),
+        "batches": len(plan.batches),
+        "arms": summarize(records),
+        "records": records,
+        "reconciliation": recon_results,
+    }
+    _write_json(root / "metrics.json", metrics)
+    print(f"[bakeoff] artifacts -> {root}")
+    return 0
+
+
+def _fragments_from_validated(plan, calls_dir: Path) -> dict:
+    """Rebuild each arm's fragments from canonical validated payloads
+    (AMENDMENT 3 --recon-from path). Missing/failed batches simply
+    contribute nothing, mirroring a live partial batch phase."""
+    arm_fragments = {arm: {"interests": [], "questions": [],
+                           "regret_candidates": []} for arm in ARMS}
+    for path in sorted(calls_dir.glob("*.validated.json")):
+        stem = path.name[: -len(".validated.json")]      # e.g. b001.C
+        batch_id, arm = stem.rsplit(".", 1)
+        if arm not in ARMS:
+            continue
+        blob = json.loads(path.read_text(encoding="utf-8"))
+        frags = big.build_fragments(plan.plan_id, batch_id, blob["payload"])
+        for key in ("interests", "questions", "regret_candidates"):
+            arm_fragments[arm][key].extend(frags[key])
+    return arm_fragments
+
+
+def _recon_for_arms(plan, arm_fragments: dict, schemas: dict,
+                    recon_dir: Path) -> dict:
+    """Reconciliation trees per arm; shared by --run and --recon-from."""
     recon_results = {}
+    recon_dir.mkdir(parents=True, exist_ok=True)
+    eligible_ids = list(plan.eligible_cluster_ids)
     for arm in ARMS:
         frag = arm_fragments[arm]
         n_frag = len(frag["interests"])
@@ -508,22 +549,20 @@ def run_mode(artifact_dir: str | None) -> int:
                                   "fragments": 0}
             continue
         ledger: list = []
-        hook = (make_c_hook(schema_paths, ledger,
-                            list(plan.eligible_cluster_ids),
+        hook = (make_c_hook(schemas, ledger, eligible_ids,
                             recon_dir / "c-hook-prompts")
                 if arm == "C" else None)
         t0 = time.monotonic()
         try:
             tree = big.run_reconciliation_tree(
-                frag, list(plan.eligible_cluster_ids), provider="codex",
+                frag, eligible_ids, provider="codex",
                 timeout=TIMEOUT_S,
                 prompt_path=recon_dir / f"{arm}-group-prompt.txt",
-                invoke=make_recon_adapter(arm, schema_paths, ledger),
+                invoke=make_recon_adapter(arm, schemas, ledger),
                 stage_writer=lambda s, rec_, a=arm: _write_json(
                     recon_dir / f"{a}-stage-{s:02d}.json", rec_),
                 repair_hook=hook)
-            big.validate_inference(tree["final"],
-                                   set(plan.eligible_cluster_ids))
+            big.validate_inference(tree["final"], set(eligible_ids))
             recon_results[arm] = {
                 "status": "completed", "fragments": n_frag,
                 "stages": len(tree["stages"]),
@@ -543,26 +582,34 @@ def run_mode(artifact_dir: str | None) -> int:
                 "error": str(exc)[:800], "group_call_records": ledger,
                 "wall_s": round(time.monotonic() - t0, 1)}
             print(f"[bakeoff] recon {arm}: FAILED ({type(exc).__name__})")
+    for res in recon_results.values():               # flatten ledgers
+        res["ledger"] = res.pop("group_call_records", [])
+    return recon_results
 
-    recon_results_serializable = {}
-    for arm, res in recon_results.items():
-        res2 = dict(res)
-        res2.pop("group_call_records", None)     # ledgered separately
-        res2["ledger"] = res.get("group_call_records", [])
-        recon_results_serializable[arm] = res2
 
-    metrics = {
-        "generated_at": stamp,
-        "plan_id": plan.plan_id,
-        "eligible_clusters": len(plan.eligible_cluster_ids),
-        "batches": len(plan.batches),
-        "arms": summarize(records),
-        "records": records,
-        "reconciliation": recon_results_serializable,
-    }
-    _write_json(root / "metrics.json", metrics)
-    print(json.dumps({a: m for a, m in metrics["arms"].items()}, indent=2)[:1500])
-    print(f"[bakeoff] artifacts -> {root}")
+def recon_from_mode(source_dir: str) -> int:
+    """AMENDMENT 3: rerun ONLY reconciliation for a completed bakeoff dir."""
+    from ef.interest_candidates import CandidatePlan
+    root = Path(source_dir)
+    plan = CandidatePlan.from_dict(
+        json.loads((root / "plan.json").read_text(encoding="utf-8")))
+    schemas = {
+        "inference": root / "schemas" / "inference-output-schema.json",
+        "reconciliation": root / "schemas" /
+                          "reconciliation-output-schema.json"}
+    # refresh schema files so the audit trail holds what was actually used
+    _write_json(schemas["inference"], inference_output_schema())
+    _write_json(schemas["reconciliation"], reconciliation_output_schema())
+    arm_fragments = _fragments_from_validated(plan, root / "calls")
+    results = _recon_for_arms(plan, arm_fragments, schemas,
+                              root / "reconciliation")
+    metrics_path = root / "metrics.json"
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    first_pass = metrics.get("reconciliation", {})
+    metrics["reconciliation_first_attempt"] = first_pass
+    metrics["reconciliation"] = results
+    metrics["amendment3_rerun_at"] = time.strftime("%Y%m%dT%H%M%S")
+    _write_json(metrics_path, metrics)
     return 0
 
 
@@ -715,11 +762,15 @@ def main(argv=None) -> int:
     g.add_argument("--fixtures", action="store_true")
     g.add_argument("--run", nargs="?", const="", metavar="ARTIFACT_DIR")
     g.add_argument("--report", metavar="ARTIFACT_DIR")
+    g.add_argument("--recon-from", metavar="BAKEOFF_DIR",
+                   help="AMENDMENT 3: rerun only reconciliation")
     a = ap.parse_args(argv)
     if a.fixtures:
         return fixtures_mode()
     if a.run is not None:
         return run_mode(a.run or None)
+    if getattr(a, "recon_from", None):
+        return recon_from_mode(a.recon_from)
     return report_mode(a.report)
 
 
