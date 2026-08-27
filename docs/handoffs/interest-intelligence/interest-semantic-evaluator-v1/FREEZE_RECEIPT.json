@@ -1,0 +1,54 @@
+{
+  "receipt": "isem_v1_freeze",
+  "agent": "zcode",
+  "host": "zcode",
+  "created_utc": "2026-08-26T21:50:13",
+  "status": "EVALUATOR_READY_WAITING_ON_INFERENCE_FREEZE",
+  "candidate_inference_implementation": "NOT_YET_FROZEN",
+  "sealed_holdout_public_hash_echo": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f",
+  "preregistration_doc": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
+  "judge_prompts_sha256": {
+    "positive": "733e24b5fb2ad9cf7c70e55e435f349c5b7e189398c2fc11b6344e4592825ccc",
+    "negative_interest": "9bd66cc82f8a6394dad08d7bdb15304928049d973ed00a784368e38375fb7fd8"
+  },
+  "judge_model_config": {
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "timeout_s": 300,
+    "max_attempts": 2
+  },
+  "min_n_per_type": 5,
+  "stability_schemes": [
+    "S1_RANDOM_DROP_5PCT(seed1337,min8)",
+    "S2_TOP_BREADTH_DROP_10",
+    "S3_REPS_TRIM(first2)",
+    "S4_ORDER_SHUFFLE(seed20260826)"
+  ],
+  "frozen_artifacts": [
+    {
+      "path": "ef/eval_interest_semantic.py",
+      "sha256": "3321d8aa8369012413e16439273e415915c737eaab6369de55f73ac7b31150dd"
+    },
+    {
+      "path": "scripts/eval_interest_holdout.py",
+      "sha256": "623ea5b80435321b5a0b4b12de5c8402ebfe7b4bc481eeae328f9a7c932d91f8"
+    },
+    {
+      "path": "tests/test_eval_interest_semantic.py",
+      "sha256": "a7234474df8f8554c1953885bcd0333c8825986ef111133500bd493156c67ced"
+    },
+    {
+      "path": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
+      "sha256": "f3bcd0e72bbafbd461b6e868ff755990544ac0215bbec83898bee112381f46fb"
+    }
+  ],
+  "gate_unseal_preconditions": [
+    "architect publishes selected inference implementation SHA",
+    "this same evaluator binds --inference-sha and re-verifies manifest hashes unchanged",
+    "only then may --gt point at the sealed v1.1 artifact"
+  ],
+  "post_run_constraints": [
+    "single scoring run; no inference tuning afterward",
+    "exact per-item outcomes reported regardless of verdicts"
+  ]
+}
