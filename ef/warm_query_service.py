@@ -2232,6 +2232,61 @@ def library_lookup(video_id: str, catalog_db=None) -> dict:
     }
 
 
+def _ingest_extension_document(payload: dict, kind: str, transcripts_db=None):
+    """Harvested-document ingestion (article / pdf) into transcript_cache.
+
+    E-class evidence source for the linked-content harvest (work packet
+    20260824e Y1): rows carry source extension-article / extension-pdf and
+    origin kind in metadata, so they never enter the curated S/E/K
+    authority namespaces. Same idempotency contract as video transcripts:
+    one authority row per document (url-hash id), same content answers
+    already_present, changed content is a 409. Returns (http_status, body).
+    """
+    import hashlib
+    import sqlite3
+    import time as _time
+    from ef.authority import TRANSCRIPTS_DB
+    url = (payload.get("url") or "").strip()
+    title = (payload.get("title") or "").strip()
+    text = payload.get("text")
+    pages = payload.get("pageCount")
+    if not url.startswith("http") or not isinstance(text, str):
+        return 400, {"error": "malformed ingest request"}
+    if not text.strip() or len(text) > 2_000_000:
+        return 400, {"error": "malformed ingest request"}
+    if pages is not None and not isinstance(pages, int):
+        return 400, {"error": "malformed ingest request"}
+    doc_id = "doc-" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+    provider = f"extension-{kind}"
+    cache_key = f"{doc_id}:en:{provider}"
+    conn = sqlite3.connect(str(transcripts_db or TRANSCRIPTS_DB), timeout=30.0)
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        existing = conn.execute(
+            "select cache_key, transcript from transcript_cache "
+            "where video_id = ? order by cached_at desc limit 1",
+            (doc_id,)).fetchone()
+        if existing:
+            if existing[0] == cache_key and existing[1] != text:
+                return 409, {"error": "existing_document_differs"}
+            return 200, {"status": "already_present",
+                         "documentChars": len(existing[1])}
+        metadata = json.dumps({"title": title, "url": url,
+                               "origin": "extension", "kind": kind,
+                               **({"pageCount": pages} if pages is not None
+                                  else {})})
+        conn.execute(
+            "insert into transcript_cache "
+            "(cache_key, video_id, lang, source, transcript, metadata_json, "
+            "cached_at, terminal_id) values (?,?,?,?,?,?,?,NULL)",
+            (cache_key, doc_id, "en", provider, text, metadata,
+             _time.strftime("%Y-%m-%dT%H:%M:%S")))
+        conn.commit()
+    finally:
+        conn.close()
+    return 200, {"status": "saved", "documentChars": len(text)}
+
+
 def ingest_extension(payload: dict, transcripts_db=None):
     """Idempotent single-video ingestion into the transcript authority.
 
@@ -2239,11 +2294,21 @@ def ingest_extension(payload: dict, transcripts_db=None):
     (any provider) answers already_present; only the same cache_key with
     different content is a 409 conflict. New rows land in transcript_cache
     and the incremental EF indexer projects them into catalog/chunks/qdrant
-    on its next cycle. Returns (http_status, body)."""
+    on their next cycle. Returns (http_status, body).
+
+    Harvested documents (kind=article|pdf from the linked-content harvest)
+    route to _ingest_extension_document: E-class rows, never curated
+    authority."""
     import re
     import sqlite3
     import time as _time
     from ef.authority import TRANSCRIPTS_DB
+    kind = (payload.get("kind") or "transcript").strip()
+    if kind in ("article", "pdf"):
+        return _ingest_extension_document(payload, kind,
+                                          transcripts_db=transcripts_db)
+    if kind != "transcript":
+        return 400, {"error": "unsupported kind"}
     video_id = payload.get("videoId") or ""
     provider = (payload.get("provider") or "extension").strip() or "extension"
     title = (payload.get("title") or "").strip()

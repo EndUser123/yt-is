@@ -192,14 +192,19 @@ def test_nullability_of_optional_text_fields():
 
 def test_cluster_id_array_shape():
     schema = inference_output_schema()
-    # interests forbid duplicates (validator dupes=True) ...
-    errs = conformance_errors(
-        interest_mut(cluster_ids=[2, 2]), schema)
-    assert any("unique" in e.lower() for e in errs)
-    # ... while regret candidates allow them (dupes=False)
+    # AMENDMENT 2: the endpoint 400s on `uniqueItems`, so duplicates are
+    # NOT schema-blocked anywhere; validator keeps the interests rule.
+    assert conformance_errors(
+        interest_mut(cluster_ids=[2, 2]), schema) == []
+    dupes = interest_mut(cluster_ids=[2, 2])
+    import pytest
+    with pytest.raises(big.InferenceContractError):
+        big.validate_inference(dupes, SUPPLIED)
+    # regret candidates allow duplicates at BOTH layers (dupes=False)
     p = valid_payload()
     p["regret_candidates"][0]["cluster_ids"] = [4, 4]
     assert conformance_errors(p, schema) == []
+    big.validate_inference(p, SUPPLIED)
     # empty arrays are violations in both places
     errs = conformance_errors(interest_mut(cluster_ids=[]), schema)
     assert any("fewer than 1" in e for e in errs)
