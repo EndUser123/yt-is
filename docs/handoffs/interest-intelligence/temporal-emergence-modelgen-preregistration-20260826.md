@@ -159,3 +159,34 @@ No tuning of v2 thresholds; no new holdout curation or consumption; no
 formal ledger writes; no production default change; no Interest inference
 or Recommendation changes; no concept extraction or label modifications;
 no E4 discord date-policy work.
+
+## Amendment A1 (2026-08-26, recorded AFTER first outcome pass)
+
+Two disclosures, both mechanical rather than preference-based:
+
+1. PARITY RE-ANCHORING. The harness acceptance gate originally targeted
+   the published morning artifact (recall 35/42, negative rate 72/124).
+   Subject-by-subject comparison against a receipt-pinned NON_BLIND
+   rerun of the FROZEN evaluator on the CURRENT catalog
+   (eval-20260826T202847-NON_BLIND_DIAGNOSTIC, ledger untouched)
+   reproduced ALL THREE headline rates EXACTLY (36/42 recall, 75/124
+   negative rate, candidate recall 42/42) with ZERO mismatches over all
+   124 negatives. The morning-vs-current deltas are catalog drift
+   (eu/kg rows re-ingested during 2026-08-26; drift class already
+   disclosed in project-state-discovery.md), enumerated as named sids in
+   the harness constant PARITY_DRIFT_PUBLISHED_VS_CURRENT_NEGATIVES.
+   Acceptance basis is therefore the same-day frozen-evaluator rerun;
+   deviation from the published numbers is evidence of drift, not of
+   engine divergence. Decision bars below are UNCHANGED.
+
+2. RE-ARM COMPLETION. The frozen text declares: "episode may re-arm only
+   via the v2 cool rule then a fresh positive crossing". The first
+   implementation pass accounted ONLY the single earliest opening per
+   lane, leaving the declared re-arm mechanism unimplemented; single-shot
+   deadlines anchored at potentially ancient openings suppressed recall
+   mechanically rather than empirically. Before inspecting ANY re-run
+   outcome, episode accounting now implements the declared clause:
+   deadline-expired attempts expire, and the NEXT positive-detector
+   boundary opens a fresh attempt with trigger_evidence_cutoff reset.
+   No variant definitions, thresholds, arms, or bars changed.
+

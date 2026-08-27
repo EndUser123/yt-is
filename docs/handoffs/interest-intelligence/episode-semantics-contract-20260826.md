@@ -118,3 +118,19 @@ still shows explicit-negative confirmed-emergence rates statistically
 indistinguishable from positive confirmed-emergence recall would show the
 contract is not capturing the phenomenon and must be revised before any
 freezing of implementation.
+
+## ERRATUM E1 (2026-08-26, fresh-context review note N1)
+
+"Episode-open definition" lists the breakpoint set as
+{first_evidence_date} ∪ {first_evidence_date + recent_window_days}. The
+signal's exact continuity set additionally contains baseline-window
+exits, {first_evidence_date + recent_window_days + baseline_window_days}
+(= dd+240d under v2 parameters): an EU leaving the 180d baseline window
+changes k_base and can move the posterior across the threshold with no
+evidence event. The bakeoff of record used the frozen two-multiplier
+sampler; a post-hoc SENSITIVITY probe sampling dd+240d produced
+IDENTICAL arm A/arm D aggregates (arm A recall/negative/separation
+unchanged) and moved only CHANNELNEW's negative rate AGAINST that
+family (+0.0322), so no recorded outcome depends on the choice. Future
+implementations of this contract should use the three-multiplier set.
+
