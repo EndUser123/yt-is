@@ -43,6 +43,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -70,6 +71,19 @@ BOOTSTRAP_MAX_CLUSTERS_PER_CALL = 25
 MAX_FRAGMENTS_PER_RECONCILIATION = 40
 MAX_RECONCILIATION_STAGES = 8     # fail closed beyond this — never truncate
 ARTIFACT_ROOT = Path("P:/.data/yt-is/ef/interest-inference")
+
+
+def _new_run_dir(kind: str) -> Path:
+    """Unique per-execution artifact root under the canonical store.
+
+    Artifact-hygiene rule (2026-08-26 additive packet): no inference run
+    may write to a FIXED shared path — one run gets one unique directory,
+    so concurrent runs cannot overwrite each other and a stale prior-run
+    payload can never masquerade as the current result. Nothing ever
+    reads these directories implicitly.
+    """
+    run_id = f"{time.strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:8]}_{kind}"
+    return ARTIFACT_ROOT / "runs" / run_id
 
 
 class ProviderExecutionError(RuntimeError):
@@ -641,7 +655,8 @@ def _invoke_and_extract(provider: str, prompt: str, prompt_file: Path,
 
 
 def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
-                  result_path=None, timeout: int = 580):
+                  result_path=None, timeout: int = 580,
+                  run_root: Path | None = None):
     """LEGACY single-shot baseline: one global top-25 breadth-ranked subset.
 
     Returns (payload, meta) where meta carries the inference-run
@@ -649,6 +664,10 @@ def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
     Raises ProviderExecutionError on subprocess/parse failure and
     InferenceContractError on contract violation — the canonical result
     artifact is written ONLY after successful validation.
+
+    Artifacts are run-scoped: with no explicit overrides they land under a
+    unique ARTIFACT_ROOT/runs/<run_id>/ directory; the retired fixed
+    shared-temp result location is never read or written by any path.
     """
     if clusters is None:
         from ef.evidence_clusters import cached_clusters
@@ -657,8 +676,11 @@ def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
     supplied = [int(c["cluster_id"]) for c in selected]
     prompt = build_prompt(selected)
 
+    if run_root is None:
+        run_root = _new_run_dir("single-shot")
+    run_root = Path(run_root)
     prompt_file = Path(prompt_path) if prompt_path else \
-        Path("P:/tmp/interest-inference-prompt.txt")
+        run_root / "prompt.txt"
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt, encoding="utf-8")
 
@@ -671,10 +693,14 @@ def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
     result_hash = canonical_result_hash(payload)
 
     out = Path(result_path) if result_path else \
-        Path("P:/tmp/interest-inference-result.json")
+        run_root / "result.validated.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, indent=2, ensure_ascii=False),
-                   encoding="utf-8")
+    _write_json(out, {
+        "run_id": run_root.name,
+        "validation_status": "validated",
+        "payload": payload,
+        "result_hash": result_hash,
+    })
     print(f"[inference] validated {len(payload['inferred_interests'])} "
           f"interests, {len(payload['questions'])} questions, "
           f"{len(payload['regret_candidates'])} regret candidates "
@@ -687,6 +713,7 @@ def run_inference(provider: str = "codex", clusters=None, prompt_path=None,
         "candidate_policy": CANDIDATE_POLICY,
         "cluster_ids": supplied,
         "result_hash": result_hash,
+        "run_id": run_root.name,
     }
     return payload, meta
 
@@ -746,8 +773,12 @@ def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
             f"batch {batch.batch_id}: hydrated clusters {sorted(supplied)} "
             f"do not match plan ids {sorted(batch.cluster_ids)}")
     prompt = build_prompt(batch_clusters)
-    prompt_file = Path(prompt_path) if prompt_path else Path(
-        f"P:/tmp/interest-inference-{plan_id}-{batch.batch_id}-prompt.txt")
+    if prompt_path is None:
+        # artifact-hygiene rule: unique per-call home, never a fixed
+        # shared P:/tmp location that concurrent runs could clobber
+        prompt_path = _new_run_dir(
+            f"batch-{batch.batch_id}") / "prompt.txt"
+    prompt_file = Path(prompt_path)
     prompt_file.parent.mkdir(parents=True, exist_ok=True)
     prompt_file.write_text(prompt, encoding="utf-8")
 
@@ -957,6 +988,10 @@ def run_reconciliation_tree(fragments, plan_cluster_ids, provider="codex",
     final_wrapper = None
     provider_calls = 0
     stage = 0
+    # Per-tree prompt isolation: when the caller supplies no path, every
+    # group call gets its own file under a fresh run directory — no
+    # cross-run or intra-run overwrites (artifact-hygiene rule).
+    recon_prompt_root = _new_run_dir("recon") if prompt_path is None else None
     while True:
         stage += 1
         groups = [current[i:i + max_per_call]
@@ -966,8 +1001,8 @@ def run_reconciliation_tree(fragments, plan_cluster_ids, provider="codex",
                   "dispositions": [], "outputs": {}}
         next_current = []
         for gi, group in enumerate(groups):
-            prompt_file = Path(prompt_path) if prompt_path else Path(
-                f"P:/tmp/interest-reconciliation-s{stage}-g{gi + 1:03d}.txt")
+            prompt_file = Path(prompt_path) if prompt_path else \
+                recon_prompt_root / f"s{stage}-g{gi + 1:03d}-prompt.txt"
             wrapper = _reconcile_group(group, provider, timeout, prompt_file,
                                        invoke=invoke)
             provider_calls += 1
@@ -1091,7 +1126,8 @@ def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
     validate_plan_coverage(plan, BOOTSTRAP_MAX_CLUSTERS_PER_CALL)
 
     run_dir = Path(artifact_root) if artifact_root else (
-        ARTIFACT_ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}_{plan.plan_id}")
+        ARTIFACT_ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}_"
+                        f"{uuid.uuid4().hex[:8]}_{plan.plan_id}")
     _write_json(run_dir / "plan.json", plan.to_dict())
     _write_json(run_dir / "inventory-summary.json", {
         "total_semantic_non_series":
@@ -1110,7 +1146,9 @@ def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
             packets = hydrate_fn(list(batch.cluster_ids))
             fragments, meta = run_batch_inference(
                 plan.plan_id, batch, packets, provider=provider,
-                timeout=timeout)
+                timeout=timeout,
+                prompt_path=run_dir / "prompts" /
+                            f"{batch.batch_id}-prompt.txt")
             provider_calls += 1
             requested_model = meta["requested_model"]
             _write_json(run_dir / f"batch-{i:02d}-input-metadata.json", {
