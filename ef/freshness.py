@@ -162,6 +162,17 @@ def incremental_update(batch_limit: int = 2000) -> dict:
     gen = spec["generation"]
     digest = buildspec.spec_digest(spec)
     build_id = f"generation/gen{gen}-{digest}"
+    # Per-source index exclusion is now spec policy, default EMPTY: the old
+    # hardcoded reddit/hn/rss/github/podcast/newsletter/dht exclusion
+    # predated the multi-source expansion and silently made every row those
+    # connectors write to transcript_cache permanently unsearchable
+    # (2026-08-27: 256 pending rows past a healthy watermark while rounds
+    # reported processed: 0).
+    excluded_sources = set(spec.get("excluded_sources") or [])
+    src_excl_sql = ""
+    if excluded_sources:
+        src_excl_sql = (" and t.source not in ("
+                        + ",".join("?" * len(excluded_sources)) + ")")
     st = load_state()
     iw = st.get("indexed_watermark")
     if not iw:
@@ -171,7 +182,7 @@ def incremental_update(batch_limit: int = 2000) -> dict:
     conn = sqlite3.connect(f"file:{authority.get_transcripts_db_path().as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute(f"attach database 'file:{authority.get_status_db_path().as_posix()}?mode=ro' as status")
-    rows = [dict(r) for r in conn.execute("""
+    rows = [dict(r) for r in conn.execute(f"""
         select t.video_id, t.lang, t.source, t.cached_at, t.transcript,
                a.title, a.channel_id, a.published_at, a.duration,
                cm.channel_title
@@ -180,10 +191,9 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         left join status.channel_metadata cm on cm.channel_id = a.channel_id
         where t.cached_at > ? and length(t.transcript) >= 100
           and (t.terminal_id is null or t.terminal_id not like 'test%')
-          and t.source not in ('reddit','hackernews','discord','rss',
-                               'github','podcast','dht-artifact','newsletter')
+          {src_excl_sql}
         order by t.cached_at asc limit ?
-    """, (iw, batch_limit)).fetchall()]
+    """, (iw, *sorted(excluded_sources), batch_limit)).fetchall()]
     # Tie-completion pass: a tie LARGER than batch_limit can never be
     # cleared by ordinary batching — every run re-selects the same first
     # batch_limit rows, hash-skips them, and holds the watermark below
@@ -201,18 +211,18 @@ def incremental_update(batch_limit: int = 2000) -> dict:
         left join status.channel_metadata cm on cm.channel_id = a.channel_id
         where %s and length(t.transcript) >= 100
           and (t.terminal_id is null or t.terminal_id not like 'test%%')
-          and t.source not in ('reddit','hackernews','discord','rss',
-                               'github','podcast','dht-artifact','newsletter')"""
+          {src_excl_sql}""".format(src_excl_sql=src_excl_sql)
 
     def _eligible_boundary_count(ts, quarantined):
         q = ("select count(*) from transcript_cache where cached_at = ?"
              " and length(transcript) >= 100"
              " and (terminal_id is null or terminal_id not like 'test%')"
-             " and source not in ('reddit','hackernews','discord','rss',"
-             "'github','podcast','dht-artifact','newsletter')"
+             + (" and t.source not in (" + ",".join("?" * len(excluded_sources)) + ")"
+                if excluded_sources else "")
              + (" and video_id not in (%s)" % ",".join("?" * len(quarantined))
                 if quarantined else ""))
-        return conn.execute(q, (ts, *quarantined)).fetchone()[0]
+        params = [ts, *sorted(excluded_sources)] if excluded_sources else [ts]
+        return conn.execute(q, (*params, *quarantined)).fetchone()[0]
 
     boundary_total = 0
     if rows:
