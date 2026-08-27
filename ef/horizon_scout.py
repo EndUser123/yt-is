@@ -93,6 +93,10 @@ class ScoutPlan:
     created_at: str
     policy_version: str
     queries: tuple[ScoutQuery, ...]
+    # Anchor diagnostics: distinguish legitimate wildcard exploration from
+    # wildcard-only degradation caused by absent accepted personal anchors.
+    anchor_state: str = "READY"  # READY|EMPTY
+    degraded_reason: str | None = None  # NO_ACCEPTED_PERSONAL_ANCHORS when EMPTY
 
     def to_dict(self) -> dict:
         return {
@@ -100,6 +104,8 @@ class ScoutPlan:
             "created_at": self.created_at,
             "policy_version": self.policy_version,
             "queries": [asdict(q) for q in self.queries],
+            "anchor_state": self.anchor_state,
+            "degraded_reason": self.degraded_reason,
         }
 
 
@@ -127,9 +133,17 @@ def _domain_from_text(text: str) -> str:
 
 
 def _open_graph(graph_db: Any) -> sqlite3.Connection | None:
-    """Open the graph DB read-only when given a path; never write to it."""
+    """Open the graph DB read-only when given a path; never write to it.
+
+    graph_db=None resolves through the ONE canonical default seam,
+    the ef.personal_graph.CATALOG constant (no second hardcoded path).
+    Explicit paths always win."""
     if isinstance(graph_db, sqlite3.Connection):
         return graph_db
+    if graph_db is None:
+        from ef import personal_graph
+
+        graph_db = personal_graph.CATALOG
     path = Path(graph_db)
     if not path.exists():
         return None
@@ -266,6 +280,13 @@ def build_scout_plan(
     results supply the unknown names. Pure function of DB state plus
     max_queries: no network, no clock in the identity (plan_id depends
     only on the query set). Missing/empty tables degrade to wildcards.
+    graph_db=None resolves to ef.personal_graph.CATALOG (the canonical
+    default); explicit paths always win.
+
+    Anchor diagnostics: when NO accepted Interest/Goal/InformationNeed
+    rows exist, anchor_state=EMPTY with degraded_reason=
+    NO_ACCEPTED_PERSONAL_ANCHORS, so wildcard-only plans stay auditable;
+    no fallback anchors are fabricated.
     """
     conn = _open_graph(graph_db)
     try:
@@ -273,6 +294,12 @@ def build_scout_plan(
     finally:
         if conn is not None and graph_db is not conn:
             conn.close()
+
+    anchor_state = "READY"
+    degraded_reason = None
+    if not sources:
+        anchor_state = "EMPTY"
+        degraded_reason = "NO_ACCEPTED_PERSONAL_ANCHORS"
 
     interest_sources = [s for s in sources if s[0] == "interest"]
     adjacent_sources = [s for s in sources if s[0] in ("goal", "information_need")]
@@ -304,6 +331,8 @@ def build_scout_plan(
         created_at=now if now is not None else _now_iso(),
         policy_version=SCOUT_POLICY_VERSION,
         queries=tuple(queries),
+        anchor_state=anchor_state,
+        degraded_reason=degraded_reason,
     )
 
 
