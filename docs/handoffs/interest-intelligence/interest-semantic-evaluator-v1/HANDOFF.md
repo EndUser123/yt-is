@@ -38,16 +38,21 @@ architect specified).
 - `FREEZE_RECEIPT.json` — sha256s of all four + judge prompts + model
   config + gate preconditions
 
-Hashes at generation time (AMENDMENT_1 chain; verify before landing;
-any drift invalidates):
+Hashes at generation time (AMENDMENT_1 chain, LANDED-CANONICAL repo
+content hashes; verify before reuse; any drift invalidates):
 
-- ef/eval_interest_semantic.py 3321d8aa8369012413e16439273e415915c737eaab6369de55f73ac7b31150dd
+- ef/eval_interest_semantic.py a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503
 - scripts/eval_interest_holdout.py 623ea5b80435321b5a0b4b12de5c8402ebfe7b4bc481eeae328f9a7c932d91f8
-- tests/test_eval_interest_semantic.py a7234474df8f8554c1953885bcd0333c8825986ef111133500bd493156c67ced
+- tests/test_eval_interest_semantic.py bac1a1f0ba2793c6a3816734507cc94a2430f17d2496f3682a2aa99d9be11548
 - METRIC_PLAN_PREREGISTRATION.md f3bcd0e72bbafbd461b6e868ff755990544ac0215bbec83898bee112381f46fb
 
-Superseded pre-amendment chain (history only): d03755c1…, 623ea5b8…,
-ea789ad9…, 604d17fd….
+Landing record: lane commit 02fd3a7e → integrated main ff9696ee
+(run run-bc79ae6be0d4, reviewer agent-reviewer-71042b81, tree a6efd016,
+verdict APPROVE; reviewer authority source=manual per fleet convention).
+Superseded chains: pre-amendment (d03755c1…, 623ea5b8…, ea789ad9…,
+604d17fd…) and pre-normalization disk-EOL variants of the amended pair
+(3321d8aa… ef, a7234474… tests) — see AMENDMENT 1 Addendum in the
+preregistration doc.
 
 ## Contamination record
 
