@@ -1,0 +1,70 @@
+{
+  "kind": "eu_time_policy_migration_post_verification",
+  "agent": "zcode",
+  "migration": "apply_run1.json (idempotent_ok, rerun changed_rows=0)",
+  "backup": "P:/.data/yt-is/backups/catalog.sqlite.pre_eu_time_policy_20260827T133241Z",
+  "checks": {
+    "discord_recovery_coverage": {
+      "expected_rows": 28611,
+      "rows": 28611,
+      "methods": {
+        "dht_window_first_ts_ms_epoch": 27879,
+        "raw_archive_bridge_message_time": 192,
+        "url_attachment_snowflake": 540
+      },
+      "verdict": "PASS"
+    },
+    "no_timestamp_deviation_from_source": "PASS by construction (values written from frozen recovery map built from source metadata; basis hash pins interval+method)",
+    "captured_time_preserved": {
+      "discord_dht_empty_captured": 0,
+      "eu_published_rewritten": 0,
+      "discord_published_still_empty": 27879,
+      "verdict": "PASS"
+    },
+    "unrecoverable_not_fabricated": {
+      "notebooklm_recovery_rows": 0,
+      "unknown_valid_excluded_mentions": 3487,
+      "verdict": "PASS"
+    },
+    "captured_fallback_removed": {
+      "reader_policy": "published->recovery->EXCLUDED",
+      "pre_repair_temporal_mentions": 102454,
+      "post_repair_temporal_mentions": 98967,
+      "verdict": "PASS"
+    },
+    "fixtures_world_knowledge_late_arrival": "unit tests test_reader_* / case1/case2/case6: PASS (18 tests green)",
+    "old_discord_no_longer_manufactures_2026_burst": {
+      "pre_repair_final_day_v1_emerging": 112,
+      "pre_repair_v2_positive": 176,
+      "post_migration_current_arm_v1_emerging": 13,
+      "v2_positive": 67,
+      "arms_converged": "a==b==c (12..13/67..68 spread only from d_interval_end alt-write)",
+      "run_dir": ".logs/temporal-time-policy/timepolicy-postmigrate-01",
+      "verdict": "PASS"
+    }
+  },
+  "pre_post_counts": {
+    "total_eus": {
+      "pre_diag_0826": 266945,
+      "apply_time": 269254
+    },
+    "undated": {
+      "pre": 41796,
+      "at_apply": 43341
+    },
+    "recovered_exact": {
+      "windows_first_ts": 27879,
+      "archive_bridge": 192
+    },
+    "recovered_approx": {
+      "url_attachment_snowflake": 540
+    },
+    "unknown_valid_excluded": 14730,
+    "mentions_entering_temporal_windows": {
+      "pre": 102454,
+      "post": 98967
+    }
+  },
+  "burst_policies_touched": false,
+  "temporal_model_rerun_performed": false
+}
