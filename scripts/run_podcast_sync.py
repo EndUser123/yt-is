@@ -131,6 +131,7 @@ def download_audio(audio_url: str, episode_key: str) -> Path | None:
          "--no-playlist", "--quiet",
          audio_url],
         capture_output=True, text=True, timeout=1800,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         cwd=str(REPO))
     if result.returncode != 0:
         return None
