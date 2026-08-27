@@ -133,12 +133,46 @@ def download_audio(audio_url: str, episode_key: str) -> Path | None:
 
 
 def transcribe(audio_path: Path) -> str | None:
-    """GPU Whisper via the existing whisper_worker.transcribe."""
+    """GPU Whisper via whisper_worker, ISOLATED in a child process.
+
+    PyAV/libav abort()s natively on some episode audio (faulthandler receipt
+    2026-08-26: Fatal Python error: Aborted inside transcribe with the av.*
+    extension stack live) — an in-process call killed the ENTIRE sync
+    (schtasks 0xC0000409, pythonw, console, dispatcher alike). Running the
+    decode in a child converts that abort into an ordinary nonzero exit this
+    loop already handles; empty stdout = transcription failed/empty.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", str(Path(__file__).resolve()),
+             "--transcribe-one", str(audio_path)],
+            capture_output=True, text=True, timeout=1800,
+            encoding="utf-8", errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        print("    transcriber timeout after 1800s")
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        print(f"    transcriber exit {result.returncode} "
+              f"({(result.stderr or '').strip()[-120:]})")
+        return None
+    return result.stdout.strip()
+
+
+def _transcribe_one(audio_path: str) -> int:
+    """Child entry (--transcribe-one): full native stack dies here if it must."""
     from csf.whisper_worker import transcribe
-    result = transcribe(audio_path, "en")
+    result = transcribe(Path(audio_path), "en")
+    text = None
     if isinstance(result, dict):
-        return result.get("text") or result.get("transcript")
-    return str(result) if result else None
+        text = result.get("text") or result.get("transcript")
+    elif result:
+        text = str(result)
+    if not text:
+        return 4
+    sys.stdout.write(text)
+    return 0
 
 
 def store_episode(feed_name, ep, transcript):
@@ -171,7 +205,12 @@ def main(argv=None):
     load_workspace_env()
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=EPISODE_LIMIT)
+    parser.add_argument("--transcribe-one", type=Path, default=None,
+                        help=argparse.SUPPRESS)  # child entry: see transcribe()
     args = parser.parse_args(argv)
+
+    if args.transcribe_one is not None:
+        return _transcribe_one(str(args.transcribe_one))
 
     feeds = get_feeds()
     if not feeds:

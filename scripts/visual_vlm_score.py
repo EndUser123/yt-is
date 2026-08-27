@@ -13,8 +13,15 @@ Verdicts persist in ``visual_vlm_scores``; ``--calibrate`` joins them
 against the legacy Stage-0 text score to answer whether the old score
 tracks visual richness at all.
 
+``--prefilter`` is Path A of the bulk-score decision (the ~191K backlog):
+candidates reach the VLM only if their channel already shows density in
+past verdicts (channel prior) or their title/description carries an
+instructional keyword; every other video is skipped without spending a
+call. Survivors are still gated for enqueue by ``density >= min_density``.
+
 Usage:
   python scripts/visual_vlm_score.py --limit 60
+  python scripts/visual_vlm_score.py --limit 2000 --prefilter
   python scripts/visual_vlm_score.py --calibrate
 """
 
@@ -53,6 +60,27 @@ RUBRIC = (
     "on-screen text, code snippet, or labeled diagram; 7-8 dense code, "
     "multi-part diagrams, annotated charts; 9-10 extremely dense "
     "instructional or screencast-grade content."
+)
+
+# Bulk-score prefilter vocabulary (matched lowercase via LIKE against
+# title/description). The channel-prior branch covers channels with proven
+# VLM density; these keywords rescue zero-sample channels whose own text
+# already signals screencast-grade instructional content. Mirrors the spirit
+# of csf.visual.content_scorer._TITLE_KEYWORDS but tuned to depth markers
+# (deep dive, code review, benchmark) rather than broad demo vocabulary.
+PREFILTER_KEYWORDS: tuple[str, ...] = (
+    "tutorial",
+    "walkthrough",
+    "deep dive",
+    "architecture",
+    "implementation",
+    "code review",
+    "diagram",
+    "benchmark",
+    "profiling",
+    "optimization",
+    "build guide",
+    "explained internally",
 )
 
 
@@ -122,8 +150,32 @@ def ensure_vlm_table(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def channel_priors(conn: sqlite3.Connection) -> dict[str, float]:
+    """Mean VLM density per channel across already-scored videos.
+
+    Plain read-only SQL on the passed connection (no writes, WAL-safe).
+    Feeds the prefilter's channel-prior branch; empty until scoring
+    history exists.
+    """
+    rows = conn.execute(
+        """SELECT a.channel_id, AVG(s.density)
+           FROM visual_vlm_scores s
+           JOIN analysis_status a ON a.video_id = s.video_id
+           WHERE a.channel_id IS NOT NULL
+           GROUP BY a.channel_id"""
+    ).fetchall()
+    return {str(chan): float(mean) for chan, mean in rows}
+
+
 def select_candidates(
-    conn: sqlite3.Connection, *, days: int, limit: int, include_queued: bool = False
+    conn: sqlite3.Connection,
+    *,
+    days: int,
+    limit: int,
+    include_queued: bool = False,
+    prefilter: bool = False,
+    prior_min: float = 4.5,
+    prior_samples: int = 3,
 ) -> list[tuple[str, str | None]]:
     """Recent completes for scoring.
 
@@ -135,21 +187,56 @@ def select_candidates(
     (2026-08-26 batch-3 failure). ``include_queued`` scores already-queued
     videos too (signal completeness); enqueue stays guarded by the
     one-job-per-video invariant, so re-enqueue is impossible.
+
+    ``prefilter`` is bulk Path A: admit a candidate only when its channel's
+    scored history averages >= ``prior_min`` density over >= ``prior_samples``
+    verdicts, or its title/description hits a PREFILTER_KEYWORDS marker.
+    Off by default — zero-signal candidates flow through exactly as before.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     queued_clause = "" if include_queued else (
         "AND NOT EXISTS (SELECT 1 FROM visual_jobs v WHERE v.video_id = a.video_id)"
     )
+    cte_sql = ""
+    prefilter_clause = ""
+    if prefilter:
+        like_clauses = [
+            "(lower(a.title) LIKE ? OR lower(a.description) LIKE ?)"
+            for _kw in PREFILTER_KEYWORDS
+        ]
+        kw_block = "\n                  OR ".join(like_clauses)
+        keyword_params: list[object] = []
+        for _kw in PREFILTER_KEYWORDS:
+            keyword_params.extend([f"%{_kw}%", f"%{_kw}%"])
+        cte_sql = """WITH dense_channels AS (
+               SELECT p.channel_id
+               FROM visual_vlm_scores s
+               JOIN analysis_status p ON p.video_id = s.video_id
+               WHERE p.channel_id IS NOT NULL
+               GROUP BY p.channel_id
+               HAVING AVG(s.density) >= ? AND COUNT(*) >= ?
+           )"""
+        # Placeholder order is CTE(2) -> cutoff(1) -> keywords -> LIMIT(1);
+        # keep the bind tuple in that exact sequence (review run-8db0aaabe5d3
+        # F1: swapping cutoff/keywords turned the date into a LIKE arg).
+        prefilter_clause = (
+            "\n             AND (a.channel_id IN (SELECT channel_id FROM dense_channels)\n"
+            f"                  OR {kw_block})"
+        )
+        bind = [prior_min, prior_samples, cutoff, *keyword_params]
+    else:
+        bind = [cutoff]
     rows = conn.execute(
-        f"""SELECT a.video_id, a.thumbnail FROM analysis_status a
+        f"""{cte_sql}
+           SELECT a.video_id, a.thumbnail FROM analysis_status a
            WHERE a.status = 'complete'
              AND a.updated_at >= ?
              {queued_clause}
              AND EXISTS (SELECT 1 FROM video_catalog c WHERE c.video_id = a.video_id)
-             AND NOT EXISTS (SELECT 1 FROM visual_vlm_scores s WHERE s.video_id = a.video_id)
+             AND NOT EXISTS (SELECT 1 FROM visual_vlm_scores s WHERE s.video_id = a.video_id){prefilter_clause}
            ORDER BY a.updated_at DESC
            LIMIT ?""",
-        (cutoff, limit),
+        (*bind, limit),
     ).fetchall()
     return [(str(vid), thumb) for vid, thumb in rows]
 
@@ -206,6 +293,9 @@ def score_batch(
     gap_s: float,
     max_consecutive_failures: int,
     include_queued: bool = False,
+    prefilter: bool = False,
+    prior_min: float = 4.5,
+    prior_samples: int = 3,
 ) -> dict:
     conn = sqlite3.connect(str(db_path), timeout=10.0)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -213,7 +303,15 @@ def score_batch(
     ensure_vlm_table(conn)
     run_v3_visual_queue_migration(db_path)
 
-    candidates = select_candidates(conn, days=days, limit=limit, include_queued=include_queued)
+    candidates = select_candidates(
+        conn,
+        days=days,
+        limit=limit,
+        include_queued=include_queued,
+        prefilter=prefilter,
+        prior_min=prior_min,
+        prior_samples=prior_samples,
+    )
     scored = enqueued = failures = 0
     consecutive = 0
     for video_id, thumb_url in candidates:
@@ -276,6 +374,7 @@ def score_batch(
         "failures": failures,
         "min_density": min_density,
         "days": days,
+        "prefilter": prefilter,
     }
 
 
@@ -404,6 +503,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--include-queued", action="store_true",
                         help="also score videos already in visual_jobs (signal completeness; "
                              "re-enqueue stays blocked by the one-job-per-video invariant)")
+    parser.add_argument("--prefilter", action="store_true",
+                        help="bulk Path A: only channel-prior survivors or keyword-matching "
+                             "titles/descriptions reach the VLM")
+    parser.add_argument("--prior-min", type=float, default=4.5,
+                        help="prefilter: minimum channel mean VLM density to admit its videos")
+    parser.add_argument("--prior-samples", type=int, default=3,
+                        help="prefilter: minimum scored videos backing a channel prior")
     parser.add_argument("--calibrate", action="store_true",
                         help="print calibration summary from existing scores, no API calls")
     args = parser.parse_args(argv)
@@ -420,6 +526,9 @@ def main(argv: list[str] | None = None) -> int:
             gap_s=args.gap_s,
             max_consecutive_failures=args.max_consecutive_failures,
             include_queued=args.include_queued,
+            prefilter=args.prefilter,
+            prior_min=args.prior_min,
+            prior_samples=args.prior_samples,
         )
     print(json.dumps(result, indent=1))
     return 0
