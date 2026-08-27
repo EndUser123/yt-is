@@ -94,7 +94,11 @@ def fetch_episodes(url: str, feed_name: str):
     # feedparser.parse(url) does its own socket fetch with NO timeout and can
     # block forever on a dead feed (2026-08-26: sync produced no output and
     # no error for 90+ minutes). Fetch bounded, then parse the payload.
-    with urllib.request.urlopen(url, timeout=30) as resp:
+    # Browser UA: soundcloud/megaphone feeds 403 the default Python agent.
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
         payload = resp.read()
     parsed = feedparser.parse(payload)
     episodes = []
