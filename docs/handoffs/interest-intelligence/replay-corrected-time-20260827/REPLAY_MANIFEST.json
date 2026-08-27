@@ -1,0 +1,178 @@
+{
+  "kind": "temporal_emergence_corrected_time_replay_manifest",
+  "status": "FROZEN_BEFORE_MEASURED_EXECUTION",
+  "agent": "zcode",
+  "session_id": "sess_22f9a598-5a68-4270-bfc3-7ab947ed97b7",
+  "date": "2026-08-27",
+  "experiment": "temporal-emergence-modelgen-v1 REPLAY after production evidence-time correction",
+  "not_a_new_model_search": true,
+
+  "temporal_substrate": {
+    "exact_commit": "1f72ee16bfffdc2ed429f0a611a4f47743784a7e",
+    "is_local_main_head": true,
+    "origin_main_divergence": {"behind": 0, "ahead": 0},
+    "repair_lineage": ["49e7ba72", "2b873f2c", "e2a95acf", "ad218261"],
+    "repair_lineage_all_ancestors_of_replay_base": true,
+    "expected_semantics": "published/source valid time -> recovered valid time (eu_time_recovery.valid_start) -> EXCLUDE; captured_at NEVER substitutes valid time; recorded time remains separate; knowledge-as-of supported by substrate",
+    "migration_receipts": [
+      "docs/temporal-eu-time-policy/RECEIPT.md",
+      "docs/temporal-eu-time-policy/migration/apply_run1.json",
+      "docs/temporal-eu-time-policy/migration/post_verify.json",
+      "docs/temporal-eu-time-policy/time_policy_decision_v1.json"
+    ],
+    "migration_facts_pinned": {
+      "eu_rows_rewritten_by_migration": 0,
+      "recovered_exact": 28071,
+      "recovered_approx_flagged": 540,
+      "unknown_valid_excluded_eus": 14730,
+      "temporal_mentions_pre": 102454,
+      "temporal_mentions_post": 98967
+    }
+  },
+
+  "frozen_code_identity": {
+    "harness": {
+      "path": "scripts/bakeoff_temporal_emergence.py",
+      "sha256": "931d041ce476f3c5ba8b17693ab0a7e1cbf2e9ac33eb6a6800d4ca5625da0be9",
+      "git_blob": "c1602bf488c4c4f3f6441aed4789e3b8c6e5cf87",
+      "byte_identical_to_original_run_commit_761b688a": true
+    },
+    "harness_tests": {
+      "path": "tests/test_bakeoff_temporal_emergence.py",
+      "sha256": "b286b19d35c6c5d86c6553711e122c27e5edbb78eca2dbf2e32414398a04ae87",
+      "git_blob": "853e56b5d07a851875d81c5624b0e1406401510d",
+      "byte_identical_to_original_run_commit_761b688a": true
+    },
+    "frozen_evaluator": {
+      "path": "scripts/evaluate_concept_discovery.py",
+      "sha256": "18a91180f040eb4298c378f6cd52402537f22fb9d04dc1872369b3a7519f4b93",
+      "git_blob": "adddd5619656aff06b38c0cbc2dfb19060bdf7fa",
+      "byte_identical_to_original_run_commit_761b688a": true
+    },
+    "burst_policy_v2_module": {
+      "path": "ef/burst_policy_v2.py",
+      "sha256": "69f610a94008447932736c7d7e1120c57398115661faa72ee82005155865e2f9",
+      "git_blob": "edd29089d43eada377132281079243ce8856ffb9",
+      "byte_identical_to_original_run_commit_761b688a": true
+    },
+    "substrate_modules_new_in_policy_tree": {
+      "scripts/temporal_time_policy.py": "57ca15075b3ea80b7e38a8b93988b033230ec6178557b1a57820d94fa62158e2",
+      "scripts/migrate_eu_time_policy.py": "3ed122631171713be86f26ce49b96821777b5c374e46642894e290c773fd047c",
+      "ef/catalog.py": "412b5bd3a1e5a8213db22ebbc3ad7d4bc84c7d386c1212fdedaf831551b77e36"
+    },
+    "replay_tooling_written_for_this_replay": {
+      "scripts/replay_substrate_builder.py": "4237ad4753c59c92b387123e451e2a858d9c9dd90756ee738e8e90d8add84533",
+      "scripts/replay_compare.py": "9325c7e00f24324f0f7c08e615c0c7537a8b647934d5b451f0dfaa2febd120e9",
+      "note": "comparator written and frozen BEFORE any historical result artifact was opened"
+    },
+    "frozen_docs": {
+      "preregistration": "2b885ceba61c2b28aee17536a8f24fdd4044255c8bd8bcbfbe9d52dd9e2fe47b",
+      "episode_semantics_contract": "30839a20cd651d331005d47ee77068bc710f8eb32f1f6d4bd4c6a9885e78333a"
+    }
+  },
+
+  "consumed_diagnostic": {
+    "path": "P:/.data/yt-is/private/discovery-retrospective-case-control-v4-diagnostic.json",
+    "sha256": "57fee60b002c52c240c4e2f7d64db129f4ddb89c342b28107fe0010c72069482",
+    "policy_sha256": "1e454421c635f950acfea27e22602f945288a1adfeca404ebfc302f0b7fdfc9a",
+    "positives": 42,
+    "negatives": 124,
+    "negatives_note": "negative_targets=124 (A1 acceptance basis counts 124); separate negative_control_insufficient_targets list holds 1",
+    "positives_missing_T": 42,
+    "T_derivation": "evaluator first_qualifying_evidence on the run's substrate (corrected run derives T under corrected semantics; shadow run under pre-repair semantics) - the anchor shift is part of the causal effect",
+    "status": "TRAINING_DIAGNOSTIC_ONLY - never formal, never promotion evidence, no new labels curated, Interest holdout v1.1 not accessed"
+  },
+
+  "arms_unchanged_from_preregistration": {
+    "A": "v2 reference replay at six evaluator checkpoints, stateful consecutive-evaluation promotion",
+    "B_variants": ["EU1-W30", "EU2-W60", "BUCKETS-W120", "POSTERIOR-EXCL-W30", "CHANNELNEW-W30"],
+    "C": "explicit episode-state machine over B/EU1-W30 base predicate",
+    "D": "two-signal: burst opening x independent post-open trailing-30d persistence floor (2 EUs in 60d)",
+    "rearm": "Amendment A1 clause implemented by frozen harness: deadline-expired attempts expire, next positive-detector boundary opens fresh attempt with trigger_evidence_cutoff reset",
+    "threshold_search_forbidden": true
+  },
+
+  "thresholds": {
+    "BARS": {
+      "neg_rate_max_abs": 0.35,
+      "neg_rate_max_ratio_vs_A": 0.50,
+      "pos_confirmed_recall_min": 0.50,
+      "separation_min_vs_A_prereg_text": 0.253,
+      "perturb20_confirmed_retention_min": 0.50
+    },
+    "D1_ratio_anchor_published": {"neg_emerging": "72/124"},
+    "harness_D3_implementation_note": "frozen code compares separation to the RUN'S OWN armA separation; prereg text cites 0.253 (original run's armA). Frozen code applied verbatim; both anchors reported.",
+    "burst_policy_v2_PARAMS": {"baseline_window_days": 180, "candidate_half_life_days": 30, "candidate_lifetime_min": 2, "candidate_support_min": 1.5, "channels_min": 1, "consecutive_gap_max_days": 30, "continue_threshold": 0.7, "prior_alpha": 0.5, "prior_beta": 0.5, "rate_multiplier": 1.5, "recent_window_days": 60, "signal_threshold": 0.8, "strong_channels_min": 2, "strong_threshold": 0.99, "time_unit_days": 30}
+  },
+
+  "perturbations": {
+    "fractions": [0.10, 0.20],
+    "method": "prefix replay T-30..T+30, deterministic seed sha256(subject id), removal without replacement over (lane, eu) items sorted",
+    "axes": ["armA_candidate_retained", "armA_emerging_retained", "per-family confirmed_retained"]
+  },
+
+  "decision_mapping": {
+    "source": "preregistration section Decision mapping + frozen harness apply_decision_bars, applied VERBATIM",
+    "family_supported_requires": ["D1_material_neg_drop", "D2_pos_useful", "D3_separation_beats_A", "D4_perturb20_confirmed_retention>=0.50", "D5_determinism_exact_and_noleak_fixtures", "D7_loo_envelope_stability"],
+    "D6": "structural simplicity recorded for review, non-numerical",
+    "allowed_outcomes": ["POST_TRIGGER_CONFIRMATION_SUPPORTED", "EPISODE_STATE_MODEL_SUPPORTED", "TWO_SIGNAL_MODEL_SUPPORTED", "NO_NEW_MODEL_SUPPORTED", "INSUFFICIENT_EVIDENCE"],
+    "no_new_promotion_rule": true,
+    "production_consequence": "NONE - shadow-only even if supported; burst-policy-v1 untouched; no promotion of any arm"
+  },
+
+  "as_of_semantics": {
+    "decisions": "strictly from observations with obs_date (valid time) <= t; checkpoints {-30,0,+7,+14,+30,+60} days from per-subject anchor T, capped at run date",
+    "knowledge_as_of": "remains a substrate capability (production reader emits recorded_date; predicate recorded_date <= t). NOT part of the frozen harness semantics and NOT added: the original run did not apply it; adding it would change a second dimension. Recorded time never substitutes valid time anywhere.",
+    "no_lookahead_rules": ["filter_le at every decision point", "prefix bounding for perturbation replays", "inject_future fixture must be byte-identical to original", "full pipeline run twice -> identical canonical sha256", "no post-result correction of any threshold"]
+  },
+
+  "substrate_change_declaration": {
+    "intended_dimension": "evidence valid-time semantics - THE ONLY delta between the shadow run and the corrected run",
+    "old_reader_frozen_harness_sql": "substr(COALESCE(NULLIF(eu.published_at,''), eu.captured_at),1,10) - pre-repair captured-at fallback",
+    "corrected_reader": "published_at when present else eu_time_recovery.valid_start else EXCLUDED (production reader ef/concept_discovery.py::_entity_observations, MIXED_SOURCE_TIME_POLICY v1)",
+    "mechanism": "code byte-frozen; correction enters through the substrate database each run reads. Corrected shadow DB materializes the corrected reader expressions over eu + eu_time_recovery; kg_nodes/kg_edges copied verbatim; excluded rows blanked in the derived interface only (snapshot copy untouched)",
+    "evaluator_T_derivation": "first_qualifying_evidence reads the same substrate, so T anchors shift only via the corrected dimension",
+    "catalog_drift_isolation": "both runs read ONE shared file snapshot of the catalog, so ingestion drift between runs is impossible; the historical run used the 2026-08-26 catalog, so historical-vs-shadow differences are catalog drift (disclosed drift class, A1), and shadow-vs-corrected differences are the pure time-semantics effect",
+    "python": "3.14.0"
+  },
+
+  "execution_plan": {
+    "worktree": "P:/packages/yt-is/.data/sessions/sess_22f9a598-5a68-4270-bfc3-7ab947ed97b7/worktree",
+    "branch": "agent/sess_22f9a598-5a68-4270-bfc3-7ab947ed97b7",
+    "run_dir": "P:/.data/yt-is/ef/concept-discovery-calibration/temporal-emergence-modelgen-v1-replay-corrected-time",
+    "runs": [
+      {"name": "corrected", "catalog": "substrate/corrected-shadow.sqlite", "artifacts": "corrected/"},
+      {"name": "shadow-prerepair", "catalog": "substrate/catalog-snapshot.sqlite", "artifacts": "shadow-prerepair/"}
+    ],
+    "historical_dir_READ_ONLY_never_written": "P:/.data/yt-is/ef/concept-discovery-calibration/temporal-emergence-modelgen-v1",
+    "boundary_exits_sensitivity": "one extra corrected-run probe with --boundary-baseline-exits into corrected-sensitivity-boundary-exits/ (mirrors the original run's sensitivity artifact; never part of the bakeoff of record)"
+  },
+
+  "parity_gate_interpretation_frozen_in_advance": {
+    "shadow_run": "the frozen parity gate (pass_published 35/42,72/124 or pass_current 36/42,75/124) is replay-equivalence evidence for the MACHINERY on the drifted catalog; a pass is strong evidence, a fail attributable to post-A1 catalog drift is reported with sid-level enumeration",
+    "corrected_run": "armA parity vs pre-repair references is EXPECTED to fail when the substrate correction moves v2 outputs; that failure is the substrate-change signal, not a machinery defect. Machinery equivalence for the corrected run rides on the byte-frozen code + shadow decomposition"
+  },
+
+  "causal_classification_rule_frozen_before_comparison": {
+    "inputs": "historical JSON artifacts (aggregate, decision-bars, metric-rows, counterfactuals, stability) vs corrected-run equivalents, both under the frozen bar evaluator",
+    "qualified_set": "families passing D1,D2,D3,D4,D5,D7",
+    "R1": "if qualified_new != qualified_old -> TIME_CORRECTION_REVERSES_PRIOR_FRONTIER",
+    "R2": "if both sets equal: material improvement exists iff some family has (neg confirmed rate old-minus-new >= 0.10 absolute) OR (separation new-minus-old >= 0.10 absolute), with that family's bar-pass count not decreasing -> TIME_CORRECTION_MATERIALLY_IMPROVES_BUT_FRONTIER_REMAINS, else TIME_CORRECTION_NO_MATERIAL_EFFECT",
+    "threshold_frozen_a_priori": "0.10 absolute (about 12 of 124 negatives); chosen before any corrected or historical number was inspected for this replay",
+    "cohort_guard": "corrected run with <40 scorable positives or <40 paired negatives -> classification reported as COHORT_INSUFFICIENT (prereg INSUFFICIENT_EVIDENCE territory)",
+    "causal_enum_does_not_override_original_decision": true
+  },
+
+  "transition_rule_frozen": "pair by sid; per family positives TP->TP/TP->FN/FN->TP/FN->FN, negatives FP->TN/FP->FP/TN->FP/TN->TN with TP/FP := family confirmed flag; candidate-state via armA candidate_ever and a_emerging_ever; confirmation-state via per-family confirmation-delay deltas; decomposition historical->shadow->corrected separates catalog drift from the time-semantics effect",
+
+  "seal_protocol": {
+    "order": ["write corrected raw per-subject outputs (metric-rows.json)", "sha256 them", "write aggregate metrics", "sha256 them", "record frozen decision under the ORIGINAL mapping in SEALED_OUTPUTS.json", "ONLY THEN open/read historical detailed artifacts"],
+    "sealed_files": ["metric-rows.json", "aggregate.json", "decision-bars.json", "segments.json", "counterfactuals.json", "run-config.json"]
+  },
+
+  "contamination_guard": {
+    "readable_pre_seal": ["frozen preregistration (+Amendment A1)", "frozen harness/evaluator/tests", "substrate source", "temporal-policy migration receipts", "consumed diagnostic identity/counts"],
+    "forbidden_until_seal": ["historical per-arm outcome table (metric-rows/aggregate/decision-bars of the original run)", "results narrative doc", "old winner/loser interpretation", "old fork recommendations O1/O2/O3", "subject-level prior classifications"],
+    "known_unavoidable_fact": "prior frozen decision = NO_NEW_MODEL_SUPPORTED"
+  }
+}
