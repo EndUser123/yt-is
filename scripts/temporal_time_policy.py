@@ -135,7 +135,6 @@ def build_snapshot(run_id: str) -> Path:
         dst.executemany("INSERT OR REPLACE INTO kg_nodes VALUES (?,?,?)",
                         rows)
         nn += len(rows)
-    ecur = src.cursor()
     ecur.arraysize = 100000
     ecur.execute(
         """SELECT m.src_id, m.dst_id, m.relation FROM kg_edges m
@@ -148,10 +147,35 @@ def build_snapshot(run_id: str) -> Path:
             break
         dst.executemany("INSERT INTO kg_edges VALUES (?,?,?)", rows)
         ne += len(rows)
+    has_rec = src.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND "
+        "name='eu_time_recovery'").fetchone()
+    nr = 0
+    dst.execute("""CREATE TABLE IF NOT EXISTS eu_time_recovery (
+        eu_id text primary key, valid_start text not null,
+        valid_end text not null, method text not null,
+        approx integer not null default 0,
+        previous_published_at text not null default '',
+        source_field text not null, basis text not null default '',
+        migration_version integer not null default 1,
+        migrated_at text not null default '')""")
+    if has_rec:
+        rcur = src.cursor()
+        rcur.execute("SELECT * FROM eu_time_recovery")
+        names = [d[0] for d in rcur.description]
+        ph = ",".join("?" for _ in names)
+        while True:
+            rows = rcur.fetchmany(20000)
+            if not rows:
+                break
+            dst.executemany(f"INSERT OR REPLACE INTO eu_time_recovery ({','.join(names)}) "
+                            f"VALUES ({ph})", rows)
+            nr += len(rows)
     dst.execute("CREATE INDEX idx_eu_aref ON eu(authority_ref)")
     dst.execute("CREATE INDEX idx_kge_src ON kg_edges(src_id)")
     dst.commit()
-    counts = {"eu": n_eu, "kg_nodes": nn, "kg_edges": ne}
+    counts = {"eu": n_eu, "kg_nodes": nn, "kg_edges": ne,
+              "eu_time_recovery": nr}
     dst.close()
     manifest = {
         "kind": "temporal-eu-time-policy-snapshot",
@@ -435,6 +459,7 @@ def _import_concept_discovery():
                 "evidence_cluster_inventory shimmed by "
                 "scripts/temporal_time_policy.py; live export is "
                 "ef.evidence_clusters.evidence_clusters")
+        _shim.__ttp_import_shim__ = True
         ec.evidence_cluster_inventory = _shim
         CD_IMPORT_SHIM["used"] = True
     from ef import concept_discovery as cd  # noqa: F401
@@ -449,20 +474,26 @@ def load_observations(db_path: Path) -> dict[str, list[dict]]:
     optional bitemporal filter."""
     cd = _import_concept_discovery()
     conn = cd._catalog_ro(db_path)
-    rows = conn.execute(
-        r"""
+    inner = r"""
         SELECT m.src_id AS node_id, n.label AS label, eu.eu_id AS eu_id,
                eu.video_id AS video_id, eu.channel_id AS channel_id,
                eu.source AS source,
-               substr(COALESCE(NULLIF(eu.published_at,''), eu.captured_at),1,10)
-                 AS obs_date,
+               substr(CASE
+                        WHEN NULLIF(eu.published_at,'') IS NOT NULL
+                          THEN eu.published_at
+                        WHEN r.valid_start IS NOT NULL
+                          THEN r.valid_start
+                        ELSE ''
+                      END, 1, 10) AS obs_date,
                substr(eu.captured_at,1,10) AS recorded_date
         FROM kg_edges m
         JOIN kg_nodes n ON n.node_id = m.src_id AND n.kind = 'entity'
         JOIN eu ON eu.eu_id = substr(m.dst_id, 4)
+        LEFT JOIN eu_time_recovery r ON r.eu_id = eu.eu_id
         WHERE m.relation = 'mentioned_in'
-          AND substr(COALESCE(NULLIF(eu.published_at,''), eu.captured_at),1,10) != ''
-        """).fetchall()
+    """
+    rows = conn.execute(
+        f"SELECT * FROM ({inner}) WHERE obs_date != ''").fetchall()
     conn.close()
     ents: dict[str, list[dict]] = {}
     for r in rows:

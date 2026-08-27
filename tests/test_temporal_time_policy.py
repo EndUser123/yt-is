@@ -52,6 +52,14 @@ def _mk_snapshot(tmp_path: Path, eus: list[dict],
                 " label TEXT, kind TEXT)")
     con.execute("CREATE TABLE kg_edges (src_id TEXT, dst_id TEXT,"
                 " relation TEXT)")
+    con.execute("""CREATE TABLE eu_time_recovery (
+        eu_id TEXT PRIMARY KEY, valid_start TEXT NOT NULL,
+        valid_end TEXT NOT NULL, method TEXT NOT NULL,
+        approx INTEGER NOT NULL DEFAULT 0,
+        previous_published_at TEXT NOT NULL DEFAULT '',
+        source_field TEXT NOT NULL DEFAULT '', basis TEXT NOT NULL DEFAULT '',
+        migration_version INTEGER NOT NULL DEFAULT 1,
+        migrated_at TEXT NOT NULL DEFAULT '')""")
     for u in eus:
         con.execute(
             "INSERT INTO eu (eu_id, media_kind, video_id, channel_id,"
@@ -270,18 +278,20 @@ def test_case2_year_old_evidence_ingested_today_needs_both_times(log_root,
             assert t["entities_evaluated"] == 0
 
 
-def test_case3_unknown_time_ingested_today_current_vs_exclude(log_root,
-                                                              tmp_path):
+def test_case3_unknown_time_ingested_today_excluded_under_repair(log_root,
+                                                                 tmp_path,
+                                                                 monkeypatch):
+    """Packet case 3 (post-repair semantics): unknown valid time is
+    excluded from temporal windows no matter when it was ingested — the
+    old captured-at substitution (and with it the pre-repair A-vs-B
+    distinction) is gone from the read path."""
     snap = _mk_snapshot(tmp_path,
                         [_eu("u1", "", "2026-08-21T01:00:00", src="discord")],
                         [("e1", "u1")])
     a = _run_replay(snap, "a_current", False)
+    assert a["mentions_total"] == 0          # excluded: unknown valid time
     b = _run_replay(snap, "b_exclude", False)
-    assert a["mentions_total"] == 1          # current: enters via captured_at
-    assert b["mentions_total"] == 0          # exclude: absent everywhere
-    for t in a["timeline"]:
-        if t["as_of"] < "2026-08-21":
-            assert t["entities_evaluated"] == 0
+    assert b["mentions_total"] == 0
 
 
 def test_case6_future_ingestion_no_lookahead_under_bitemporal(log_root,
@@ -302,9 +312,11 @@ def test_case6_future_ingestion_no_lookahead_under_bitemporal(log_root,
 
 def test_case7_undated_bulk_capture_fabricates_burst(log_root, tmp_path,
                                                      monkeypatch):
-    """The live production failure mode: messages really sent across
-    2021-2024 arrive together on one bulk-capture day. Current behaviour
-    fabricates an Aug-2026 burst; recovered dates do not."""
+    """Packet case 7 (post-repair substrate): messages really sent across
+    2021-2024 arrive together on one bulk-capture day. WITH recovered valid
+    times joined by the production read path, no Aug-2026 burst can be
+    fabricated; the pre-repair behaviour is retained as a frozen historical
+    baseline in .logs replay artifacts."""
     true_days = ["2021-03-04", "2022-06-15", "2023-11-02", "2024-02-29",
                  "2024-08-01"]
     eus, cache_rows = [], []
@@ -321,50 +333,136 @@ def test_case7_undated_bulk_capture_fabricates_burst(log_root, tmp_path,
     tdb = _mk_transcripts_db(tmp_path, cache_rows)
     monkeypatch.setattr(ttp, "TRANSCRIPTS_DB", tdb)
 
-    a = _run_replay(snap, "a_current", False, start="2026-08-10")
-    c = _run_replay(snap, "c_recover", False, start="2026-08-10")
-    ma = a["final_entity_metrics"]["ent"]
-    mc = c["final_entity_metrics"]["ent"]
-    # current: all five observations stamp onto capture days -> heavy recent
-    # support; v2 signal fires
-    assert ma["v1_recent_count"] == 5
-    assert ma["v2_k_recent"] == 5
-    assert ma["v2_positive"] is True
-    # recovered: observations sit at their true years; zero recent-window
-    # support at any 2026 date -> no fabricated burst
-    assert mc["v1_recent_count"] == 0
-    assert mc["v2_k_recent"] == 0
-    assert mc["v2_positive"] is False
+    # post-repair: recovery rows exist (as migration v1 writes them), so the
+    # plain current-snapshot replay already carries correct semantics
+    con = sqlite3.connect(str(snap))
+    for i, td in enumerate(true_days):
+        ts_ms = int(datetime.strptime(td, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc).timestamp() * 1000)
+        con.execute(
+            "INSERT INTO eu_time_recovery (eu_id, valid_start, valid_end,"
+            " method) VALUES (?,?,'','dht_window_first_ts_ms_epoch')",
+            (f"w{i}", ttp.ms_to_date(ts_ms)))
+    con.commit()
+    con.close()
+    p = ttp.apply_arm(snap, "a_current")
+    r = ttp.replay_arm(p, knowledge_as_of=False, start="2026-08-10")
+    m = r["final_entity_metrics"]["ent"]
+    assert m["v1_recent_count"] == 0          # zero fabricated recency
+    assert m["v2_k_recent"] == 0
+    assert m["v2_positive"] is False
 
 
 def test_case7b_recovered_time_keeps_in_window_counting(log_root,
                                                         tmp_path,
                                                         monkeypatch):
     """A message truly posted in May 2026 that arrives late (bulk capture):
-    recovery must move it OUT of the fabricated recency AND keep it counted
-    inside the baseline window — exclusion (arm B) would drop it entirely."""
-    true_day = "2026-05-05"          # inside the 90d baseline window of the
-                                     # as_of=2026-08-26 evaluation, outside
-                                     # the 30d recent window
+    on the repaired read path it counts inside the baseline window through
+    its recovered date — never in fabricated recency."""
+    true_day = "2026-05-05"          # baseline window of as_of=2026-08-26,
+                                     # outside the 30d recent window
     ts_ms = int(datetime.strptime(true_day, "%Y-%m-%d").replace(
         tzinfo=timezone.utc).timestamp() * 1000)
-    tdb = _mk_transcripts_db(tmp_path, [
-        ("dht:cD:9:9", json.dumps({"first_ts": str(ts_ms)}),
-         "2026-08-22", "discord")])
-    monkeypatch.setattr(ttp, "TRANSCRIPTS_DB", tdb)
     snap = _mk_snapshot(tmp_path,
                         [_eu("h1", "", "2026-08-22T01:00:00", ch="cD",
                              src="discord", aref="dht:cD:9:9")],
                         [("e1", "h1")])
-    a = _run_replay(snap, "a_current", False, start="2026-08-01",
-                    end="2026-08-26")
-    b = _run_replay(snap, "b_exclude", False, start="2026-08-01",
-                    end="2026-08-26")
-    c = _run_replay(snap, "c_recover", False, start="2026-08-01",
-                    end="2026-08-26")
-    # A: falsely recent; B: dropped everywhere; C: correct bucket.
-    assert a["final_entity_metrics"]["e1"]["v1_recent_count"] == 1
-    assert b["final_entity_metrics"].get("e1") is None
-    m_c = c["final_entity_metrics"]["e1"]
-    assert m_c["v1_recent_count"] == 0
-    assert m_c["v1_baseline_count"] == 1
+    con = sqlite3.connect(str(snap))
+    con.execute("INSERT INTO eu_time_recovery (eu_id, valid_start, valid_end,"
+                " method) VALUES ('h1',?,'','dht_window_first_ts_ms_epoch')",
+                (ttp.ms_to_date(ts_ms),))
+    con.commit()
+    con.close()
+    r = ttp.replay_arm(ttp.apply_arm(snap, "a_current"), False,
+                       start="2026-08-01", end="2026-08-26")
+    m = r["final_entity_metrics"]["e1"]
+    assert m["v1_recent_count"] == 0
+    assert m["v1_baseline_count"] == 1
+
+
+# --------------------------------------------------------------------------
+# production reader policy (ef.concept_discovery._entity_observations)
+# --------------------------------------------------------------------------
+
+@pytest.fixture()
+def catalog_snapshot(tmp_path):
+    """Three-EU catalog exercising every time-policy branch:
+      y : youtube     published 2026-05-01 / recorded 2026-05-02
+      d : discord     NO published      / recorded 2026-08-21,
+          recovered valid [2021-06-01 .. 2021-06-30]
+      b : discord     NO published      / EMPTY recorded,
+          recovered valid 2024-03-03
+      u : notebooklm  NO published, no recovery row  -> UNKNOWN
+    """
+    snap = _mk_snapshot(tmp_path, [
+        _eu("y", "2026-05-01", "2026-05-02T10:00:00"),
+        _eu("d", "", "2026-08-21T05:00:00+00:00", ch="cD",
+            src="discord"),
+        _eu("b", "", "", ch="cE", src="discord"),
+        _eu("u", "", "2026-08-20T09:00:00"),
+    ], [("e1", "y"), ("e1", "d"), ("e1", "b"), ("e1", "u")])
+    con = sqlite3.connect(str(snap))
+    con.execute("INSERT INTO eu_time_recovery (eu_id, valid_start,"
+                " valid_end, method, approx) VALUES ('d','2021-06-01',"
+                "'2021-06-30','dht_window_first_ts_ms_epoch',0)")
+    con.execute("INSERT INTO eu_time_recovery (eu_id, valid_start,"
+                " valid_end, method, approx) VALUES ('b','2024-03-03',"
+                "'2024-03-03','raw_archive_bridge_message_time',0)")
+    con.commit()
+    con.close()
+    return snap
+
+
+def test_reader_excludes_unknown_and_uses_recovered(catalog_snapshot):
+    cd = ttp._import_concept_discovery()
+    conn = cd._catalog_ro(catalog_snapshot)
+    obs = cd._entity_observations(conn, "2026-08-25")
+    got = {o["eu_id"]: o["obs_date"]
+           for lst in obs.values() for o in lst}
+    # authoritative date wins
+    assert got["y"] == "2026-05-01"
+    # mechanically recovered VALID_TIME replaces the old captured-at
+    # substitution entirely
+    assert got["d"] == "2021-06-01"
+    assert got["b"] == "2024-03-03"
+    # UNKNOWN valid time is EXCLUDED — never substituted by captured_at
+    assert "u" not in got
+
+
+def test_reader_knowledge_as_of_bitemporal(catalog_snapshot):
+    cd = ttp._import_concept_discovery()
+    conn = cd._catalog_ro(catalog_snapshot)
+    obs = cd._entity_observations(conn, "2026-07-01", knowledge_as_of=True)
+    got = {o["eu_id"] for lst in obs.values() for o in lst}
+    assert "y" in got                      # known since recorded 05-02
+    assert "d" not in got                  # recorded 2026-08-21 > as_of
+    assert "b" not in got                  # no recorded timestamp at all
+
+
+def test_catalog_connect_ensures_recovery_table(tmp_path):
+    from ef import catalog as catmod
+    dbp = tmp_path / "cat.sqlite"
+    catmod.connect(dbp)
+    cols = {r[1] for r in sqlite3.connect(str(dbp)).execute(
+        "PRAGMA table_info(eu_time_recovery)")}
+    assert {"eu_id", "valid_start", "method", "approx",
+            "previous_published_at", "source_field", "basis"} <= cols
+
+
+def test_scan_import_surface_regression():
+    """scan_internal's local setup must import without failure through the
+    committed export surface. Skips while the working tree carries a
+    concurrent lane's uncommitted removal of evidence_cluster_inventory
+    (committed HEAD exports it)."""
+    import ef.evidence_clusters as ec
+    attr = getattr(ec, "evidence_cluster_inventory", None)
+    if attr is None or getattr(attr, "__ttp_import_shim__", False):
+        pytest.skip("concurrent uncommitted lane edit hides "
+                    "evidence_cluster_inventory; committed HEAD exports it")
+    code = ("import sys;"
+            f"sys.path.insert(0,{str(REPO)!r});"
+            "import ef.concept_discovery;")
+    proc = __import__("subprocess").run(
+        [sys.executable, "-c", code], capture_output=True, text=True,
+        timeout=120)
+    assert proc.returncode == 0, proc.stderr[-800:]

@@ -152,6 +152,19 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
         conn.execute("alter table eu add column build_id text not null default ''")
         conn.commit()
     conn.execute("create index if not exists ix_eu_build on eu(build_id)")
+    conn.execute("""create table if not exists eu_time_recovery (
+        eu_id text primary key,
+        valid_start text not null,
+        valid_end text not null,
+        method text not null,
+        approx integer not null default 0,
+        previous_published_at text not null default '',
+        source_field text not null,
+        basis text not null default '',
+        migration_version integer not null default 1,
+        migrated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+    conn.execute(
+        "create index if not exists ix_eutr_method on eu_time_recovery(method)")
     conn.commit()
     return conn
 
