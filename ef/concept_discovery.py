@@ -129,25 +129,50 @@ def _is_emerging(stats: dict) -> bool:
     )
 
 
-def _entity_observations(conn: sqlite3.Connection, as_of: str) -> dict[str, list[dict]]:
+def _entity_observations(conn: sqlite3.Connection, as_of: str,
+                         knowledge_as_of: bool = False) -> dict[str, list[dict]]:
     """All entity observations at or before as_of, keyed by node_id.
-    Authoritative observation date = substr(COALESCE(NULLIF(published_at,''),
-    captured_at),1,10) — published_at wins whenever present."""
-    rows = conn.execute(
-        r"""
+
+    Time policy (undated-EU correctness repair; architect-accepted
+    MIXED_SOURCE_TIME_POLICY, migration version 1):
+
+      obs_date   = published_at when present (VALID_TIME, authoritative)
+                 else eu_time_recovery.valid_start when a mechanically
+                   recovered valid time exists (provenance preserved in
+                   that table; eu rows are never rewritten)
+                 else '' — the EU carries UNKNOWN valid time and is
+                   EXCLUDED from temporal windows.
+
+      captured_at (RECORDED_TIME) is never substituted for unknown valid
+      time. It is emitted as recorded_date so replays can enforce the
+      bitemporal knowledge-as-of predicate: with knowledge_as_of=True an
+      observation additionally requires recorded_date != '' and
+      recorded_date <= as_of (late arrivals cannot influence dates before
+      yt-is learned them)."""
+    inner = r"""
         SELECT m.src_id AS node_id, n.label AS label, eu.eu_id AS eu_id,
                eu.video_id AS video_id, eu.channel_id AS channel_id,
                eu.source AS source,
-               substr(COALESCE(NULLIF(eu.published_at,''), eu.captured_at),1,10)
-                 AS obs_date
+               substr(CASE
+                        WHEN NULLIF(eu.published_at,'') IS NOT NULL
+                          THEN eu.published_at
+                        WHEN r.valid_start IS NOT NULL
+                          THEN r.valid_start
+                        ELSE ''
+                      END, 1, 10) AS obs_date,
+               substr(eu.captured_at,1,10) AS recorded_date
         FROM kg_edges m
         JOIN kg_nodes n ON n.node_id = m.src_id AND n.kind = 'entity'
         JOIN eu ON eu.eu_id = substr(m.dst_id, 4)
+        LEFT JOIN eu_time_recovery r ON r.eu_id = eu.eu_id
         WHERE m.relation = 'mentioned_in'
-          AND substr(COALESCE(NULLIF(eu.published_at,''), eu.captured_at),1,10) != ''
-          AND substr(COALESCE(NULLIF(eu.published_at,''), eu.captured_at),1,10) <= ?
-        """,
-        (as_of,),
+    """
+    kasof_sql = (" AND recorded_date != '' AND recorded_date <= ?"
+                 if knowledge_as_of else "")
+    rows = conn.execute(
+        f"SELECT * FROM ({inner}) WHERE obs_date != '' AND obs_date <= ?"
+        + kasof_sql,
+        (as_of, as_of) if knowledge_as_of else (as_of,),
     ).fetchall()
     out: dict[str, list[dict]] = {}
     for r in rows:
@@ -159,6 +184,8 @@ def _entity_observations(conn: sqlite3.Connection, as_of: str) -> dict[str, list
                 "channel_id": r["channel_id"],
                 "source": r["source"],
                 "obs_date": r["obs_date"],
+                "recorded_date": r["recorded_date"]
+                if knowledge_as_of else None,
             }
         )
     return out
