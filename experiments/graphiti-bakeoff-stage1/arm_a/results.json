@@ -1,7 +1,7 @@
 {
   "arm": "A",
   "architecture": "existing yt-is relational substrate (ef/concept_registry.py) + minimum adapter additions (arm_a/store.py); isolated SQLite DB",
-  "generated_at_utc": "2026-08-26T19:26:21Z",
+  "generated_at_utc": "2026-08-27T00:31:06Z",
   "fixture_version": "stage1-fixture-v1",
   "fixture_sha256_freeze_recorded": "1b3a258d110a7294a7ba146a866aeb81f56e7969111fd158aa152c10499cc0ce",
   "fixture_sha256_this_run": "1b3a258d110a7294a7ba146a866aeb81f56e7969111fd158aa152c10499cc0ce",
@@ -345,14 +345,14 @@
   },
   "performance_ms": {
     "ingest_full_fixture_load": {
-      "main_db_ms": 48.533,
-      "median_of_3_fresh_loads_ms": 1.456
+      "main_db_ms": 40.215,
+      "median_of_3_fresh_loads_ms": 1.374
     },
     "per_query_mean_of_3": {
       "as_of_now_attribute": {
-        "mean_ms": 0.044,
+        "mean_ms": 0.039,
         "samples_ms": [
-          0.094,
+          0.08,
           0.022,
           0.015
         ]
@@ -366,35 +366,35 @@
         ]
       },
       "provenance": {
-        "mean_ms": 0.022,
+        "mean_ms": 0.021,
         "samples_ms": [
-          0.042,
-          0.012,
+          0.04,
+          0.013,
           0.011
         ]
       },
       "bridge_discovery": {
-        "mean_ms": 0.124,
+        "mean_ms": 0.116,
         "samples_ms": [
-          0.17,
+          0.162,
           0.099,
-          0.102
+          0.087
         ]
       },
       "alias_resolution": {
-        "mean_ms": 0.016,
+        "mean_ms": 0.015,
         "samples_ms": [
-          0.03,
-          0.01,
+          0.026,
+          0.009,
           0.008
         ]
       }
     },
     "replay_checkpoints": {
-      "2026-01-05T00:00:00Z": 0.872,
-      "2026-01-18T00:00:00Z": 1.445,
-      "2026-01-20T00:00:00Z": 1.273,
-      "2026-02-02T00:00:00Z": 2.818
+      "2026-01-05T00:00:00Z": 0.934,
+      "2026-01-18T00:00:00Z": 1.11,
+      "2026-01-20T00:00:00Z": 1.146,
+      "2026-02-02T00:00:00Z": 1.641
     }
   },
   "accounting": {

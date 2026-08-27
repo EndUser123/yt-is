@@ -64,13 +64,14 @@ async def main() -> int:
             print(f"MISSING_ENV {var}")
             return 4
 
-    from run_b1 import build_graphiti  # arm_b1 pinned stack
+    from run_b1 import build_graphiti, cmd_purge_group  # arm_b1 pinned stack
 
     db = f"er_stress_run{n}"
     if not db.startswith("er_stress_"):
         print("SAFETY: graph name must start with er_stress_")
         return 5
     try:
+        await cmd_purge_group(db)  # reviewer N2: rerun-safe clean graph
         g, driver, llm_desc, reranker_desc = await build_graphiti(db, args.llm_mode)
     except Exception as e:  # noqa: BLE001 — fail-fast health check
         print(f"FALKORDB_UNAVAILABLE {os.environ.get('FALKORDB_HOST')}:"
