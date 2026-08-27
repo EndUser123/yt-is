@@ -1,0 +1,46 @@
+{
+  "fixture_version": "stage1-fixture-v1",
+  "support_rule": {
+    "threshold_independent_sources": 2,
+    "emergence_time": "timestamp of the EU from the second independent source that asserts the claim/relationship",
+    "independent_sources": "distinct source_id values",
+    "supersession": "a later EU with same subject+predicate and higher t asserts the replacement value; historical value remains queryable as-of before supersession time",
+    "contradiction": "EUs asserting different values for the same subject+predicate without supersession marker coexist as competing claims"
+  },
+  "sources": [
+    {"source_id": "S1", "channel": "Starline Weekly"},
+    {"source_id": "S2", "channel": "Deep Space Digest"},
+    {"source_id": "S3", "channel": "Lab Notes Blog"}
+  ],
+  "entities": [
+    {"entity_id": "E1", "canonical_name": "Project Alphard", "type": "project", "aliases": ["Alphard", "ALPHARD initiative", "the Alphard program"]},
+    {"entity_id": "E2", "canonical_name": "Project Betelgeuse", "type": "project", "aliases": ["Betelgeuse project"]},
+    {"entity_id": "E3", "canonical_name": "Project Alphard Minor", "type": "project", "aliases": ["Alphard Minor"]},
+    {"entity_id": "P1", "canonical_name": "Dr. Mira Chen", "type": "person", "aliases": ["M. Chen", "Mira Chen"]},
+    {"entity_id": "O1", "canonical_name": "Helion Labs", "type": "org", "aliases": ["Helion"]},
+    {"entity_id": "T1", "canonical_name": "fusion propulsion", "type": "topic", "aliases": []},
+    {"entity_id": "T2", "canonical_name": "thermal management", "type": "topic", "aliases": ["thermal control"]},
+    {"entity_id": "B1", "canonical_name": "cryogenic cooling", "type": "topic", "aliases": ["cryo-cooling"]}
+  ],
+  "evidence_units": [
+    {"eu_id": "EU01", "t": "2026-01-02T00:00:00Z", "source_id": "S1", "text": "Project Alphard, the Alphard program at Helion Labs, announced preliminary fusion propulsion studies.", "asserts": [{"subject": "E1", "predicate": "researches", "object": "T1"}, {"subject": "E1", "predicate": "housed_at", "object": "O1"}]},
+    {"eu_id": "EU02", "t": "2026-01-05T00:00:00Z", "source_id": "S2", "text": "Helion Labs confirmed the ALPHARD initiative studies fusion propulsion.", "asserts": [{"subject": "E1", "predicate": "researches", "object": "T1"}]},
+    {"eu_id": "EU03", "t": "2026-01-08T00:00:00Z", "source_id": "S1", "text": "The Betelgeuse project will launch in 2031.", "asserts": [{"subject": "E2", "predicate": "launch_year", "object": "2031"}]},
+    {"eu_id": "EU04", "t": "2026-01-10T00:00:00Z", "source_id": "S1", "text": "M. Chen joined Helion Labs.", "asserts": [{"subject": "P1", "predicate": "employed_by", "object": "O1"}]},
+    {"eu_id": "EU05", "t": "2026-01-12T00:00:00Z", "source_id": "S1", "text": "Project Alphard budget is 2 million dollars.", "asserts": [{"subject": "E1", "predicate": "budget", "object": "2M"}]},
+    {"eu_id": "EU06", "t": "2026-01-14T00:00:00Z", "source_id": "S2", "text": "Alphard partners with Helion Labs on thermal management.", "asserts": [{"subject": "E1", "predicate": "partners_with", "object": "O1"}, {"subject": "E1", "predicate": "researches", "object": "T2"}]},
+    {"eu_id": "EU07", "t": "2026-01-16T00:00:00Z", "source_id": "S3", "text": "Documents show Project Alphard budget is 5 million dollars.", "asserts": [{"subject": "E1", "predicate": "budget", "object": "5M"}]},
+    {"eu_id": "EU08", "t": "2026-01-18T00:00:00Z", "source_id": "S3", "text": "Helion Labs announced partnership with the Alphard program.", "asserts": [{"subject": "E1", "predicate": "partners_with", "object": "O1"}]},
+    {"eu_id": "EU09", "t": "2026-01-20T00:00:00Z", "source_id": "S2", "text": "The Betelgeuse project launch moved to 2033.", "asserts": [{"subject": "E2", "predicate": "launch_year", "object": "2033"}, {"supersedes_value": "2031"}]},
+    {"eu_id": "EU10", "t": "2026-01-22T00:00:00Z", "source_id": "S1", "text": "Cryogenic cooling advances help fusion propulsion reactors.", "asserts": [{"subject": "B1", "predicate": "enables", "object": "T1"}]},
+    {"eu_id": "EU11", "t": "2026-01-24T00:00:00Z", "source_id": "S3", "text": "Cryogenic cooling is critical to spacecraft thermal management.", "asserts": [{"subject": "B1", "predicate": "enables", "object": "T2"}]},
+    {"eu_id": "EU12", "t": "2026-01-26T00:00:00Z", "source_id": "S2", "text": "Dr. Mira Chen appointed lead of Project Alphard.", "asserts": [{"subject": "P1", "predicate": "leads", "object": "E1"}]},
+    {"eu_id": "EU13", "t": "2026-01-28T00:00:00Z", "source_id": "S1", "text": "Thermal management demand spiked this quarter.", "asserts": [{"subject": "T2", "predicate": "spike_detected", "object": "Q1"}]},
+    {"eu_id": "EU14", "t": "2026-01-30T00:00:00Z", "source_id": "S2", "text": "Project Alphard Minor is a separate student outreach effort.", "asserts": [{"subject": "E3", "predicate": "kind", "object": "outreach"}]},
+    {"eu_id": "EU15", "t": "2026-02-02T00:00:00Z", "source_id": "S3", "text": "Mira Chen presented Alphard results at the Helion seminar.", "asserts": [{"subject": "P1", "predicate": "leads", "object": "E1"}]}
+  ],
+  "hidden_slice": {
+    "as_of_T": "2026-01-26T00:00:00Z",
+    "note": "EU12..EU15 are >= as_of boundary cases; post-T evidence (EU13 spike on T2, EU15 second 'leads' support) must not leak into as-of answers"
+  }
+}

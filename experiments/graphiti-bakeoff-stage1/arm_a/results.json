@@ -1,0 +1,431 @@
+{
+  "arm": "A",
+  "architecture": "existing yt-is relational substrate (ef/concept_registry.py) + minimum adapter additions (arm_a/store.py); isolated SQLite DB",
+  "generated_at_utc": "2026-08-26T19:26:21Z",
+  "fixture_version": "stage1-fixture-v1",
+  "fixture_sha256_freeze_recorded": "1b3a258d110a7294a7ba146a866aeb81f56e7969111fd158aa152c10499cc0ce",
+  "fixture_sha256_this_run": "1b3a258d110a7294a7ba146a866aeb81f56e7969111fd158aa152c10499cc0ce",
+  "db_path": "P:\\tmp\\ytis-graphiti-bakeoff\\experiments\\graphiti-bakeoff-stage1\\arm_a\\arm_a.sqlite",
+  "generation_after_ingest": 15,
+  "ingest_summary": {
+    "entities": 8,
+    "evidence_units": 15,
+    "assertions": 17
+  },
+  "semantics": [
+    {
+      "id": "X1",
+      "query": "as-of 2026-01-15: E2 launch_year == 2031 ASSERTED-ONLY",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "value": "2031",
+        "status": "ASSERTED_ONLY",
+        "single_source_EU03": true,
+        "leak_free": true
+      }
+    },
+    {
+      "id": "X10",
+      "query": "as-of 01-26 inclusive: leads ASSERTED-ONLY (EU15 must not leak)",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "status": "ASSERTED_ONLY",
+        "visible_eus": [
+          "EU12"
+        ],
+        "leaked_post_T_evidence": [],
+        "EU15_absent": true
+      }
+    },
+    {
+      "id": "X11",
+      "query": "replay to 4 checkpoints incl leakage probe at each",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "researches_T1_supported": {
+          "checkpoint": "2026-01-05T00:00:00Z",
+          "pass": true,
+          "leaks": [],
+          "actual": {
+            "status": "SUPPORTED",
+            "emergence": "2026-01-05T00:00:00Z",
+            "lineage_eus": [
+              "EU01",
+              "EU02"
+            ],
+            "current_values": [
+              {
+                "value": "T1",
+                "backed_by": [
+                  "EU01",
+                  "EU02"
+                ]
+              }
+            ]
+          }
+        },
+        "partners_emerged": {
+          "checkpoint": "2026-01-18T00:00:00Z",
+          "pass": true,
+          "leaks": [],
+          "actual": {
+            "status": "SUPPORTED",
+            "emergence": "2026-01-18T00:00:00Z",
+            "lineage_eus": [
+              "EU06",
+              "EU08"
+            ],
+            "current_values": [
+              {
+                "value": "O1",
+                "backed_by": [
+                  "EU06",
+                  "EU08"
+                ]
+              }
+            ]
+          }
+        },
+        "launch_flipped_to_2033": {
+          "checkpoint": "2026-01-20T00:00:00Z",
+          "pass": true,
+          "leaks": [],
+          "actual": {
+            "status": "SUPPORTED",
+            "emergence": "2026-01-20T00:00:00Z",
+            "lineage_eus": [
+              "EU03",
+              "EU09"
+            ],
+            "current_values": [
+              {
+                "value": "2033",
+                "backed_by": [
+                  "EU09"
+                ]
+              }
+            ]
+          }
+        },
+        "leads_supported": {
+          "checkpoint": "2026-02-02T00:00:00Z",
+          "pass": true,
+          "leaks": [],
+          "actual": {
+            "status": "SUPPORTED",
+            "emergence": "2026-02-02T00:00:00Z",
+            "lineage_eus": [
+              "EU12",
+              "EU15"
+            ],
+            "current_values": [
+              {
+                "value": "E1",
+                "backed_by": [
+                  "EU12",
+                  "EU15"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "X12",
+      "query": "provenance exactness for two claims",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "partners_with_O1": [
+          "EU06",
+          "EU08"
+        ],
+        "researches_T1": [
+          "EU01",
+          "EU02"
+        ]
+      }
+    },
+    {
+      "id": "X13",
+      "query": "why_surfaced completeness for the bridge answer",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "discovery_route": "cryogenic cooling -enables-> fusion propulsion; cryogenic cooling -enables-> thermal management via cryogenic cooling",
+        "supporting_eus": [
+          "EU10",
+          "EU11"
+        ],
+        "novelty_state": "'cryogenic cooling' is a NOVEL mediator: not a predeclared Interest (user_relationship='unknown', no interest links); entered knowledge only via evidence first seen 2026-01-22T00:00:00Z",
+        "evidence_maturity": {
+          "source_count": 2,
+          "independent_source_threshold": 2,
+          "sources": [
+            {
+              "source_id": "S1",
+              "channel": "Starline Weekly"
+            },
+            {
+              "source_id": "S3",
+              "channel": "Lab Notes Blog"
+            }
+          ],
+          "timestamps": [
+            "2026-01-22T00:00:00Z",
+            "2026-01-24T00:00:00Z"
+          ]
+        },
+        "bridge_reason": "shared mediator 'cryogenic cooling' connects 'fusion propulsion' and 'thermal management' through evidence from >=2 independent sources; the node itself was never user-declared."
+      }
+    },
+    {
+      "id": "X14",
+      "query": "concurrency: stale generation write must fail, replay stays consistent",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "reader_generation_N": 15,
+        "post_commit_generation": 16,
+        "concurrent_asof_replay_ok": true,
+        "asof_0202_no_leak_of_EU16": true,
+        "stale_write_outcome": "failed_with_StaleWriteError",
+        "error_detail": "StaleWriteError: stale write: held generation 15, store generation is 16",
+        "store_unchanged_by_stale_write": true
+      }
+    },
+    {
+      "id": "X2",
+      "query": "as-of 2026-01-19(now incl 18th): partners_with SUPPORTED emerged 01-18",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "status": "SUPPORTED",
+        "emergence": "2026-01-18T00:00:00Z",
+        "eu_ids": [
+          "EU06",
+          "EU08"
+        ],
+        "sources": [
+          "S2",
+          "S3"
+        ]
+      }
+    },
+    {
+      "id": "X3",
+      "query": "now: launch_year 2033 SUPPORTED; 2031 historical < 01-20",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "now_value": "2033",
+        "now_status": "SUPPORTED",
+        "now_lineage": [
+          "EU03",
+          "EU09"
+        ],
+        "asof_0119_value": "2031",
+        "asof_0119_status": "ASSERTED_ONLY"
+      }
+    },
+    {
+      "id": "X4",
+      "query": "now: budget 2M and 5M coexist, each single-source",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "values": [
+          "2M",
+          "5M"
+        ],
+        "statuses": [
+          "ASSERTED_ONLY"
+        ],
+        "distinct_claims": 2,
+        "supersession_links": true
+      }
+    },
+    {
+      "id": "X5",
+      "query": "alias resolution incl 'Alphard Minor' distinct from Alphard",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "the Alphard program": "E1",
+        "ALPHARD initiative": "E1",
+        "Alphard": "E1",
+        "Alphard Minor": "E3"
+      }
+    },
+    {
+      "id": "X6",
+      "query": "bridge T1-T2 via B1, aggregate-supported, emerged 01-24, novel mediator",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "path": [
+          "cryogenic cooling -enables-> fusion propulsion",
+          "cryogenic cooling -enables-> thermal management"
+        ],
+        "mediator": "B1",
+        "status": "SUPPORTED",
+        "emergence": "2026-01-24T00:00:00Z",
+        "aggregate_sources": [
+          "S1",
+          "S3"
+        ],
+        "mediator_was_not_predeclared_interest": true,
+        "supporting_eus": [
+          "EU10",
+          "EU11"
+        ]
+      }
+    },
+    {
+      "id": "X7",
+      "query": "remove EU08 -> partners downgrades to ASSERTED-ONLY; no over-cascade",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "partners_status_after_removal": "ASSERTED_ONLY",
+        "partners_lineage_after": [
+          "EU06"
+        ],
+        "researches_T1_still_supported": [
+          "EU01",
+          "EU02"
+        ],
+        "launch_value_intact": "2033",
+        "budget_claims_intact": 2,
+        "removal_summary": {
+          "already_removed": false,
+          "deactivated_assertions": 1,
+          "affected_triples": [
+            "E1|partners_with|O1"
+          ],
+          "recomputed_relations": 1
+        }
+      }
+    },
+    {
+      "id": "X8",
+      "query": "remove EU11 -> bridge disappears; B1 enables T1 remains",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "bridges_after_removal": 0,
+        "B1_enables_T1_remains": [
+          "EU10"
+        ],
+        "B1_enables_T2_gone": true
+      }
+    },
+    {
+      "id": "X9",
+      "query": "now: P1 leads E1 SUPPORTED emerged 2026-02-02",
+      "pass": true,
+      "failure_class": null,
+      "actual": {
+        "status": "SUPPORTED",
+        "emergence": "2026-02-02T00:00:00Z",
+        "eu_ids": [
+          "EU12",
+          "EU15"
+        ]
+      }
+    }
+  ],
+  "semantics_score": {
+    "passed": 14,
+    "total": 14
+  },
+  "performance_ms": {
+    "ingest_full_fixture_load": {
+      "main_db_ms": 48.533,
+      "median_of_3_fresh_loads_ms": 1.456
+    },
+    "per_query_mean_of_3": {
+      "as_of_now_attribute": {
+        "mean_ms": 0.044,
+        "samples_ms": [
+          0.094,
+          0.022,
+          0.015
+        ]
+      },
+      "as_of_historical": {
+        "mean_ms": 0.012,
+        "samples_ms": [
+          0.014,
+          0.011,
+          0.01
+        ]
+      },
+      "provenance": {
+        "mean_ms": 0.022,
+        "samples_ms": [
+          0.042,
+          0.012,
+          0.011
+        ]
+      },
+      "bridge_discovery": {
+        "mean_ms": 0.124,
+        "samples_ms": [
+          0.17,
+          0.099,
+          0.102
+        ]
+      },
+      "alias_resolution": {
+        "mean_ms": 0.016,
+        "samples_ms": [
+          0.03,
+          0.01,
+          0.008
+        ]
+      }
+    },
+    "replay_checkpoints": {
+      "2026-01-05T00:00:00Z": 0.872,
+      "2026-01-18T00:00:00Z": 1.445,
+      "2026-01-20T00:00:00Z": 1.273,
+      "2026-02-02T00:00:00Z": 2.818
+    }
+  },
+  "accounting": {
+    "split_rule": "semantic = arm_a/store.py wholesale (every capability was absent pre-bakeoff per stage-0 inventory); harness = cases.py + run_stage1.py (evaluation/orchestration). LOC = non-blank, non-comment lines.",
+    "added_semantic_loc": 509,
+    "harness_loc": 445,
+    "reused_mechanisms": [
+      {
+        "mechanism": "deterministic concept identity (concept_identity_id/upsert_concept)",
+        "file": "ef/concept_registry.py"
+      },
+      {
+        "mechanism": "exact-normalized alias identity (normalize_alias/add_alias/resolve_alias)",
+        "file": "ef/concept_registry.py"
+      },
+      {
+        "mechanism": "observations with evidence_ref provenance (record_observation)",
+        "file": "ef/concept_registry.py"
+      },
+      {
+        "mechanism": "relations with evidence payload (record_concept_relation)",
+        "file": "ef/concept_registry.py"
+      },
+      {
+        "mechanism": "idempotent registry schema (ensure_schema) + deterministic digest ids (_short_digest)",
+        "file": "ef/concept_registry.py"
+      },
+      {
+        "mechanism": "content-hash identity pattern + tmp-DB test isolation precedent",
+        "file": "ef/personal_graph.py"
+      }
+    ]
+  }
+}

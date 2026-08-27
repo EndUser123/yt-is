@@ -172,3 +172,70 @@ def block_live_notebooklm_processes(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", guarded_run)
 
+
+# ---------------------------------------------------------------------------
+# No-live-writes invariant (P1 gate): under pytest, sqlite3.connect refuses
+# read-write opens of anything under the live shared-state root. mode=ro
+# reads stay allowed; env-var redirected tmp DBs are unaffected because
+# their paths never sit under P:/.data/yt-is. Set
+# YTIS_TEST_ALLOW_LIVE_WRITES=1 for a deliberate manual live run.
+# ---------------------------------------------------------------------------
+if os.environ.get("YTIS_TEST_ALLOW_LIVE_WRITES") != "1":
+    import sqlite3 as _sq
+
+    _LIVE_ROOT = "p:/.data/yt-is"
+    _orig_connect = _sq.connect
+
+    def _guarded_connect(database, *a, **k):
+        text = str(database).replace("\\", "/").lower()
+        if _LIVE_ROOT in text and "mode=ro" not in text:
+            # test_-prefixed scratch DBs under the live tree (e.g.
+            # batch_status/test_scheduler.sqlite) are test-owned sandboxes,
+            # not shared state — the invariant targets shared live DBs
+            if "/batch_status/test_" in text or "\\batch_status\\test_" in text:
+                return _orig_connect(database, *a, **k)
+            raise RuntimeError(
+                f"no-live-writes invariant: test attempted a read-write "
+                f"sqlite open of LIVE state: {database!r} (mode=ro reads "
+                f"stay allowed; redirect to tmp or set "
+                f"YTIS_TEST_ALLOW_LIVE_WRITES=1)")
+        return _orig_connect(database, *a, **k)
+
+    _sq.connect = _guarded_connect
+
+# Redirect ALL catalog connects (ef.catalog.connect honors this env at
+# call time) so the no-live-writes gate + tests never touch the live
+# catalog through default arguments. Plain mkdtemp under the system temp:
+# conftest import time has no pytest fixtures; OS temp hygiene covers it.
+import tempfile as _td  # noqa: E402
+
+_cat_dir = Path(_td.mkdtemp(prefix="ytis-catalog-"))
+os.environ.setdefault("YTIS_EF_CATALOG_DB_PATH",
+                      str(_cat_dir / "catalog.sqlite"))
+
+try:
+    import ef.catalog as _ec
+    _seed = _ec.connect()          # env default -> redirected tmp catalog
+    _seed.executescript(_ec._SCHEMA)   # catalog.connect already applied it; idempotent re-run for clarity
+    # projection-layer tables some consumers query read-only at import/
+    # plan time (live-built in production); empty baselines keep such
+    # readers working against the redirected catalog
+    _seed.executescript("""
+        CREATE TABLE IF NOT EXISTS eu (
+            eu_id TEXT PRIMARY KEY, video_id TEXT, channel_id TEXT,
+            source TEXT, title TEXT, channel_title TEXT,
+            published_at TEXT DEFAULT '', captured_at TEXT DEFAULT '');
+        CREATE TABLE IF NOT EXISTS kg_nodes (
+            node_id TEXT PRIMARY KEY, kind TEXT, label TEXT,
+            weight REAL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS kg_edges (
+            src_id TEXT, dst_id TEXT, relation TEXT,
+            weight REAL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS chunk_clusters (
+            cluster_id INTEGER, video_id TEXT, assigned_at TEXT);
+    """)
+    _seed.commit()
+    _seed.close()
+except Exception:
+    pass                           # gate tests still validate blocking
+

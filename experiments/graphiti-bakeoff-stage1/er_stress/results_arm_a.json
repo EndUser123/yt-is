@@ -1,0 +1,698 @@
+{
+  "schema": "er-stress-results-v1",
+  "label": "NON_DECISION_DIAGNOSTIC",
+  "diagnostic_name": "ENTITY_RESOLUTION_STRESS_DIAGNOSTIC",
+  "arm": "A",
+  "generated_at_utc": "2026-08-26T23:09:12Z",
+  "python_version": "3.14.0",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "fixture_version": "er-stress-fixture-v1",
+  "store": "ArmAStore(:memory:) fresh instance, ea_* + reused ef registry tables",
+  "ingest_report": {
+    "entities": 11,
+    "evidence_units": 10,
+    "assertions": 11
+  },
+  "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+  "scorecard": {
+    "cases_total": 9,
+    "PASS": 2,
+    "PARTIAL": 4,
+    "FAIL": 3,
+    "weighted_score": 0.444,
+    "scoring": "PASS=1 PARTIAL=0.5 FAIL=0"
+  },
+  "entity_map_snapshot": [
+    {
+      "entity_id": "ER-G1",
+      "concept_id": "concept_1ce9f3492f8d0aad"
+    },
+    {
+      "entity_id": "ER-G2",
+      "concept_id": "concept_1ce9f3492f8d0aad"
+    },
+    {
+      "entity_id": "ER-L1",
+      "concept_id": "concept_6eec70ecc23e6899"
+    },
+    {
+      "entity_id": "ER-L2",
+      "concept_id": "concept_ab2e741b11a1e298"
+    },
+    {
+      "entity_id": "ER-O1",
+      "concept_id": "concept_2e493265f790f360"
+    },
+    {
+      "entity_id": "ER-O2",
+      "concept_id": "concept_71b4131d081b03c2"
+    },
+    {
+      "entity_id": "ER-O9",
+      "concept_id": "concept_77eafa0482fa5a3c"
+    },
+    {
+      "entity_id": "ER-P1",
+      "concept_id": "concept_244c99891a3a1588"
+    },
+    {
+      "entity_id": "ER-PJ1",
+      "concept_id": "concept_33845fe9652f9f73"
+    },
+    {
+      "entity_id": "ER-PJ2",
+      "concept_id": "concept_3943e5f629515dc5"
+    },
+    {
+      "entity_id": "ER-T1",
+      "concept_id": "concept_2aafa549a0ce9590"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "ERS01",
+      "category": "acronym_vs_full_name",
+      "description": "'HTSC' and the spelled-out initiative name both denote topic ER-T1. Expansion form arrives later from a different source than the acronym.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "HTSC",
+          "source_hint": "S_B",
+          "context_hint": "tape-yield article (early evidence uses the acronym)"
+        },
+        {
+          "ref": "High-Temperature Superconductivity Initiative",
+          "source_hint": "S_C",
+          "context_hint": "survey publication spells the name out"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "HTSC",
+          "normalized_ref": "htsc",
+          "candidate_concept_ids": [
+            "concept_2aafa549a0ce9590"
+          ],
+          "resolved_entity_id": "ER-T1",
+          "resolved_concept_id": "concept_2aafa549a0ce9590",
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-T1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_B",
+          "context_hint": "tape-yield article (early evidence uses the acronym)"
+        },
+        {
+          "ref": "High-Temperature Superconductivity Initiative",
+          "normalized_ref": "high temperature superconductivity initiative",
+          "candidate_concept_ids": [],
+          "resolved_entity_id": null,
+          "resolved_concept_id": null,
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-T1"
+          },
+          "verdict": "MISS_UNRESOLVED",
+          "source_hint": "S_C",
+          "context_hint": "survey publication spells the name out"
+        }
+      ],
+      "resolved_ids": [
+        "ER-T1",
+        null
+      ],
+      "expected": {
+        "relation": "MERGE_TO_ONE",
+        "canonical_entity_id": "ER-T1"
+      },
+      "verdict": "PARTIAL"
+    },
+    {
+      "case_id": "ERS02",
+      "category": "punctuation_case_variants",
+      "description": "Case, hyphenation, trailing punctuation and corporate-suffix variants of one org. Ground truth: all four are ER-O1.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "HELION LABS,",
+          "source_hint": "S_A",
+          "context_hint": "all-caps + trailing comma headline"
+        },
+        {
+          "ref": "helion-labs",
+          "source_hint": "S_A",
+          "context_hint": "hyphenated slug form"
+        },
+        {
+          "ref": "Helion Labs, Inc.",
+          "source_hint": "S_C",
+          "context_hint": "registered legal form"
+        },
+        {
+          "ref": "Helion Labs Incorporated",
+          "source_hint": "S_C",
+          "context_hint": "suffix spelled out, no comma"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "HELION LABS,",
+          "normalized_ref": "helion labs",
+          "candidate_concept_ids": [
+            "concept_2e493265f790f360"
+          ],
+          "resolved_entity_id": "ER-O1",
+          "resolved_concept_id": "concept_2e493265f790f360",
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-O1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_A",
+          "context_hint": "all-caps + trailing comma headline"
+        },
+        {
+          "ref": "helion-labs",
+          "normalized_ref": "helion labs",
+          "candidate_concept_ids": [
+            "concept_2e493265f790f360"
+          ],
+          "resolved_entity_id": "ER-O1",
+          "resolved_concept_id": "concept_2e493265f790f360",
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-O1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_A",
+          "context_hint": "hyphenated slug form"
+        },
+        {
+          "ref": "Helion Labs, Inc.",
+          "normalized_ref": "helion labs, inc",
+          "candidate_concept_ids": [
+            "concept_2e493265f790f360"
+          ],
+          "resolved_entity_id": "ER-O1",
+          "resolved_concept_id": "concept_2e493265f790f360",
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-O1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_C",
+          "context_hint": "registered legal form"
+        },
+        {
+          "ref": "Helion Labs Incorporated",
+          "normalized_ref": "helion labs incorporated",
+          "candidate_concept_ids": [],
+          "resolved_entity_id": null,
+          "resolved_concept_id": null,
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-O1"
+          },
+          "verdict": "MISS_UNRESOLVED",
+          "source_hint": "S_C",
+          "context_hint": "suffix spelled out, no comma"
+        }
+      ],
+      "resolved_ids": [
+        "ER-O1",
+        "ER-O1",
+        "ER-O1",
+        null
+      ],
+      "expected": {
+        "relation": "MERGE_TO_ONE",
+        "canonical_entity_id": "ER-O1"
+      },
+      "verdict": "PARTIAL"
+    },
+    {
+      "case_id": "ERS03",
+      "category": "renamed_organization_mid_timeline",
+      "description": "Vertex Dynamics -> Vector Dynamics rename filed at UE02. Old and new names are ONE entity (ER-O2); old name survives only in historical evidence.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "Vertex Dynamics",
+          "source_hint": "S_A",
+          "context_hint": "pre-rename evidence (UE01)"
+        },
+        {
+          "ref": "Vector Dynamics",
+          "source_hint": "S_A",
+          "context_hint": "post-rename evidence (UE04, UE08)"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "Vertex Dynamics",
+          "normalized_ref": "vertex dynamics",
+          "candidate_concept_ids": [],
+          "resolved_entity_id": null,
+          "resolved_concept_id": null,
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-O2"
+          },
+          "verdict": "MISS_UNRESOLVED",
+          "source_hint": "S_A",
+          "context_hint": "pre-rename evidence (UE01)"
+        },
+        {
+          "ref": "Vector Dynamics",
+          "normalized_ref": "vector dynamics",
+          "candidate_concept_ids": [
+            "concept_71b4131d081b03c2"
+          ],
+          "resolved_entity_id": "ER-O2",
+          "resolved_concept_id": "concept_71b4131d081b03c2",
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-O2"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_A",
+          "context_hint": "post-rename evidence (UE04, UE08)"
+        }
+      ],
+      "resolved_ids": [
+        null,
+        "ER-O2"
+      ],
+      "expected": {
+        "relation": "MERGE_TO_ONE",
+        "canonical_entity_id": "ER-O2"
+      },
+      "verdict": "PARTIAL"
+    },
+    {
+      "case_id": "ERS04",
+      "category": "ambiguous_short_label_shared_by_two_projects",
+      "description": "'Project K' is claimed by TWO distinct projects. Disambiguation requires context/source; ground truth: the two mentions are DIFFERENT entities.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "Project K",
+          "source_hint": "S_A",
+          "context_hint": "Kestrel launch campaign (UE06)"
+        },
+        {
+          "ref": "Project K",
+          "source_hint": "S_B",
+          "context_hint": "Kepler observatory pipeline (UE05)"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "Project K",
+          "normalized_ref": "project k",
+          "candidate_concept_ids": [
+            "concept_33845fe9652f9f73",
+            "concept_3943e5f629515dc5"
+          ],
+          "resolved_entity_id": "ER-PJ1",
+          "resolved_concept_id": "concept_33845fe9652f9f73",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-PJ1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_A",
+          "context_hint": "Kestrel launch campaign (UE06)"
+        },
+        {
+          "ref": "Project K",
+          "normalized_ref": "project k",
+          "candidate_concept_ids": [
+            "concept_33845fe9652f9f73",
+            "concept_3943e5f629515dc5"
+          ],
+          "resolved_entity_id": "ER-PJ1",
+          "resolved_concept_id": "concept_33845fe9652f9f73",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-PJ2"
+          },
+          "verdict": "WRONG_ENTITY",
+          "source_hint": "S_B",
+          "context_hint": "Kepler observatory pipeline (UE05)"
+        }
+      ],
+      "resolved_ids": [
+        "ER-PJ1",
+        "ER-PJ1"
+      ],
+      "expected": {
+        "relation": "DISTINCT",
+        "entity_ids": [
+          "ER-PJ1",
+          "ER-PJ2"
+        ]
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "case_id": "ERS05",
+      "category": "ambiguous_label_unambiguous_expansions_control",
+      "description": "Control for ERS04: the expanded forms must stay cleanly separated, one per project.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "Project Kestrel",
+          "source_hint": "S_A",
+          "context_hint": "launch campaign"
+        },
+        {
+          "ref": "Project Kepler",
+          "source_hint": "S_B",
+          "context_hint": "observatory pipeline"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "Project Kestrel",
+          "normalized_ref": "project kestrel",
+          "candidate_concept_ids": [
+            "concept_33845fe9652f9f73"
+          ],
+          "resolved_entity_id": "ER-PJ1",
+          "resolved_concept_id": "concept_33845fe9652f9f73",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-PJ1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_A",
+          "context_hint": "launch campaign"
+        },
+        {
+          "ref": "Project Kepler",
+          "normalized_ref": "project kepler",
+          "candidate_concept_ids": [
+            "concept_3943e5f629515dc5"
+          ],
+          "resolved_entity_id": "ER-PJ2",
+          "resolved_concept_id": "concept_3943e5f629515dc5",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-PJ2"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_B",
+          "context_hint": "observatory pipeline"
+        }
+      ],
+      "resolved_ids": [
+        "ER-PJ1",
+        "ER-PJ2"
+      ],
+      "expected": {
+        "relation": "DISTINCT",
+        "entity_ids": [
+          "ER-PJ1",
+          "ER-PJ2"
+        ]
+      },
+      "verdict": "PASS"
+    },
+    {
+      "case_id": "ERS06",
+      "category": "identical_surface_same_type_two_real_firms",
+      "description": "Two genuinely different companies share the exact legal name AND the entity type. Only context/source distinguishes them. Ground truth: DISTINCT.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "Geminus Group",
+          "source_hint": "S_B",
+          "context_hint": "US payments-firm incident (UE07)"
+        },
+        {
+          "ref": "Geminus Group",
+          "source_hint": "S_A",
+          "context_hint": "European cable supplier delivery (UE08)"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "Geminus Group",
+          "normalized_ref": "geminus group",
+          "candidate_concept_ids": [
+            "concept_1ce9f3492f8d0aad"
+          ],
+          "resolved_entity_id": "ER-G1",
+          "resolved_concept_id": "concept_1ce9f3492f8d0aad",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-G1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_B",
+          "context_hint": "US payments-firm incident (UE07)"
+        },
+        {
+          "ref": "Geminus Group",
+          "normalized_ref": "geminus group",
+          "candidate_concept_ids": [
+            "concept_1ce9f3492f8d0aad"
+          ],
+          "resolved_entity_id": "ER-G1",
+          "resolved_concept_id": "concept_1ce9f3492f8d0aad",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-G2"
+          },
+          "verdict": "WRONG_ENTITY",
+          "source_hint": "S_A",
+          "context_hint": "European cable supplier delivery (UE08)"
+        }
+      ],
+      "resolved_ids": [
+        "ER-G1",
+        "ER-G1"
+      ],
+      "expected": {
+        "relation": "DISTINCT",
+        "entity_ids": [
+          "ER-G1",
+          "ER-G2"
+        ]
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "case_id": "ERS07",
+      "category": "identical_surface_cross_type_org_vs_project",
+      "description": "A program named exactly like its parent company. Types differ (org vs project); surface string is identical. Ground truth: DISTINCT.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "Lumen Grid Technologies",
+          "source_hint": "S_C",
+          "context_hint": "employer-of-record mention -> company"
+        },
+        {
+          "ref": "Lumen Grid Technologies",
+          "source_hint": "S_A",
+          "context_hint": "internal program Dr. Rand leads -> project"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "Lumen Grid Technologies",
+          "normalized_ref": "lumen grid technologies",
+          "candidate_concept_ids": [
+            "concept_6eec70ecc23e6899",
+            "concept_ab2e741b11a1e298"
+          ],
+          "resolved_entity_id": "ER-L1",
+          "resolved_concept_id": "concept_6eec70ecc23e6899",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-L1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_C",
+          "context_hint": "employer-of-record mention -> company"
+        },
+        {
+          "ref": "Lumen Grid Technologies",
+          "normalized_ref": "lumen grid technologies",
+          "candidate_concept_ids": [
+            "concept_6eec70ecc23e6899",
+            "concept_ab2e741b11a1e298"
+          ],
+          "resolved_entity_id": "ER-L1",
+          "resolved_concept_id": "concept_6eec70ecc23e6899",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-L2"
+          },
+          "verdict": "WRONG_ENTITY",
+          "source_hint": "S_A",
+          "context_hint": "internal program Dr. Rand leads -> project"
+        }
+      ],
+      "resolved_ids": [
+        "ER-L1",
+        "ER-L1"
+      ],
+      "expected": {
+        "relation": "DISTINCT",
+        "entity_ids": [
+          "ER-L1",
+          "ER-L2"
+        ]
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "case_id": "ERS08",
+      "category": "alias_arrival_from_different_sources_at_different_times",
+      "description": "Person aliases accrete over time from three sources: short form (declared early), initial form, credentialed expanded form. All are ER-P1.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "Sofia Rand",
+          "source_hint": "S_A",
+          "context_hint": "short form, declared alias"
+        },
+        {
+          "ref": "S. Rand",
+          "source_hint": "S_C",
+          "context_hint": "initial form in registry log (UE09)"
+        },
+        {
+          "ref": "Sofia Q. Rand, PhD",
+          "source_hint": "S_A",
+          "context_hint": "credentialed form in keynote intro (UE10)"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "Sofia Rand",
+          "normalized_ref": "sofia rand",
+          "candidate_concept_ids": [
+            "concept_244c99891a3a1588"
+          ],
+          "resolved_entity_id": "ER-P1",
+          "resolved_concept_id": "concept_244c99891a3a1588",
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-P1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_A",
+          "context_hint": "short form, declared alias"
+        },
+        {
+          "ref": "S. Rand",
+          "normalized_ref": "s. rand",
+          "candidate_concept_ids": [],
+          "resolved_entity_id": null,
+          "resolved_concept_id": null,
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-P1"
+          },
+          "verdict": "MISS_UNRESOLVED",
+          "source_hint": "S_C",
+          "context_hint": "initial form in registry log (UE09)"
+        },
+        {
+          "ref": "Sofia Q. Rand, PhD",
+          "normalized_ref": "sofia q. rand, phd",
+          "candidate_concept_ids": [],
+          "resolved_entity_id": null,
+          "resolved_concept_id": null,
+          "expected": {
+            "relation": "MERGE_TO_ONE",
+            "target": "ER-P1"
+          },
+          "verdict": "MISS_UNRESOLVED",
+          "source_hint": "S_A",
+          "context_hint": "credentialed form in keynote intro (UE10)"
+        }
+      ],
+      "resolved_ids": [
+        "ER-P1",
+        null,
+        null
+      ],
+      "expected": {
+        "relation": "MERGE_TO_ONE",
+        "canonical_entity_id": "ER-P1"
+      },
+      "verdict": "PARTIAL"
+    },
+    {
+      "case_id": "ERS09",
+      "category": "negative_control_near_identical_names",
+      "description": "Near-identical but genuinely different orgs ('Helion' vs 'Helios'). Ground truth: NEVER merge. Checks that scoring does not reward over-merging elsewhere.",
+      "mechanism": "exact-normalized alias lookup: ef.concept_registry.resolve_alias on normalized_alias equality, ORDER BY concept_id LIMIT 1; no fuzzy match, no context/source parameter, no temporal validity, no acronym expansion",
+      "inputs": [
+        {
+          "ref": "Helion Labs",
+          "source_hint": "S_A",
+          "context_hint": "fusion partner"
+        },
+        {
+          "ref": "Helios Labs",
+          "source_hint": "S_B",
+          "context_hint": "unrelated optics firm"
+        }
+      ],
+      "probe_results": [
+        {
+          "ref": "Helion Labs",
+          "normalized_ref": "helion labs",
+          "candidate_concept_ids": [
+            "concept_2e493265f790f360"
+          ],
+          "resolved_entity_id": "ER-O1",
+          "resolved_concept_id": "concept_2e493265f790f360",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-O1"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_A",
+          "context_hint": "fusion partner"
+        },
+        {
+          "ref": "Helios Labs",
+          "normalized_ref": "helios labs",
+          "candidate_concept_ids": [
+            "concept_77eafa0482fa5a3c"
+          ],
+          "resolved_entity_id": "ER-O9",
+          "resolved_concept_id": "concept_77eafa0482fa5a3c",
+          "expected": {
+            "relation": "DISTINCT",
+            "target": "ER-O9"
+          },
+          "verdict": "HIT_EXPECTED",
+          "source_hint": "S_B",
+          "context_hint": "unrelated optics firm"
+        }
+      ],
+      "resolved_ids": [
+        "ER-O1",
+        "ER-O9"
+      ],
+      "expected": {
+        "relation": "DISTINCT",
+        "entity_ids": [
+          "ER-O1",
+          "ER-O9"
+        ]
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "decision_note": "This artifact informs architectural interpretation only; per the Stage-1 preregistration it CANNOT change the X1..X14 decision."
+}

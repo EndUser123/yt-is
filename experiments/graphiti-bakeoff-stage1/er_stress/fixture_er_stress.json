@@ -1,0 +1,130 @@
+{
+  "fixture_version": "er-stress-fixture-v1",
+  "label": "NON_DECISION_DIAGNOSTIC",
+  "purpose": "ENTITY_RESOLUTION_STRESS_DIAGNOSTIC for the Stage-1 memory bakeoff. Synthetic, fully fictional namespace (ER-* ids). Stresses identity resolution HARDER than ../fixture.json. Ground truth is declared per case; this diagnostic measures how the CURRENT resolution mechanisms behave. It informs architectural interpretation and CANNOT change the Stage-1 decision.",
+  "sources": [
+    {"source_id": "S_A", "channel": "Fusion Wire"},
+    {"source_id": "S_B", "channel": "Quantum Materials Brief"},
+    {"source_id": "S_C", "channel": "Startup Registry Log"}
+  ],
+  "entities": [
+    {"entity_id": "ER-T1", "type": "topic", "canonical_name": "High-Temperature Superconductivity", "aliases": ["HTSC"], "ground_truth_note": "Research topic. 'HTSC' is the same thing as the expansion."},
+    {"entity_id": "ER-O1", "type": "org", "canonical_name": "Helion Labs, Inc.", "aliases": ["Helion Labs"], "ground_truth_note": "One legal entity; variants below are punctuation/case/suffix forms of it."},
+    {"entity_id": "ER-O2", "type": "org", "canonical_name": "Vector Dynamics", "aliases": [], "ground_truth_note": "Single entity renamed mid-timeline: before 2026-03-06 it operated as 'Vertex Dynamics'. Old and new names denote the SAME entity."},
+    {"entity_id": "ER-O9", "type": "org", "canonical_name": "Helios Labs", "aliases": [], "ground_truth_note": "Unrelated firm; similar surface to ER-O1. Negative control: must never merge with Helion Labs."},
+    {"entity_id": "ER-PJ1", "type": "project", "canonical_name": "Project Kestrel", "aliases": ["Kestrel", "Project K"], "ground_truth_note": "Launch-campaign program. Shares short label 'Project K' with ER-PJ2."},
+    {"entity_id": "ER-PJ2", "type": "project", "canonical_name": "Project Kepler", "aliases": ["Kepler", "Project K"], "ground_truth_note": "Observatory data-pipeline program. Distinct from ER-PJ1 despite sharing 'Project K'."},
+    {"entity_id": "ER-G1", "type": "org", "canonical_name": "Geminus Group", "aliases": [], "ground_truth_note": "European fusion cable supplier. Identical legal name AND identical type to ER-G2; two genuinely different firms."},
+    {"entity_id": "ER-G2", "type": "org", "canonical_name": "Geminus Group", "aliases": [], "ground_truth_note": "US payments firm. Identical legal name AND identical type to ER-G1; distinct reality, disambiguable only by context/source."},
+    {"entity_id": "ER-L1", "type": "org", "canonical_name": "Lumen Grid Technologies", "aliases": [], "ground_truth_note": "Company."},
+    {"entity_id": "ER-L2", "type": "project", "canonical_name": "Lumen Grid Technologies", "aliases": [], "ground_truth_note": "Internal engineering program named identically to its parent company ER-L1; different TYPE, identical surface."},
+    {"entity_id": "ER-P1", "type": "person", "canonical_name": "Dr. Sofia Rand", "aliases": ["Sofia Rand"], "ground_truth_note": "One person; source aliases arrive over time: short form, initial form, credentialed expanded form."}
+  ],
+  "evidence_units": [
+    {"eu_id": "UE01", "t": "2026-03-01T00:00:00Z", "source_id": "S_A", "text": "Vertex Dynamics closed a seed round for its high-temperature superconductivity tape production line.", "asserts": [{"subject": "ER-O2", "predicate": "announced_round", "object": "seed"}]},
+    {"eu_id": "UE02", "t": "2026-03-06T00:00:00Z", "source_id": "S_C", "text": "Registry filing confirms Vertex Dynamics completed rebranding to Vector Dynamics.", "asserts": [{"subject": "ER-O2", "predicate": "renamed_to", "object": "Vector Dynamics"}]},
+    {"eu_id": "UE03", "t": "2026-03-08T00:00:00Z", "source_id": "S_B", "text": "HTSC tape yields improved again this quarter, according to the High-Temperature Superconductivity Initiative survey.", "asserts": [{"subject": "ER-T1", "predicate": "trend", "object": "improving"}]},
+    {"eu_id": "UE04", "t": "2026-03-10T00:00:00Z", "source_id": "S_A", "text": "helion-labs confirmed: Helion Labs, Inc. signed a supply agreement with Vector Dynamics.", "asserts": [{"subject": "ER-O1", "predicate": "partners_with", "object": "ER-O2"}]},
+    {"eu_id": "UE05", "t": "2026-03-14T00:00:00Z", "source_id": "S_B", "text": "Project K shipped pipeline v2 for the Kepler observatory archive.", "asserts": [{"subject": "ER-PJ2", "predicate": "shipped_release", "object": "v2"}]},
+    {"eu_id": "UE06", "t": "2026-03-16T00:00:00Z", "source_id": "S_A", "text": "Project K reached its launch-campaign milestone under the Kestrel programme.", "asserts": [{"subject": "ER-PJ1", "predicate": "reached_milestone", "object": "launch_campaign"}]},
+    {"eu_id": "UE07", "t": "2026-03-20T00:00:00Z", "source_id": "S_B", "text": "Geminis note: Geminus Group, the US payments firm, disclosed a service incident; unrelated to the European cable-maker of the same name.", "asserts": [{"subject": "ER-G2", "predicate": "disclosed", "object": "service_incident"}]},
+    {"eu_id": "UE08", "t": "2026-03-22T00:00:00Z", "source_id": "S_A", "text": "Fusion Wire logistics report: Geminus Group delivered superconducting cable stock to the Vector Dynamics fab.", "asserts": [{"subject": "ER-G1", "predicate": "delivered_cable_to", "object": "ER-O2"}]},
+    {"eu_id": "UE09", "t": "2026-03-25T00:00:00Z", "source_id": "S_C", "text": "Startup Registry Log: S. Rand was appointed CTO of Lumen Grid Technologies.", "asserts": [{"subject": "ER-P1", "predicate": "employed_by", "object": "ER-L1"}]},
+    {"eu_id": "UE10", "t": "2026-03-28T00:00:00Z", "source_id": "S_A", "text": "Keynote by Sofia Q. Rand, PhD on grid-scale storage; she also leads Project Lumen Grid Technologies internally.", "asserts": [{"subject": "ER-P1", "predicate": "presented_at", "object": "grid_storage_summit"}, {"subject": "ER-P1", "predicate": "leads", "object": "ER-L2"}]}
+  ],
+  "er_cases": [
+    {
+      "case_id": "ERS01",
+      "category": "acronym_vs_full_name",
+      "description": "'HTSC' and the spelled-out initiative name both denote topic ER-T1. Expansion form arrives later from a different source than the acronym.",
+      "inputs": [
+        {"ref": "HTSC", "source_hint": "S_B", "context_hint": "tape-yield article (early evidence uses the acronym)"},
+        {"ref": "High-Temperature Superconductivity Initiative", "source_hint": "S_C", "context_hint": "survey publication spells the name out"}
+      ],
+      "expected": {"relation": "MERGE_TO_ONE", "canonical_entity_id": "ER-T1"}
+    },
+    {
+      "case_id": "ERS02",
+      "category": "punctuation_case_variants",
+      "description": "Case, hyphenation, trailing punctuation and corporate-suffix variants of one org. Ground truth: all four are ER-O1.",
+      "inputs": [
+        {"ref": "HELION LABS,", "source_hint": "S_A", "context_hint": "all-caps + trailing comma headline"},
+        {"ref": "helion-labs", "source_hint": "S_A", "context_hint": "hyphenated slug form"},
+        {"ref": "Helion Labs, Inc.", "source_hint": "S_C", "context_hint": "registered legal form"},
+        {"ref": "Helion Labs Incorporated", "source_hint": "S_C", "context_hint": "suffix spelled out, no comma"}
+      ],
+      "expected": {"relation": "MERGE_TO_ONE", "canonical_entity_id": "ER-O1"}
+    },
+    {
+      "case_id": "ERS03",
+      "category": "renamed_organization_mid_timeline",
+      "description": "Vertex Dynamics -> Vector Dynamics rename filed at UE02. Old and new names are ONE entity (ER-O2); old name survives only in historical evidence.",
+      "inputs": [
+        {"ref": "Vertex Dynamics", "source_hint": "S_A", "context_hint": "pre-rename evidence (UE01)"},
+        {"ref": "Vector Dynamics", "source_hint": "S_A", "context_hint": "post-rename evidence (UE04, UE08)"}
+      ],
+      "expected": {"relation": "MERGE_TO_ONE", "canonical_entity_id": "ER-O2"}
+    },
+    {
+      "case_id": "ERS04",
+      "category": "ambiguous_short_label_shared_by_two_projects",
+      "description": "'Project K' is claimed by TWO distinct projects. Disambiguation requires context/source; ground truth: the two mentions are DIFFERENT entities.",
+      "inputs": [
+        {"ref": "Project K", "source_hint": "S_A", "context_hint": "Kestrel launch campaign (UE06)"},
+        {"ref": "Project K", "source_hint": "S_B", "context_hint": "Kepler observatory pipeline (UE05)"}
+      ],
+      "expected": {"relation": "DISTINCT", "entity_ids": ["ER-PJ1", "ER-PJ2"]}
+    },
+    {
+      "case_id": "ERS05",
+      "category": "ambiguous_label_unambiguous_expansions_control",
+      "description": "Control for ERS04: the expanded forms must stay cleanly separated, one per project.",
+      "inputs": [
+        {"ref": "Project Kestrel", "source_hint": "S_A", "context_hint": "launch campaign"},
+        {"ref": "Project Kepler", "source_hint": "S_B", "context_hint": "observatory pipeline"}
+      ],
+      "expected": {"relation": "DISTINCT", "entity_ids": ["ER-PJ1", "ER-PJ2"]}
+    },
+    {
+      "case_id": "ERS06",
+      "category": "identical_surface_same_type_two_real_firms",
+      "description": "Two genuinely different companies share the exact legal name AND the entity type. Only context/source distinguishes them. Ground truth: DISTINCT.",
+      "inputs": [
+        {"ref": "Geminus Group", "source_hint": "S_B", "context_hint": "US payments-firm incident (UE07)"},
+        {"ref": "Geminus Group", "source_hint": "S_A", "context_hint": "European cable supplier delivery (UE08)"}
+      ],
+      "expected": {"relation": "DISTINCT", "entity_ids": ["ER-G1", "ER-G2"]}
+    },
+    {
+      "case_id": "ERS07",
+      "category": "identical_surface_cross_type_org_vs_project",
+      "description": "A program named exactly like its parent company. Types differ (org vs project); surface string is identical. Ground truth: DISTINCT.",
+      "inputs": [
+        {"ref": "Lumen Grid Technologies", "source_hint": "S_C", "context_hint": "employer-of-record mention -> company"},
+        {"ref": "Lumen Grid Technologies", "source_hint": "S_A", "context_hint": "internal program Dr. Rand leads -> project"}
+      ],
+      "expected": {"relation": "DISTINCT", "entity_ids": ["ER-L1", "ER-L2"]}
+    },
+    {
+      "case_id": "ERS08",
+      "category": "alias_arrival_from_different_sources_at_different_times",
+      "description": "Person aliases accrete over time from three sources: short form (declared early), initial form, credentialed expanded form. All are ER-P1.",
+      "inputs": [
+        {"ref": "Sofia Rand", "source_hint": "S_A", "context_hint": "short form, declared alias"},
+        {"ref": "S. Rand", "source_hint": "S_C", "context_hint": "initial form in registry log (UE09)"},
+        {"ref": "Sofia Q. Rand, PhD", "source_hint": "S_A", "context_hint": "credentialed form in keynote intro (UE10)"}
+      ],
+      "expected": {"relation": "MERGE_TO_ONE", "canonical_entity_id": "ER-P1"}
+    },
+    {
+      "case_id": "ERS09",
+      "category": "negative_control_near_identical_names",
+      "description": "Near-identical but genuinely different orgs ('Helion' vs 'Helios'). Ground truth: NEVER merge. Checks that scoring does not reward over-merging elsewhere.",
+      "inputs": [
+        {"ref": "Helion Labs", "source_hint": "S_A", "context_hint": "fusion partner"},
+        {"ref": "Helios Labs", "source_hint": "S_B", "context_hint": "unrelated optics firm"}
+      ],
+      "expected": {"relation": "DISTINCT", "entity_ids": ["ER-O1", "ER-O9"]}
+    }
+  ]
+}

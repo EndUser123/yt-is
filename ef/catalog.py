@@ -11,6 +11,7 @@ Location: P:/.data/yt-is/ef/catalog.sqlite (fabric-owned, not live-pipeline).
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -18,6 +19,14 @@ from .contracts import ChunkRecord, EvidenceUnit
 
 EF_DATA = Path("P:/.data/yt-is/ef")
 CATALOG_DB = EF_DATA / "catalog.sqlite"
+
+
+def get_catalog_db_path() -> Path:
+    """Catalog path with YTIS_EF_CATALOG_DB_PATH env override (P1 gate:
+    lets the test harness redirect every catalog.connect() away from LIVE
+    state without touching call sites)."""
+    override = os.environ.get("YTIS_EF_CATALOG_DB_PATH")
+    return Path(override) if override else CATALOG_DB
 
 _SCHEMA = """
 create table if not exists eu (
@@ -125,7 +134,15 @@ def check_write(conn: sqlite3.Connection, build_id: str,
             f"matching production claim")
 
 
-def connect(db_path: Path = CATALOG_DB) -> sqlite3.Connection:
+def _default_catalog() -> Path:
+    """Late-bound default: env override wins at CALL time, so pytest's
+    conftest redirect applies even to already-imported modules."""
+    return get_catalog_db_path()
+
+
+def connect(db_path: Path | None = None) -> sqlite3.Connection:
+    if db_path is None:
+        db_path = _default_catalog()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.executescript(_SCHEMA)
