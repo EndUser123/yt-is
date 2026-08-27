@@ -23,6 +23,9 @@ def env(tmp_path, monkeypatch):
     heartbeat = tmp_path / "heartbeat.json"
     monkeypatch.setattr(d, "RECEIPT_ROOT", receipts)
     monkeypatch.setattr(d, "HEARTBEAT", heartbeat)
+    # recurring enrollment would otherwise enqueue REAL heavyweight workers
+    # (podcast downloads) inside unit tests; fixtures enroll explicitly.
+    monkeypatch.setattr(d, "RECURRING", {})
     conn = d.connect(db)
     yield conn, receipts
     conn.close()
@@ -127,3 +130,38 @@ def _advance_clock(conn, jid):
         (jid,),
     )
     conn.commit()
+
+
+def test_recurring_enrolls_once_per_interval(tmp_path, monkeypatch, capsys):
+    """RECURRING inserts a due row only when no open row exists AND the last
+    terminal completion is older than the interval (backoff-safe)."""
+    import scripts.dispatcher as d
+
+    db = tmp_path / "d.sqlite"
+    monkeypatch.setattr(d, "DISPATCH_DB", db)
+    monkeypatch.setattr(d, "RECEIPT_ROOT", tmp_path / "receipts")
+    monkeypatch.setattr(d, "HEARTBEAT", tmp_path / "hb.json")
+    monkeypatch.setattr(d, "WORKERS", {
+        **d.WORKERS,
+        "probe_light": {"argv": [sys.executable, "-c", "print('ok')"],
+                        "timeout_s": 10, "defaults": {}, "backoff_s": 0},
+    })
+    monkeypatch.setattr(d, "RECURRING",
+                        {"probe_light": {"interval_s": 600, "params": {}}})
+
+    conn = d.connect(db)
+    try:
+        assert d.ensure_recurring(conn) == 1            # first window: enrolls
+        assert d.ensure_recurring(conn) == 0            # open row blocks dup
+        assert d.tick(conn) >= 1                        # drains it ok
+        assert d.ensure_recurring(conn) == 0            # inside 600s interval
+        # simulate interval elapsing
+        conn.execute(
+            """UPDATE pipeline_jobs SET finished_at =
+                   strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now', '-700 seconds')
+               WHERE kind = 'probe_light' AND outcome = 'ok'"""
+        )
+        conn.commit()
+        assert d.ensure_recurring(conn) == 1            # interval elapsed
+    finally:
+        conn.close()

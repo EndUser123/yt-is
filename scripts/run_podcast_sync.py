@@ -241,6 +241,19 @@ def main(argv=None):
             print(f"  {name}: feed error {str(e)[:60]}")
             errors += 1
             continue
+        # Feeds that fetched cleanly count as synced (health signal; the
+        # column existed for weeks but nothing ever wrote it). Lives in the
+        # batch DB, not transcripts (review run-afd069d181fe F1).
+        try:
+            tdb = _rw(DB)
+            tdb.execute(
+                "UPDATE podcast_feeds SET last_synced = ? WHERE url = ?",
+                (datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), url),
+            )
+            tdb.commit()
+            tdb.close()
+        except Exception as sync_err:
+            print(f"  last_synced update skipped: {sync_err}")
         for ep in episodes:
             if ingested >= args.limit:
                 break

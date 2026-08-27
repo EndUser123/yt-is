@@ -277,11 +277,21 @@ def run_mmx_vision(url: str, *, timeout_s: float = 60.0) -> dict | None:
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"mmx exit {proc.returncode}: {proc.stderr.strip()[:200]}")
+        err = f"mmx exit {proc.returncode}: {proc.stderr.strip()[:200]}"
+        if "usage limit reached" in proc.stdout + proc.stderr:
+            # MiniMax Token Plan dry (2026-08-27 sweep): hard stop, retries
+            # cannot help and the API lies with HTTP 200 envelopes.
+            raise VLMQuotaExceeded(err)
+        raise RuntimeError(err)
     payload = json.loads(proc.stdout)
-    if payload.get("base_resp", {}).get("status_code", 0) != 0:
-        raise RuntimeError(f"mmx api error: {payload['base_resp'].get('status_msg')}")
+    status = payload.get("base_resp", {})
+    if status.get("status_code", 0) != 0:
+        raise RuntimeError(f"mmx api error: {status.get('status_msg')}")
     return parse_vlm_json(payload.get("content", ""))
+
+
+class VLMQuotaExceeded(RuntimeError):
+    """MiniMax Token Plan exhausted — the batch must stop, not retry."""
 
 
 def score_batch(
@@ -314,64 +324,74 @@ def score_batch(
     )
     scored = enqueued = failures = 0
     consecutive = 0
-    for video_id, thumb_url in candidates:
-        if consecutive >= max_consecutive_failures:
-            print(f"stopping: {consecutive} consecutive failures", file=sys.stderr)
-            break
-        url = hq_thumbnail_url(video_id, thumb_url)
-        try:
-            verdict = run_mmx_vision(url)
-        except Exception as exc:  # noqa: BLE001 - per-item isolation by design
-            failures += 1
-            consecutive += 1
-            print(f"{video_id}: FAILED {exc}", file=sys.stderr)
-            time.sleep(gap_s)
-            continue
-        consecutive = 0
-        if verdict is None:
-            failures += 1
-            consecutive += 1
-            print(f"{video_id}: unparseable reply", file=sys.stderr)
-            time.sleep(gap_s)
-            continue
-        conn.execute(
-            """INSERT OR REPLACE INTO visual_vlm_scores
-               (video_id, model, density, has_text, has_code, has_diagram,
-                has_chart, has_face, content_type, raw, scored_at)
-               VALUES (?, 'minimax-vlm', ?, ?, ?, ?, ?, ?, ?, ?,
-                       datetime('now'))""",
-            (
-                video_id,
-                verdict["density"],
-                verdict["has_text"],
-                verdict["has_code"],
-                verdict["has_diagram"],
-                verdict["has_chart"],
-                verdict["has_face"],
-                verdict["content_type"],
-                json.dumps(verdict),
-            ),
-        )
-        scored += 1
-        if verdict["density"] >= min_density:
-            cur = conn.execute(
-                """INSERT OR IGNORE INTO visual_jobs
-                       (video_id, profile, created_at, max_attempts)
-                   SELECT ?, 'vlm', ?, 3
-                   WHERE NOT EXISTS (SELECT 1 FROM visual_jobs v WHERE v.video_id = ?)""",
-                (video_id, VLM_EPOCH, video_id),
+    quota_stopped = False
+    try:
+        for video_id, thumb_url in candidates:
+            if consecutive >= max_consecutive_failures:
+                print(f"stopping: {consecutive} consecutive failures", file=sys.stderr)
+                break
+            url = hq_thumbnail_url(video_id, thumb_url)
+            try:
+                verdict = run_mmx_vision(url)
+            except VLMQuotaExceeded as exc:
+                quota_stopped = True
+                failures += 1
+                print(f"{video_id}: QUOTA EXCEEDED, stopping batch: {exc}",
+                      file=sys.stderr)
+                break
+            except Exception as exc:  # noqa: BLE001 - per-item isolation by design
+                failures += 1
+                consecutive += 1
+                print(f"{video_id}: FAILED {exc}", file=sys.stderr)
+                time.sleep(gap_s)
+                continue
+            consecutive = 0
+            if verdict is None:
+                failures += 1
+                consecutive += 1
+                print(f"{video_id}: unparseable reply", file=sys.stderr)
+                time.sleep(gap_s)
+                continue
+            conn.execute(
+                """INSERT OR REPLACE INTO visual_vlm_scores
+                   (video_id, model, density, has_text, has_code, has_diagram,
+                    has_chart, has_face, content_type, raw, scored_at)
+                   VALUES (?, 'minimax-vlm', ?, ?, ?, ?, ?, ?, ?, ?,
+                           datetime('now'))""",
+                (
+                    video_id,
+                    verdict["density"],
+                    verdict["has_text"],
+                    verdict["has_code"],
+                    verdict["has_diagram"],
+                    verdict["has_chart"],
+                    verdict["has_face"],
+                    verdict["content_type"],
+                    json.dumps(verdict),
+                ),
             )
-            enqueued += cur.rowcount
-        conn.commit()
-        print(f"{video_id}: density={verdict['density']} "
-              f"{'ENQUEUED' if verdict['density'] >= min_density else ''}")
-        time.sleep(gap_s)
-    conn.close()
+            scored += 1
+            if verdict["density"] >= min_density:
+                cur = conn.execute(
+                    """INSERT OR IGNORE INTO visual_jobs
+                           (video_id, profile, created_at, max_attempts)
+                       SELECT ?, 'vlm', ?, 3
+                       WHERE NOT EXISTS (SELECT 1 FROM visual_jobs v WHERE v.video_id = ?)""",
+                    (video_id, VLM_EPOCH, video_id),
+                )
+                enqueued += cur.rowcount
+            conn.commit()
+            print(f"{video_id}: density={verdict['density']} "
+                  f"{'ENQUEUED' if verdict['density'] >= min_density else ''}")
+            time.sleep(gap_s)
+    finally:
+        conn.close()
     return {
         "candidates": len(candidates),
         "scored": scored,
         "enqueued": enqueued,
         "failures": failures,
+        "quota_stopped": quota_stopped,
         "min_density": min_density,
         "days": days,
         "prefilter": prefilter,
