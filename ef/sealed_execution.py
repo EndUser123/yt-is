@@ -42,6 +42,58 @@ REPEATABLE_PERFECT = "REPEATABLE_PERFECT"
 INTEREST_FAMILY_TRACKS = ("Interest", "Goal", "InformationNeed",
                           "Question")
 
+# AMENDMENT_4 U14: formal sealed outputs are durable PRIVATE artifacts.
+# The canonical private-artifact convention of this repository places
+# label-derived material under P:/.data/yt-is/private/ (the sealed
+# holdout itself lives there); formal sealed evaluations belong in the
+# same protection class. Session-scoped, temp, and repository-checkout
+# paths are rejected.
+SEALED_OUTPUT_ALLOWED_ROOTS = (Path("P:/.data/yt-is/private"),)
+SEALED_OUTPUT_POLICY = (
+    "out root must resolve strictly inside the canonical durable "
+    "PRIVATE evaluation hierarchy (default "
+    "P:/.data/yt-is/private/...); rejected: P:/tmp, "
+    ".data/sessions/<session>/, repository checkout paths, arbitrary "
+    "public paths; unique run_id per run; existing run dirs collide "
+    "(fail); report hashes receipted")
+
+
+def validate_output_root(out_root, allowed_roots=None) -> Path:
+    """AMENDMENT_4 U14 output-root policy. Returns the resolved root.
+
+    Raises SealedRunError when the root is not strictly inside the
+    durable private hierarchy or carries session/temp segments
+    relative to the hierarchy.
+    """
+    allowed = [Path(r).resolve() for r in
+               (allowed_roots or SEALED_OUTPUT_ALLOWED_ROOTS)]
+    p = Path(out_root).resolve()
+    container = next((a for a in allowed
+                      if p == a or a in p.parents), None)
+    if container is None:
+        raise SealedRunError(
+            "OUTPUT_ROOT_NOT_PRIVATE",
+            f"{p} is not inside the canonical durable private "
+            f"evaluation hierarchy {allowed}; "
+            f"{SEALED_OUTPUT_POLICY}")
+    if p == container:
+        raise SealedRunError(
+            "OUTPUT_ROOT_NOT_A_SUBDIR",
+            f"{p} must be a dedicated evaluation root INSIDE the "
+            "private hierarchy (run directories are created inside "
+            f"it), not the hierarchy root itself; "
+            f"{SEALED_OUTPUT_POLICY}")
+    rel_parts = p.relative_to(container).parts
+    if "sessions" in rel_parts:
+        raise SealedRunError(
+            "OUTPUT_ROOT_SESSION_SCOPED",
+            f"{p} is session-scoped; {SEALED_OUTPUT_POLICY}")
+    if "tmp" in rel_parts:
+        raise SealedRunError(
+            "OUTPUT_ROOT_TEMP",
+            f"{p} is a temp path; {SEALED_OUTPUT_POLICY}")
+    return p
+
 
 class SealedRunError(Exception):
     """Fail-closed sealed-execution refusal."""
@@ -285,7 +337,8 @@ def incomplete_report(identity: dict, judge_unavailable, judge_calls,
 # Mechanical aggregate
 # ---------------------------------------------------------------------------
 
-def aggregate_reports(reports: list[dict], binding: dict) -> dict:
+def aggregate_reports(reports: list[dict], binding: dict,
+                      preflight_manifest_sha256: str | None = None) -> dict:
     """REPEATABLE_PERFECT as code.
 
     YES  iff Interest finite-set == PERFECT on shadow_1 AND shadow_2
@@ -293,6 +346,9 @@ def aggregate_reports(reports: list[dict], binding: dict) -> dict:
     NO   on any non-PERFECT (IMPERFECT or NOT_EVALUABLE).
     INCOMPLETE (final_gate=None) on any missing report, duplicate
          contestant, or identity/hash failure.
+
+    AMENDMENT_4: the aggregate binds the hash of the PRE-UNSEAL
+    transaction (preflight) manifest emitted before any label parse.
     """
     expected = {c["run_id"]: c["expected_sha256"]
                 for c in binding["contestants"]}
@@ -353,6 +409,11 @@ def aggregate_reports(reports: list[dict], binding: dict) -> dict:
     aggregate = {
         "aggregate_kind": "ISEM_D3_REPEATABLE_PERFECT",
         "binding_identity_sha256": identity,
+        "preflight_manifest_sha256": preflight_manifest_sha256,
+        "preflight_binding_rule": "this aggregate is valid only for "
+                                  "the sealed run whose PRE-UNSEAL "
+                                  "transaction manifest hashes to "
+                                  "preflight_manifest_sha256",
         "rule": "REPEATABLE_PERFECT = YES iff Interest finite-set "
                 "conformance is PERFECT on shadow_1 AND shadow_2 AND "
                 "shadow_3; any non-PERFECT -> NO; missing/invalid "

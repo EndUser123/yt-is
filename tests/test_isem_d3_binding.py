@@ -127,8 +127,7 @@ def test_binding_accepts_when_reconstruction_matches(
         b, "reconstruct_contestant",
         lambda root, fz: (payload, fake_stats()))
     rep = b.verify_binding(tmp_path, freeze_path)
-    assert rep["binding_status"] == \
-        "BOUND_WAITING_ON_FRESH_PRE_UNSEAL_REVIEW"
+    assert rep["binding_status"] == b.BINDING_STATUS
     assert all(c["byte_exact"] for c in rep["contestants"])
 
 

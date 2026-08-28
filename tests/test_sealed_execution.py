@@ -338,20 +338,396 @@ def test_generic_score_refuses_sealed_digest_even_with_flag(
     assert "refusing generic score" in str(ei.value)
 
 
-def test_formal_runner_refuses_non_sealed_gt(
-        tmp_path, sealed_gt_factory):
+def test_formal_runner_refuses_non_sealed_gt_after_preflight(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    """AMENDMENT_4 U13: preflight completes first; a non-sealed GT is
+    refused at the digest gate AFTER the preflight receipt exists and
+    BEFORE any semantic parse."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "sealed_runner", REPO / "scripts" / "run_sealed_isem_d3.py")
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
+    world = make_world(tmp_path, sealed_gt_factory)
+    binding_path = tmp_path / "binding.json"
+    binding_path.write_text(json.dumps(world["binding"]),
+                            encoding="utf-8")
+    mat_path = tmp_path / "materialization.json"
+    mat_path.write_text(json.dumps(world["materialization"]),
+                        encoding="utf-8")
+    private_root = tmp_path / "private-evals"
+    private_root.mkdir()
+    monkeypatch.setattr(seal, "SEALED_OUTPUT_ALLOWED_ROOTS",
+                        (tmp_path,))
+    monkeypatch.setattr(runner.isem, "judge_isolation_probe",
+                        lambda: {"verdict": "PASS",
+                                 "outside_canary_leaked": False,
+                                 "prompt_canary_processed": True})
     gt = tmp_path / "synthetic-gt.json"
     gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+
+    def sentinel(p):
+        raise AssertionError("GT parsed")
+
+    monkeypatch.setattr(runner.isem, "load_ground_truth", sentinel)
     with pytest.raises(seal.SealedRunError) as ei:
-        runner.run_sealed(gt, tmp_path / "b.json",
-                          tmp_path / "m.json", None, None,
-                          tmp_path / "out")
+        runner.run_sealed(gt, binding_path, mat_path, None, None,
+                          private_root)
     assert ei.value.code == "GT_NOT_SEALED_HOLDOUT"
+    runs = list(private_root.iterdir())
+    assert len(runs) == 1
+    assert (runs[0] / "PRE_UNSEAL_PREFLIGHT_PASS.json").exists()
+
+
+# ================= AMENDMENT_4 U11-U14 adversarial tests ============
+
+def _cli_module_u4():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "isem_cli_u4", REPO / "scripts" / "eval_interest_holdout.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_u11_support_refuses_sealed_even_with_allow_flag(
+        tmp_path, monkeypatch):
+    cli = _cli_module_u4()
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    monkeypatch.setattr(cli.isem, "SEALED_GT_SHA256",
+                        cli.isem.sha256_file(gt))
+    parsed = []
+    monkeypatch.setattr(cli.isem, "load_ground_truth",
+                        lambda p: parsed.append(1))
+    with pytest.raises(SystemExit) as ei:
+        cli.main(["support", "--gt", str(gt),
+                  "--out", str(tmp_path / "s.json"),
+                  "--allow-holdout"])
+    assert "refusing generic support" in str(ei.value)
+    assert parsed == []  # sealed GT never parsed by generic support
+
+
+def test_u11_support_sealed_refusal_before_parse(
+        tmp_path, monkeypatch):
+    cli = _cli_module_u4()
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    monkeypatch.setattr(cli.isem, "SEALED_GT_SHA256",
+                        cli.isem.sha256_file(gt))
+
+    def sentinel(p):
+        raise AssertionError("generic support parsed the sealed GT")
+
+    monkeypatch.setattr(cli.isem, "load_ground_truth", sentinel)
+    with pytest.raises(SystemExit):
+        cli.main(["support", "--gt", str(gt),
+                  "--out", str(tmp_path / "s.json"),
+                  "--allow-holdout"])  # refusal happened pre-parse
+
+
+def test_u12_score_sealed_refusal_before_parse(
+        tmp_path, monkeypatch):
+    cli = _cli_module_u4()
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    monkeypatch.setattr(cli.isem, "SEALED_GT_SHA256",
+                        cli.isem.sha256_file(gt))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"frozen_artifacts": []}),
+                        encoding="utf-8")
+
+    def sentinel(p):
+        raise AssertionError("generic score parsed the sealed GT")
+
+    monkeypatch.setattr(cli.isem, "load_ground_truth", sentinel)
+    res = tmp_path / "res.json"
+    res.write_text("{}", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        cli.main(["score", "--gt", str(gt), "--result", str(res),
+                  "--out", str(tmp_path / "o.json"),
+                  "--allow-holdout", "--manifest", str(manifest)])
+
+
+def _u4_runner():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "sealed_runner_u4", REPO / "scripts" / "run_sealed_isem_d3.py")
+    return importlib.util.module_from_spec(spec), spec
+
+
+def _sentinel_parser(monkeypatch, module):
+    calls = []
+
+    def sentinel(p):
+        calls.append(str(p))
+        raise AssertionError(
+            f"sealed GT parsed after failed preflight: {p}")
+
+    monkeypatch.setattr(module.isem, "load_ground_truth", sentinel)
+    return calls
+
+
+def _u4_world(tmp_path, sealed_gt_factory, monkeypatch):
+    """Offline-runnable formal environment: world + monkeypatches."""
+    runner, spec = _u4_runner()
+    spec.loader.exec_module(runner)
+    world = make_world(tmp_path, sealed_gt_factory)
+    binding_path = tmp_path / "binding.json"
+    binding_path.write_text(json.dumps(world["binding"]),
+                            encoding="utf-8")
+    mat_path = tmp_path / "materialization.json"
+    mat_path.write_text(json.dumps(world["materialization"]),
+                        encoding="utf-8")
+    private_root = tmp_path / "private-evals"
+    private_root.mkdir()
+    monkeypatch.setattr(seal, "SEALED_OUTPUT_ALLOWED_ROOTS",
+                        (tmp_path,))
+    monkeypatch.setattr(runner.isem, "judge_isolation_probe",
+                        lambda: {"verdict": "PASS",
+                                 "outside_canary_leaked": False,
+                                 "prompt_canary_processed": True})
+    import ef.evidence_clusters as clusters_mod
+    monkeypatch.setattr(clusters_mod, "cached_clusters",
+                        lambda: ([{"cluster_id": 900 + i,
+                                   "label": f"c{i}", "terms": [],
+                                   "entities": [],
+                                   "representative": []}
+                                  for i in range(5)], {}))
+    return runner, world, binding_path, mat_path, private_root
+
+
+def test_u13_corrupted_evaluator_blocks_before_gt_parse(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    calls = _sentinel_parser(monkeypatch, runner)
+    bad_receipt = tmp_path / "receipt.json"
+    bad_receipt.write_text(json.dumps({"frozen_artifacts": [
+        {"path": str(tmp_path / "nope.py"), "sha256": "0" * 64}]}),
+        encoding="utf-8")
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    with pytest.raises(seal.SealedRunError) as ei:
+        runner.run_sealed(gt, binding_path, mat_path, None, None,
+                          private_root, receipt_path=bad_receipt)
+    assert ei.value.code == "EVALUATOR_CANDIDATE_DRIFT"
+    assert calls == []
+
+
+def test_u13_corrupted_binding_blocks_before_gt_parse(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    calls = _sentinel_parser(monkeypatch, runner)
+    bad = json.loads(binding_path.read_text(encoding="utf-8"))
+    bad["binding_identity_sha256"] = "0" * 64
+    binding_path.write_text(json.dumps(bad), encoding="utf-8")
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    with pytest.raises(seal.SealedRunError) as ei:
+        runner.run_sealed(gt, binding_path, mat_path, None, None,
+                          private_root)
+    assert ei.value.code == "BINDING_MANIFEST_IDENTITY"
+    assert calls == []
+
+
+def test_u13_corrupted_contestant_blocks_before_gt_parse(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    calls = _sentinel_parser(monkeypatch, runner)
+    mat = json.loads(mat_path.read_text(encoding="utf-8"))
+    mat["contestants"][2]["payload_sha256"] = "c" * 64
+    mat_path.write_text(json.dumps(mat), encoding="utf-8")
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    with pytest.raises(seal.SealedRunError) as ei:
+        runner.run_sealed(gt, binding_path, mat_path, None, None,
+                          private_root)
+    assert ei.value.code == "MATERIALIZATION_IDENTITY"
+    assert calls == []
+
+
+def test_u13_judge_sandbox_failure_blocks_before_gt_parse(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    calls = _sentinel_parser(monkeypatch, runner)
+    monkeypatch.setattr(runner.isem, "judge_isolation_probe",
+                        lambda: {"verdict": "BLOCKED",
+                                 "outside_canary_leaked": True,
+                                 "prompt_canary_processed": True})
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    with pytest.raises(seal.SealedRunError) as ei:
+        runner.run_sealed(gt, binding_path, mat_path, None, None,
+                          private_root)
+    assert ei.value.code == "JUDGE_SANDBOX_BLOCKED"
+    assert calls == []
+
+
+def test_u13_cache_identity_mismatch_blocks_before_gt_parse(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    calls = _sentinel_parser(monkeypatch, runner)
+    bad_cache = tmp_path / "cache.json"
+    bad_cache.write_text(json.dumps({
+        "cache_format": 1, "model": "other-model",
+        "reasoning_effort": "low", "decisions": {}}),
+        encoding="utf-8")
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    with pytest.raises(isem.JudgeCacheIdentityError):
+        runner.run_sealed(gt, binding_path, mat_path, None,
+                          str(bad_cache), private_root)
+    assert calls == []
+
+
+def test_u13_invalid_output_root_blocks_before_gt_parse(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    calls = _sentinel_parser(monkeypatch, runner)
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    with pytest.raises(seal.SealedRunError) as ei:
+        runner.run_sealed(gt, binding_path, mat_path, None, None,
+                          str(tmp_path / "tmp" / "isem-sealed-run"))
+    assert ei.value.code == "OUTPUT_ROOT_TEMP"
+    assert calls == []
+
+
+def test_u13_successful_preflight_emits_receipt(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    manifest = runner.preflight(binding_path, mat_path, None,
+                                private_root)
+    assert manifest["document_kind"] == \
+        "ISEM_PRE_UNSEAL_PREFLIGHT_PASS"
+    assert manifest["holdout_content_parsed"] is False
+    assert manifest["expected_sealed_holdout_sha256"] == \
+        isem.SEALED_GT_SHA256
+    assert manifest["binding"]["binding_identity_sha256"] == \
+        world["binding"]["binding_identity_sha256"]
+    assert len(manifest["contestant_manifest"]["entries"]) == 3
+    assert manifest["judge_configuration"]["probe_receipt"][
+        "verdict"] == "PASS"
+    assert manifest["support_preconditions"]["labels_read"] is False
+    assert manifest["preflight_manifest_sha256"]
+    run_dir = Path(manifest["output_root"]["run_dir"])
+    on_disk = json.loads(
+        (run_dir / "PRE_UNSEAL_PREFLIGHT_PASS.json").read_text(
+            encoding="utf-8"))
+    assert on_disk["preflight_manifest_sha256"] == \
+        manifest["preflight_manifest_sha256"]
+
+
+def test_u13_parser_only_after_preflight_receipt(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    """End-to-end offline formal run: the sealed GT parser may execute
+    only AFTER PRE_UNSEAL_PREFLIGHT_PASS.json exists; the aggregate
+    binds the preflight manifest hash."""
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    gt = tmp_path / "sealed-synthetic-gt.json"
+    gt.write_text(json.dumps({"labels": [
+        gt_label(f"i{k}", f"sealed topic number {k}")
+        for k in range(5)]}), encoding="utf-8")
+    monkeypatch.setattr(runner.isem, "SEALED_GT_SHA256",
+                        isem.sha256_file(gt))
+    order = {"receipt_at_parse": None}
+
+    real_parse = isem.load_ground_truth
+
+    def recording_parse(p):
+        run_dirs = list(private_root.iterdir())
+        order["receipt_at_parse"] = all(
+            (d / "PRE_UNSEAL_PREFLIGHT_PASS.json").exists()
+            for d in run_dirs)
+        return real_parse(p)
+
+    monkeypatch.setattr(runner.isem, "load_ground_truth",
+                        recording_parse)
+    result = runner.run_sealed(gt, binding_path, mat_path, None, None,
+                               private_root)
+    assert order["receipt_at_parse"] is True
+    assert result["status"] == "AGGREGATED"
+    assert result["repeatable_perfect"] == "YES"
+    run_dir = Path(result["run_dir"])
+    files = {p.name for p in run_dir.iterdir()}
+    assert "PRE_UNSEAL_PREFLIGHT_PASS.json" in files
+    assert "sealed-aggregate.json" in files
+    assert "reports-manifest.json" in files
+    agg = json.loads((run_dir / "sealed-aggregate.json").read_text(
+        encoding="utf-8"))
+    assert agg["preflight_manifest_sha256"] == \
+        result["preflight_manifest_sha256"]
+
+
+def test_u14_output_root_policy():
+    # P:/tmp rejected
+    with pytest.raises(seal.SealedRunError) as ei:
+        seal.validate_output_root(
+            "P:/tmp/isem-sealed-run",
+            allowed_roots=("P:/.data/yt-is/private",))
+    assert ei.value.code == "OUTPUT_ROOT_NOT_PRIVATE"
+    # session-scoped rejected
+    with pytest.raises(seal.SealedRunError) as ei:
+        seal.validate_output_root(
+            "P:/.data/yt-is/private/sessions/sess_x/run",
+            allowed_roots=("P:/.data/yt-is/private",))
+    assert ei.value.code == "OUTPUT_ROOT_SESSION_SCOPED"
+    # temp segment inside the hierarchy rejected
+    with pytest.raises(seal.SealedRunError) as ei:
+        seal.validate_output_root(
+            "P:/.data/yt-is/private/tmp/run",
+            allowed_roots=("P:/.data/yt-is/private",))
+    assert ei.value.code == "OUTPUT_ROOT_TEMP"
+    # the hierarchy root itself is not a valid run root
+    with pytest.raises(seal.SealedRunError) as ei:
+        seal.validate_output_root(
+            "P:/.data/yt-is/private",
+            allowed_roots=("P:/.data/yt-is/private",))
+    assert ei.value.code == "OUTPUT_ROOT_NOT_A_SUBDIR"
+    # durable private root accepted
+    ok = seal.validate_output_root(
+        "P:/.data/yt-is/private/interest-evaluations",
+        allowed_roots=("P:/.data/yt-is/private",))
+    assert ok.name == "interest-evaluations"
+
+
+def test_u14_runner_rejects_tmp_root_before_gt_parse(
+        tmp_path, sealed_gt_factory, monkeypatch):
+    runner, world, binding_path, mat_path, private_root = _u4_world(
+        tmp_path, sealed_gt_factory, monkeypatch)
+    calls = _sentinel_parser(monkeypatch, runner)
+    gt = tmp_path / "gt.json"
+    gt.write_text(json.dumps({"labels": []}), encoding="utf-8")
+    with pytest.raises(seal.SealedRunError) as ei:
+        runner.run_sealed(gt, binding_path, mat_path, None, None,
+                          str(tmp_path / "tmp" / "x"))
+    assert ei.value.code == "OUTPUT_ROOT_TEMP"
+    assert calls == []
+
+
+def test_u15_aggregate_binds_preflight_manifest_hash(
+        tmp_path, sealed_gt_factory):
+    world = make_world(tmp_path, sealed_gt_factory, perfect=True)
+    reports = score_all(world)
+    sha_a = "a" * 64
+    agg = seal.aggregate_reports(reports, world["binding"],
+                                 preflight_manifest_sha256=sha_a)
+    assert agg["preflight_manifest_sha256"] == sha_a
+    sha_b = "b" * 64
+    agg_b = seal.aggregate_reports(reports, world["binding"],
+                                   preflight_manifest_sha256=sha_b)
+    assert agg_b["preflight_manifest_sha256"] == sha_b
+    # changing the bound preflight hash changes the aggregate hash
+    assert agg["aggregate_sha256"] != agg_b["aggregate_sha256"]
+
 
 
 def test_diagnostic_surfaces_have_no_gt_input():

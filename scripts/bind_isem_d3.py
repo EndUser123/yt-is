@@ -25,6 +25,17 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from ef import isem_d3_binding as b  # noqa: E402
+from ef import sealed_execution as seal_exec  # noqa: E402
+
+
+def seal_policy_snapshot() -> dict:
+    return {
+        "policy": seal_exec.SEALED_OUTPUT_POLICY,
+        "allowed_roots": [str(p) for p in
+                          seal_exec.SEALED_OUTPUT_ALLOWED_ROOTS],
+        "canonical_run_root":
+            "P:/.data/yt-is/private/interest-evaluations",
+    }
 
 FREEZE_DOC = REPO / ("docs/handoffs/interest-intelligence/"
                      "inference-candidate-d3-freeze.json")
@@ -36,8 +47,11 @@ EVALUATOR_LINEAGE = {
     "amendment_2_commit": "0a5d7b73 (REJECTED by fresh pre-unseal "
                           "review; rejection ACCEPTED; history kept "
                           "immutable)",
-    "amendment": "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_"
-                 "HARDENING (this candidate branch head)",
+    "amendment_3_commit": "25df9263 (direction accepted; four "
+                          "one-way-door defects repaired in this "
+                          "amendment; history immutable)",
+    "amendment": "AMENDMENT_4_PRE_UNSEAL_ONE_WAY_DOOR_HARDENING "
+                 "(this candidate branch head)",
 }
 MATERIALIZATION_MIRROR = REPO / (
     "docs/handoffs/interest-intelligence/"
@@ -71,6 +85,9 @@ def build_binding_manifest(freeze_doc: Path) -> dict:
         "docs/handoffs/interest-intelligence/"
         "interest-semantic-evaluator-v1/"
         "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING.md",
+        "docs/handoffs/interest-intelligence/"
+        "interest-semantic-evaluator-v1/"
+        "AMENDMENT_4_PRE_UNSEAL_ONE_WAY_DOOR_HARDENING.md",
     ]
     # live judge-sandbox isolation probe at emit time (synthetic
     # canaries only, no labels); a failing probe refuses the emit
@@ -269,6 +286,37 @@ def build_binding_manifest(freeze_doc: Path) -> dict:
                                   "missing/invalid identity -> "
                                   "INCOMPLETE with no final gate",
             },
+        },
+        "amendment_4": {
+            "name": "AMENDMENT_4_PRE_UNSEAL_ONE_WAY_DOOR_HARDENING",
+            "one_way_door": {
+                "U11": "generic support refuses the sealed holdout "
+                       "digest COMPLETELY (even with --allow-holdout); "
+                       "path -> digest classification -> refuse -> "
+                       "only otherwise parse",
+                "U12": "generic score refuses the sealed digest "
+                       "BEFORE any GT parse (sentinel-parser proven)",
+                "U13": "formal preflight (evaluator, binding, "
+                       "materialization, D3 identity, judge sandbox "
+                       "probe, judge config, cache identity, output "
+                       "root, label-free support preconditions) emits "
+                       "PRE_UNSEAL_PREFLIGHT_PASS BEFORE the holdout "
+                       "digest check and BEFORE any content parse; "
+                       "any preflight failure leaves the holdout "
+                       "unparsed",
+                "U14": "formal outputs live only in the durable "
+                       "PRIVATE evaluation hierarchy "
+                       "(P:/.data/yt-is/private/interest-evaluations/); "
+                       "P:/tmp, session-scoped, and checkout paths "
+                       "rejected; unique run_id; collision fails; "
+                       "report hashes receipted",
+            },
+            "preflight_transaction": {
+                "manifest_kind": "ISEM_PRE_UNSEAL_PREFLIGHT_PASS",
+                "bound_into_aggregate": True,
+                "holdout_content_parsed_at_preflight": False,
+            },
+            "output_root_policy": seal_policy_snapshot(),
         },
         "review": {
             "review_performed": "NO — FRESH REVIEW REQUIRED",

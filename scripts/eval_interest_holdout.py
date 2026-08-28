@@ -61,11 +61,31 @@ def _requires_holdout_authorization(gt_path: Path) -> bool:
     return False
 
 
+def is_sealed_gt_digest(gt_path: Path) -> bool:
+    """AMENDMENT_4 one-way-door classification: is this THE sealed
+    v1.1 holdout?
+
+    Digest-only identity check (byte hash, never a JSON parse) so the
+    caller can refuse BEFORE any label content is parsed.
+    """
+    if not gt_path.exists():
+        return False
+    return isem.sha256_file(gt_path) == isem.SEALED_GT_SHA256
+
+
 def cmd_support(args) -> int:
-    if _requires_holdout_authorization(Path(args.gt)) \
+    gt_path = Path(args.gt)
+    # order (AMENDMENT_4 U11): path classification -> digest
+    # classification -> refuse -> only otherwise parse GT
+    if _requires_holdout_authorization(gt_path) \
             and not args.allow_holdout:
         raise SystemExit(
             "refusing to open holdout without --allow-holdout")
+    if is_sealed_gt_digest(gt_path):
+        raise SystemExit(
+            "refusing generic support against the sealed v1.1 "
+            "holdout: only the formal bound-three sealed execution "
+            "transaction may parse it")
     from ef.evidence_clusters import cached_clusters
     clusters, _coverage = cached_clusters()
     cluster_texts = {}
@@ -133,14 +153,14 @@ def cmd_score(args) -> int:
     manifest_path = Path(args.manifest or DEFAULT_MANIFEST)
     verify_manifest(manifest_path)
 
-    gt = isem.load_ground_truth(args.gt)
-    # AMENDMENT_3: the generic arbitrary-result score path must never
-    # touch the sealed v1.1 holdout, even with --allow-holdout. Only
-    # the formal bound-three execution surface may score it.
-    if gt["sealed_sha256"] == isem.SEALED_GT_SHA256:
+    # AMENDMENT_4 U12 one-way-door order: digest classification FIRST
+    # (byte hash, never a JSON parse); the sealed holdout is refused
+    # before ANY label content is parsed, even with --allow-holdout.
+    if is_sealed_gt_digest(Path(args.gt)):
         raise SystemExit(
             "refusing generic score against the sealed v1.1 holdout: "
             "use the formal bound runner scripts/run_sealed_isem_d3.py")
+    gt = isem.load_ground_truth(args.gt)
     isem.verify_sealed(gt)
 
     eligible, support_by_label = _load_support(args.support)

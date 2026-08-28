@@ -42,7 +42,7 @@ RECONSTRUCTION_PROCEDURE = "DETERMINISTIC_ASSEMBLY_REPLAY_V1"
 
 BOUND_CONTESTANT_IDS = ("shadow_1", "shadow_2", "shadow_3")
 
-BINDING_STATUS = "BOUND_WAITING_ON_FRESH_PRE_UNSEAL_REVIEW"
+BINDING_STATUS = "AMENDMENT_4_READY_FOR_FRESH_PRE_UNSEAL_REVIEW"
 
 # The sealed holdout is never an input of this module: the expected
 # public hash is echoed from the freeze documents only.

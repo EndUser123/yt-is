@@ -2,8 +2,8 @@
   "receipt": "isem_v1_freeze",
   "agent": "zcode",
   "host": "zcode",
-  "created_utc": "2026-08-27T20:03:55",
-  "status": "BOUND_WAITING_ON_FRESH_PRE_UNSEAL_REVIEW",
+  "created_utc": "2026-08-27T21:59:11",
+  "status": "AMENDMENT_4_READY_FOR_FRESH_PRE_UNSEAL_REVIEW",
   "candidate_inference_implementation": "D3_DECOMPOSED frozen at f7bd24fdb917aa5e35112d0b2f2eae1c2129bf59 (implementation_manifest_sha256 3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3)",
   "sealed_holdout_public_hash_echo": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f",
   "preregistration_doc": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
@@ -31,7 +31,7 @@
     },
     {
       "path": "scripts/eval_interest_holdout.py",
-      "sha256": "72ddfd18188f052b27bbabfc6173e410634fdf3b3c50b41c08aa29917e845b60"
+      "sha256": "89c86102dc731ceb6b2f2973b7300b2031b8b2fd69199f0f5eec62514ce79b48"
     },
     {
       "path": "tests/test_eval_interest_semantic.py",
@@ -39,15 +39,15 @@
     },
     {
       "path": "ef/isem_d3_binding.py",
-      "sha256": "e34eae4414423c5654497528ca7e8bc41e9f54a1a9393e78642446864e25cf6c"
+      "sha256": "5f61afc9b08cabe55419e11e9196d3aad22b598d1950850a5ec43d483eaa7ed0"
     },
     {
       "path": "ef/sealed_execution.py",
-      "sha256": "8eaeeead9278f8f3e538d945f025fa2b3cf9fc1ce2b3db4376b854882912da5a"
+      "sha256": "6a9024a93588bc7ccd009e411383e84e4c154f1e10b3b720108601f49b205806"
     },
     {
       "path": "scripts/run_sealed_isem_d3.py",
-      "sha256": "5b12dcd009a61a761d8f52b731094c3d37aa6c2fbfe1ef8e095981faa9cc5b88"
+      "sha256": "86fd4bc2c3602ea6324526b73b43d146c4d8b8f6c0599cc187fd534e9aa4d0bd"
     },
     {
       "path": "scripts/materialize_d3_contestants.py",
@@ -67,5 +67,5 @@
     "single scoring run; no inference tuning afterward",
     "exact per-item outcomes reported regardless of verdicts"
   ],
-  "amendment_note": "BINDING_AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING: match ladder EXACT_TEXT->EXACT_ALIAS->SEMANTIC_JUDGE (substring/token-subset auto-match removed, context never auto-matches); tool-free sandboxed judge transport (tools.shell disabled, inline stdin prompt, per-call empty sandbox, no broad root) with mechanical canary probe PASS; fail-closed JudgeUnavailable -> EVALUATION_INCOMPLETE with write-once identity-pinned judge cache and unresolved-only resume; generic score refuses the sealed holdout digest; formal bound-three runner + materialized contestants; see AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING.md. Amendments 1-2 history immutable."
+  "amendment_note": "AMENDMENT_4_PRE_UNSEAL_ONE_WAY_DOOR_HARDENING: U11 support sealed-digest complete refusal pre-parse; U12 score sealed refusal pre-parse; U13 formal preflight transaction before holdout digest/parse (aggregate binds preflight manifest hash); U14 durable PRIVATE output hierarchy only. Amendments 1-3 immutable."
 }
