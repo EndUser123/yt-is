@@ -92,3 +92,6 @@ scripts/dht-capture/tracking-script.js
 # DHT fresh tracking script (per-session token — never track)
 scripts/dht-capture/tracking-script-fresh.js
 .logs/sharded_lane_series/
+
+# canonical lane worktree root (2026-08-27 migration)
+.worktrees/
