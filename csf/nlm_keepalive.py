@@ -162,6 +162,7 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
             check=True,
             capture_output=True,
             timeout=10,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
         )
         subprocess.run(
             ["git", "remote", "add", "backup", str(BACKUP_REPO)],
@@ -169,6 +170,7 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
             check=True,
             capture_output=True,
             timeout=10,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
         )
         # Start from the existing backup history.  A fresh temporary commit
         # cannot be pushed to a non-empty bare repository without first
@@ -185,6 +187,7 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
             ],
             capture_output=True,
             timeout=10,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
         )
         if remote_main.returncode not in (0, 1):
             _log(f"could not inspect backup main ref rc={remote_main.returncode}")
@@ -196,6 +199,7 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
             )
             if fetch.returncode != 0:
                 _log(f"could not fetch existing backup history: {fetch.stderr}")
@@ -206,6 +210,7 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
                 check=True,
                 capture_output=True,
                 timeout=10,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
             )
         for _account_profile, storage_path, backup_filename in validated:
             shutil.copy2(storage_path, tmpdir / backup_filename)
@@ -215,12 +220,14 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
             check=True,
             capture_output=True,
             timeout=10,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
         )
         staged_diff = subprocess.run(
             ["git", "diff", "--cached", "--quiet"],
             cwd=tmpdir,
             capture_output=True,
             timeout=10,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
         )
         if staged_diff.returncode == 0:
             _log("backup already current")
@@ -243,6 +250,7 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
             capture_output=True,
             timeout=10,
             env=commit_env,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
         )
         # Push to the fixed local bare repo only. No network remote is
         # configured or constructed by this path.
@@ -252,6 +260,7 @@ def _push_backup(account_profiles: Iterable[str] = ACCOUNT_PROFILES) -> bool:
             capture_output=True,
             text=True,
             timeout=30,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: task runs under consoleless pythonw
         )
         if result.returncode != 0:
             _log(f"push to backup failed rc={result.returncode}: {result.stderr}")

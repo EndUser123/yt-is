@@ -108,6 +108,7 @@ def probe_video(video_path: str | Path) -> dict:
                     str(video_path),
                 ],
                 capture_output=True, text=True, timeout=60,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW: worker runs under consoleless pythonw
             )
             if proc.returncode == 0:
                 for line in proc.stdout.splitlines():
@@ -133,6 +134,7 @@ def probe_video(video_path: str | Path) -> dict:
             proc = subprocess.run(
                 [_ffmpeg_binary(), "-hide_banner", "-i", str(video_path)],
                 capture_output=True, text=True, timeout=60,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW: worker runs under consoleless pythonw
             )
         except (subprocess.TimeoutExpired, OSError):
             proc = None
@@ -191,7 +193,10 @@ def extract_pass1(
         str(frames_dir / "frame_%04d.jpg"),
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=1200,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: worker runs under consoleless pythonw
+        )
     except subprocess.TimeoutExpired as exc:
         raise FrameExtractionError(f"pass-1 ffmpeg timeout for {video_path}") from exc
     except OSError as exc:
@@ -257,7 +262,10 @@ def reextract_native(
             str(dest),
         ]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW: worker runs under consoleless pythonw
+            )
         except (subprocess.TimeoutExpired, OSError):
             continue
         if proc.returncode == 0 and dest.exists() and dest.stat().st_size > 0:

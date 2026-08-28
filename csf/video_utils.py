@@ -20,6 +20,7 @@ def _parse_duration_ffmpeg(video_path: Path) -> float:
             ["ffmpeg", "-i", str(video_path)],
             capture_output=True,
             text=True,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: pipeline runs under consoleless pythonw
         )
     except FileNotFoundError:
         raise RuntimeError("ffmpeg not found on PATH")
@@ -107,6 +108,7 @@ def extract_frames(
                 cmd,
                 capture_output=True,
                 text=True,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW: pipeline runs under consoleless pythonw
             )
         except FileNotFoundError as exc:
             raise RuntimeError("ffmpeg not found on PATH") from exc

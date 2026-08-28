@@ -139,6 +139,7 @@ def run_nlm(args: list[str], *, timeout_s: float, env: dict[str, str] | None = N
             timeout=timeout_s,
             env=env,
             check=False,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: keepalive task runs under consoleless pythonw
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(build_nlm_command(*resolved_args), 1, "", "NLM command timed out")
@@ -163,6 +164,7 @@ def chrome_pids_for_root(browser_root: str | Path) -> set[int]:
             text=True,
             timeout=10,
             check=False,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: keepalive task runs under consoleless pythonw
         )
     except subprocess.TimeoutExpired:
         return set()
@@ -368,7 +370,7 @@ def stop_chrome_pids(pids: set[int]) -> set[int]:
         + "if ($p -and -not $p.HasExited) { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } "
         + "}"
     )
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=20, check=False)
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=20, check=False, creationflags=0x08000000)  # CREATE_NO_WINDOW: keepalive task runs under consoleless pythonw
     return owned_pids
 
 
