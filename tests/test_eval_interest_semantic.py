@@ -179,19 +179,47 @@ def test_matching_paths_exact_alias_judge(sealed_gt_factory):
 
 
 def test_judge_ladder_only_after_alias_miss():
-    """exact and alias tiers must resolve without judge calls."""
+    """AMENDMENT_3 ladder: exact text, then EXACT alias equality only;
+    anything else goes to the judge — context/substring/token-subset
+    can never auto-match."""
     target = {"label_id": "t1", "semantic_class": "Interest",
               "canonical_name": "Home espresso dialing-in",
               "aliases": ["dial-in workflow"]}
+
+    class LoggingNoJudge:
+        live = False
+
+        def __init__(self):
+            self.log = []
+
+        def __call__(self, prompt, surface, tgt):
+            self.log.append((surface["sid"], tgt["label_id"]))
+            return False
+
+    judge = LoggingNoJudge()
     surface = {"sid": "I0", "text": "Home espresso dialing-in",
-               "context": ""}
-    path, _ = isem.match_one(target, surface, False, AlwaysNoJudge())
+               "context": "summary mentions home espresso dialing-in"}
+    path, _ = isem.match_one(target, surface, False, judge)
     assert path == isem.MATCH_EXACT
-    surface2 = {"sid": "I1", "text": "espresso dial-in workflow v2",
+    assert len(judge.log) == 0
+    # exact alias equality auto-matches without the judge
+    surface_a = {"sid": "I1", "text": "Dial-In Workflow",
+                 "context": ""}
+    path_a, _ = isem.match_one(target, surface_a, False, judge)
+    assert path_a == isem.MATCH_ALIAS
+    assert len(judge.log) == 0
+    # mere mention/token overlap now goes to the judge tier
+    surface2 = {"sid": "I2", "text": "espresso dial-in workflow v2",
                 "context": ""}
-    path2, _ = isem.match_one(target, surface2, False,
-                              AlwaysNoJudge())
-    assert path2 == isem.MATCH_ALIAS
+    path2, _ = isem.match_one(target, surface2, False, judge)
+    assert len(judge.log) == 1  # judge WAS engaged
+    assert path2 == isem.MATCH_NONE  # blinded judge says no
+    # context mention alone does not auto-match either
+    surface3 = {"sid": "I3", "text": "grinder upgrades",
+                "context": "context about dial-in workflow questions"}
+    path3, _ = isem.match_one(target, surface3, False, judge)
+    assert path3 == isem.MATCH_NONE
+    assert len(judge.log) == 2
 
 
 def test_type_separation_negatives_never_enter_interest_track(
@@ -298,11 +326,19 @@ def test_full_pass_requires_fp_zero_and_stability(sealed_gt_factory):
     assert neg_tm["interest_negative_fp_hits"] == 0
 
     rep_fp = isem.evaluate(
-        gt, payload_with("sparkling soda apparatus review"),
+        gt, payload_with("sparkling soda apparatus"),
         AlwaysNoJudge(), stability_results=True)
     assert rep_fp["tracks"]["Interest"][
         "interest_negative_fp_hits"] == 1
     assert rep_fp["tracks"]["Interest"]["verdict"] == "FAIL"
+
+    # AMENDMENT_3: a surface that merely MENTIONS the negative name no
+    # longer auto-matches it (judge tier decides; blinded judge says no)
+    rep_mention = isem.evaluate(
+        gt, payload_with("sparkling soda apparatus review"),
+        AlwaysNoJudge(), stability_results=True)
+    assert rep_mention["tracks"]["Interest"][
+        "interest_negative_fp_hits"] == 0
 
     # an unmatched scorable positive fails even with no FPs
     rep_miss = isem.evaluate(gt, payload_with(), AlwaysNoJudge(),
@@ -728,3 +764,212 @@ def test_f1_support_synthetic_gt_still_runs_without_flag(
     rc = cli.main(["support", "--gt", str(gt),
                    "--out", str(tmp_path / "s.json")])
     assert rc == 0
+
+
+# ------------- AMENDMENT_3 matcher ladder (construct validity) -------
+
+def am3_target():
+    return {"label_id": "t9", "semantic_class": "Interest",
+            "canonical_name": "Home espresso dialing workflow",
+            "aliases": ["dial-in routine"]}
+
+
+def test_am3_context_mention_never_auto_matches(sealed_gt_factory):
+    # evaluate-level: candidate whose evidence summary MENTIONS the
+    # interest must not count as the interest without the judge
+    rows = [gt_label("i1", "Interest", "espresso timing")]
+    gt = isem.load_ground_truth(
+        sealed_gt_factory({"labels": rows}))
+    payload = {"inferred_interests": [
+        interest_obj("milk steaming", 51)], "questions": [],
+        "regret_candidates": []}
+    payload["inferred_interests"][0]["evidence_summary"] = \
+        "notes about espresso timing throughout"
+    rep = isem.evaluate(gt, payload, AlwaysNoJudge())
+    item = rep["tracks"]["Interest"]["per_item"][0]
+    assert item["matched"] is False  # context mention != the interest
+
+
+def test_am3_token_subset_never_auto_matches():
+    # every significant token of the target appears in the candidate
+    # text, but the text is not the name/alias -> judge tier, no automatch
+    surface = {"sid": "I0",
+               "text": "workflow home dialing espresso kit",
+               "context": ""}
+    path, _ = isem.match_one(am3_target(), surface, False,
+                             AlwaysNoJudge())
+    assert path == isem.MATCH_NONE
+
+
+def test_am3_exact_candidate_name_matches():
+    surface = {"sid": "I0", "text": "home espresso DIALING workflow",
+               "context": "unrelated context mentioning dial-in routine"}
+    path, _ = isem.match_one(am3_target(), surface, False,
+                             AlwaysNoJudge())
+    assert path == isem.MATCH_EXACT
+
+
+def test_am3_exact_explicit_alias_matches():
+    surface = {"sid": "I0", "text": "  Dial-In   Routine ",
+               "context": ""}
+    path, _ = isem.match_one(am3_target(), surface, False,
+                             AlwaysNoJudge())
+    assert path == isem.MATCH_ALIAS
+    # a DIFFERENT target's alias does not match this target
+    other = dict(am3_target(), aliases=["frothing"])
+    path2, _ = isem.match_one(other, surface, False, AlwaysNoJudge())
+    assert path2 == isem.MATCH_NONE
+
+
+def test_am3_ambiguous_relation_goes_to_judge_with_context():
+    seen = {}
+
+    class SpyJudge:
+        live = False
+
+        def __call__(self, prompt, surface, target):
+            seen["prompt"] = prompt
+            seen["surface"] = surface
+            return True
+
+    surface = {"sid": "I0", "text": "9bar pressure experiments",
+               "context": "long notes about preinfusion and the "
+                          "dial-in routine"}
+    path, _ = isem.match_one(am3_target(), surface, False, SpyJudge())
+    assert path == isem.MATCH_JUDGE
+    # context IS rendered into the judge prompt (judge may use it)
+    assert "dial-in routine" in seen["prompt"]
+    assert seen["surface"]["context"]
+
+
+# ------------- AMENDMENT_3 judge transport hardening -----------------
+
+def test_am3_transport_argv_tool_free_and_no_broad_root(
+        monkeypatch, tmp_path):
+    import shutil as _shutil
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+
+        class R:
+            returncode = 0
+            stdout = json.dumps({"match": True})
+
+        return R()
+
+    monkeypatch.setattr(isem.subprocess, "run", fake_run)
+    monkeypatch.setattr(_shutil, "which", lambda name: "codex-fake")
+    out = isem._codex_judge_stdout("PROBE PROMPT TEXT")
+    assert out is not None
+    cmd = captured["cmd"]
+    assert "tools.shell=false" in cmd
+    assert "--ignore-user-config" in cmd and "--ignore-rules" in cmd
+    assert "--skip-git-repo-check" in cmd  # sandbox is outside any repo
+    assert "--ephemeral" in cmd
+    assert cmd[-1] == "-"  # prompt delivered via stdin
+    i = cmd.index("-C")
+    sandbox = cmd[i + 1]
+    assert sandbox  # a fresh sandbox dir
+    assert not sandbox.lower().startswith("p:/")
+    assert captured["kwargs"]["input"] == "PROBE PROMPT TEXT"
+    assert captured["kwargs"]["cwd"] == sandbox
+    # the old file-read instruction pattern is gone
+    assert not any(str(a).startswith("Read ") for a in cmd)
+
+
+def test_am3_canary_probe_logic():
+    ok = isem._probe_verdict(
+        "… {\"match\": false} PROMPT_CANARY_ABC …",
+        "OUTSIDE_CANARY_X", "PROMPT_CANARY_ABC")
+    assert ok["verdict"] == "PASS"
+    assert ok["judge_can_read_outside_sandbox"] is False
+    leaked = isem._probe_verdict(
+        "the file said OUTSIDE_CANARY_X PROMPT_CANARY_ABC",
+        "OUTSIDE_CANARY_X", "PROMPT_CANARY_ABC")
+    assert leaked["verdict"] == "BLOCKED"
+    assert leaked["judge_can_read_outside_sandbox"] is True
+    blind = isem._probe_verdict("no nonce at all",
+                                "OUTSIDE_CANARY_X", "PROMPT_CANARY_ABC")
+    assert blind["verdict"] == "BLOCKED"  # prompt channel must work
+
+
+def test_am3_judge_failure_raises_unavailable_not_no_match(
+        sealed_gt_factory):
+    class DeadJudge:
+        live = False
+
+        def __call__(self, *a):
+            return None
+
+    rows = [gt_label("i1", "Interest", "alpha pursuit")]
+    gt = isem.load_ground_truth(
+        sealed_gt_factory({"labels": rows}))
+    payload = {"inferred_interests": [
+        interest_obj("a different pursuit", 61)], "questions": [],
+        "regret_candidates": []}
+    with pytest.raises(isem.JudgeUnavailable) as ei:
+        isem.evaluate(gt, payload, DeadJudge())
+    assert len(ei.value.prompt_hash) == 64  # sha256 of the pair prompt
+    # exact matches never touch the judge, so they still evaluate
+    payload2 = {"inferred_interests": [
+        interest_obj("alpha pursuit", 62)], "questions": [],
+        "regret_candidates": []}
+    rep = isem.evaluate(gt, payload2, DeadJudge())
+    assert rep["tracks"]["Interest"]["per_item"][0][
+        "matching_path"] == isem.MATCH_EXACT
+
+
+def test_am3_resume_only_unresolved_and_cache_immutable(
+        tmp_path, monkeypatch):
+    cache_file = tmp_path / "judge-cache.json"
+    calls = {"n": 0, "prompts": []}
+    prompt_y = "judge prompt Y"
+    prompt_x = "judge prompt X"
+    state = {"x_attempts": 0}
+
+    def fake_stdout(prompt_text):
+        calls["n"] += 1
+        calls["prompts"].append(prompt_text)
+        if prompt_text == prompt_x:
+            state["x_attempts"] += 1
+            if state["x_attempts"] == 1:
+                return None  # transport failure on the first attempt
+            return json.dumps({"match": False})
+        return json.dumps({"match": True})
+
+    monkeypatch.setattr(isem, "_codex_judge_stdout", fake_stdout)
+    t = isem.judge_transport_factory(cache_path=str(cache_file))
+    assert t(prompt_y, {}, {}) is True
+    assert t(prompt_x, {}, {}) is False  # retried within bounds
+    assert cache_file.exists()
+    calls_after_first_pass = calls["n"]
+
+    # resume: a fresh transport over the SAME cache must issue ZERO new
+    # provider calls for already-decided prompts
+    calls["n"] = 0
+    t2 = isem.judge_transport_factory(cache_path=str(cache_file))
+    assert t2(prompt_y, {}, {}) is True
+    assert t2(prompt_x, {}, {}) is False
+    assert calls["n"] == 0
+    assert calls_after_first_pass >= 3  # Y once; X failed then retried
+
+    # a judge that would answer DIFFERENTLY cannot change a completed
+    # decision: the cache is served first and the file keeps its value
+    monkeypatch.setattr(
+        isem, "_codex_judge_stdout",
+        lambda p: json.dumps({"match": p != prompt_y}))
+    t3 = isem.judge_transport_factory(cache_path=str(cache_file))
+    assert t3(prompt_y, {}, {}) is True  # unchanged
+    raw = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert raw["model"] == isem.JUDGE_MODEL
+    key = isem.judge_cache_key(prompt_y)
+    assert raw["decisions"][key] is True
+
+    # a cache written under a different judge identity refuses resume
+    raw2 = dict(raw, model="some-other-model")
+    bad = tmp_path / "bad-cache.json"
+    bad.write_text(json.dumps(raw2), encoding="utf-8")
+    with pytest.raises(isem.JudgeCacheIdentityError):
+        isem.load_judge_cache(bad)

@@ -134,6 +134,13 @@ def cmd_score(args) -> int:
     verify_manifest(manifest_path)
 
     gt = isem.load_ground_truth(args.gt)
+    # AMENDMENT_3: the generic arbitrary-result score path must never
+    # touch the sealed v1.1 holdout, even with --allow-holdout. Only
+    # the formal bound-three execution surface may score it.
+    if gt["sealed_sha256"] == isem.SEALED_GT_SHA256:
+        raise SystemExit(
+            "refusing generic score against the sealed v1.1 holdout: "
+            "use the formal bound runner scripts/run_sealed_isem_d3.py")
     isem.verify_sealed(gt)
 
     eligible, support_by_label = _load_support(args.support)
@@ -262,6 +269,9 @@ def cmd_freeze_receipt(args) -> int:
         "scripts/eval_interest_holdout.py",
         "tests/test_eval_interest_semantic.py",
         "ef/isem_d3_binding.py",
+        "ef/sealed_execution.py",
+        "scripts/run_sealed_isem_d3.py",
+        "scripts/materialize_d3_contestants.py",
         "docs/handoffs/interest-intelligence/"
         "interest-semantic-evaluator-v1/"
         "METRIC_PLAN_PREREGISTRATION.md",

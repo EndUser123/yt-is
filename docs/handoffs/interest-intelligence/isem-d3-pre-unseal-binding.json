@@ -1,6 +1,6 @@
 {
  "document_kind": "ISEM_D3_PRE_UNSEAL_BINDING",
- "created_utc": "2026-08-27T16:51:52",
+ "created_utc": "2026-08-27T20:06:42",
  "status": "BOUND_WAITING_ON_FRESH_PRE_UNSEAL_REVIEW",
  "evaluator": {
   "identity": "isem_v1 (ARCHITECT_AMENDMENT_1 frozen core)",
@@ -8,31 +8,44 @@
    "candidate_commit": "02fd3a7e",
    "integration_commit": "ff9696ee",
    "bookkeeping_commit": "a91bdec1",
-   "amendment": "BINDING_AMENDMENT_2 (this candidate branch head)"
+   "amendment_2_commit": "0a5d7b73 (REJECTED by fresh pre-unseal review; rejection ACCEPTED; history kept immutable)",
+   "amendment": "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING (this candidate branch head)"
   },
   "canonical_artifact_hashes": [
    {
     "path": "ef/eval_interest_semantic.py",
-    "sha256": "a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503"
+    "sha256": "7504e383597b94326127f2d5e30276b9a99222816fe62c61d753df71655b8ce0"
    },
    {
     "path": "scripts/eval_interest_holdout.py",
-    "sha256": "1098e891fb81a116914f153f88c8767dfd28822a0f5194d4573a33597e0ff82c"
+    "sha256": "72ddfd18188f052b27bbabfc6173e410634fdf3b3c50b41c08aa29917e845b60"
    },
    {
     "path": "tests/test_eval_interest_semantic.py",
-    "sha256": "ed33641277b1038d443cbc8941c1e8193df9de8198097be4584c5e65ffdc2b14"
+    "sha256": "e662aa6d872883990b470c2a1d9cedc2d84475321ebcccbdb07ee81075934021"
    },
    {
     "path": "ef/isem_d3_binding.py",
     "sha256": "e34eae4414423c5654497528ca7e8bc41e9f54a1a9393e78642446864e25cf6c"
    },
    {
+    "path": "ef/sealed_execution.py",
+    "sha256": "8eaeeead9278f8f3e538d945f025fa2b3cf9fc1ce2b3db4376b854882912da5a"
+   },
+   {
+    "path": "scripts/run_sealed_isem_d3.py",
+    "sha256": "5b12dcd009a61a761d8f52b731094c3d37aa6c2fbfe1ef8e095981faa9cc5b88"
+   },
+   {
+    "path": "scripts/materialize_d3_contestants.py",
+    "sha256": "a66c8271671760921b2f5f4f305fae77aa1440b10d660e7854b33cbc3d64c95a"
+   },
+   {
     "path": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
     "sha256": "7b0a3c651adfdb7f59c248e27b0aa4d9bd78a37ee7600823ba3bf836a051dbf0"
    }
   ],
-  "freeze_receipt_sha256": "52ea3d80b21aad41ffeeb186803073942ad6063f9bca6a99fc396ef251ba7726",
+  "freeze_receipt_sha256": "8cc90178d27c07a783f18ba7b998db24cecf3f1e446d3b732afa592460e0745c",
   "judge_prompts_sha256": {
    "positive": "733e24b5fb2ad9cf7c70e55e435f349c5b7e189398c2fc11b6344e4592825ccc",
    "negative_interest": "9bd66cc82f8a6394dad08d7bdb15304928049d973ed00a784368e38375fb7fd8"
@@ -149,12 +162,82 @@
   },
   "amendment_file_hashes": {
    "ef/isem_d3_binding.py": "e34eae4414423c5654497528ca7e8bc41e9f54a1a9393e78642446864e25cf6c",
-   "scripts/bind_isem_d3.py": "f70ec7da6813c851c38423acc9a533213e81670565df9e0e2519920fb72484a3",
-   "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/AMENDMENT_2_D3_BINDING.md": "357410b0d19fa4a1996afe993cc9b03876e33abeb9927b4c71ef68f675b960e6"
+   "ef/sealed_execution.py": "8eaeeead9278f8f3e538d945f025fa2b3cf9fc1ce2b3db4376b854882912da5a",
+   "scripts/bind_isem_d3.py": "fd6e6beb63eafdecc407b45c75e73d0d849ffd0eb40f5edade32299c948b643a",
+   "scripts/run_sealed_isem_d3.py": "5b12dcd009a61a761d8f52b731094c3d37aa6c2fbfe1ef8e095981faa9cc5b88",
+   "scripts/materialize_d3_contestants.py": "a66c8271671760921b2f5f4f305fae77aa1440b10d660e7854b33cbc3d64c95a",
+   "docs/handoffs/interest-intelligence/isem-d3-contestant-materialization.json": "d64261e0460a6b72f157774a3eef781f4c4a647af953515ae644adc79e756663",
+   "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/AMENDMENT_2_D3_BINDING.md": "357410b0d19fa4a1996afe993cc9b03876e33abeb9927b4c71ef68f675b960e6",
+   "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING.md": "76b6a43376d2329540806f5318347283d7f61ab8c7c2826feb0f5c53c69676cb"
   },
   "tests_hash": {
-   "tests/test_eval_interest_semantic.py": "ed33641277b1038d443cbc8941c1e8193df9de8198097be4584c5e65ffdc2b14",
-   "tests/test_isem_d3_binding.py": "c9bcf783d735df8e01b2342960f343d8469fc57e3accaa489ad87f5b827c40b2"
+   "tests/test_eval_interest_semantic.py": "e662aa6d872883990b470c2a1d9cedc2d84475321ebcccbdb07ee81075934021",
+   "tests/test_isem_d3_binding.py": "c9bcf783d735df8e01b2342960f343d8469fc57e3accaa489ad87f5b827c40b2",
+   "tests/test_sealed_execution.py": "433c44e6c0f3aecf8561ba0bc6dafca224147f7e3e8154c949c7f38bbc39839f"
+  }
+ },
+ "amendment_3": {
+  "name": "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING",
+  "review_blocker_F_R1": {
+   "finding": "generic score accepted arbitrary --result without binding a scored report to the three contestants",
+   "fix": "generic score REFUSES the sealed holdout digest outright; the ONLY sealed surface is scripts/run_sealed_isem_d3.py (verify -> materialize -> score x3 -> mechanical aggregate); every report carries a full sealed_execution_identity block",
+   "status": "FIXED"
+  },
+  "match_policy_amendment": {
+   "ladder": "EXACT_TEXT -> EXACT_ALIAS -> SEMANTIC_JUDGE",
+   "amendment": "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING",
+   "removed": [
+    "substring auto-match",
+    "significant-token-subset auto-match",
+    "context-produced auto-match"
+   ],
+   "recorded": "pre-unseal construct-validity amendment, labels never inspected"
+  },
+  "judge_sandbox": {
+   "configuration": {
+    "invocation": "codex exec (tool-free)",
+    "shell_tool": "disabled structurally via -c tools.shell=false",
+    "prompt_channel": "stdin (inline rendered pair prompt)",
+    "working_root": "fresh per-call empty temp sandbox directory",
+    "forbidden_roots": [
+     "P:/",
+     "any repository or data root"
+    ],
+    "user_config": "not loaded (--ignore-user-config --ignore-rules)",
+    "environment": "inherits nothing (shell_environment_policy.inherit=none)",
+    "session": "ephemeral",
+    "sandbox_mode": "read-only"
+   },
+   "isolation_probe": {
+    "method": "synthetic canaries: outside nonce file must be unreadable; prompt-embedded nonce must be processed",
+    "result": {
+     "verdict": "PASS",
+     "outside_canary_leaked": false,
+     "judge_can_read_outside_sandbox": false,
+     "prompt_canary_processed": true
+    },
+    "labels_touched": "NONE"
+   },
+   "blocked_rule": "if the probe ever fails: JUDGE_SANDBOX_BLOCKED, do not unseal"
+  },
+  "transport_failure_semantics": {
+   "rule": "judge transport failure raises JudgeUnavailable -> EVALUATION_INCOMPLETE; never a semantic no_match",
+   "resume": "unresolved prompt hashes ONLY; same evaluator, same prompt, same model/config",
+   "cache": "write-once, keyed by exact rendered prompt, header pins model+effort, refuses resume under other identity",
+   "final_gate": "never issued with unresolved required judgments"
+  },
+  "contestant_materialization": {
+   "store_root": "P:/.data/yt-is/ef/interest-inference/frozen-contestants/isem-d3-v1",
+   "manifest_mirror": "docs/handoffs/interest-intelligence/isem-d3-contestant-materialization.json",
+   "manifest_sha256": "d64261e0460a6b72f157774a3eef781f4c4a647af953515ae644adc79e756663",
+   "policy": "materialized pre-unseal; scoring re-hashes bytes immediately before use; contestants never regenerated after unseal"
+  },
+  "formal_execution": {
+   "runner": "scripts/run_sealed_isem_d3.py",
+   "runner_sha256": "5b12dcd009a61a761d8f52b731094c3d37aa6c2fbfe1ef8e095981faa9cc5b88",
+   "aggregate_implementation": "ef/sealed_execution.py (aggregate_reports)",
+   "aggregate_sha256": "8eaeeead9278f8f3e538d945f025fa2b3cf9fc1ce2b3db4376b854882912da5a",
+   "aggregate_rule": "REPEATABLE_PERFECT = YES iff all three Interest finite-set == PERFECT; non-PERFECT -> NO; missing/invalid identity -> INCOMPLETE with no final gate"
   }
  },
  "review": {

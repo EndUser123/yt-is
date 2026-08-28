@@ -2,7 +2,7 @@
   "receipt": "isem_v1_freeze",
   "agent": "zcode",
   "host": "zcode",
-  "created_utc": "2026-08-27T16:51:15",
+  "created_utc": "2026-08-27T20:03:55",
   "status": "BOUND_WAITING_ON_FRESH_PRE_UNSEAL_REVIEW",
   "candidate_inference_implementation": "D3_DECOMPOSED frozen at f7bd24fdb917aa5e35112d0b2f2eae1c2129bf59 (implementation_manifest_sha256 3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3)",
   "sealed_holdout_public_hash_echo": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f",
@@ -27,19 +27,31 @@
   "frozen_artifacts": [
     {
       "path": "ef/eval_interest_semantic.py",
-      "sha256": "a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503"
+      "sha256": "7504e383597b94326127f2d5e30276b9a99222816fe62c61d753df71655b8ce0"
     },
     {
       "path": "scripts/eval_interest_holdout.py",
-      "sha256": "1098e891fb81a116914f153f88c8767dfd28822a0f5194d4573a33597e0ff82c"
+      "sha256": "72ddfd18188f052b27bbabfc6173e410634fdf3b3c50b41c08aa29917e845b60"
     },
     {
       "path": "tests/test_eval_interest_semantic.py",
-      "sha256": "ed33641277b1038d443cbc8941c1e8193df9de8198097be4584c5e65ffdc2b14"
+      "sha256": "e662aa6d872883990b470c2a1d9cedc2d84475321ebcccbdb07ee81075934021"
     },
     {
       "path": "ef/isem_d3_binding.py",
       "sha256": "e34eae4414423c5654497528ca7e8bc41e9f54a1a9393e78642446864e25cf6c"
+    },
+    {
+      "path": "ef/sealed_execution.py",
+      "sha256": "8eaeeead9278f8f3e538d945f025fa2b3cf9fc1ce2b3db4376b854882912da5a"
+    },
+    {
+      "path": "scripts/run_sealed_isem_d3.py",
+      "sha256": "5b12dcd009a61a761d8f52b731094c3d37aa6c2fbfe1ef8e095981faa9cc5b88"
+    },
+    {
+      "path": "scripts/materialize_d3_contestants.py",
+      "sha256": "a66c8271671760921b2f5f4f305fae77aa1440b10d660e7854b33cbc3d64c95a"
     },
     {
       "path": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
@@ -55,5 +67,5 @@
     "single scoring run; no inference tuning afterward",
     "exact per-item outcomes reported regardless of verdicts"
   ],
-  "amendment_note": "BINDING_AMENDMENT_2 pre-unseal D3 binding: F1 support holdout authorization gate; F2 superseded-hash ledger incl D3 manifest EOL duality (AMENDMENT_2_D3_BINDING.md); F3 zero-scorable finite-set regression tests; binding module ef/isem_d3_binding.py added to frozen artifacts. Historical receipts preserved in git history."
+  "amendment_note": "BINDING_AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING: match ladder EXACT_TEXT->EXACT_ALIAS->SEMANTIC_JUDGE (substring/token-subset auto-match removed, context never auto-matches); tool-free sandboxed judge transport (tools.shell disabled, inline stdin prompt, per-call empty sandbox, no broad root) with mechanical canary probe PASS; fail-closed JudgeUnavailable -> EVALUATION_INCOMPLETE with write-once identity-pinned judge cache and unresolved-only resume; generic score refuses the sealed holdout digest; formal bound-three runner + materialized contestants; see AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING.md. Amendments 1-2 history immutable."
 }

@@ -33,8 +33,19 @@ EVALUATOR_LINEAGE = {
     "candidate_commit": "02fd3a7e",
     "integration_commit": "ff9696ee",
     "bookkeeping_commit": "a91bdec1",
-    "amendment": "BINDING_AMENDMENT_2 (this candidate branch head)",
+    "amendment_2_commit": "0a5d7b73 (REJECTED by fresh pre-unseal "
+                          "review; rejection ACCEPTED; history kept "
+                          "immutable)",
+    "amendment": "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_"
+                 "HARDENING (this candidate branch head)",
 }
+MATERIALIZATION_MIRROR = REPO / (
+    "docs/handoffs/interest-intelligence/"
+    "isem-d3-contestant-materialization.json")
+AMENDMENT_3_DOC = REPO / (
+    "docs/handoffs/interest-intelligence/"
+    "interest-semantic-evaluator-v1/"
+    "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING.md")
 DEFAULT_OUT = REPO / ("docs/handoffs/interest-intelligence/"
                       "isem-d3-pre-unseal-binding.json")
 
@@ -48,10 +59,26 @@ def build_binding_manifest(freeze_doc: Path) -> dict:
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     amendment_files = [
         "ef/isem_d3_binding.py",
+        "ef/sealed_execution.py",
         "scripts/bind_isem_d3.py",
+        "scripts/run_sealed_isem_d3.py",
+        "scripts/materialize_d3_contestants.py",
         "docs/handoffs/interest-intelligence/"
-        "interest-semantic-evaluator-v1/AMENDMENT_2_D3_BINDING.md",
+        "isem-d3-contestant-materialization.json",
+        "docs/handoffs/interest-intelligence/"
+        "interest-semantic-evaluator-v1/"
+        "AMENDMENT_2_D3_BINDING.md",
+        "docs/handoffs/interest-intelligence/"
+        "interest-semantic-evaluator-v1/"
+        "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING.md",
     ]
+    # live judge-sandbox isolation probe at emit time (synthetic
+    # canaries only, no labels); a failing probe refuses the emit
+    probe = isem.judge_isolation_probe()
+    if probe["verdict"] != "PASS":
+        raise b.BindingRefusal(
+            "JUDGE_SANDBOX_BLOCKED",
+            "judge isolation probe did not pass; do not unseal")
     contestants = [{
         "run_id": c["run_id"],
         "run_root": c["run_root"],
@@ -155,6 +182,92 @@ def build_binding_manifest(freeze_doc: Path) -> dict:
                 "tests/test_isem_d3_binding.py":
                     b.sha256_file(REPO / "tests/"
                                   "test_isem_d3_binding.py"),
+                "tests/test_sealed_execution.py":
+                    b.sha256_file(REPO / "tests/"
+                                  "test_sealed_execution.py"),
+            },
+        },
+        "amendment_3": {
+            "name": "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_"
+                    "HARDENING",
+            "review_blocker_F_R1": {
+                "finding": "generic score accepted arbitrary --result "
+                           "without binding a scored report to the "
+                           "three contestants",
+                "fix": "generic score REFUSES the sealed holdout "
+                       "digest outright; the ONLY sealed surface is "
+                       "scripts/run_sealed_isem_d3.py (verify -> "
+                       "materialize -> score x3 -> mechanical "
+                       "aggregate); every report carries a full "
+                       "sealed_execution_identity block",
+                "status": "FIXED",
+            },
+            "match_policy_amendment": {
+                "ladder": isem.MATCH_LADDER,
+                "amendment": isem.MATCH_POLICY_AMENDMENT,
+                "removed": ["substring auto-match",
+                            "significant-token-subset auto-match",
+                            "context-produced auto-match"],
+                "recorded": "pre-unseal construct-validity amendment, "
+                            "labels never inspected",
+            },
+            "judge_sandbox": {
+                "configuration": isem.JUDGE_SANDBOX_CONFIG,
+                "isolation_probe": {
+                    "method": "synthetic canaries: outside nonce file "
+                              "must be unreadable; prompt-embedded "
+                              "nonce must be processed",
+                    "result": {"verdict": probe["verdict"],
+                               "outside_canary_leaked":
+                                   probe["outside_canary_leaked"],
+                               "judge_can_read_outside_sandbox":
+                                   probe["judge_can_read_outside_"
+                                         "sandbox"],
+                               "prompt_canary_processed":
+                                   probe["prompt_canary_processed"]},
+                    "labels_touched": "NONE",
+                },
+                "blocked_rule": "if the probe ever fails: "
+                                "JUDGE_SANDBOX_BLOCKED, do not unseal",
+            },
+            "transport_failure_semantics": {
+                "rule": "judge transport failure raises "
+                        "JudgeUnavailable -> EVALUATION_INCOMPLETE; "
+                        "never a semantic no_match",
+                "resume": "unresolved prompt hashes ONLY; same "
+                          "evaluator, same prompt, same model/config",
+                "cache": "write-once, keyed by exact rendered prompt, "
+                         "header pins model+effort, refuses resume "
+                         "under other identity",
+                "final_gate": "never issued with unresolved required "
+                              "judgments",
+            },
+            "contestant_materialization": {
+                "store_root":
+                    "P:/.data/yt-is/ef/interest-inference/"
+                    "frozen-contestants/isem-d3-v1",
+                "manifest_mirror":
+                    "docs/handoffs/interest-intelligence/"
+                    "isem-d3-contestant-materialization.json",
+                "manifest_sha256": b.sha256_file(MATERIALIZATION_MIRROR)
+                if MATERIALIZATION_MIRROR.exists() else None,
+                "policy": "materialized pre-unseal; scoring re-hashes "
+                          "bytes immediately before use; contestants "
+                          "never regenerated after unseal",
+            },
+            "formal_execution": {
+                "runner": "scripts/run_sealed_isem_d3.py",
+                "runner_sha256": b.sha256_file(
+                    REPO / "scripts" / "run_sealed_isem_d3.py"),
+                "aggregate_implementation": "ef/sealed_execution.py "
+                                            "(aggregate_reports)",
+                "aggregate_sha256": b.sha256_file(
+                    REPO / "ef" / "sealed_execution.py"),
+                "aggregate_rule": "REPEATABLE_PERFECT = YES iff all "
+                                  "three Interest finite-set == "
+                                  "PERFECT; non-PERFECT -> NO; "
+                                  "missing/invalid identity -> "
+                                  "INCOMPLETE with no final gate",
             },
         },
         "review": {

@@ -1,0 +1,64 @@
+{
+ "document_kind": "ISEM_D3_CONTESTANT_MATERIALIZATION",
+ "created_utc": "2026-08-27T20:01:00",
+ "store_root": "P:\\.data\\yt-is\\ef\\interest-inference\\frozen-contestants\\isem-d3-v1",
+ "holdout_state": "SEALED — contestants materialized pre-unseal",
+ "note": "Content-addressed canonical payload bytes; formal scoring re-hashes bytes immediately before use; contestants are never regenerated after unseal.",
+ "binding_identity_sha256": "ed65ea19e6a2ee68ce675bde28552c9211ca3df1809a63f51430fbba740cac37",
+ "contestants": [
+  {
+   "run_id": "shadow_1",
+   "payload_sha256": "8eafbfd8cf05bb3931dd0c93393f1c6a0bbeeadde8cc911bc641d37b860fea00",
+   "byte_length": 132751,
+   "storage_path": "P:\\.data\\yt-is\\ef\\interest-inference\\frozen-contestants\\isem-d3-v1\\8eafbfd8cf05bb3931dd0c93393f1c6a0bbeeadde8cc911bc641d37b860fea00.json",
+   "d3_freeze_commit": "f7bd24fdb917aa5e35112d0b2f2eae1c2129bf59",
+   "implementation_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+   "reconstruction_version": "DETERMINISTIC_ASSEMBLY_REPLAY_V1",
+   "reconstruction_recipe": "json.dumps(sort_keys,compact,ensure_ascii=False)",
+   "strict_validator_status": "PASSED",
+   "counts": {
+    "objects_in": 303,
+    "canonical_objects": 225,
+    "explicit_dispositions": 376,
+    "quarantined_edges": 1,
+    "required_link_failures": 1
+   }
+  },
+  {
+   "run_id": "shadow_2",
+   "payload_sha256": "acbbda7c9c9cee141b7d97d35571dd75eafb46db79da38f18cef04785d041462",
+   "byte_length": 173406,
+   "storage_path": "P:\\.data\\yt-is\\ef\\interest-inference\\frozen-contestants\\isem-d3-v1\\acbbda7c9c9cee141b7d97d35571dd75eafb46db79da38f18cef04785d041462.json",
+   "d3_freeze_commit": "f7bd24fdb917aa5e35112d0b2f2eae1c2129bf59",
+   "implementation_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+   "reconstruction_version": "DETERMINISTIC_ASSEMBLY_REPLAY_V1",
+   "reconstruction_recipe": "json.dumps(sort_keys,compact,ensure_ascii=False)",
+   "strict_validator_status": "PASSED",
+   "counts": {
+    "objects_in": 329,
+    "canonical_objects": 307,
+    "explicit_dispositions": 445,
+    "quarantined_edges": 3,
+    "required_link_failures": 1
+   }
+  },
+  {
+   "run_id": "shadow_3",
+   "payload_sha256": "277a1a3af5c22537a1785b48d4f3668c8d9820e9c378f96fb5a04a4a49addc48",
+   "byte_length": 174482,
+   "storage_path": "P:\\.data\\yt-is\\ef\\interest-inference\\frozen-contestants\\isem-d3-v1\\277a1a3af5c22537a1785b48d4f3668c8d9820e9c378f96fb5a04a4a49addc48.json",
+   "d3_freeze_commit": "f7bd24fdb917aa5e35112d0b2f2eae1c2129bf59",
+   "implementation_manifest_sha256": "3652da82817f5a373eef1011312e756fa1c42ef41d8635b553a9ab3d3e996ba3",
+   "reconstruction_version": "DETERMINISTIC_ASSEMBLY_REPLAY_V1",
+   "reconstruction_recipe": "json.dumps(sort_keys,compact,ensure_ascii=False)",
+   "strict_validator_status": "PASSED",
+   "counts": {
+    "objects_in": 326,
+    "canonical_objects": 288,
+    "explicit_dispositions": 406,
+    "quarantined_edges": 3,
+    "required_link_failures": 2
+   }
+  }
+ ]
+}

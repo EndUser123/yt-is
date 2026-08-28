@@ -33,6 +33,14 @@ Design boundaries:
   - Small denominators return INSUFFICIENT_EVIDENCE rather than PASS/FAIL
     at MIN_N_PER_TYPE=5; exact per-item outcomes are always reported.
 
+AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING (recorded
+pre-unseal): matching ladder is EXACT_TEXT -> EXACT_ALIAS ->
+SEMANTIC_JUDGE (substring and token-subset auto-match removed);
+context can never produce an automatic match; judge transport failure
+raises JudgeUnavailable (fail-closed EVALUATION_INCOMPLETE) instead of
+scoring as no_match; the judge transport is tool-free and sandboxed
+(see JUDGE_SANDBOX_CONFIG).
+
 Pure logic + one subprocess seam: judge transport is injectable so tests
 run fully offline. Integrity helpers hash this file family; score time
 verifies FROZEN_MANIFEST to prove the plan did not drift since freeze.
@@ -156,7 +164,9 @@ name: <TARGET_NAME>
 aliases: <TARGET_ALIASES>"""
 
 STOP_TOKENS = {"the", "and", "for", "with", "from", "about", "using",
-               "into", "that", "this"}
+               "into", "that", "this"}  # retained frozen constant
+# (no longer used by the AMENDMENT_3 matcher ladder; kept so cached
+# artifacts referencing it stay importable)
 
 
 def normalize_text(value: str) -> str:
@@ -475,32 +485,33 @@ class ResultView:
 
 # ---------------------------------------------------------------------------
 # Matching pipeline
+#
+# AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING (pre-unseal,
+# architect red-team finding): the previous alias tier auto-matched on
+# substring containment of the target name/alias inside candidate
+# text+context and on a significant-token-subset shortcut, so a
+# candidate could be counted as a known Interest merely because its
+# evidence summary MENTIONS it. The frozen ladder is now:
+#
+#   1. EXACT   normalized candidate surface TEXT == normalized
+#              target canonical name
+#   2. ALIAS   normalized candidate surface TEXT == one normalized
+#              explicitly supplied target alias
+#   3. JUDGE   otherwise (context is rendered into the judge prompt)
+#
+# Context can never produce an automatic match; only the semantic
+# judge sees it. Judge transport failure is fail-closed
+# (JudgeUnavailable -> EVALUATION_INCOMPLETE), never no_match.
 # ---------------------------------------------------------------------------
 
-
-def _sig_tokens(text: str) -> set[str]:
-    toks = set()
-    for w in normalize_text(text).replace("/", " ").split():
-        w2 = re.sub(r"[^0-9a-z]", "", w)
-        if len(w2) >= 5 and w2 not in STOP_TOKENS and not w2.isdigit():
-            toks.add(w2)
-    return toks
+MATCH_POLICY_AMENDMENT = "AMENDMENT_3_PRE_UNSEAL_EXECUTION_AND_CONSTRUCT_HARDENING"
+MATCH_LADDER = "EXACT_TEXT -> EXACT_ALIAS -> SEMANTIC_JUDGE"
 
 
-def alias_hit(surface_text: str, context: str, target: dict) -> bool:
-    needles = [normalize_text(target["canonical_name"])] + [
-        normalize_text(a) for a in target.get("aliases", [])
-        if len(a.strip()) >= 4]
-    hay = normalize_text(f"{surface_text} | {context}")
-    for n in needles:
-        if len(n) >= 4 and n in hay:
-            return True
-    toks = _sig_tokens(target["canonical_name"])
-    if len(toks) >= 2:
-        hay_toks = _sig_tokens(hay)
-        if toks <= hay_toks:
-            return True
-    return False
+def alias_names(target: dict) -> set[str]:
+    """Normalized explicitly supplied aliases (AMENDMENT_3 tier 2)."""
+    return {normalize_text(a) for a in target.get("aliases", [])
+            if isinstance(a, str) and a.strip()}
 
 
 def render_judge_prompt(template: str, surface_kind: str,
@@ -517,14 +528,30 @@ def render_judge_prompt(template: str, surface_kind: str,
             .replace("<TARGET_ALIASES>", target_aliases))
 
 
+class JudgeUnavailable(Exception):
+    """A required semantic-judge pair could not be decided.
+
+    Raised instead of falling through to ``no_match`` so a provider or
+    runtime failure can never become a semantic false negative
+    (AMENDMENT_3 fail-closed rule). Carries the prompt hash so the
+    sealed runner can resume ONLY unresolved pairs.
+    """
+
+    def __init__(self, prompt_hash: str = "", detail: str = ""):
+        super().__init__(
+            f"judge unavailable for prompt {prompt_hash[:16]} {detail}")
+        self.prompt_hash = prompt_hash
+        self.detail = detail
+
+
 def match_one(target: dict, surface: dict, is_negative_target: bool,
               judge) -> tuple[str, object]:
-    """exact -> alias -> semantic_judge -> no_match for one pair."""
+    """EXACT_TEXT -> EXACT_ALIAS -> semantic_judge for one pair."""
     t_norm = normalize_text(target["canonical_name"])
     s_norm = normalize_text(surface["text"])
     if t_norm == s_norm:
         return MATCH_EXACT, None
-    if alias_hit(surface["text"], surface["context"], target):
+    if s_norm and s_norm in alias_names(target):
         return MATCH_ALIAS, None
     prompt = (FROZEN_JUDGE_PROMPT_NEGATIVE_INTEREST
               if is_negative_target else FROZEN_JUDGE_PROMPT_POSITIVE)
@@ -544,7 +571,9 @@ def match_one(target: dict, surface: dict, is_negative_target: bool,
         return MATCH_JUDGE, None
     if verdict is False:
         return MATCH_NONE, None
-    return MATCH_NONE, "judge_error"
+    raise JudgeUnavailable(
+        sha256_bytes(rendered.encode("utf-8")),
+        "transport returned no verdict after bounded attempts")
 
 
 def run_track(track_class: str, targets: list[dict], surfaces: list[dict],
@@ -567,6 +596,8 @@ def run_track(track_class: str, targets: list[dict], surfaces: list[dict],
         for surf, _rank in ranked:
             if id(surf) in consumed:
                 continue
+            if _MATCH_RANK.get(best, 3) <= 1:
+                break  # exact/alias best: no judge path can outrank it
             path, err = match_one(target, surf, negatives, judge)
             path_rank = _MATCH_RANK.get(path, 3)
             cur_rank = _MATCH_RANK.get(best, 3)
@@ -595,11 +626,10 @@ def run_track(track_class: str, targets: list[dict], surfaces: list[dict],
 
 
 def _match_score(surface: dict, target: dict) -> int:
-    t_norm = normalize_text(target["canonical_name"])
     s_norm = normalize_text(surface["text"])
-    if t_norm == s_norm:
+    if normalize_text(target["canonical_name"]) == s_norm:
         return 0
-    if alias_hit(surface["text"], surface["context"], target):
+    if s_norm and s_norm in alias_names(target):
         return 1
     return 2  # judge tier resolved later per-pair
 
@@ -623,58 +653,194 @@ class _JudgeRecorder:
         return out
 
 
-def judge_transport_factory(cache_path=None):
-    """Frozen codex-exec judge transport (blinded, cached)."""
-    cache = {}
-    cache_p = Path(cache_path) if cache_path else None
-    if cache_p and cache_p.exists():
+class JudgeCacheIdentityError(ValueError):
+    """Cache file was produced under a different judge model/config."""
+
+
+JUDGE_CACHE_FORMAT = 1
+JUDGE_SANDBOX_CONFIG = {
+    "invocation": "codex exec (tool-free)",
+    "shell_tool": "disabled structurally via -c tools.shell=false",
+    "prompt_channel": "stdin (inline rendered pair prompt)",
+    "working_root": "fresh per-call empty temp sandbox directory",
+    "forbidden_roots": ["P:/", "any repository or data root"],
+    "user_config": "not loaded (--ignore-user-config --ignore-rules)",
+    "environment": "inherits nothing (shell_environment_policy.inherit=none)",
+    "session": "ephemeral",
+    "sandbox_mode": "read-only",
+}
+
+
+def judge_cache_key(prompt_text: str) -> str:
+    return sha256_bytes(prompt_text.encode("utf-8"))
+
+
+def load_judge_cache(cache_path, model: str = JUDGE_MODEL,
+                     effort: str = JUDGE_REASONING_EFFORT) -> dict:
+    """Load decisions from a judge cache; refuse identity mismatch.
+
+    Resume rule (AMENDMENT_3): a cache is reusable ONLY under the exact
+    same judge model and reasoning effort under which it was written.
+    """
+    if not cache_path:
+        return {}
+    p = Path(cache_path)
+    if not p.exists():
+        return {}
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    if (raw.get("cache_format") != JUDGE_CACHE_FORMAT
+            or raw.get("model") != model
+            or raw.get("reasoning_effort") != effort):
+        raise JudgeCacheIdentityError(
+            f"judge cache {p.name} identity mismatch: "
+            f"model={raw.get('model')!r} effort="
+            f"{raw.get('reasoning_effort')!r}; refusing resume")
+    return raw.get("decisions", {})
+
+
+def _codex_judge_stdout(prompt_text: str) -> str | None:
+    """One hardened tool-free judge invocation; raw stdout or None.
+
+    Shared by the judge transport and the isolation probe so the probe
+    exercises the EXACT command shape used for real decisions.
+    """
+    import shutil
+    import tempfile
+    codex = shutil.which("codex")
+    if not codex:
+        return None
+    sandbox_dir = tempfile.mkdtemp(prefix="isem-judge-sbx-")
+    try:
+        r = subprocess.run(
+            [codex, "exec", "--json", "--ephemeral",
+             "--ignore-user-config", "--ignore-rules",
+             "--skip-git-repo-check",
+             "-s", "read-only",
+             "-C", sandbox_dir,
+             "-m", JUDGE_MODEL,
+             "-c",
+             f"model_reasoning_effort={JUDGE_REASONING_EFFORT}",
+             "-c", "tools.shell=false",
+             "-c", 'shell_environment_policy.inherit="none"',
+             "-"],
+            input=prompt_text, capture_output=True, text=True,
+            timeout=JUDGE_TIMEOUT_S, cwd=sandbox_dir,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    finally:
+        shutil.rmtree(sandbox_dir, ignore_errors=True)
+    if r.returncode != 0:
+        return None
+    return r.stdout
+
+
+def _probe_verdict(stdout_text: str | None, outside_nonce: str,
+                   prompt_nonce: str) -> dict:
+    """Pure canary logic: classify one probe stdout (offline-testable)."""
+    leaked = bool(stdout_text) and outside_nonce in stdout_text
+    prompt_channel_ok = bool(stdout_text) and prompt_nonce in stdout_text
+    return {
+        "outside_canary_leaked": leaked,
+        "prompt_canary_processed": prompt_channel_ok,
+        "judge_can_read_outside_sandbox": leaked,
+        "verdict": "PASS" if (not leaked and prompt_channel_ok)
+        else "BLOCKED",
+    }
+
+
+def judge_isolation_probe(max_attempts: int = 2) -> dict:
+    """Live synthetic-canary isolation probe (never touches labels).
+
+    Outside canary: a nonce file on disk; the judge is asked to read
+    and echo it — it must FAIL (tool-free transport).
+    Prompt canary: a nonce embedded in the probe prompt itself; the
+    judge must be able to use it (the prompt channel is the ONLY
+    channel and must work).
+    """
+    import tempfile
+    import uuid
+    outside_nonce = f"OUTSIDE_CANARY_{uuid.uuid4().hex[:12].upper()}"
+    prompt_nonce = f"PROMPT_CANARY_{uuid.uuid4().hex[:12].upper()}"
+    canary_path = Path(tempfile.gettempdir()) / \
+        f"isem-canary-{outside_nonce}.txt"
+    canary_path.write_text(outside_nonce, encoding="utf-8")
+    try:
+        prompt = (
+            "Sandbox isolation probe. "
+            f"Try to read the file {canary_path} with any tool you "
+            "have. Then answer using ONLY this compact JSON with no "
+            "prose: {\"match\": <true ONLY if you actually read the "
+            f"file and it contained {outside_nonce}, otherwise false>"
+            ", \"echo\": \"" + prompt_nonce + "\"} — the echo field "
+            "must repeat that token verbatim to prove this prompt "
+            "reached you.")
+        stdout = None
+        for _ in range(max_attempts):
+            stdout = _codex_judge_stdout(prompt)
+            if stdout is not None:
+                break
+        result = _probe_verdict(stdout, outside_nonce, prompt_nonce)
+        if stdout is not None:
+            result["stdout_tail"] = stdout[-600:]
+        return result
+    finally:
         try:
-            cache = json.loads(cache_p.read_text(encoding="utf-8"))
-        except Exception:
-            cache = {}
+            canary_path.unlink()
+        except OSError:
+            pass
+
+
+def judge_transport_factory(cache_path=None):
+    """AMENDMENT_3 hardened judge transport (blinded, cached, tool-free).
+
+    The judge model has NO filesystem channel: the shell tool is
+    disabled structurally (`-c tools.shell=false`), the rendered pair
+    prompt is the ONLY input (passed inline via stdin), the working
+    root is a fresh empty per-call sandbox directory (never P:/ or any
+    repository/data root), user config and execpolicy rules are not
+    loaded, nothing is inherited from the environment, and the session
+    is ephemeral. Synthetic-canary isolation probes
+    (`run_sealed_isem_d3.py --probe-judge`) demonstrate an outside-
+    canary nonce is unreachable while prompt-embedded content is
+    decided normally.
+
+    Decisions cache is WRITE-ONCE and keyed by the exact rendered
+    prompt; the cache file header pins model + reasoning effort and
+    refuses resume under any other identity. Transport exhaustion
+    returns None ONCE; callers fail closed via JudgeUnavailable — a
+    transport failure never becomes a semantic no_match.
+    """
+    cache = load_judge_cache(cache_path)
 
     def transport(prompt_text, surface, target):
-        key = sha256_bytes(prompt_text.encode("utf-8"))
+        key = judge_cache_key(prompt_text)
         if key in cache:
             return cache[key]
-        import shutil
-        import tempfile
-        codex = shutil.which("codex")
-        if not codex:
-            return None
         attempts_ok = False
         for _attempt in range(JUDGE_MAX_ATTEMPTS):
-            pf = Path(tempfile.gettempdir()) / (
-                f"isem-judge-{key[:16]}.txt")
-            pf.write_text(prompt_text, encoding="utf-8")
-            try:
-                r = subprocess.run(
-                    [codex, "exec", "--json", "--ephemeral",
-                     "-s", "read-only", "-m", JUDGE_MODEL,
-                     "-c",
-                     f"model_reasoning_effort={JUDGE_REASONING_EFFORT}",
-                     "-C", "P:/",
-                     f"Read {pf} and return ONLY the JSON. No prose, "
-                     "no markdown fences."],
-                    capture_output=True, text=True,
-                    timeout=JUDGE_TIMEOUT_S, cwd="P:/",
-                    creationflags=getattr(
-                        subprocess, "CREATE_NO_WINDOW", 0))
-            except (subprocess.TimeoutExpired, OSError):
+            stdout = _codex_judge_stdout(prompt_text)
+            if stdout is None:
                 continue
-            if r.returncode != 0:
-                continue
-            parsed = _extract_judge_json(r.stdout)
+            parsed = _extract_judge_json(stdout)
             if parsed is None:
                 continue
             val = bool(parsed.get("match"))
             cache[key] = val
             attempts_ok = True
             break
-        if cache_p:
+        if cache_p := (Path(cache_path) if cache_path else None):
             cache_p.parent.mkdir(parents=True, exist_ok=True)
-            cache_p.write_text(json.dumps(cache, indent=1, sort_keys=True),
-                               encoding="utf-8")
+            existing = load_judge_cache(cache_p)
+            for k, v in cache.items():
+                existing.setdefault(k, v)  # write-once: never overwrite
+            cache_p.write_text(json.dumps({
+                "cache_format": JUDGE_CACHE_FORMAT,
+                "model": JUDGE_MODEL,
+                "reasoning_effort": JUDGE_REASONING_EFFORT,
+                "judge_kind": "codex-tool-free",
+                "decisions": existing,
+            }, indent=1, sort_keys=True), encoding="utf-8")
         if not attempts_ok:
             return None
         return cache[key]
@@ -897,6 +1063,8 @@ def evaluate(gt_doc: dict, result_payload: dict, judge,
     report = {
         "evaluator": "isem_v1",
         "amendment": "ARCHITECT_AMENDMENT_1",
+        "match_policy": {"ladder": MATCH_LADDER,
+                         "amendment": MATCH_POLICY_AMENDMENT},
         "generated": time.strftime("%Y-%m-%dT%H%M%S"),
         "sealed_gt_sha256_verified": SEALED_GT_SHA256,
         "min_n_per_type": MIN_N_PER_TYPE,
