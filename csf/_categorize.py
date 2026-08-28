@@ -435,6 +435,7 @@ def get_video_titles(channel_url: str, limit: int = 10) -> list[str]:
             capture_output=True,
             text=True,
             timeout=30,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: bare yt-dlp under pythonw flashes a console window
         )
         if result.returncode != 0:
             return []

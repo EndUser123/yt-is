@@ -84,7 +84,10 @@ def remux_audio(video_path: Path, dest_dir: Path) -> Path | None:
         str(dest),
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=300,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: bare ffmpeg under pythonw flashes a console window
+        )
     except (subprocess.TimeoutExpired, OSError):
         return None
     if proc.returncode == 0 and dest.exists() and dest.stat().st_size > 0:

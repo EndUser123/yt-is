@@ -525,7 +525,8 @@ def download_video(
         started = time.monotonic()
         try:
             proc = subprocess.run(
-                command, capture_output=True, text=True, timeout=timeout_s
+                command, capture_output=True, text=True, timeout=timeout_s,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW: bare spawn under pythonw opens a visible console per download
             )
         except subprocess.TimeoutExpired:
             _log_download(db_path, video_id, "failed", error="timeout")

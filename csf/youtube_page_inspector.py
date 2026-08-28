@@ -245,6 +245,7 @@ def inspect_youtube_watch_page_via_ytdlp(video_id: str, *, timeout_s: float = _Y
             capture_output=True,
             text=True,
             timeout=timeout_s,
+            creationflags=0x08000000,  # CREATE_NO_WINDOW: bare yt-dlp under pythonw flashes a console window
         )
     except subprocess.TimeoutExpired:
         return {
