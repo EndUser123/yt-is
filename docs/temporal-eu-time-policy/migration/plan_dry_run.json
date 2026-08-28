@@ -1,0 +1,34 @@
+{
+  "kind": "eu_time_policy_migration_v1",
+  "agent": "zcode",
+  "created": "2026-08-27T13:25:01Z",
+  "cmd": "plan",
+  "pre_metrics": {
+    "total_eus": 269254,
+    "undated_total": 43341,
+    "undated_by_source": {
+      "dht-artifact": 732,
+      "discord": 27879,
+      "github": 8,
+      "hackernews": 74,
+      "newsletter": 6,
+      "notebooklm": 14516,
+      "podcast": 1,
+      "rss": 66,
+      "whisper": 2,
+      "ytdlp": 57
+    },
+    "recoverable_matched_eus": 28611,
+    "recoverable_exact_methods": 28071,
+    "recoverable_approx_methods": 540,
+    "unknown_valid_count": 14730,
+    "temporal_mentions_old_rule": 102454,
+    "temporal_mentions_new_rule_pre_populate": null
+  },
+  "plan": {
+    "planned_rows": 28611,
+    "changed_rows": 28611,
+    "dry_run": true
+  },
+  "status": "dry_run_ok"
+}

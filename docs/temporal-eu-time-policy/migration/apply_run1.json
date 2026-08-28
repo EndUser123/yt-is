@@ -1,0 +1,62 @@
+{
+  "kind": "eu_time_policy_migration_v1",
+  "agent": "zcode",
+  "created": "2026-08-27T13:32:41Z",
+  "cmd": "apply",
+  "pre_metrics": {
+    "total_eus": 269254,
+    "undated_total": 43341,
+    "undated_by_source": {
+      "dht-artifact": 732,
+      "discord": 27879,
+      "github": 8,
+      "hackernews": 74,
+      "newsletter": 6,
+      "notebooklm": 14516,
+      "podcast": 1,
+      "rss": 66,
+      "whisper": 2,
+      "ytdlp": 57
+    },
+    "recoverable_matched_eus": 28611,
+    "recoverable_exact_methods": 28071,
+    "recoverable_approx_methods": 540,
+    "unknown_valid_count": 14730,
+    "temporal_mentions_old_rule": 102454,
+    "temporal_mentions_new_rule_pre_populate": 58865
+  },
+  "backup": {
+    "path": "P:\\.data\\yt-is\\backups\\catalog.sqlite.pre_eu_time_policy_20260827T133241Z",
+    "sha256_head_before_write": "eb9ca4d7fc73821f"
+  },
+  "apply": {
+    "planned_rows": 28611,
+    "changed_rows": 28611,
+    "dry_run": false,
+    "inserted": 28611,
+    "updated_in_place": 28611,
+    "unchanged_basis": 0
+  },
+  "post_verify": {
+    "recovery_rows": 28611,
+    "by_method": {
+      "dht_window_first_ts_ms_epoch": 27879,
+      "raw_archive_bridge_message_time": 192,
+      "url_attachment_snowflake": 540
+    },
+    "previous_published_nonempty": 0,
+    "eu_published_still_untouched_check": {
+      "discord_empty_published": 27879,
+      "discord_total": 27879
+    },
+    "fabricated_dates_guard": {
+      "notebooklm_recovery_rows": 0
+    },
+    "captured_preserved_probe": 0
+  },
+  "idempotent_rerun": {
+    "changed_rows": 0,
+    "inserted": 0
+  },
+  "status": "idempotent_ok"
+}
