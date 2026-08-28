@@ -29,9 +29,6 @@ from csf.channel_identity import (
 from csf.csf_logging import log_action
 
 
-_SQLITE_PARAMETER_CHUNK = 900
-
-
 class SetStatusBatchResult(NamedTuple):
     """Outcome of a best-effort bulk status write.
 
@@ -216,8 +213,8 @@ class _BatchStatusStorage:
         """Create analysis_status and channel_metadata tables, migrate columns if needed."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self._db_path)
-        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS analysis_status (
@@ -746,14 +743,11 @@ class _BatchStatusStorage:
         """Get a connection to the batch status DB."""
         if read_only:
             uri = f"file:{self._db_path.resolve().as_posix()}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+            conn = sqlite3.connect(uri, uri=True)
         else:
-            conn = sqlite3.connect(self._db_path, timeout=30.0)
-            # busy_timeout BEFORE WAL: the WAL acquisition itself can
-            # block on a lock; arming the timeout first prevents a
-            # hot-spin failure (codex 3b43c030 ordering invariant)
-            conn.execute("PRAGMA busy_timeout=30000")
+            conn = sqlite3.connect(self._db_path)
             conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     @contextmanager
@@ -775,7 +769,7 @@ class _BatchStatusStorage:
         return row[0] if row else None
 
     def _get_status_batch(self, video_ids: list[str]) -> dict[str, str | None]:
-        """Batch lookup of status for multiple video_ids in bounded queries.
+        """Batch lookup of status for multiple video_ids — O(1) single query.
 
         Returns dict mapping video_id -> status (or None if not found).
         All requested video_ids are included in the result dict.
@@ -783,15 +777,12 @@ class _BatchStatusStorage:
         if not video_ids:
             return {}
         with self._conn() as conn:
-            rows = []
-            for offset in range(0, len(video_ids), _SQLITE_PARAMETER_CHUNK):
-                chunk = video_ids[offset:offset + _SQLITE_PARAMETER_CHUNK]
-                placeholders = ",".join("?" * len(chunk))
-                rows.extend(conn.execute(
-                    "SELECT video_id, status FROM analysis_status "
-                    f"WHERE video_id IN ({placeholders})",
-                    chunk,
-                ).fetchall())
+            placeholders = ",".join("?" * len(video_ids))
+            cursor = conn.execute(
+                f"SELECT video_id, status FROM analysis_status WHERE video_id IN ({placeholders})",
+                video_ids,
+            )
+            rows = cursor.fetchall()
         result = {row[0]: row[1] for row in rows}
         # Fill in None for missing IDs to match docstring contract
         for vid in video_ids:
@@ -807,8 +798,8 @@ class _BatchStatusStorage:
             rows = []
             # SQLite's host-parameter limit varies by build. Keep manifest
             # selection bounded per query while retaining one read snapshot.
-            for offset in range(0, len(video_ids), _SQLITE_PARAMETER_CHUNK):
-                chunk = video_ids[offset:offset + _SQLITE_PARAMETER_CHUNK]
+            for offset in range(0, len(video_ids), 900):
+                chunk = video_ids[offset:offset + 900]
                 placeholders = ",".join("?" * len(chunk))
                 rows.extend(conn.execute(
                     f"""
@@ -2057,8 +2048,7 @@ def get_status_batch(
     """Batch lookup of analysis status for multiple video_ids.
 
     Returns a dict mapping video_id -> status ('complete', 'failed', or None).
-    Uses bounded SELECT ... WHERE IN (...) queries — set-based without
-    exceeding SQLite's host-parameter limit.
+    Uses a single SELECT ... WHERE IN (...) query — O(1) vs O(N) individual calls.
 
     Args:
         video_ids: List of video IDs to look up.
@@ -2915,8 +2905,8 @@ def run_v2_migration(db_path: str | Path | None = None) -> dict[str, int]:
 
     sql = V2_MIGRATION_SQL_PATH.read_text(encoding="utf-8")
     conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
 
     counts: dict[str, int] = {}
     try:
@@ -2982,8 +2972,8 @@ def run_v3_visual_queue_migration(db_path: str | Path | None = None) -> dict[str
         raise FileNotFoundError(f"v3 migration SQL not found: {V3_VISUAL_QUEUE_SQL_PATH}")
 
     conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         before = conn.execute("SELECT COUNT(*) FROM visual_jobs").fetchone()[0]
         distinct = conn.execute(
@@ -3036,15 +3026,14 @@ def run_v2_cross_db_backfill(
         )
 
     conn = sqlite3.connect(str(batch_db_path))
-    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
 
     counts: dict[str, int] = {}
     try:
         # Attach the transcripts DB
         conn.execute(
-            "ATTACH DATABASE ? AS cache_db",
-            (str(Path(transcripts_db_path)),),
+            f"ATTACH DATABASE '{transcripts_db_path}' AS cache_db"
         )
 
         # Schema validation: verify transcript_cache table exists
@@ -3210,9 +3199,9 @@ def record_status_event(
     else:
         db_path = Path(db_path)
 
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout=30000")
+    conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
 
     try:
         # Check current rank for monotonic enforcement
@@ -3284,8 +3273,8 @@ def get_transcript_status(
     else:
         db_path = Path(db_path)
 
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout=30000")
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         row = conn.execute(
             "SELECT status FROM transcript_status WHERE video_id = ?",
@@ -3305,8 +3294,8 @@ def get_visual_status(
     else:
         db_path = Path(db_path)
 
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout=30000")
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         row = conn.execute(
             "SELECT status FROM visual_status WHERE video_id = ?",
