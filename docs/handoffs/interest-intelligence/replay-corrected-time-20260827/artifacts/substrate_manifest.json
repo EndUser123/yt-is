@@ -1,0 +1,34 @@
+{
+  "kind": "corrected_time_replay_substrate",
+  "agent": "zcode",
+  "generated_utc": "2026-08-27T23:53:58Z",
+  "live_catalog": "P:\\.data\\yt-is\\ef\\catalog.sqlite",
+  "snapshot": {
+    "path": "P:\\.data\\yt-is\\ef\\concept-discovery-calibration\\temporal-emergence-modelgen-v1-replay-corrected-time\\substrate\\catalog-snapshot.sqlite",
+    "sha256": "9c050a1e0ac71b3425d52ee611a0b2c0add164eede47fcff39f78c0ed6d063d0",
+    "counts": {
+      "eu": 269254,
+      "eu_dated_published": 225913,
+      "eu_time_recovery": 28611,
+      "kg_edges": 145514,
+      "kg_nodes_entity": 313
+    }
+  },
+  "corrected_shadow": {
+    "path": "P:\\.data\\yt-is\\ef\\concept-discovery-calibration\\temporal-emergence-modelgen-v1-replay-corrected-time\\substrate\\corrected-shadow.sqlite",
+    "sha256": "fd696c782f91e4e53fa1b2eb708d8bb6b215a391f0de45443aeb07f7cb2e2d0b",
+    "counts": {
+      "eu": 269254,
+      "kg_nodes": 43062,
+      "kg_edges": 145514,
+      "corrected_dated": 254524,
+      "corrected_excluded": 14730
+    }
+  },
+  "corrected_reader_expressions": {
+    "published_at": "CASE WHEN NULLIF(e.published_at,'') IS NOT NULL THEN e.published_at WHEN r.valid_start IS NOT NULL THEN r.valid_start ELSE '' END",
+    "captured_at": "CASE WHEN NULLIF(e.published_at,'') IS NULL AND r.valid_start IS NULL THEN '' ELSE e.captured_at END",
+    "matches_production_reader": "ef/concept_discovery.py::_entity_observations (MIXED_SOURCE_TIME_POLICY v1)"
+  },
+  "note": "snapshot is a verbatim file copy (old-reader semantics); corrected shadow materializes recovered valid time and excludes unknown-valid rows; eu rows in the snapshot are never rewritten by the migration (post_verify: eu_published_rewritten=0)"
+}

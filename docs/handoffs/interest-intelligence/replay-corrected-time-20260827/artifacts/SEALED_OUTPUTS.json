@@ -1,0 +1,93 @@
+{
+  "kind": "corrected_time_replay_seal",
+  "agent": "zcode",
+  "generated_utc": "2026-08-28T00:06:54Z",
+  "run": "temporal-emergence-modelgen-v1-replay-corrected-time/corrected",
+  "sealed_file_sha256": {
+    "metric-rows.json": "40cad35adbe31e84ac71e329412d193d9b67ec6265d198165c0b3062bc57eeed",
+    "aggregate.json": "4d923118aadd3d24ea41497657f3710ba0b63a21e7ac99d69593726f10863541",
+    "decision-bars.json": "9d3c84f45201669832614f68b329af1e419f8ad927d77c1194c4be63cb282596",
+    "segments.json": "cddfe72dd8312cdeeb6a04ac5e3aad3df6be68fad610bf1bd38dc39148f26e30",
+    "counterfactuals.json": "8c98626ab3ae48f9f4258d4525a824f093ab4d6608b4e694e90b3af2856af193",
+    "run-config.json": "dd7749de06f77aaccdc6686c53d80ab4872289af9afe1045b939da5ef2bcb811"
+  },
+  "frozen_decision_under_original_mapping": "NO_NEW_MODEL_SUPPORTED",
+  "qualified_families": [],
+  "mechanical_bars": {
+    "armB_EU1-W30": {
+      "D1": false,
+      "D2": true,
+      "D3": false,
+      "D4_perturb20_retention": true,
+      "D5": true,
+      "D7": true,
+      "family_supported": false
+    },
+    "armB_EU2-W60": {
+      "D1": false,
+      "D2": true,
+      "D3": false,
+      "D4_perturb20_retention": true,
+      "D5": true,
+      "D7": true,
+      "family_supported": false
+    },
+    "armB_BUCKETS-W120": {
+      "D1": false,
+      "D2": true,
+      "D3": false,
+      "D4_perturb20_retention": true,
+      "D5": true,
+      "D7": true,
+      "family_supported": false
+    },
+    "armB_POSTERIOR-EXCL-W30": {
+      "D1": true,
+      "D2": false,
+      "D3": false,
+      "D4_perturb20_retention": true,
+      "D5": true,
+      "D7": true,
+      "family_supported": false
+    },
+    "armB_CHANNELNEW-W30": {
+      "D1": false,
+      "D2": false,
+      "D3": false,
+      "D4_perturb20_retention": true,
+      "D5": true,
+      "D7": true,
+      "family_supported": false
+    },
+    "armC": {
+      "D1": false,
+      "D2": true,
+      "D3": false,
+      "D4_perturb20_retention": true,
+      "D5": true,
+      "D7": true,
+      "family_supported": false
+    },
+    "armD": {
+      "D1": true,
+      "D2": false,
+      "D3": false,
+      "D4_perturb20_retention": true,
+      "D5": true,
+      "D7": true,
+      "family_supported": false
+    }
+  },
+  "cohorts": {
+    "positives_scorable": 42,
+    "positives_missing_T": 0,
+    "negatives_paired_scorable": 124
+  },
+  "determinism": {
+    "run1_sha256": "cc9a29a7e4b8b8252b23302341b67effc43c18b6362b13fe0074627230f41bd6",
+    "run2_sha256": "cc9a29a7e4b8b8252b23302341b67effc43c18b6362b13fe0074627230f41bd6",
+    "identical": true
+  },
+  "parity_note": "armA parity vs pre-repair references fails as expected under the corrected substrate (frozen interpretation in REPLAY_MANIFEST.json); machinery equivalence carried by byte-frozen code + shadow-prerepair run which passes pass_current_reference exactly (36/42, 75/124)",
+  "seal_file_sha256": "63b4d8d18a9d0e734c005e1046f5bb8a01416562a234c380a87940f6bd98be72"
+}
