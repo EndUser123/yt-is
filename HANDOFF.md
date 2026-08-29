@@ -143,12 +143,17 @@ are evidence states, not confidence.
 Open items (operator-held unless noted):
 
 1. Category exclusion decision — EVIDENCE COMPLETE, recommendation KEEP:
-   see `docs/operations/category-exclusion-decision-20260825.md` (H+M+F =
-   202K pending = 46%, but also 41% of the completed corpus with Health the
-   #1 completed category; the 48h fetch frontier is already SWE+Tech+AI/ML
-   = 89% with Markets/Finance at zero; both original motivations were fixed
-   by 5f8faaab and 0ddb0b48). 30-day fetch-share falsifier defined.
-   Operator word pending.
+   canonical packet `P:\docs\decisions\category-exclusion-20260824.md`
+   (red-teamed 2026-08-28, supersedes the 2026-08-25 numbers in
+   `docs/operations/category-exclusion-decision-20260825.md`): after the
+   08-26 purge and Whisper-parking, the worker-eligible pending pool is
+   1,213 rows of which H/M/F = 432 (0.06% of the table) — exclusion is now
+   a no-op on fetching and would only blind discovery on 562 channels
+   holding the deepest verticals (Health #1 complete, 42.9% H/M/F). 30-day
+   >25% fetch-share falsifier defined. Operator word pending.
+   (2026-08-28 00:26Z: pending invariant re-actioned — 8,608 no-caption
+   refill rows re-deferred; daily recurrence until intake-time
+   classification lands.)
 2. ~~Blocked-channel purge~~ EXECUTED 2026-08-26 00:26Z (operator
    directive, third ask): purge_channels.py over the full blocklist —
    deleted 541,166 analysis_status rows, 1,045 channel_metadata rows,
