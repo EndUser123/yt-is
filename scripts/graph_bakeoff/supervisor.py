@@ -85,6 +85,12 @@ def flip_failed_to_pending() -> int:
     2026-08-22 run showed docs stuck in processing/analyzing/parsing by an
     unclean kill collide on re-insert ('File name already exists') and get
     marked failed — so all non-terminal states must be reset."""
+    if not STATUS.exists():
+        # Post-rebuild state: the wd holds only the restored response cache,
+        # no doc-status store yet — the ingest cycle recreates it. Reading
+        # the missing store crashed the post-rebuild iteration (run found
+        # dead 2026-08-27 after the 08-25 03:26 rebuild).
+        return 0
     d = json.loads(STATUS.read_text(encoding="utf-8"))
     n = 0
     for v in d.values():

@@ -43,7 +43,7 @@
   },
   "lightrag": {
    "version": "1.5.6 (lightrag-hku)",
-   "policy": "evaluation install for bake-off P2 NL arm; isolated venv, not in any service path",
+   "policy": "evaluation CLOSED 2026-08-29: bake-off two-axis verdict = CTE wins (NL arm 1.35 vs 2.00 avg judge, 5/20 vs 20/20 gold); not adopted; isolated venv, not in any service path",
    "venv": "P:/.data/scout/graph-bakeoff/lightrag-venv (Python 3.12.10)",
    "lock": "P:/.data/scout/graph-bakeoff/lightrag-lock.txt",
    "restart": [],
