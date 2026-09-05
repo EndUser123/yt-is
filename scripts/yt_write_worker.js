@@ -10,11 +10,16 @@
 //        JSON.stringify({ job: window.__ytw, st: JSON.parse(localStorage.getItem('ytw-v1') || '{}') })
 //
 // Config (window.__ytw_cfg):
-//   op:          "collect-wl" | "create-playlists" | "add" | "remove" | "purge-wl" | "verify"
+//   op:          "collect-wl" | "create-playlists" | "add" | "remove" | "purge-wl" | "verify" | "delete"
 //   expect:      substring the active account handle must match (default "hominidae")
+//   stateKey:    localStorage key for THIS run (default "ytw-v1"). Pass a fresh
+//                key per logical run — resume works by reusing the same key;
+//                sharing a key across unrelated ops resumes stale offsets.
 //   plan:        [{ title, videoIds: [id...] }]                     (create-playlists)
-//   playlistId:  "PL..." or "WL"                                    (add / remove / verify)
+//   playlistId:  "PL..." or "WL"                                    (add / remove / verify / delete)
+//   playlistIds: [id...]                                            (verify, multi)
 //   videoIds:    [id...]                                            (add)
+//   setItems:    [{v,s}] pre-collected items                        (remove, optional)
 //   batchSize:   100 (max 100)   seedSize: 50   paceMs: 1300   jitterMs: 500
 //   privacy:     "PRIVATE" | "UNLISTED" | "PUBLIC"
 //
@@ -30,7 +35,7 @@
   if (window.__ytw && window.__ytw.running) return;
   const cfg = window.__ytw_cfg || {};
   const OP = cfg.op;
-  const LS = "ytw-v1";
+  const LS = cfg.stateKey || "ytw-v1";
   const load = function () {
     try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch (e) { return {}; }
   };
@@ -153,6 +158,7 @@
       if (!accountStable()) { job.aborted = "account changed mid-run"; return i; }
       job.phase = "add " + playlistId + " at " + i;
       const batch = videoIds.slice(i, i + BATCH);
+      st.opVideos = videoIds;
       const ed = await call("browse/edit_playlist", {
         playlistId: playlistId,
         actions: batch.map(function (v) { return { action: "ACTION_ADD_VIDEO", addedVideoId: v }; }),
@@ -199,7 +205,7 @@
     for (const f of (st.failed || []).slice()) {
       job.phase = "retry " + f.kind + " at " + f.at;
       if (f.kind === "add") {
-        const batch = (st.planVideos && st.planVideos.slice(f.at, f.at + f.n)) || [];
+        const batch = (st.opVideos && st.opVideos.slice(f.at, f.at + f.n)) || [];
         if (!batch.length) continue;
         const ed = await call("browse/edit_playlist", {
           playlistId: f.playlistId,
@@ -284,7 +290,7 @@
           rec.playlistId = pid; rec.added = seed.length; save();
           await sleep(J(PACE));
         }
-        st.planVideos = dom.videoIds;
+        st.opVideos = dom.videoIds;
         await addBatches(rec.playlistId, dom.videoIds, rec.added);
         rec.added = st.added || rec.added;
         rec.done = rec.added >= rec.total && !(st.failed || []).some(function (f) { return f.playlistId === rec.playlistId || f.title === dom.title; });
@@ -318,6 +324,22 @@
       await retryFailed();
       st.verify = await verify(pid);
       job.verify = st.verify;
+      st.done = (st.failed || []).length === 0; save();
+
+    } else if (OP === "delete") {
+      const ids = cfg.playlistIds || (cfg.playlistId ? [cfg.playlistId] : []);
+      if (!ids.length) { job.error = "delete needs playlistId(s)"; return; }
+      if (!st.failed) st.failed = [];
+      st.deleted = st.deleted || [];
+      for (const pid of ids) {
+        job.phase = "delete " + pid;
+        const del = await call("playlist/delete", { playlistId: pid.replace(/^VL/, "") });
+        if (del.status === 200) st.deleted.push(pid);
+        else st.failed.push({ kind: "delete", playlistId: pid, status: del.status, body: JSON.stringify(del.json).slice(0, 120) });
+        save();
+        await sleep(J(PACE));
+      }
+      job.deleted = st.deleted;
       st.done = (st.failed || []).length === 0; save();
 
     } else if (OP === "verify") {
