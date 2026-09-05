@@ -253,6 +253,15 @@
       job.collected = st.collect.items.length;
       st.done = !job.error; save();
 
+    } else if (OP === "collect") {
+      const pid = cfg.playlistId;
+      if (!pid) { job.error = "collect needs playlistId"; return; }
+      if (!st.collect) st.collect = {};
+      const prefix = pid === "WL" ? "VLWL" : "VL" + pid.replace(/^VL/, "");
+      await collectItems(prefix, st.collect);
+      job.collected = st.collect.items.length;
+      st.done = !job.error; save();
+
     } else if (OP === "purge-wl") {
       if (!st.collect) st.collect = {};
       if (!st.collect.items || st.phase !== "remove") {
