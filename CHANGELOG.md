@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`scripts/yt_write_worker.js` — page-context YouTube write worker** (consumed by the `yt-write` skill): config-driven ops for `collect`/`collect-wl`/`create-playlists`/`add`/`remove`/`purge-wl`/`delete`/`verify` against the logged-in youtube.com page via innertube + SAPISIDHASH. Identity gate, mid-run account guard, per-run `stateKey` resume, continuation-token-queue pagination. Runtime-verified 2026-09-04: 18 playlists / 6,821 videos created and server-verified; 3,404-item Watch Later purge; 1,469-video pl-other refinement; packaged-file smoke test of every op.
+- **`scripts/classify_topics.py` — topic-domain classifier and playlist-plan builder** (ported from the 2026-09-04 one-off; verified to reproduce the executed 18-domain plan exactly). CLI: `--wl/--history/--items` in, `--assignments/--plan/--report` out.
+
 ### Fixed
 - **NotebookLM source matching** — `nlm_batch.py` no longer trusts `source list --json` order when extracting transcripts. It now matches NotebookLM source entries back to the requested YouTube video IDs by title/url first, with order only as a fallback. This fixes the wrong-source / wrong-video mismatch that showed up in worker-count trials when valid videos were reported as `too_short` or `command_failed`.
 - **Free-tier NotebookLM reuse** — the worker notebook path now defaults to `50`-source batches and recycles the existing worker notebook at capacity instead of creating a fresh notebook. This keeps the free NotebookLM test account on a single reused worker notebook instead of spawning replacements.
