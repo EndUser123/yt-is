@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Classify YouTube video items into topic domains and build playlist plans.
 
-Ported from the one-off P:/tmp/youtube-topic-groups/classify.py (2026-09-04
+Ported from the one-off P:/tmp/sess_74977c1f-youtube-topic-groups/classify.py (2026-09-04
 run, 6,821 videos into 18 domains) so the domain sort is reusable by the
 yt-write skill's sync flow.
 
