@@ -117,18 +117,25 @@
   };
 
   // Paginate a playlist (VL-prefixed browseId), collecting {v, s, t, c}:
-  // videoId, setVideoId, title, channel. Resume via st.token.
+  // videoId, setVideoId, title, channel.
+  // Browse responses can carry SEVERAL continuationCommand tokens (items
+  // continuation plus unrelated ones); walk order does not reliably put the
+  // items token last. So: keep a queue of untried token candidates, prefer
+  // the page's own continuations, fall back through the queue when a page
+  // yields no new items. Resume persists the queue in the store.
   const collectItems = async function (browseId, store) {
     if (!store.items) store.items = [];
-    const seen = {}; store.items.forEach(function (x) { seen[x.s || x.v] = 1; });
-    let token = store.token || null;
-    for (let page = 0; page < 60; page++) {
-      job.phase = "collect " + browseId + " page " + (page + 1) + " (" + store.items.length + ")";
+    const seen = {};
+    store.items.forEach(function (x) { seen[x.s || x.v] = 1; });
+    if (!store.tried) store.tried = {};
+    let queue = store.queue || [];
+    const fetchPage = async function (tok) {
       const body = { browseId: browseId };
-      if (token) body.continuation = token;
+      if (tok) body.continuation = tok;
       const br = await call("browse", body);
-      if (br.status !== 200) { job.error = "browse " + br.status; return false; }
-      let next = null;
+      if (br.status !== 200) { job.error = "browse " + br.status; return null; }
+      const fresh = [];
+      const cands = [];
       walk(br.json, function (n) {
         const pvr = n.playlistVideoRenderer;
         if (pvr && pvr.videoId) {
@@ -138,16 +145,37 @@
             const t = pvr.title && (pvr.title.runs && pvr.title.runs[0] && pvr.title.runs[0].text || pvr.title.simpleText);
             const c = (pvr.shortBylineText && pvr.shortBylineText.runs && pvr.shortBylineText.runs[0] && pvr.shortBylineText.runs[0].text) ||
                       (pvr.ownerText && pvr.ownerText.runs && pvr.ownerText.runs[0] && pvr.ownerText.runs[0].text) || null;
-            store.items.push({ v: pvr.videoId, s: pvr.setVideoId || null, t: t || null, c: c || null });
+            fresh.push({ v: pvr.videoId, s: pvr.setVideoId || null, t: t || null, c: c || null });
           }
         }
-        if (n.continuationCommand && n.continuationCommand.token) next = n.continuationCommand.token;
+        if (n.continuationCommand && n.continuationCommand.token &&
+            !store.tried[n.continuationCommand.token] && cands.indexOf(n.continuationCommand.token) < 0) {
+          cands.push(n.continuationCommand.token);
+        }
       });
-      if (!next || next === token) { store.token = null; return true; }
-      token = next; store.token = token; save();
+      return { fresh: fresh, cands: cands };
+    };
+    let guard = 0;
+    for (;;) {
+      if (++guard > 80) { job.error = "collect guard: 80 pages"; break; }
+      const tok = queue.shift() || null;
+      if (tok) store.tried[tok] = 1;
+      job.phase = "collect " + browseId + " (" + store.items.length + " items, " + queue.length + " queued)";
+      const r = await fetchPage(tok);
+      if (r === null) break;
+      if (r.fresh.length) {
+        store.items = store.items.concat(r.fresh);
+        const cands = r.cands.slice().reverse().filter(function (t) {
+          return !store.tried[t] && queue.indexOf(t) < 0;
+        });
+        queue = cands.concat(queue);
+      }
+      store.queue = queue; save();
+      if (!r.fresh.length && !queue.length) break;
       await sleep(J(500));
     }
-    return true;
+    store.queue = queue;
+    return !job.error;
   };
 
   // Batched ACTION_ADD_VIDEO.
