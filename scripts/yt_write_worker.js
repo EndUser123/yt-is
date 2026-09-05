@@ -183,7 +183,7 @@
     let i = doneCount || 0;
     if (!st.failed) st.failed = [];
     while (i < videoIds.length) {
-      if (!accountStable()) { job.aborted = "account changed mid-run"; return i; }
+      if (!accountStable()) { throw new Error("account changed mid-run"); }
       job.phase = "add " + playlistId + " at " + i;
       const batch = videoIds.slice(i, i + BATCH);
       st.opVideos = videoIds;
@@ -206,7 +206,7 @@
     let i = doneCount || 0;
     if (!st.failed) st.failed = [];
     while (i < items.length) {
-      if (!accountStable()) { job.aborted = "account changed mid-run"; return i; }
+      if (!accountStable()) { throw new Error("account changed mid-run"); }
       job.phase = "remove " + playlistId + " at " + i;
       const batch = items.slice(i, i + BATCH);
       let ed = await call("browse/edit_playlist", {
@@ -268,10 +268,10 @@
   };
 
   try {
-    if (!OP) { job.error = "no op in __ytw_cfg"; return; }
+    if (!OP) { throw new Error("no op in __ytw_cfg"); }
     const id = await identity();
     job.identity = { handle: id.handle, matched: id.matched };
-    if (!id.matched) { job.aborted = "identity gate: " + id.handle + " does not match " + (cfg.expect || "hominidae"); return; }
+    if (!id.matched) { throw new Error("identity gate: " + id.handle + " does not match " + (cfg.expect || "hominidae")); }
     sid0 = String(ytcfg("SESSION_INDEX") || 0);
     del0 = String(ytcfg("DELEGATED_SESSION_ID") || "");
 
@@ -283,7 +283,7 @@
 
     } else if (OP === "collect") {
       const pid = cfg.playlistId;
-      if (!pid) { job.error = "collect needs playlistId"; return; }
+      if (!pid) { throw new Error("collect needs playlistId"); }
       if (!st.collect) st.collect = {};
       const prefix = pid === "WL" ? "VLWL" : "VL" + pid.replace(/^VL/, "");
       await collectItems(prefix, st.collect);
@@ -307,7 +307,7 @@
       if (!st.created) st.created = {};
       if (!st.failed) st.failed = [];
       for (const dom of cfg.plan) {
-        if (!accountStable()) { job.aborted = "account changed mid-run"; return; }
+        if (!accountStable()) { throw new Error("account changed mid-run"); }
         const rec = st.created[dom.title] = st.created[dom.title] ||
           { total: dom.videoIds.length, added: 0, playlistId: null, done: false };
         if (rec.done) continue;
@@ -338,7 +338,7 @@
 
     } else if (OP === "add") {
       const pid = cfg.playlistId;
-      if (!pid || !cfg.videoIds) { job.error = "add needs playlistId + videoIds"; return; }
+      if (!pid || !cfg.videoIds) { throw new Error("add needs playlistId + videoIds"); }
       st.added = st.added || 0;
       await addBatches(pid, cfg.videoIds, st.added);
       await retryFailed();
@@ -348,7 +348,7 @@
 
     } else if (OP === "remove") {
       const pid = cfg.playlistId;
-      if (!pid) { job.error = "remove needs playlistId"; return; }
+      if (!pid) { throw new Error("remove needs playlistId"); }
       if (cfg.setItems) {
         st.items = cfg.setItems;
       } else {
@@ -365,7 +365,7 @@
 
     } else if (OP === "delete") {
       const ids = cfg.playlistIds || (cfg.playlistId ? [cfg.playlistId] : []);
-      if (!ids.length) { job.error = "delete needs playlistId(s)"; return; }
+      if (!ids.length) { throw new Error("delete needs playlistId(s)"); }
       if (!st.failed) st.failed = [];
       st.deleted = st.deleted || [];
       for (const pid of ids) {
