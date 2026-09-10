@@ -75,6 +75,25 @@ def audio_deletable(transcript_status: str | None) -> bool:
     return transcript_status == "complete"
 
 
+def maybe_evict_audio(
+    *, video_id: str, audio_path: Path, db_path: Path, media_root: Path
+) -> dict | None:
+    """Second pass of the audio lifecycle.
+
+    Recovery only caches the transcript; promotion to complete runs through
+    the separate reviewed gate. This pass evicts the audio once the row
+    reads complete, and does nothing before that. Returns the deletion
+    receipt, or None when the row is not complete yet.
+    """
+    if not audio_deletable(_analysis_status_for(video_id, db_path)):
+        return None
+    return delete_media_with_ledger(
+        audio_path, video_id=video_id,
+        reason="transcript_complete",
+        media_root=media_root,
+    )
+
+
 def delete_media_with_ledger(
     path: Path, *, video_id: str, reason: str, media_root: Path
 ) -> dict:
@@ -269,11 +288,6 @@ def maybe_recover_transcript(
         if not decision["ok"]:
             return decision
         payload = decision["payload"]
-    except json.JSONDecodeError as exc:
-        return {
-            "attempted": True, "ok": False,
-            "error": f"whisper result unreadable ({exc}); worker likely crashed before writing",
-        }
     except subprocess.TimeoutExpired:
         return {"attempted": True, "ok": False, "error": f"whisper timeout (>{timeout_s:g}s)"}
     except Exception as exc:
@@ -289,7 +303,7 @@ def maybe_recover_transcript(
     band = "lt21" if chars < 21 else "21-499" if chars < 500 else "gte500"
     from csf.cache import set_cached_transcript
 
-    set_cached_transcript(
+    cached = set_cached_transcript(
         video_id,
         "en",
         "whisper",
@@ -303,12 +317,23 @@ def maybe_recover_transcript(
             "prior_analysis_status": status,
         },
     )
+    if not cached:
+        return {
+            "attempted": True,
+            "ok": False,
+            "chars": chars,
+            "words": words,
+            "length_band": band,
+            "cached": False,
+            "error": "transcript refused by cache boundary (sub-floor content)",
+        }
     return {
         "attempted": True,
         "ok": True,
         "chars": chars,
         "words": words,
         "length_band": band,
+        "cached": True,
         "promotion_candidate": chars >= 500,
     }
 
@@ -445,12 +470,12 @@ def process_one(
             video_id, status="complete", last_stage="audio_recovery",
             db_path=db_path,
         )
-        if audio_deletable(_analysis_status_for(video_id, db_path)):
-            receipt["audio_evicted"] = delete_media_with_ledger(
-                audio_path, video_id=video_id,
-                reason="transcript_complete",
-                media_root=media_fetch.media_root(db_path),
-            )
+        evicted = maybe_evict_audio(
+            video_id=video_id, audio_path=audio_path, db_path=db_path,
+            media_root=media_fetch.media_root(db_path),
+        )
+        if evicted is not None:
+            receipt["audio_evicted"] = evicted
         visual_jobs.log_visual_attempt(
             video_id, profile=job.get("profile"), provider="yt-dlp+whisper",
             outcome="ok", latency_ms=(time.monotonic() - started) * 1000,

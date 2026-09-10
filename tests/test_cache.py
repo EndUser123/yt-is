@@ -108,18 +108,28 @@ class TestSubfloorRefusal:
     def test_subfloor_transcript_is_refused(self):
         """3-char garbage (empty-audio output) never reaches the cache."""
         with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "abc")
+            assert (
+                set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "abc") is False
+            )
             assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is None
 
     def test_whitespace_only_transcript_is_refused(self):
         with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "   \n  ")
+            assert (
+                set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "   \n  ")
+                is False
+            )
             assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is None
 
     def test_short_but_real_transcript_is_kept(self):
         """The lt21 band stays usable; only garbage stops at the boundary."""
         with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "hello world today")
+            assert (
+                set_cached_transcript(
+                    "dQw4w9WgXcQ", "en", "cli", "hello world today"
+                )
+                is True
+            )
             assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is not None
 
 

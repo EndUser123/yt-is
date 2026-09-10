@@ -123,11 +123,12 @@ _MEDIA_EXTENSIONS = {".mka", ".webm", ".mp4", ".mkv", ".mp3", ".m4a"}
 def classify_visual_file(path: Path) -> str:
     """Per-class bucket for one file under the visual media root."""
     name = path.name.lower()
-    if name.startswith("source."):
+    suffix = path.suffix.lower()
+    if name.startswith("source.") and suffix not in {".jpg", ".md", ".json", ".jsonl"}:
         return "video-source"
-    if name.startswith("audio."):
+    if name.startswith("audio.") and suffix not in {".jpg", ".md", ".json", ".jsonl"}:
         return "kept-audio"
-    if path.suffix.lower() == ".jpg":
+    if suffix == ".jpg":
         return "frames"
     if path.suffix.lower() in _MEDIA_EXTENSIONS:
         return "media-unclassified"

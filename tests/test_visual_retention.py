@@ -14,6 +14,7 @@ import time
 from scripts.run_visual_worker import (
     audio_deletable,
     delete_media_with_ledger,
+    maybe_evict_audio,
     parse_recovery_result,
     sweep_stale_partials,
 )
@@ -117,3 +118,50 @@ def test_unreadable_result_is_failure(tmp_path: Path):
     decision = parse_recovery_result(path, -1073740791, "")
     assert decision["ok"] is False
     assert "unreadable" in decision["error"]
+
+
+def _status_db(tmp_path: Path, video_id: str, status: str) -> Path:
+    import sqlite3
+
+    db = tmp_path / "status.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE analysis_status (video_id TEXT, status TEXT)")
+    conn.execute(
+        "INSERT INTO analysis_status VALUES (?, ?)", (video_id, status)
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_audio_eviction_two_pass_flow(tmp_path: Path):
+    # Pass one: transcript cached but row not promoted — audio stays.
+    audio = tmp_path / "audio.mka"
+    audio.write_bytes(b"x" * 100)
+    db = _status_db(tmp_path, "vidPass", "deferred_audio")
+    assert (
+        maybe_evict_audio(
+            video_id="vidPass", audio_path=audio, db_path=db,
+            media_root=tmp_path,
+        )
+        is None
+    )
+    assert audio.exists()
+    # Pass two: promotion gate flips the row — audio goes with a ledger row.
+    conn_holder = tmp_path / "status.sqlite"
+    import sqlite3
+
+    conn = sqlite3.connect(conn_holder)
+    conn.execute("UPDATE analysis_status SET status = 'complete'")
+    conn.commit()
+    conn.close()
+    receipt = maybe_evict_audio(
+        video_id="vidPass", audio_path=audio, db_path=db,
+        media_root=tmp_path,
+    )
+    assert receipt is not None
+    assert receipt["deleted"] is True
+    assert not audio.exists()
+    rows = _ledger_rows(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["reason"] == "transcript_complete"

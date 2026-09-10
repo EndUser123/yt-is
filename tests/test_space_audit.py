@@ -70,6 +70,8 @@ def test_classify_visual_file_buckets(tmp_path):
     assert classify_visual_file(tmp_path / "f0001.jpg") == "frames"
     assert classify_visual_file(tmp_path / "stray.webm") == "media-unclassified"
     assert classify_visual_file(tmp_path / "note.md") == "receipts"
+    assert classify_visual_file(tmp_path / "source.jpg") == "frames"
+    assert classify_visual_file(tmp_path / "audio.md") == "receipts"
 
 
 def test_scan_visual_classes_counts_bytes(tmp_path):

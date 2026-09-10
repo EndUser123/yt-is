@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import time
 from typing import Any
 
@@ -65,21 +66,26 @@ def _global_cooldown_active(conn: sqlite3.Connection) -> bool:
         return False
 
 
-def _consecutive_refunds(conn: sqlite3.Connection, video_id: str) -> int:
+def _trailing_refunds(conn: sqlite3.Connection, video_id: str) -> int:
+    """Refunds since the last non-refund outcome (single shared predicate).
+
+    Both the pre-pass close-out and the claim-loop guard use this one
+    implementation so the two can never diverge.
+    """
+    assert all(c in _REFUND_OUTCOME_CLASSES for c in _REFUND_OUTCOME_CLASSES)
+    refund_list = ",".join(f"'{c}'" for c in sorted(_REFUND_OUTCOME_CLASSES))
     try:
-        rows = conn.execute(
-            """SELECT outcome FROM visual_attempts
-               WHERE video_id = ? ORDER BY attempt_id DESC LIMIT ?""",
-            (video_id, REFUND_CAP + 1),
-        ).fetchall()
+        row = conn.execute(
+            f"""SELECT COUNT(*) FROM visual_attempts a
+                WHERE a.video_id = ? AND a.outcome IN ({refund_list})
+                AND a.attempt_id > COALESCE((SELECT MAX(b.attempt_id)
+                    FROM visual_attempts b
+                    WHERE b.video_id = ? AND b.outcome NOT IN ({refund_list})), -1)""",
+            (video_id, video_id),
+        ).fetchone()
     except sqlite3.OperationalError:
         return 0
-    count = 0
-    for (outcome,) in rows:
-        if outcome not in _REFUND_OUTCOME_CLASSES:
-            break
-        count += 1
-    return count
+    return int(row[0]) if row else 0
 
 
 def _now_iso() -> str:
@@ -141,19 +147,19 @@ def claim_next_visual_job(
                 """SELECT job_id, video_id, profile, claimed_at FROM visual_jobs
                    WHERE completed_at IS NULL AND attempt_count >= max_attempts"""
             ).fetchall()
-            if _claim_stale(claimed_at, now, DEFAULT_STALE_CLAIM_S)
+            if _claim_stale(claimed_at, now, stale_claim_s)
         ]
         closeouts = [(job_id, video_id, profile, "retry_budget_exhausted") for job_id, video_id, profile in spent]
         if not _global_cooldown_active(conn):
             # One query, no per-job scans at queue scale: close jobs whose
-            # trailing attempts streak (since the last non-refund outcome)
-            # sits at or past the cap. Mixed histories with a recent real
-            # outcome stay live; the claim loop below still guards them.
+            # trailing streak sits at or past the cap. Fresh claims are
+            # never touched: a worker may be running right now.
             refund_list = ",".join(f"'{c}'" for c in sorted(_REFUND_OUTCOME_CLASSES))
+            assert all(c in _REFUND_OUTCOME_CLASSES for c in refund_list.replace("'", "").split(","))
             closeouts.extend(
                 (job_id, video_id, profile, "refund_cap_exhausted")
-                for job_id, video_id, profile in conn.execute(
-                    f"""SELECT j.job_id, j.video_id, j.profile FROM visual_jobs j
+                for job_id, video_id, profile, claimed_at in conn.execute(
+                    f"""SELECT j.job_id, j.video_id, j.profile, j.claimed_at FROM visual_jobs j
                        WHERE j.completed_at IS NULL AND j.attempt_count < j.max_attempts
                        AND (SELECT COUNT(*) FROM visual_attempts a
                             WHERE a.video_id = j.video_id AND a.outcome IN ({refund_list})
@@ -162,6 +168,7 @@ def claim_next_visual_job(
                                 WHERE b.video_id = j.video_id AND b.outcome NOT IN ({refund_list})), -1)) >= ?""",
                     (REFUND_CAP,),
                 ).fetchall()
+                if _claim_stale(claimed_at, now, stale_claim_s)
             )
         for job_id, _, _, _ in closeouts:
             conn.execute(
@@ -173,8 +180,10 @@ def claim_next_visual_job(
         conn.close()
     for _, video_id, profile, reason in closeouts:
         # Outside any open write transaction: a nested status write would
-        # stall on the claim lock and fail silently.
-        record_status_event(
+        # stall on the claim lock and fail silently. Retry once; a second
+        # failure is reported on stderr for operator reconciliation (the
+        # job row is already closed, so the skew is status-only).
+        ok = record_status_event(
             "visual_status",
             video_id,
             "failed_terminal",
@@ -182,6 +191,21 @@ def claim_next_visual_job(
             profile=profile,
             db_path=db_path,
         )
+        if not ok:
+            ok = record_status_event(
+                "visual_status",
+                video_id,
+                "failed_terminal",
+                failure_reason=reason,
+                profile=profile,
+                db_path=db_path,
+            )
+        if not ok:
+            print(
+                f"visual_jobs: status event lost for {video_id} ({reason}); "
+                "job closed without failed_terminal event",
+                file=sys.stderr,
+            )
     conn = _connect(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -195,7 +219,7 @@ def claim_next_visual_job(
         for job_id, video_id, profile, claimed_at, attempt_count, max_attempts in rows:
             if not _claim_stale(claimed_at, now, stale_claim_s):
                 continue
-            if _consecutive_refunds(conn, video_id) >= REFUND_CAP:
+            if _trailing_refunds(conn, video_id) >= REFUND_CAP:
                 # Never claim-return a capped refund loop in any cooldown
                 # state: the pre-pass closes these once the global cooldown
                 # clears; until then they are skipped, so storm-time claims

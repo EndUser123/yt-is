@@ -348,10 +348,13 @@ def set_cached_transcript(
     *,
     metadata: Mapping[str, Any] | None = None,
     bind_verified: bool = True,
-) -> None:
+) -> bool:
     """Cache a transcript entry.
 
     Writes to the shared transcript pool - all terminals can read it.
+
+    Returns True when the transcript was stored, False when refused
+    (invalid id, unverified bind, or sub-floor content).
 
     Args:
         video_id: YouTube video ID (must be 11 chars)
@@ -371,19 +374,19 @@ def set_cached_transcript(
         Silently refused when bind_verified is False (logs a structured warning).
     """
     if not _validate_video_id(video_id):
-        return
+        return False
 
     if not bind_verified:
         # C2 trust-floor: refuse unbound writes to the shared cache. This is the
         # gate that keeps MD5-source-id keys out of transcripts.sqlite.
         _log_unbound_write_skip(video_id, lang, source)
-        return
+        return False
 
     if len((transcript or "").strip()) < MIN_CACHED_TRANSCRIPT_CHARS:
         # Cache boundary: refuse sub-floor transcripts (e.g. 3-char output
         # from empty audio). The lt21 band stays usable; only garbage stops.
         _log_unbound_write_skip(video_id, lang, f"{source}:subfloor")
-        return
+        return False
 
     from csf.terminal_context import resolve_tid
 
@@ -423,6 +426,7 @@ def set_cached_transcript(
     # but not tracked in analysis_status). Uses INSERT OR IGNORE to avoid
     # downgrading existing rows.
     _register_in_analysis_status(video_id, source)
+    return True
 
 
 def _register_in_analysis_status(video_id: str, source: str) -> None:
