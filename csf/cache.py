@@ -522,7 +522,7 @@ def replace_cached_transcript_if_better(
         cache_key = _make_cache_key(video_id, lang, source)
         now = datetime.now()
         metadata_json = _normalize_metadata(metadata)
-        storage = _get_storage(terminal_id)
+        _get_storage(terminal_id)
         # Direct UPDATE instead of INSERT OR IGNORE
         with _db_access_lock:
             conn = _connect_shared_db()

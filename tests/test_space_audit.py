@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from csf.space_audit import (
     classify_browser_root,
     classify_run_root,

@@ -18,7 +18,6 @@ import pytest
 
 from csf.batch_status import (
     V2_MIGRATION_SQL_PATH,
-    V3_VISUAL_QUEUE_SQL_PATH,
     run_v3_visual_queue_migration,
 )
 from csf.visual import jobs as vj
@@ -427,7 +426,6 @@ def test_enqueue_failed_rows_only_by_default(db: Path):
 
 
 def test_maybe_recover_transcript_skips_complete_and_attempts_failed(tmp_path, monkeypatch):
-    import importlib
     import scripts.run_visual_worker as worker
 
     db = tmp_path / "b.sqlite"

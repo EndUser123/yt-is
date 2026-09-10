@@ -87,7 +87,7 @@ class TestCacheHitWithoutApiCall:
 
                 mock_api.reset_mock()
 
-                result = get_cached_transcript(video_id, lang, source)
+                get_cached_transcript(video_id, lang, source)
 
                 mock_api.assert_not_called()
 
@@ -179,7 +179,6 @@ class TestCacheBackup:
         Verifies _ensure_db_initialized() is called before read operations.
         """
         import sqlite3
-        from pathlib import Path
 
         # Delete the database to simulate first run on empty DB
         db_path = cache.get_shared_db_path()
