@@ -151,6 +151,20 @@ def test_claim_never_kills_final_inflight_attempt(db: Path):
     assert visual_status_row(db, "vidFinal") is None  # untouched
 
 
+def test_claim_prepass_honors_caller_window(db: Path):
+    # A 2000s-old claim is stale under the default window but fresh under
+    # a custom one: the pre-pass must follow the caller's window.
+    old = (datetime.now(timezone.utc) - timedelta(seconds=2000)).isoformat()
+    insert_job(db, "vidWindow", attempt_count=3, claimed_at=old)
+    assert vj.claim_next_visual_job(db, stale_claim_s=3600.0) is None
+    assert job_row(db, "vidWindow")[2] is None  # left open, not closed
+    assert visual_status_row(db, "vidWindow") is None  # untouched
+    # Same row under the default window: stale, so it closes out.
+    vj.claim_next_visual_job(db)
+    assert job_row(db, "vidWindow")[2] is not None
+    assert visual_status_row(db, "vidWindow")[0] == "failed_terminal"
+
+
 def log_attempts(db_path: Path, video_id: str, outcomes: list):
     conn = sqlite3.connect(db_path)
     for outcome in outcomes:
@@ -466,6 +480,7 @@ def test_maybe_recover_transcript_skips_complete_and_attempts_failed(tmp_path, m
         written.update(
             video_id=video_id, lang=lang, source=source, transcript=transcript, metadata=metadata
         )
+        return True
 
     monkeypatch.setattr(cache_mod, "set_cached_transcript", fake_set)
     result = worker.maybe_recover_transcript("vFail", audio, db_path=db, run_id="run-1")
