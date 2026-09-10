@@ -125,6 +125,127 @@ def test_claim_returns_none_when_all_completed_or_fresh(db: Path):
     assert vj.claim_next_visual_job(db) is None
 
 
+def test_claim_closes_exhausted_crash_job_instead_of_reclaiming(db: Path):
+    # Crashed between claim and adjudication with the budget spent.
+    insert_job(db, "vidPoison", attempt_count=3)
+    insert_job(db, "vidHealthy")
+    job = vj.claim_next_visual_job(db)
+    assert job is not None
+    assert job["video_id"] == "vidHealthy"
+    assert job_row(db, "vidPoison")[2] is not None  # completed_at set
+    assert visual_status_row(db, "vidPoison")[0] == "failed_terminal"
+    # Never claimable again.
+    vj.complete_visual_job("vidHealthy", db_path=db)
+    assert vj.claim_next_visual_job(db) is None
+
+
+def test_claim_never_kills_final_inflight_attempt(db: Path):
+    # Spent budget but freshly claimed: a worker may still be running its
+    # final attempt, so the pre-pass must leave it alone.
+    insert_job(db, "vidFinal", attempt_count=3,
+               claimed_at=datetime.now(timezone.utc).isoformat())
+    insert_job(db, "vidOther")
+    job = vj.claim_next_visual_job(db)
+    assert job is not None
+    assert job["video_id"] == "vidOther"
+    assert job_row(db, "vidFinal")[2] is None  # still open
+    assert visual_status_row(db, "vidFinal") is None  # untouched
+
+
+def log_attempts(db_path: Path, video_id: str, outcomes: list):
+    conn = sqlite3.connect(db_path)
+    for outcome in outcomes:
+        conn.execute(
+            "INSERT INTO visual_attempts (video_id, outcome) VALUES (?, ?)",
+            (video_id, outcome),
+        )
+    conn.commit()
+    conn.close()
+
+
+def set_cooldown(db_path: Path, until_epoch: float):
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS media_rate_limit "
+        "(kind TEXT, cooldown_until_epoch REAL, reason TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO media_rate_limit VALUES ('dl', ?, 'test')",
+        (until_epoch,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_claim_closes_refund_loop_without_cooldown(db: Path):
+    insert_job(db, "vidRefundLoop", claimed_at="2020-01-01T00:00:00+00:00")
+    log_attempts(db, "vidRefundLoop", ["rate_limited"] * 25)
+    job = vj.claim_next_visual_job(db)
+    assert job is None  # closed out, never claimed again
+    assert job_row(db, "vidRefundLoop")[2] is not None
+    assert visual_status_row(db, "vidRefundLoop")[0] == "failed_terminal"
+
+
+def test_claim_skips_capped_refund_job_during_cooldown(db: Path):
+    insert_job(db, "vidCapped", claimed_at="2020-01-01T00:00:00+00:00")
+    log_attempts(db, "vidCapped", ["rate_limited"] * 25)
+    set_cooldown(db, 9999999999.0)
+    insert_job(db, "vidHealthy")
+    job = vj.claim_next_visual_job(db)
+    assert job is not None
+    assert job["video_id"] == "vidHealthy"
+    assert job_row(db, "vidCapped")[2] is None  # still open, not closed
+    assert job_row(db, "vidCapped")[3] == 0  # budget unspent
+
+
+def test_claim_keeps_refund_loop_during_global_cooldown(db: Path):
+    # Capped jobs are skipped (never claimed) while the cooldown lasts and
+    # stay open: backoff, not poison, and no budget is spent either way.
+    insert_job(db, "vidStorm", claimed_at="2020-01-01T00:00:00+00:00")
+    log_attempts(db, "vidStorm", ["rate_limited"] * 25)
+    set_cooldown(db, 9999999999.0)  # machine-wide cooldown active
+    assert vj.claim_next_visual_job(db) is None
+    assert job_row(db, "vidStorm")[2] is None  # still open
+    assert job_row(db, "vidStorm")[3] == 0  # budget unspent
+
+
+def test_claim_mixed_outcomes_break_refund_streak(db: Path):
+    insert_job(db, "vidMixed", claimed_at="2020-01-01T00:00:00+00:00")
+    log_attempts(db, "vidMixed", ["rate_limited"] * 25 + ["ok"])
+    job = vj.claim_next_visual_job(db)
+    assert job is not None
+    assert job["video_id"] == "vidMixed"
+
+
+def test_claim_trailing_refund_streak_closes_despite_old_ok(db: Path):
+    insert_job(db, "vidTrailing", claimed_at="2020-01-01T00:00:00+00:00")
+    log_attempts(db, "vidTrailing", ["ok"] + ["rate_limited"] * 25)
+    assert vj.claim_next_visual_job(db) is None  # closed, never returned
+    assert job_row(db, "vidTrailing")[2] is not None
+    assert visual_status_row(db, "vidTrailing")[0] == "failed_terminal"
+
+
+def test_claim_429_refund_cycles_never_spend_budget(db: Path):
+    insert_job(db, "vidBackoff")
+    for _ in range(5):
+        job = vj.claim_next_visual_job(db, stale_claim_s=0)
+        assert job is not None
+        vj.fail_visual_job(
+            "vidBackoff", error_class="rate_limited", retry_after_s=300.0,
+            penalize_attempt=False, db_path=db,
+        )
+        conn = sqlite3.connect(db)  # simulate the retry window elapsing
+        conn.execute(
+            "UPDATE visual_jobs SET claimed_at = '2020-01-01T00:00:00+00:00' "
+            "WHERE video_id = 'vidBackoff'"
+        )
+        conn.commit()
+        conn.close()
+    assert job_row(db, "vidBackoff")[3] == 0  # attempt_count refunded
+    assert job_row(db, "vidBackoff")[2] is None  # still open by design
+    assert vj.claim_next_visual_job(db, stale_claim_s=0)["video_id"] == "vidBackoff"
+
+
 # ---------------------------------------------------------------------------
 # complete / fail
 # ---------------------------------------------------------------------------
@@ -322,7 +443,7 @@ def test_maybe_recover_transcript_skips_complete_and_attempts_failed(tmp_path, m
     conn.close()
 
     audio = tmp_path / "audio.mka"
-    audio.write_bytes(b"a")
+    audio.write_bytes(b"a" * 17000)  # above the recovery floor
 
     # Complete rows: no attempt.
     result = worker.maybe_recover_transcript("vOK", audio, db_path=db, run_id="t")

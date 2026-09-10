@@ -17,8 +17,10 @@ the conservative side by design.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 import sqlite3
+import time
 from typing import Any
 
 from csf.batch_status import (
@@ -29,6 +31,55 @@ from csf.batch_status import (
 DEFAULT_STALE_CLAIM_S = 1800.0
 
 _TERMINAL_UNAVAILABLE_CLASSES = {"unavailable", "private", "removed", "deleted", "no_content"}
+
+# Mirror of the worker's non-penalized (refund) outcome classes: rate-limit
+# backoff refunds the attempt instead of spending it. Consecutive refunds are
+# capped below, but only when no machine-wide cooldown is active — refunds
+# during a global cooldown are backoff working as designed, and capping them
+# would mass-terminate the queue on every transient storm.
+_REFUND_OUTCOME_CLASSES = {"rate_limited", "budget_exhausted", "cookie_source"}
+
+
+def _refund_cap() -> int:
+    try:
+        return int(os.environ.get("YTIS_VISUAL_REFUND_CAP", "25"))
+    except (TypeError, ValueError):
+        return 25
+
+
+REFUND_CAP = _refund_cap()
+
+
+def _global_cooldown_active(conn: sqlite3.Connection) -> bool:
+    try:
+        row = conn.execute(
+            "SELECT MAX(cooldown_until_epoch) FROM media_rate_limit"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False  # table absent means no cooldown was ever recorded
+    if not row or row[0] is None:
+        return False
+    try:
+        return float(row[0]) > time.time()
+    except (TypeError, ValueError):
+        return False
+
+
+def _consecutive_refunds(conn: sqlite3.Connection, video_id: str) -> int:
+    try:
+        rows = conn.execute(
+            """SELECT outcome FROM visual_attempts
+               WHERE video_id = ? ORDER BY attempt_id DESC LIMIT ?""",
+            (video_id, REFUND_CAP + 1),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return 0
+    count = 0
+    for (outcome,) in rows:
+        if outcome not in _REFUND_OUTCOME_CLASSES:
+            break
+        count += 1
+    return count
 
 
 def _now_iso() -> str:
@@ -56,6 +107,14 @@ def _connect(db_path: str | Path | None) -> sqlite3.Connection:
     return conn
 
 
+def _claim_stale(claimed_at: str | None, now: datetime, stale_claim_s: float) -> bool:
+    """True when a claim is missing or older than the stale window."""
+    claimed_dt = _parse_iso(claimed_at)
+    if claimed_dt is None:
+        return True
+    return (now - claimed_dt).total_seconds() >= stale_claim_s
+
+
 def claim_next_visual_job(
     db_path: str | Path | None = None,
     *,
@@ -66,7 +125,63 @@ def claim_next_visual_job(
     Claimable means: not completed, and either never claimed or its claim is
     older than ``stale_claim_s`` (crashed-worker reclaim). Sets ``claimed_at``,
     increments ``attempt_count``, and flips ``visual_status`` to ``running``.
+
+    Jobs whose retry budget is already spent (crashed between claim and
+    adjudication) are closed out as failed_terminal up front instead of
+    being reclaimed forever. Jobs stuck in a refund loop with no active
+    machine-wide cooldown are closed out the same way. Freshly claimed
+    rows are never touched: a final in-flight attempt may still succeed.
     """
+    now = datetime.now(timezone.utc)
+    conn = _connect(db_path)
+    try:
+        spent = [
+            (job_id, video_id, profile)
+            for job_id, video_id, profile, claimed_at in conn.execute(
+                """SELECT job_id, video_id, profile, claimed_at FROM visual_jobs
+                   WHERE completed_at IS NULL AND attempt_count >= max_attempts"""
+            ).fetchall()
+            if _claim_stale(claimed_at, now, DEFAULT_STALE_CLAIM_S)
+        ]
+        closeouts = [(job_id, video_id, profile, "retry_budget_exhausted") for job_id, video_id, profile in spent]
+        if not _global_cooldown_active(conn):
+            # One query, no per-job scans at queue scale: close jobs whose
+            # trailing attempts streak (since the last non-refund outcome)
+            # sits at or past the cap. Mixed histories with a recent real
+            # outcome stay live; the claim loop below still guards them.
+            refund_list = ",".join(f"'{c}'" for c in sorted(_REFUND_OUTCOME_CLASSES))
+            closeouts.extend(
+                (job_id, video_id, profile, "refund_cap_exhausted")
+                for job_id, video_id, profile in conn.execute(
+                    f"""SELECT j.job_id, j.video_id, j.profile FROM visual_jobs j
+                       WHERE j.completed_at IS NULL AND j.attempt_count < j.max_attempts
+                       AND (SELECT COUNT(*) FROM visual_attempts a
+                            WHERE a.video_id = j.video_id AND a.outcome IN ({refund_list})
+                            AND a.attempt_id > COALESCE((SELECT MAX(b.attempt_id)
+                                FROM visual_attempts b
+                                WHERE b.video_id = j.video_id AND b.outcome NOT IN ({refund_list})), -1)) >= ?""",
+                    (REFUND_CAP,),
+                ).fetchall()
+            )
+        for job_id, _, _, _ in closeouts:
+            conn.execute(
+                "UPDATE visual_jobs SET completed_at = ? WHERE job_id = ?",
+                (_now_iso(), job_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    for _, video_id, profile, reason in closeouts:
+        # Outside any open write transaction: a nested status write would
+        # stall on the claim lock and fail silently.
+        record_status_event(
+            "visual_status",
+            video_id,
+            "failed_terminal",
+            failure_reason=reason,
+            profile=profile,
+            db_path=db_path,
+        )
     conn = _connect(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -78,11 +193,14 @@ def claim_next_visual_job(
         ).fetchall()
         now = datetime.now(timezone.utc)
         for job_id, video_id, profile, claimed_at, attempt_count, max_attempts in rows:
-            claimed_dt = _parse_iso(claimed_at)
-            if claimed_dt is not None:
-                age_s = (now - claimed_dt).total_seconds()
-                if age_s < stale_claim_s:
-                    continue
+            if not _claim_stale(claimed_at, now, stale_claim_s):
+                continue
+            if _consecutive_refunds(conn, video_id) >= REFUND_CAP:
+                # Never claim-return a capped refund loop in any cooldown
+                # state: the pre-pass closes these once the global cooldown
+                # clears; until then they are skipped, so storm-time claims
+                # cannot spend downloads.
+                continue
             conn.execute(
                 "UPDATE visual_jobs SET claimed_at = ?, attempt_count = attempt_count + 1 "
                 "WHERE job_id = ?",

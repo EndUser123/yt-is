@@ -15,6 +15,7 @@ from typing import Iterable
 
 ACTIVE_BROWSER_ROOT_NAMES = {"notebooklm-pro", "notebooklm-free"}
 DEFAULT_BROWSER_ROOT = Path(r"P:\.data\yt-is\browser")
+DEFAULT_VISUAL_MEDIA_ROOT = Path(r"P:\.data\yt-is\visual")
 DEFAULT_SHARDED_LANE_ROOT = Path(r"P:\packages\yt-is\.logs\sharded_lane_series")
 DEFAULT_DOCS_ROOTS = (
     Path(r"P:\packages\yt-is\docs\operations\test-registry.md"),
@@ -116,13 +117,52 @@ def scan_run_roots(
     return sorted(rows, key=lambda row: row.size_bytes, reverse=True)
 
 
+_MEDIA_EXTENSIONS = {".mka", ".webm", ".mp4", ".mkv", ".mp3", ".m4a"}
+
+
+def classify_visual_file(path: Path) -> str:
+    """Per-class bucket for one file under the visual media root."""
+    name = path.name.lower()
+    if name.startswith("source."):
+        return "video-source"
+    if name.startswith("audio."):
+        return "kept-audio"
+    if path.suffix.lower() == ".jpg":
+        return "frames"
+    if path.suffix.lower() in _MEDIA_EXTENSIONS:
+        return "media-unclassified"
+    if path.suffix.lower() in {".md", ".json", ".jsonl"}:
+        return "receipts"
+    return "other"
+
+
+def scan_visual_classes(media_root: Path = DEFAULT_VISUAL_MEDIA_ROOT) -> dict[str, dict[str, int]]:
+    """Byte and file counts per visual class (audio vs frames vs source)."""
+    classes: dict[str, dict[str, int]] = {}
+    if not media_root.exists():
+        return classes
+    for child in media_root.rglob("*"):
+        if not child.is_file():
+            continue
+        try:
+            size = child.stat().st_size
+        except OSError:
+            continue
+        bucket = classes.setdefault(classify_visual_file(child), {"bytes": 0, "files": 0})
+        bucket["bytes"] += size
+        bucket["files"] += 1
+    return classes
+
+
 def build_space_audit(
     *,
     browser_root: Path = DEFAULT_BROWSER_ROOT,
     sharded_lane_root: Path = DEFAULT_SHARDED_LANE_ROOT,
     docs_paths: Iterable[Path] = DEFAULT_DOCS_ROOTS,
-) -> dict[str, list[dict[str, object]]]:
+    visual_media_root: Path = DEFAULT_VISUAL_MEDIA_ROOT,
+) -> dict[str, list[dict[str, object]] | dict[str, dict[str, int]]]:
     return {
         "browser_roots": [row.as_dict() for row in scan_browser_roots(browser_root)],
         "run_roots": [row.as_dict() for row in scan_run_roots(sharded_lane_root, docs_paths)],
+        "visual_classes": scan_visual_classes(visual_media_root),
     }

@@ -102,6 +102,57 @@ class TestCacheMiss:
         assert result is None
 
 
+class TestSubfloorRefusal:
+    """Cache boundary: sub-minimum transcripts are refused at write time."""
+
+    def test_subfloor_transcript_is_refused(self):
+        """3-char garbage (empty-audio output) never reaches the cache."""
+        with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "abc")
+            assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is None
+
+    def test_whitespace_only_transcript_is_refused(self):
+        with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "   \n  ")
+            assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is None
+
+    def test_short_but_real_transcript_is_kept(self):
+        """The lt21 band stays usable; only garbage stops at the boundary."""
+        with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "hello world today")
+            assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is not None
+
+
+class TestReplaceFloor:
+    """The replace path enforces the same cache boundary as fresh writes."""
+
+    def test_replace_with_subfloor_is_refused(self):
+        from csf.cache import replace_cached_transcript_if_better
+
+        with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_replace"}):
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "a real transcript here")
+            assert replace_cached_transcript_if_better(
+                "dQw4w9WgXcQ", "en", "cli", "xy"
+            ) is False
+            assert (
+                get_cached_transcript("dQw4w9WgXcQ", "en", "cli").transcript
+                == "a real transcript here"
+            )
+
+    def test_replace_with_better_transcript_still_works(self):
+        from csf.cache import replace_cached_transcript_if_better
+
+        with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_replace"}):
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "a real transcript here")
+            assert replace_cached_transcript_if_better(
+                "dQw4w9WgXcQ", "en", "cli", "a much longer and better transcript here"
+            ) is True
+            assert (
+                get_cached_transcript("dQw4w9WgXcQ", "en", "cli").transcript
+                == "a much longer and better transcript here"
+            )
+
+
 class TestCacheBackup:
     """Test transcript cache backup behavior."""
 

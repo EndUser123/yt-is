@@ -58,6 +58,82 @@ def _write_json(path: Path, payload: dict) -> None:
     tmp.replace(path)
 
 
+# Retention: audio may be unlinked only for complete-transcript rows and
+# source artifacts only past the partial TTL. Every audio or partial-source
+# unlink appends a ledger row (video-source eviction on the visual path
+# stays unledgered). Backlog removals run only from operator-approved
+# dry-run manifests, never here.
+PARTIAL_SOURCE_TTL_S = float(os.environ.get("YTIS_VISUAL_PARTIAL_TTL_S", "3600"))
+DELETION_LEDGER_NAME = "deletion-ledger.jsonl"
+# Recovery floor: audio smaller than this never reaches Whisper (0-byte and
+# trunc files produce garbage transcripts while spending full slots).
+MIN_RECOVERABLE_AUDIO_BYTES = 16384
+
+
+def audio_deletable(transcript_status: str | None) -> bool:
+    """Pure decision: audio may go only once the transcript is complete."""
+    return transcript_status == "complete"
+
+
+def delete_media_with_ledger(
+    path: Path, *, video_id: str, reason: str, media_root: Path
+) -> dict:
+    """Unlink one media file and append its ledger row.
+
+    Filesystem (OSError) failures are returned, never raised.
+    """
+    size = 0
+    try:
+        size = path.stat().st_size
+        path.unlink()
+        deleted = True
+    except FileNotFoundError:
+        deleted = False
+    except OSError as exc:
+        return {"deleted": False, "bytes": size, "error": str(exc)[:200]}
+    if deleted:
+        row = {
+            "ts": _utcnow_iso(),
+            "action": "delete",
+            "path": str(path),
+            "bytes": size,
+            "video_id": video_id,
+            "reason": reason,
+        }
+        try:
+            with open(media_root / DELETION_LEDGER_NAME, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row) + "\n")
+        except OSError as exc:
+            return {"deleted": True, "bytes": size, "ledger_error": str(exc)[:200]}
+    return {"deleted": deleted, "bytes": size}
+
+
+def sweep_stale_partials(video_dir: Path, *, video_id: str, media_root: Path,
+                         ttl_s: float = PARTIAL_SOURCE_TTL_S) -> list[dict]:
+    """Remove partial-failure source artifacts older than the TTL, ledgered."""
+    now = time.time()
+    receipts = []
+    try:
+        candidates = sorted(video_dir.glob("source.*"))
+    except OSError:
+        return receipts
+    for path in candidates:
+        try:
+            age_s = now - path.stat().st_mtime
+        except OSError:
+            continue
+        if age_s < ttl_s:
+            continue
+        receipts.append(
+            delete_media_with_ledger(
+                path, video_id=video_id,
+                reason=f"stale_partial_ttl age_s={int(age_s)}",
+                media_root=media_root,
+            )
+        )
+    return receipts
+
+
 def _dir_bytes(path: Path) -> int:
     total = 0
     for item in path.rglob("*"):
@@ -121,6 +197,32 @@ def _analysis_status_for(video_id: str, db_path: Path) -> str | None:
     return str(row[0]) if row else None
 
 
+def parse_recovery_result(
+    result_path: Path, exit_code: int, stderr_text: str
+) -> dict:
+    """Decide a Whisper worker outcome from its exit code and result file.
+
+    A nonzero exit with a valid ok result file means a teardown abort after
+    complete inference (CUDA context unload on Windows): the result still
+    decides. Missing or invalid results stay failures.
+    """
+    if exit_code != 0 and not result_path.exists():
+        stderr_tail = (stderr_text or "").strip()[-300:]
+        return {
+            "attempted": True, "ok": False,
+            "error": f"whisper worker crashed (exit {exit_code}): {stderr_tail}",
+        }
+    if not result_path.exists():
+        return {"attempted": True, "ok": False, "error": "whisper worker produced no result"}
+    try:
+        return {"attempted": True, "ok": True, "payload": json.loads(result_path.read_text(encoding="utf-8"))}
+    except json.JSONDecodeError as exc:
+        return {
+            "attempted": True, "ok": False,
+            "error": f"whisper result unreadable ({exc}); worker likely crashed before writing",
+        }
+
+
 def maybe_recover_transcript(
     video_id: str, audio_path: Path, *, db_path: Path, run_id: str
 ) -> dict:
@@ -139,6 +241,12 @@ def maybe_recover_transcript(
     if status is None:
         return {"attempted": False, "reason": "no_analysis_row"}
 
+    try:
+        if audio_path.stat().st_size < MIN_RECOVERABLE_AUDIO_BYTES:
+            return {"attempted": False, "reason": "audio_too_small"}
+    except OSError:
+        return {"attempted": False, "reason": "audio_unreadable"}
+
     import tempfile
 
     timeout_s = float(os.environ.get("YTIS_VISUAL_TRANSCRIBE_TIMEOUT_S", "900"))
@@ -152,13 +260,20 @@ def maybe_recover_transcript(
         "--result-path", str(result_path),
     ]
     try:
-        subprocess.run(
+        proc = subprocess.run(
             command, cwd=str(REPO_ROOT), capture_output=True, text=True,
             timeout=timeout_s, check=False,
         )
-        if not result_path.exists():
-            return {"attempted": True, "ok": False, "error": "whisper worker produced no result"}
-        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        exit_code = proc.returncode
+        decision = parse_recovery_result(result_path, exit_code, proc.stderr or "")
+        if not decision["ok"]:
+            return decision
+        payload = decision["payload"]
+    except json.JSONDecodeError as exc:
+        return {
+            "attempted": True, "ok": False,
+            "error": f"whisper result unreadable ({exc}); worker likely crashed before writing",
+        }
     except subprocess.TimeoutExpired:
         return {"attempted": True, "ok": False, "error": f"whisper timeout (>{timeout_s:g}s)"}
     except Exception as exc:
@@ -267,6 +382,10 @@ def process_one(
     audio_recovery_mode = transcript_status is not None and transcript_status != "complete"
     receipt["mode"] = "audio_recovery" if audio_recovery_mode else "visual"
 
+    receipt["partial_sweep"] = sweep_stale_partials(
+        video_dir, video_id=video_id,
+        media_root=media_fetch.media_root(db_path),
+    )
     download = media_fetch.download_video(
         video_id, db_path=db_path, dest_dir=video_dir, audio_only=audio_recovery_mode
     )
@@ -326,6 +445,12 @@ def process_one(
             video_id, status="complete", last_stage="audio_recovery",
             db_path=db_path,
         )
+        if audio_deletable(_analysis_status_for(video_id, db_path)):
+            receipt["audio_evicted"] = delete_media_with_ledger(
+                audio_path, video_id=video_id,
+                reason="transcript_complete",
+                media_root=media_fetch.media_root(db_path),
+            )
         visual_jobs.log_visual_attempt(
             video_id, profile=job.get("profile"), provider="yt-dlp+whisper",
             outcome="ok", latency_ms=(time.monotonic() - started) * 1000,
@@ -426,7 +551,9 @@ def process_one(
             video_id, "visual_frames", content_hash, db_path=db_path
         )
 
-        # Over-image policy: keep frames + audio; evict only the video file.
+        # Over-image policy: keep frames; evict only the video file. Audio is
+        # never written on this path (audio_kept False); audio lifecycle for
+        # recovery jobs lives in the audio_recovery block above.
         video_path.unlink(missing_ok=True)
         for leftover in video_dir.glob("source.*"):
             leftover.unlink(missing_ok=True)

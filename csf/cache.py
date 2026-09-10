@@ -18,6 +18,11 @@ from typing import Any, Mapping
 # Validation
 _VIDEO_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
+# Cache boundary: transcripts shorter than this (non-whitespace chars) are
+# refused at write time. Kills garbage output (e.g. 3 chars from empty
+# audio) while keeping the lt21 quality band usable.
+MIN_CACHED_TRANSCRIPT_CHARS = 5
+
 # Shared transcript cache DB (all terminals share the same pool)
 # Stored in .data alongside other CSF runtime data
 _DEFAULT_SHARED_DB_PATH = Path("P:/.data/yt-is/transcripts.sqlite")
@@ -374,6 +379,12 @@ def set_cached_transcript(
         _log_unbound_write_skip(video_id, lang, source)
         return
 
+    if len((transcript or "").strip()) < MIN_CACHED_TRANSCRIPT_CHARS:
+        # Cache boundary: refuse sub-floor transcripts (e.g. 3-char output
+        # from empty audio). The lt21 band stays usable; only garbage stops.
+        _log_unbound_write_skip(video_id, lang, f"{source}:subfloor")
+        return
+
     from csf.terminal_context import resolve_tid
 
     terminal_id = resolve_tid()
@@ -486,6 +497,12 @@ def replace_cached_transcript_if_better(
     Returns True if the entry was upgraded, False if the existing was kept.
     """
     if not _validate_video_id(video_id):
+        return False
+
+    if len((transcript or "").strip()) < MIN_CACHED_TRANSCRIPT_CHARS:
+        # Same cache boundary as fresh writes: sub-floor replacements are
+        # refused on both the INSERT and UPDATE paths.
+        _log_unbound_write_skip(video_id, lang, f"{source}:subfloor")
         return False
 
     existing = get_cached_transcript(video_id, lang, source)
