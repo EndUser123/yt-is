@@ -23,10 +23,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.deferred_audio_feeder import (  # noqa: E402
+    check_model_cache,
     classify_audio_row,
     evictable,
     pick_distribution,
 )
+from scripts.audio_drain_relay import parse_done_line  # noqa: E402
 
 
 # ------------------------------------------------------------------ pure
@@ -64,6 +66,67 @@ def test_pick_distribution_edge_cases():
 def test_evict_decision_follows_deletion_rule():
     assert evictable(True) is True
     assert evictable(False) is False
+
+
+def test_model_cache_preflight_reports_missing_and_partial(tmp_path):
+    home = tmp_path / "mc"
+    verdict = check_model_cache(home)
+    assert verdict["ok"] is False
+    assert "missing" in verdict["error"]
+    blob = home / "hub" / "models--x" / "snapshots" / "s1" / "model.bin"
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(b"0" * 100)
+    verdict = check_model_cache(home)
+    assert verdict["ok"] is False
+    assert "partial" in verdict["error"]
+    blob.write_bytes(b"0" * 1_600_000_000)
+    verdict = check_model_cache(home)
+    assert verdict["ok"] is True
+    assert verdict["bytes"] == 1_600_000_000
+
+
+def test_reconcile_drops_stale_cached_claims(feeder_env):
+    audio = feeder_env.add_video("v_r12345678", "deferred_audio", 250_000)
+    assert _run_cli("inventory", "--manifest", str(feeder_env.media_root / "m.json")).returncode == 0
+    assert _run_cli("process", "--limit", "5",
+                    "--manifest", str(feeder_env.media_root / "m.json")).returncode == 0
+    checkpoint = json.loads(feeder_env.checkpoint.read_text(encoding="utf-8"))
+    assert checkpoint["v_r12345678"]["state"] == "cached"
+
+    # Destroy the transcript row: reconcile must drop the stale claim.
+    con = sqlite3.connect(feeder_env.cache_db)
+    con.execute("DELETE FROM transcript_cache WHERE video_id = 'v_r12345678'")
+    con.commit()
+    con.close()
+    rec = _run_cli("reconcile")
+    assert rec.returncode == 0, rec.stderr
+    checkpoint = json.loads(feeder_env.checkpoint.read_text(encoding="utf-8"))
+    assert "v_r12345678" not in checkpoint
+    assert "dropped 1 stale-cached" in rec.stdout
+
+    # And the item retries instead of being stranded.
+    proc = _run_cli("process", "--limit", "5",
+                    "--manifest", str(feeder_env.media_root / "m.json"))
+    assert proc.returncode == 0, proc.stderr
+    checkpoint = json.loads(feeder_env.checkpoint.read_text(encoding="utf-8"))
+    assert checkpoint["v_r12345678"]["state"] == "cached"
+    assert audio.exists()
+
+
+def test_parse_done_line_counts():
+    counts = parse_done_line("backlog 10, checkpointed 0, processing 5 (CPU)\ndone: cached=3 refused=1 errors=1")
+    assert counts == {"cached": 3, "refused": 1, "errors": 1}
+    assert parse_done_line("no summary here") == {"cached": 0, "refused": 0, "errors": 0}
+
+
+def test_process_refuses_without_model_cache(feeder_env, monkeypatch):
+    monkeypatch.setenv("YTIS_FEEDER_MODEL_CACHE", str(feeder_env.media_root / "no-such-cache"))
+    feeder_env.add_video("v_m12345678", "deferred_audio", 250_000)
+    manifest = feeder_env.media_root / "m.json"
+    assert _run_cli("inventory", "--manifest", str(manifest)).returncode == 0
+    proc = _run_cli("process", "--limit", "5", "--manifest", str(manifest))
+    assert proc.returncode == 4
+    assert "model cache" in proc.stdout.lower() or "model.bin" in proc.stdout
 
 
 # ------------------------------------------------------- fixture harness

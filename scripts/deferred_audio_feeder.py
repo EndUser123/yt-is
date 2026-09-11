@@ -46,16 +46,44 @@ CHECKPOINT_PATH = Path(
         "P:/tmp/whisper-teardown/feeder-checkpoint.json",
     )
 )
+# Model-cache home for feeder workers. The machine default HF_HOME
+# (P:\.model_cache -> junction -> P:\.cache\model_cache) gets swept by an
+# automated cache-purge pass, so the feeder pins its own home under the
+# pipeline's protected .data area; the model persists across runs.
+MODEL_CACHE_HOME = Path(
+    os.environ.get("YTIS_FEEDER_MODEL_CACHE", "P:/.data/yt-is/model_cache")
+)
 AUDIO_SUFFIXES = {".mka", ".mp3", ".m4a", ".wav", ".opus"}
 CPU_MODEL = os.environ.get("YTIS_WHISPER_CPU_MODEL", "large-v3-turbo")
-# Worker module override for tests (process boundary double); production
-# default is the real csf.whisper_worker.
-WORKER_MODULE = os.environ.get("YTIS_FEEDER_WORKER", "csf.whisper_worker")
+# Production worker: the CPU runner script. `python -m csf.whisper_worker`
+# fail-fasts (exit 3221226505) during model load on this host ~80% of the
+# time; the identical faster-whisper stack invoked as a plain script is
+# stable, so the default is the script. Tests override with a module-mode
+# stub via YTIS_FEEDER_WORKER.
+WORKER_SCRIPT = os.environ.get(
+    "YTIS_FEEDER_WORKER_SCRIPT", str(REPO_ROOT / "scripts" / "whisper_cpu_runner.py")
+)
+WORKER_MODULE = os.environ.get("YTIS_FEEDER_WORKER")
 ITEM_TIMEOUT_S = float(os.environ.get("YTIS_FEEDER_TIMEOUT_S", "1800"))
 # Stop-if floor: P: free bytes below this halts processing (tests override
 # to 0 since fixtures live on other drives).
 MIN_FREE_BYTES = int(
     os.environ.get("YTIS_FEEDER_MIN_FREE_BYTES", str(2 * 1024 * 1024 * 1024))
+)
+# faster-whisper materializes the full feature array in RAM (~10.3x the
+# audio bytes, observed: 3.5 GB audio -> 35.9 GiB float32 allocation).
+# Items whose estimate exceeds this cap are reported unprocessable
+# instead of crashing the worker.
+MAX_EST_ALLOC_BYTES = int(
+    os.environ.get("YTIS_FEEDER_MAX_ALLOC_BYTES", str(4 * 1024 * 1024 * 1024))
+)
+EST_ALLOC_RATIO = 10.5
+# Minimum intact large-v3-turbo model.bin size. The full snapshot is
+# ~1.62 GB; interrupted downloads leave smaller blobs that make
+# ctranslate2 fail-fast (exit 3221226505) with empty stderr. The
+# pre-flight below reports this instead of burning a batch on crashes.
+MIN_MODEL_BIN_BYTES = int(
+    os.environ.get("YTIS_FEEDER_MIN_MODEL_BYTES", str(1_500_000_000))
 )
 
 STATUS_COMPLETE = "complete"
@@ -97,6 +125,58 @@ def evictable(cached: bool) -> bool:
     complete transcript row; reuse the phase-1 decision helper.
     """
     return audio_deletable(STATUS_COMPLETE if cached else None)
+
+
+def check_model_cache(home: Path = MODEL_CACHE_HOME) -> dict:
+    """Pre-flight: is the whisper model snapshot intact enough to load?
+
+    A swept or partial model.bin makes ctranslate2 fail-fast silently;
+    callers must refuse the batch with this verdict instead.
+    """
+    hub = home / "hub"
+    if not hub.is_dir():
+        return {"ok": False, "error": f"model cache hub missing: {hub}"}
+    bins = sorted(hub.glob("models--*/snapshots/*/model.bin"))
+    if not bins:
+        return {"ok": False, "error": f"no model.bin under {hub}"}
+    biggest = max(bins, key=lambda p: p.stat().st_size)
+    size = biggest.stat().st_size
+    if size < MIN_MODEL_BIN_BYTES:
+        return {
+            "ok": False,
+            "error": (
+                f"model.bin partial ({size/1e9:.2f} GB < "
+                f"{MIN_MODEL_BIN_BYTES/1e9:.2f} GB floor): re-download first"
+            ),
+        }
+    return {"ok": True, "model_bin": str(biggest), "bytes": size}
+
+
+def reconcile_checkpoint(checkpoint: dict) -> dict:
+    """Re-derive checkpoint terminal states from the transcript store.
+
+    Returns (kept, dropped, report): entries whose cached claim no
+    longer has a transcript row are dropped so the item retries;
+    refused/unprocessable terminal states are kept as recorded.
+    """
+    from csf.cache import has_cached_transcript
+
+    kept: dict = {}
+    dropped: list[str] = []
+    for video_id, result in checkpoint.items():
+        state = result.get("state") if isinstance(result, dict) else None
+        if state == "cached" and not has_cached_transcript(video_id):
+            dropped.append(video_id)
+            continue
+        kept[video_id] = result
+    return {
+        "kept": kept,
+        "dropped": dropped,
+        "report": (
+            f"checkpoint {len(checkpoint)} entries: kept {len(kept)}, "
+            f"dropped {len(dropped)} stale-cached (will retry)"
+        ),
+    }
 
 
 def _connect_ro(db: Path) -> sqlite3.Connection:
@@ -257,36 +337,74 @@ def process_item(item: dict) -> dict:
     from csf.paths import load_workspace_env
 
     load_workspace_env()
-    # The whisper worker needs its model-cache home to exist; the disk
-    # emergency wiped P:/.model_cache once already. Concurrent workers
-    # can race the parent creation on Windows — absorb FileExistsError.
-    hf_home = os.environ.get("HF_HOME", "P:/.model_cache")
+    # Pin the worker's HF home to the feeder-owned cache (the machine
+    # default P:\.model_cache junction target gets swept by an automated
+    # cache-purge pass, crashing model loads).
+    env_overrides = {
+        "CUDA_VISIBLE_DEVICES": "",
+        "YTIS_WHISPER_CPU_MODEL": CPU_MODEL,
+        "HF_HOME": str(MODEL_CACHE_HOME),
+    }
     try:
-        Path(hf_home, "hub").mkdir(parents=True, exist_ok=True)
+        Path(MODEL_CACHE_HOME, "hub").mkdir(parents=True, exist_ok=True)
     except FileExistsError:
         pass
 
     result_fd, result_name = tempfile.mkstemp(prefix="feeder_whisper_", suffix=".json")
     os.close(result_fd)
     result_path = Path(result_name)
+    est_alloc = item["bytes"] * EST_ALLOC_RATIO
+    if est_alloc > MAX_EST_ALLOC_BYTES:
+        return {
+            "state": "unprocessable",
+            "error": (
+                "over_length: est feature allocation "
+                f"{est_alloc / 2**30:.1f} GiB exceeds "
+                f"{MAX_EST_ALLOC_BYTES / 2**30:.0f} GiB cap"
+            ),
+        }
     env = dict(os.environ)
-    env["CUDA_VISIBLE_DEVICES"] = ""
-    env["YTIS_WHISPER_CPU_MODEL"] = CPU_MODEL
-    command = [
-        sys.executable, "-m", WORKER_MODULE,
-        "--audio-file", item["path"],
-        "--lang", "en",
-        "--result-path", str(result_path),
-    ]
+    env.update(env_overrides)
+    if WORKER_MODULE:
+        command = [
+            sys.executable, "-m", WORKER_MODULE,
+            "--audio-file", item["path"],
+            "--lang", "en",
+            "--result-path", str(result_path),
+        ]
+    else:
+        command = [
+            sys.executable, WORKER_SCRIPT,
+            "--audio-file", item["path"],
+            "--lang", "en",
+            "--result-path", str(result_path),
+        ]
     try:
-        subprocess.run(
+        proc = subprocess.run(
             command, cwd=str(REPO_ROOT), capture_output=True, text=True,
             timeout=ITEM_TIMEOUT_S, check=False, env=env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        stderr_tail = (proc.stderr or "").strip()[-200:]
         if not result_path.exists():
-            return {"state": "error", "error": "whisper worker produced no result"}
-        payload = json.loads(result_path.read_text(encoding="utf-8"))
+            return {
+                "state": "error",
+                "error": (
+                    "whisper worker produced no result; "
+                    f"stderr tail: {stderr_tail or '(empty)'}"
+                ),
+            }
+        result_text = result_path.read_text(encoding="utf-8")
+        if not result_text.strip():
+            return {
+                "state": "error",
+                "error": (
+                    "whisper worker crashed before writing a result "
+                    f"(empty result file); stderr tail: "
+                    f"{stderr_tail or '(empty)'}"
+                ),
+            }
+        payload = json.loads(result_text)
     except subprocess.TimeoutExpired:
         return {"state": "error", "error": f"whisper timeout (>{ITEM_TIMEOUT_S:g}s)"}
     except Exception as exc:  # noqa: BLE001 - per-item isolation
@@ -343,15 +461,23 @@ def cmd_process(args: argparse.Namespace) -> int:
     if not _disk_free_ok():
         print("STOP: disk free below 2 GB floor")
         return 3
+    cache_verdict = check_model_cache()
+    if not cache_verdict["ok"]:
+        print(f"STOP: {cache_verdict['error']}")
+        return 4
     manifest_path = Path(args.manifest) if args.manifest else MANIFEST_PATH
     if not manifest_path.exists():
         print(f"no manifest at {manifest_path}; run inventory first")
         return 2
     backlog = _load_backlog(manifest_path)
     checkpoint = _checkpoint_load()
+    # Only cached/refused/unprocessable are terminal states; plain errors
+    # retry on re-run so transient failures never strand an item.
     pending = [
         i for i in backlog
-        if i["video_id"] not in checkpoint and not i["transcript_cached"]
+        if checkpoint.get(i["video_id"], {}).get("state")
+        not in ("cached", "refused", "unprocessable")
+        and not i["transcript_cached"]
     ]
     selected = pick_distribution(pending, args.limit)
     print(f"backlog {len(backlog)}, checkpointed {len(checkpoint)}, "
@@ -445,6 +571,17 @@ def cmd_measure(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reconcile(args: argparse.Namespace) -> int:
+    """Drop stale cached claims from the checkpoint so items retry."""
+    checkpoint = _checkpoint_load()
+    outcome = reconcile_checkpoint(checkpoint)
+    _checkpoint_save(outcome["kept"])
+    print(outcome["report"])
+    for video_id in outcome["dropped"][:10]:
+        print(f"dropped stale claim: {video_id}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -468,6 +605,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p_meas = sub.add_parser("measure", help="aggregate totals only")
     p_meas.set_defaults(func=cmd_measure)
+
+    p_rec = sub.add_parser(
+        "reconcile", help="drop stale cached claims from the checkpoint"
+    )
+    p_rec.set_defaults(func=cmd_reconcile)
 
     args = parser.parse_args(argv)
     if args.command == "evict" and args.dry_run == args.apply:
