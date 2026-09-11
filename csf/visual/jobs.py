@@ -121,6 +121,33 @@ def _claim_stale(claimed_at: str | None, now: datetime, stale_claim_s: float) ->
     return (now - claimed_dt).total_seconds() >= stale_claim_s
 
 
+def video_has_active_job(
+    video_id: str,
+    db_path: str | Path | None = None,
+    *,
+    stale_claim_s: float = 3600.0,
+) -> bool:
+    """True when the video holds a live (non-stale, incomplete) job claim.
+
+    Sweep paths use this as a lease check: an mtime-old partial may still
+    belong to a running worker, so TTL alone must not delete it.
+    """
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT claimed_at FROM visual_jobs
+               WHERE video_id = ? AND completed_at IS NULL
+               AND visual_status = 'running'""",
+            (video_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    now = datetime.now(timezone.utc)
+    return any(
+        not _claim_stale(claimed_at, now, stale_claim_s) for (claimed_at,) in rows
+    )
+
+
 def claim_next_visual_job(
     db_path: str | Path | None = None,
     *,

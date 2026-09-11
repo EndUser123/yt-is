@@ -128,14 +128,28 @@ def delete_media_with_ledger(
 
 
 def sweep_stale_partials(video_dir: Path, *, video_id: str, media_root: Path,
-                         ttl_s: float = PARTIAL_SOURCE_TTL_S) -> list[dict]:
-    """Remove partial-failure source artifacts older than the TTL, ledgered."""
+                         ttl_s: float = PARTIAL_SOURCE_TTL_S,
+                         db_path: str | Path | None = None) -> list[dict]:
+    """Remove partial-failure source artifacts older than the TTL, ledgered.
+
+    TTL alone is a fallback signal: file mtime cannot prove the owning
+    job failed, so a video holding a live job claim is always skipped
+    (lease check) regardless of artifact age.
+    """
     now = time.time()
     receipts = []
     try:
         candidates = sorted(video_dir.glob("source.*"))
     except OSError:
         return receipts
+    leased = False
+    if db_path is not None:
+        try:
+            leased = visual_jobs.video_has_active_job(video_id, db_path)
+        except Exception:  # noqa: BLE001 - lease check must never block sweep
+            leased = False
+    if leased:
+        return [{"video_id": video_id, "skipped": "active_job_lease"}]
     for path in candidates:
         try:
             age_s = now - path.stat().st_mtime
@@ -243,6 +257,34 @@ def maybe_recover_transcript(
     import tempfile
 
     timeout_s = float(os.environ.get("YTIS_VISUAL_TRANSCRIBE_TIMEOUT_S", "900"))
+    # 15 min item budget for queued recovery audio (fresher and smaller
+    # on average than backlog items, which get 1800 s in the feeder).
+    # Both wrap the same runner script; the values differ by workload
+    # class, and the relay/drain wrappers derive their deadlines from
+    # these per-item budgets rather than guessing independently.
+    # Same over-length fence as the feeder (lazy import: the feeder
+    # imports this module's deletion helpers, so a top-level import
+    # would cycle). A concurrent visual job on a multi-GB file must not
+    # bypass the only OOM fence.
+    from scripts.deferred_audio_feeder import (
+        EST_ALLOC_RATIO as _EST_ALLOC_RATIO,
+    )
+    from scripts.deferred_audio_feeder import (
+        MAX_EST_ALLOC_BYTES as _MAX_EST_ALLOC_BYTES,
+    )
+    try:
+        _audio_bytes = audio_path.stat().st_size
+    except OSError:
+        return {"attempted": False, "reason": "audio_unreadable"}
+    if _audio_bytes * _EST_ALLOC_RATIO > _MAX_EST_ALLOC_BYTES:
+        return {
+            "attempted": True, "ok": False,
+            "error": (
+                "over_length: est feature allocation "
+                f"{_audio_bytes * _EST_ALLOC_RATIO / 2**30:.1f} GiB exceeds "
+                f"{_MAX_EST_ALLOC_BYTES / 2**30:.0f} GiB cap"
+            ),
+        }
     result_fd, result_name = tempfile.mkstemp(prefix="visual_whisper_", suffix=".json")
     os.close(result_fd)
     result_path = Path(result_name)
@@ -394,6 +436,7 @@ def process_one(
     receipt["partial_sweep"] = sweep_stale_partials(
         video_dir, video_id=video_id,
         media_root=media_fetch.media_root(db_path),
+        db_path=db_path,
     )
     download = media_fetch.download_video(
         video_id, db_path=db_path, dest_dir=video_dir, audio_only=audio_recovery_mode
@@ -616,6 +659,10 @@ def main(argv: list[str] | None = None) -> int:
         "--drain-backlog-n", type=int, default=25,
         help="deferred-audio drain items after the job loop (0 disables)",
     )
+    parser.add_argument(
+        "--drain-max-runtime-s", type=float, default=3600,
+        help="wall-clock cap for the embedded drain phase",
+    )
     parser.add_argument("--run-id", default=None)
     parser.add_argument(
         "--output-root", type=Path, default=None,
@@ -721,7 +768,10 @@ def main(argv: list[str] | None = None) -> int:
         # batch through the feeder lifecycle every normal run (lazy
         # import: the feeder imports this module's deletion helpers).
         from scripts.deferred_audio_feeder import run_drain_phase
-        summary["drain"] = run_drain_phase(args.drain_backlog_n)
+        summary["drain"] = run_drain_phase(
+            args.drain_backlog_n,
+            max_runtime_s=args.drain_max_runtime_s,
+        )
     _write_json(run_root / "summary.json", summary)
     print(json.dumps({k: v for k, v in summary.items() if k != "jobs"}, indent=1, default=str))
     return 0 if summary["jobs_failed"] == 0 else 1

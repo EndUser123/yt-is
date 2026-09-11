@@ -27,6 +27,7 @@ from scripts.deferred_audio_feeder import (  # noqa: E402
     classify_audio_row,
     evictable,
     pick_distribution,
+    pick_work,
 )
 from scripts.audio_drain_relay import parse_done_line  # noqa: E402
 
@@ -68,12 +69,40 @@ def test_evict_decision_follows_deletion_rule():
     assert evictable(False) is False
 
 
+def test_pick_work_is_smallest_first_not_spanning():
+    items = [
+        {"video_id": f"v{i:02d}", "bytes": 1_000_000 * (i + 1)}
+        for i in range(10)
+    ]
+    picked = pick_work(items, 3)
+    assert [p["bytes"] for p in picked] == [1_000_000, 2_000_000, 3_000_000]
+    assert pick_work(items, 0) == []
+    assert pick_work([], 3) == []
+
+
+def test_record_outcome_promotes_at_error_cap():
+    from scripts.deferred_audio_feeder import MAX_CONSECUTIVE_ERRORS, record_outcome
+
+    checkpoint: dict = {}
+    for _ in range(MAX_CONSECUTIVE_ERRORS - 1):
+        entry = record_outcome(checkpoint, "v1", {"state": "error", "error": "boom"})
+        assert entry["state"] == "error"
+    assert checkpoint["v1"]["consecutive_errors"] == MAX_CONSECUTIVE_ERRORS - 1
+    entry = record_outcome(checkpoint, "v1", {"state": "error", "error": "boom"})
+    assert entry["state"] == "unprocessable"
+    assert "error_cap" in entry["error"]
+    # Terminal states are kept, not re-counted.
+    entry = record_outcome(checkpoint, "v1", {"state": "cached", "chars": 10})
+    assert entry["state"] == "cached"
+    assert entry["consecutive_errors"] == 0
+
+
 def test_model_cache_preflight_reports_missing_and_partial(tmp_path):
     home = tmp_path / "mc"
     verdict = check_model_cache(home)
     assert verdict["ok"] is False
     assert "missing" in verdict["error"]
-    blob = home / "hub" / "models--x" / "snapshots" / "s1" / "model.bin"
+    blob = home / "hub" / "models--test--large-v3-turbo" / "snapshots" / "s1" / "model.bin"
     blob.parent.mkdir(parents=True)
     blob.write_bytes(b"0" * 100)
     verdict = check_model_cache(home)
@@ -83,6 +112,14 @@ def test_model_cache_preflight_reports_missing_and_partial(tmp_path):
     verdict = check_model_cache(home)
     assert verdict["ok"] is True
     assert verdict["bytes"] == 1_600_000_000
+    # An unrelated large snapshot must not satisfy the configured model.
+    other = tmp_path / "mc2"
+    oblob = other / "hub" / "models--test--medium" / "snapshots" / "s1" / "model.bin"
+    oblob.parent.mkdir(parents=True)
+    oblob.write_bytes(b"0" * 1_600_000_000)
+    verdict = check_model_cache(other)
+    assert verdict["ok"] is False
+    assert "large-v3-turbo" in verdict["error"]
 
 
 def test_reconcile_drops_stale_cached_claims(feeder_env):
@@ -114,9 +151,11 @@ def test_reconcile_drops_stale_cached_claims(feeder_env):
 
 
 def test_parse_done_line_counts():
-    counts = parse_done_line("backlog 10, checkpointed 0, processing 5 (CPU)\ndone: cached=3 refused=1 errors=1")
-    assert counts == {"cached": 3, "refused": 1, "errors": 1}
-    assert parse_done_line("no summary here") == {"cached": 0, "refused": 0, "errors": 0}
+    counts = parse_done_line("backlog 10, checkpointed 0, processing 5 (CPU)\ndone: cached=3 refused=1 errors=1 unprocessable=2")
+    assert counts == {"cached": 3, "refused": 1, "errors": 1, "unprocessable": 2}
+    assert parse_done_line("no summary here") == {
+        "cached": 0, "refused": 0, "errors": 0, "unprocessable": 0,
+    }
 
 
 def test_drain_command_end_to_end(feeder_env):

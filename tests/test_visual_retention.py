@@ -15,7 +15,6 @@ from scripts.run_visual_worker import (
     audio_deletable,
     delete_media_with_ledger,
     maybe_evict_audio,
-    parse_recovery_result,
     sweep_stale_partials,
 )
 
@@ -85,39 +84,37 @@ def test_sweep_removes_only_stale_partials(tmp_path: Path):
     assert "stale_partial_ttl" in rows[0]["reason"]
 
 
-def _result_file(tmp_path: Path, payload: dict) -> Path:
-    path = tmp_path / "worker_result.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
+def test_sweep_skips_video_with_active_job_lease(tmp_path: Path):
+    import sqlite3
+    from datetime import datetime, timezone
 
+    from csf.visual.jobs import video_has_active_job
 
-def test_teardown_abort_with_valid_result_is_accepted(tmp_path: Path):
-    path = _result_file(tmp_path, {"ok": True, "transcript": "hello world"})
-    decision = parse_recovery_result(path, -1073740791, "")
-    assert decision["ok"] is True
-    assert decision["payload"]["transcript"] == "hello world"
-
-
-def test_crash_without_result_names_exit_code(tmp_path: Path):
-    decision = parse_recovery_result(tmp_path / "absent.json", -1073740791, "boom")
-    assert decision == {
-        "attempted": True, "ok": False,
-        "error": "whisper worker crashed (exit -1073740791): boom",
-    }
-
-
-def test_clean_exit_without_result_is_failure(tmp_path: Path):
-    decision = parse_recovery_result(tmp_path / "absent.json", 0, "")
-    assert decision["ok"] is False
-    assert "no result" in decision["error"]
-
-
-def test_unreadable_result_is_failure(tmp_path: Path):
-    path = tmp_path / "worker_result.json"
-    path.write_text("{not json", encoding="utf-8")
-    decision = parse_recovery_result(path, -1073740791, "")
-    assert decision["ok"] is False
-    assert "unreadable" in decision["error"]
+    old = _media(tmp_path, "source.mp4", age_s=7200)
+    db = tmp_path / "jobs.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE visual_jobs (video_id TEXT, completed_at TEXT,"
+        " visual_status TEXT, claimed_at TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO visual_jobs VALUES (?, NULL, 'running', ?)",
+        ("vid4", datetime.now(timezone.utc).isoformat()),
+    )
+    conn.execute(
+        "INSERT INTO visual_jobs VALUES ('vid5', NULL, 'running', '2020-01-01T00:00:00+00:00')"
+    )
+    conn.commit()
+    conn.close()
+    assert video_has_active_job("vid4", db) is True
+    assert video_has_active_job("vid5", db) is False
+    assert video_has_active_job("vid-missing", db) is False
+    receipts = sweep_stale_partials(
+        tmp_path, video_id="vid4", media_root=tmp_path, ttl_s=3600,
+        db_path=db,
+    )
+    assert old.exists()
+    assert receipts == [{"video_id": "vid4", "skipped": "active_job_lease"}]
 
 
 def _status_db(tmp_path: Path, video_id: str, status: str) -> Path:

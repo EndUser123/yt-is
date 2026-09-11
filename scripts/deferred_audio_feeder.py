@@ -64,6 +64,12 @@ WORKER_SCRIPT = os.environ.get(
     "YTIS_FEEDER_WORKER_SCRIPT", str(REPO_ROOT / "scripts" / "whisper_cpu_runner.py")
 )
 WORKER_MODULE = os.environ.get("YTIS_FEEDER_WORKER")
+# Item budget: 30 min covers the largest observed CPU transcription
+# (~11 min for a 28 MB item) with headroom for multi-hundred-MB files
+# that clear the over-length guard. The visual worker's 900 s budget
+# covers the same script on fresher, smaller queued audio; the two
+# values differ by workload class, not by operation.
+ITEM_TIMEOUT_S = float(os.environ.get("YTIS_FEEDER_TIMEOUT_S", "1800"))
 ITEM_TIMEOUT_S = float(os.environ.get("YTIS_FEEDER_TIMEOUT_S", "1800"))
 # Stop-if floor: P: free bytes below this halts processing (tests override
 # to 0 since fixtures live on other drives).
@@ -78,6 +84,11 @@ MAX_EST_ALLOC_BYTES = int(
     os.environ.get("YTIS_FEEDER_MAX_ALLOC_BYTES", str(4 * 1024 * 1024 * 1024))
 )
 EST_ALLOC_RATIO = 10.5
+# Consecutive-error cap: an item that fails this many times in a row is
+# promoted to terminal `unprocessable` with its last error, instead of
+# being retried at up to 30 min each, every run, forever. `cached`,
+# `refused` and `unprocessable` are terminal; plain `error` retries.
+MAX_CONSECUTIVE_ERRORS = int(os.environ.get("YTIS_FEEDER_MAX_ERRORS", "3"))
 # Minimum intact large-v3-turbo model.bin size. The full snapshot is
 # ~1.62 GB; interrupted downloads leave smaller blobs that make
 # ctranslate2 fail-fast (exit 3221226505) with empty stderr. The
@@ -104,10 +115,12 @@ def classify_audio_row(status: str | None, size: int) -> str:
 
 
 def pick_distribution(items: list[dict], n: int) -> list[dict]:
-    """Pure: deterministic size-spanning sample.
+    """Pure: deterministic size-spanning sample for inventory checks.
 
     Sorts by bytes ascending and takes n evenly spaced indices, so a
     small n still spans the smallest through the largest backlog item.
+    Sampling only — never the work scheduler (it would re-inject the
+    current max into every batch).
     """
     if n <= 0 or not items:
         return []
@@ -116,6 +129,44 @@ def pick_distribution(items: list[dict], n: int) -> list[dict]:
         return list(ordered)
     last = len(ordered) - 1
     return [ordered[int(i * last / (n - 1))] for i in range(n)]
+
+
+def pick_work(items: list[dict], n: int) -> list[dict]:
+    """Pure: smallest-first work selection.
+
+    Drains cheap items first so timeouts and RAM spikes concentrate in
+    the tail, where the over-length guard and error cap handle them one
+    at a time instead of inside every batch.
+    """
+    if n <= 0 or not items:
+        return []
+    ordered = sorted(items, key=lambda r: (r["bytes"], r["video_id"]))
+    return ordered[:n] if n < len(ordered) else list(ordered)
+
+
+def record_outcome(checkpoint: dict, video_id: str, result: dict) -> dict:
+    """Pure: fold one item result into the checkpoint with the error cap.
+
+    A non-terminal `error` following MAX_CONSECUTIVE_ERRORS-1 prior
+    errors promotes the item to terminal `unprocessable`, carrying the
+    last error as the reason.
+    """
+    prior = checkpoint.get(video_id, {})
+    prior_errors = prior.get("consecutive_errors", 0) if isinstance(prior, dict) else 0
+    state = result.get("state")
+    if state == "error" and prior_errors + 1 >= MAX_CONSECUTIVE_ERRORS:
+        entry = dict(result)
+        entry["state"] = "unprocessable"
+        entry["error"] = (
+            f"error_cap: {prior_errors + 1} consecutive failures; "
+            f"last: {result.get('error', '')[:200]}"
+        )
+        entry["consecutive_errors"] = prior_errors + 1
+    else:
+        entry = dict(result)
+        entry["consecutive_errors"] = prior_errors + 1 if state == "error" else 0
+    checkpoint[video_id] = entry
+    return entry
 
 
 def evictable(cached: bool) -> bool:
@@ -128,25 +179,47 @@ def evictable(cached: bool) -> bool:
 
 
 def check_model_cache(home: Path = MODEL_CACHE_HOME) -> dict:
-    """Pre-flight: is the whisper model snapshot intact enough to load?
+    """Pre-flight: is the configured model snapshot intact enough to load?
 
-    A swept or partial model.bin makes ctranslate2 fail-fast silently;
-    callers must refuse the batch with this verdict instead.
+    Resolves the snapshot for CPU_MODEL (not just the biggest blob — a
+    large unrelated model must not satisfy the check), then requires the
+    model.bin floor. A swept or partial snapshot makes ctranslate2
+    fail-fast silently; callers must refuse the batch with this verdict
+    instead.
     """
     hub = home / "hub"
     if not hub.is_dir():
         return {"ok": False, "error": f"model cache hub missing: {hub}"}
-    bins = sorted(hub.glob("models--*/snapshots/*/model.bin"))
+    slug = CPU_MODEL.replace("_", "-")
+    candidates = [
+        d for d in hub.glob("models--*")
+        if d.is_dir() and slug in d.name
+    ]
+    if not candidates:
+        return {
+            "ok": False,
+            "error": f"no cached snapshot for model {CPU_MODEL!r} under {hub}",
+        }
+    bins = sorted(
+        (b for d in candidates for b in (d / "snapshots").glob("*/model.bin")),
+        key=lambda p: p.stat().st_size,
+        reverse=True,
+    )
     if not bins:
-        return {"ok": False, "error": f"no model.bin under {hub}"}
-    biggest = max(bins, key=lambda p: p.stat().st_size)
+        return {
+            "ok": False,
+            "error": f"no model.bin in {CPU_MODEL!r} snapshot under {hub}",
+        }
+    biggest = bins[0]
     size = biggest.stat().st_size
-    if size < MIN_MODEL_BIN_BYTES:
+    refs_main = biggest.parents[2] / "refs" / "main"
+    if not refs_main.exists() and size < MIN_MODEL_BIN_BYTES:
         return {
             "ok": False,
             "error": (
-                f"model.bin partial ({size/1e9:.2f} GB < "
-                f"{MIN_MODEL_BIN_BYTES/1e9:.2f} GB floor): re-download first"
+                f"model.bin for {CPU_MODEL!r} partial "
+                f"({size/1e9:.2f} GB < {MIN_MODEL_BIN_BYTES/1e9:.2f} GB floor, "
+                "no refs/main commit marker): re-download first"
             ),
         }
     return {"ok": True, "model_bin": str(biggest), "bytes": size}
@@ -298,11 +371,32 @@ def verify_sample(manifest: dict, n: int = 20) -> list[str]:
     return mismatches
 
 
-def _disk_free_ok() -> bool:
-    floor = int(
+def _disk_floor_bytes() -> int:
+    return int(
         os.environ.get("YTIS_FEEDER_MIN_FREE_BYTES", str(MIN_FREE_BYTES))
     )
-    return shutil.disk_usage("P:/").free >= floor
+
+
+def _guard_volume() -> Path:
+    """The filesystem the floor actually guards.
+
+    MEDIA_ROOT is env-overridable onto other volumes; probing a fixed
+    "P:/" would then monitor the wrong disk. Guard the anchor of the
+    directory we write to.
+    """
+    root = MEDIA_ROOT if MEDIA_ROOT.is_absolute() else REPO_ROOT / MEDIA_ROOT
+    return Path(root.anchor)
+
+
+def _disk_free_ok() -> bool:
+    return shutil.disk_usage(str(_guard_volume())).free >= _disk_floor_bytes()
+
+
+def _floor_stop_message() -> str:
+    return (
+        f"STOP: disk free below {_disk_floor_bytes() / 1e9:.1f} GB floor "
+        f"on {_guard_volume()}"
+    )
 
 
 def _checkpoint_load() -> dict:
@@ -441,8 +535,6 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     print(f"backlog: {t['backlog']['files']} files, {backlog_bytes/1e9:.2f} GB")
     print(f"complete: {t[STATUS_COMPLETE]['files']} files, {t[STATUS_COMPLETE]['bytes']/1e9:.2f} GB")
     print(f"subfloor: {t['subfloor']['files']} files, {t['subfloor']['bytes']/1e6:.1f} MB")
-    delta = backlog_bytes - 61.85e9
-    print(f"delta vs 61.85 GB (2026-09-10): {delta/1e9:+.2f} GB")
     mismatches = verify_sample(manifest, args.verify_sample)
     if mismatches:
         for m in mismatches:
@@ -459,7 +551,7 @@ def _load_backlog(manifest_path: Path) -> list[dict]:
 
 def cmd_process(args: argparse.Namespace) -> int:
     if not _disk_free_ok():
-        print("STOP: disk free below 2 GB floor")
+        print(_floor_stop_message())
         return 3
     cache_verdict = check_model_cache()
     if not cache_verdict["ok"]:
@@ -479,26 +571,22 @@ def cmd_process(args: argparse.Namespace) -> int:
         not in ("cached", "refused", "unprocessable")
         and not i["transcript_cached"]
     ]
-    selected = pick_distribution(pending, args.limit)
+    selected = pick_work(pending, args.limit)
     print(f"backlog {len(backlog)}, checkpointed {len(checkpoint)}, "
           f"processing {len(selected)} (CPU model {CPU_MODEL})")
-    ok = refused = errors = 0
+    counts = {"cached": 0, "refused": 0, "errors": 0, "unprocessable": 0}
     for item in selected:
         result = process_item(item)
         result["utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         result["bytes"] = item["bytes"]
-        checkpoint[item["video_id"]] = result
+        entry = record_outcome(checkpoint, item["video_id"], result)
         _checkpoint_save(checkpoint)
-        if result["state"] == "cached":
-            ok += 1
-        elif result["state"] == "refused":
-            refused += 1
-        else:
-            errors += 1
-        print(f"{item['video_id']} [{item['bytes']/1e6:.1f} MB] -> {result['state']} "
-              f"chars={result.get('chars', 0)} {result.get('error', '')[:120]}")
-    print(f"done: cached={ok} refused={refused} errors={errors}")
-    return 0 if errors == 0 else 1
+        counts[entry["state"] if entry["state"] in counts else "errors"] += 1
+        print(f"{item['video_id']} [{item['bytes']/1e6:.1f} MB] -> {entry['state']} "
+              f"chars={entry.get('chars', 0)} {str(entry.get('error', ''))[:120]}")
+    print(f"done: cached={counts['cached']} refused={counts['refused']} "
+          f"errors={counts['errors']} unprocessable={counts['unprocessable']}")
+    return 0 if counts["errors"] == 0 else 1
 
 
 def _cached_backlog_items(backlog: list[dict]) -> list[dict]:
@@ -572,13 +660,18 @@ def cmd_measure(args: argparse.Namespace) -> int:
 
 
 def run_drain_phase(limit: int, manifest_path: Path | None = None,
-                    checkpoint_path: Path | None = None) -> dict:
+                    checkpoint_path: Path | None = None,
+                    max_runtime_s: float | None = None) -> dict:
     """One bounded drain pass for embedding in the normal worker run.
 
     Reconcile, CPU-transcribe up to `limit` backlog items, then dry-run
-    and apply ledgered eviction of what completed. Returns a summary
+    and apply ledgered eviction of what completed. `max_runtime_s` caps
+    the pass by wall clock (checked before each item) so the embedded
+    drain cannot overrun the caller's runtime budget. Returns a summary
     dict; never raises on per-item failures (they land in the counts).
     """
+    import time as _time
+
     global CHECKPOINT_PATH
     manifest_file = manifest_path or MANIFEST_PATH
     if checkpoint_path is not None:
@@ -609,13 +702,18 @@ def run_drain_phase(limit: int, manifest_path: Path | None = None,
         and not i["transcript_cached"]
     ]
     counts = {"cached": 0, "refused": 0, "errors": 0, "unprocessable": 0}
-    for item in pick_distribution(pending, limit):
+    started = _time.monotonic()
+    for item in pick_work(pending, limit):
+        if (max_runtime_s is not None
+                and _time.monotonic() - started > max_runtime_s):
+            summary["stopped"] = "drain_runtime"
+            break
         result = process_item(item)
         result["utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         result["bytes"] = item["bytes"]
-        checkpoint[item["video_id"]] = result
+        entry = record_outcome(checkpoint, item["video_id"], result)
         _checkpoint_save(checkpoint)
-        state = result["state"]
+        state = entry["state"]
         counts[state if state in counts else "errors"] += 1
     summary["processed"] = counts
 
