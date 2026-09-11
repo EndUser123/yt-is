@@ -161,24 +161,26 @@ def test_inventory_builds_manifest_from_stores(feeder_env):
 
 
 def test_process_then_evict_full_lifecycle(feeder_env):
+    manifest_path = feeder_env.media_root / "m.json"
     audio_def = feeder_env.add_video("v_a12345678", "deferred_audio", 300_000)
     audio_def2 = feeder_env.add_video("v_b12345678", "failed", 200_000)
     feeder_env.add_video("v_c12345678", "deferred_audio", 50)  # subfloor, never processed
 
-    run1 = _run_cli("inventory")
+    run1 = _run_cli("inventory", "--manifest", str(manifest_path))
     assert run1.returncode == 0, run1.stderr
-    proc = _run_cli("process", "--limit", "5")
+    proc = _run_cli("process", "--limit", "5", "--manifest", str(manifest_path))
     assert proc.returncode == 0, proc.stderr
     checkpoint = json.loads(feeder_env.checkpoint.read_text(encoding="utf-8"))
     assert checkpoint["v_a12345678"]["state"] == "cached"
     assert checkpoint["v_b12345678"]["state"] == "cached"
 
     # resumability: a second identical run skips the checkpointed items
-    proc2 = _run_cli("process", "--limit", "5")
+    proc2 = _run_cli("process", "--limit", "5", "--manifest", str(manifest_path))
     assert proc2.returncode == 0, proc2.stderr
     assert "processing 0" in proc2.stdout
 
-    dry = _run_cli("evict", "--dry-run", "--out", str(feeder_env.media_root / "dry.json"))
+    dry = _run_cli("evict", "--dry-run", "--manifest", str(manifest_path),
+                   "--out", str(feeder_env.media_root / "dry.json"))
     assert dry.returncode == 0, dry.stderr
     dry_manifest = json.loads(
         (feeder_env.media_root / "dry.json").read_text(encoding="utf-8")
@@ -190,7 +192,7 @@ def test_process_then_evict_full_lifecycle(feeder_env):
     }
     assert audio_def.exists() and audio_def2.exists()  # zero unlinks in dry run
 
-    apply_run = _run_cli("evict", "--apply")
+    apply_run = _run_cli("evict", "--apply", "--manifest", str(manifest_path))
     assert apply_run.returncode == 0, apply_run.stderr
     assert not audio_def.exists()
     assert not audio_def2.exists()
@@ -204,25 +206,29 @@ def test_process_then_evict_full_lifecycle(feeder_env):
 
 
 def test_transcriptless_item_is_never_unlinked(feeder_env):
+    manifest_path = feeder_env.media_root / "m.json"
     audio = feeder_env.add_video("v_x12345678", "deferred_audio", 250_000)
-    assert _run_cli("inventory").returncode == 0
+    assert _run_cli("inventory", "--manifest", str(manifest_path)).returncode == 0
 
     # Process, then destroy the cached transcript row: the item's
     # transcript row no longer exists, so the deletion rule forbids
     # unlinking even though the checkpoint says "cached".
-    assert _run_cli("process", "--limit", "5").returncode == 0
+    assert _run_cli(
+        "process", "--limit", "5", "--manifest", str(manifest_path)
+    ).returncode == 0
     con = sqlite3.connect(feeder_env.cache_db)
     con.execute("DELETE FROM transcript_cache WHERE video_id = 'v_x12345678'")
     con.commit()
     con.close()
 
-    dry = _run_cli("evict", "--dry-run", "--out", str(feeder_env.media_root / "dry.json"))
+    dry = _run_cli("evict", "--dry-run", "--manifest", str(manifest_path),
+                   "--out", str(feeder_env.media_root / "dry.json"))
     assert dry.returncode == 0, dry.stderr
     dry_manifest = json.loads(
         (feeder_env.media_root / "dry.json").read_text(encoding="utf-8")
     )
     assert dry_manifest["files"] == 0
 
-    apply_run = _run_cli("evict", "--apply")
+    apply_run = _run_cli("evict", "--apply", "--manifest", str(manifest_path))
     assert apply_run.returncode == 0, apply_run.stderr
     assert audio.exists(), "transcript-less audio must never be unlinked"

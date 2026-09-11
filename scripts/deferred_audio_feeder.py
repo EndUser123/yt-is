@@ -254,6 +254,17 @@ def process_item(item: dict) -> dict:
     import tempfile
 
     from csf.cache import set_cached_transcript
+    from csf.paths import load_workspace_env
+
+    load_workspace_env()
+    # The whisper worker needs its model-cache home to exist; the disk
+    # emergency wiped P:/.model_cache once already. Concurrent workers
+    # can race the parent creation on Windows — absorb FileExistsError.
+    hf_home = os.environ.get("HF_HOME", "P:/.model_cache")
+    try:
+        Path(hf_home, "hub").mkdir(parents=True, exist_ok=True)
+    except FileExistsError:
+        pass
 
     result_fd, result_name = tempfile.mkstemp(prefix="feeder_whisper_", suffix=".json")
     os.close(result_fd)
