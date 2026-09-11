@@ -19,9 +19,12 @@ from typing import Any, Mapping
 _VIDEO_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 # Cache boundary: transcripts shorter than this (non-whitespace chars) are
-# refused at write time. Kills garbage output (e.g. 3 chars from empty
-# audio) while keeping the lt21 quality band usable.
-MIN_CACHED_TRANSCRIPT_CHARS = 5
+# refused at write time. Calibrated 2026-09-11 from 16 operator-judged
+# labels (docs/deferred-audio/transcript-quality-labels.json): all six
+# <=10-char samples judged junk (three silent, three audible), both
+# 17-char audible samples judged good. The 17-char "hello world today"
+# keeper test pins the usable side of the line.
+MIN_CACHED_TRANSCRIPT_CHARS = 15
 
 # Shared transcript cache DB (all terminals share the same pool)
 # Stored in .data alongside other CSF runtime data

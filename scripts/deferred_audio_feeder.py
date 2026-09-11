@@ -71,6 +71,14 @@ WORKER_MODULE = os.environ.get("YTIS_FEEDER_WORKER")
 # values differ by workload class, not by operation.
 ITEM_TIMEOUT_S = float(os.environ.get("YTIS_FEEDER_TIMEOUT_S", "1800"))
 ITEM_TIMEOUT_S = float(os.environ.get("YTIS_FEEDER_TIMEOUT_S", "1800"))
+# Silence gate: files with no measurable audio signal transcribe as
+# hallucinated filler ("Thank you." x N on digital silence — measured on
+# 6/6 silent samples plus a 1.05 GB all-silence whale, round-1/2 labels).
+# Peak amplitude at/below this is silence; such items go unprocessable
+# without spawning a worker.
+AUDIO_SILENCE_PEAK = float(os.environ.get("YTIS_FEEDER_SILENCE_PEAK", "0.001"))
+SILENCE_PROBE_WINDOWS = 3
+SILENCE_PROBE_SECONDS = 10.0
 # Stop-if floor: P: free bytes below this halts processing (tests override
 # to 0 since fixtures live on other drives).
 MIN_FREE_BYTES = int(
@@ -371,6 +379,61 @@ def verify_sample(manifest: dict, n: int = 20) -> list[str]:
     return mismatches
 
 
+def audio_peak_sample(path: str) -> float | None:
+    """Peak amplitude sampled across start/middle/end windows.
+
+    Returns 0.0 for digital silence, None when the input cannot be
+    decoded at all (unknown — callers proceed so corrupt input fails
+    loudly in the worker instead of being mislabeled silence). Uses the
+    `av` stack already in the worker's dependency closure.
+    """
+    try:
+        import av
+    except ImportError:
+        return None
+    try:
+        container = av.open(path)
+    except Exception:  # noqa: BLE001 - unreadable input
+        return None
+    try:
+        stream = next((s for s in container.streams if s.type == "audio"), None)
+        if stream is None:
+            return 0.0
+        duration_s = float(container.duration or 0) / 1_000_000 if container.duration else 0.0
+        if duration_s > 0:
+            offsets = [
+                duration_s * f
+                for f in (0.05, 0.5, 0.9)[:SILENCE_PROBE_WINDOWS]
+            ]
+        else:
+            offsets = [0.0]
+        peak = 0.0
+        decoded_any = False
+        for offset in offsets:
+            try:
+                container.seek(int(offset * 1_000_000))
+            except Exception:  # noqa: BLE001 - fall through to decode
+                pass
+            frames = 0
+            try:
+                for frame in container.decode(stream):
+                    decoded_any = True
+                    arr = frame.to_ndarray()
+                    peak = max(peak, float(abs(arr).max(initial=0)))
+                    frames += 1
+                    if frames >= 50:
+                        break
+            except Exception:  # noqa: BLE001 - corrupt window; keep peak so far
+                continue
+            if peak > AUDIO_SILENCE_PEAK:
+                break
+        if not decoded_any:
+            return None
+        return peak
+    finally:
+        container.close()
+
+
 def _disk_floor_bytes() -> int:
     return int(
         os.environ.get("YTIS_FEEDER_MIN_FREE_BYTES", str(MIN_FREE_BYTES))
@@ -431,6 +494,12 @@ def process_item(item: dict) -> dict:
     from csf.paths import load_workspace_env
 
     load_workspace_env()
+    peak = audio_peak_sample(item["path"])
+    if peak is not None and peak <= AUDIO_SILENCE_PEAK:
+        return {
+            "state": "unprocessable",
+            "error": "silence: no measurable audio signal in sampled windows",
+        }
     # Pin the worker's HF home to the feeder-owned cache (the machine
     # default P:\.model_cache junction target gets swept by an automated
     # cache-purge pass, crashing model loads).

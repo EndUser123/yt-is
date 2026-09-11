@@ -113,6 +113,23 @@ class TestSubfloorRefusal:
             )
             assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is None
 
+    def test_ten_char_audible_junk_is_refused(self):
+        """Operator labels round 2: three audible 10-char samples all junk."""
+        with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
+            assert (
+                set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "0123456789") is False
+            )
+            assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is None
+
+    def test_seventeen_char_real_transcript_is_kept(self):
+        """Operator labels round 2: both audible 17-char samples good."""
+        with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
+            assert (
+                set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "01234567890123456")
+                is True
+            )
+            assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is not None
+
     def test_whitespace_only_transcript_is_refused(self):
         with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
             assert (
@@ -173,7 +190,7 @@ class TestCacheBackup:
         clear_all_storages()
 
         with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_backup"}):
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "Backup me")
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "Backup me now please")
 
         backup_root = tmp_path / "backups"
         backup_path = backup_transcript_cache(backup_root=backup_root)
@@ -239,7 +256,7 @@ class TestCachePromotion:
             clear=False,
         ):
             clear_all_storages()
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "from staging")
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "from staging area source")
 
         with mock.patch.dict(
             os.environ,
@@ -250,8 +267,8 @@ class TestCachePromotion:
             clear=False,
         ):
             clear_all_storages()
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "from live")
-            set_cached_transcript("ZyX98765432", "en", "cli", "live only")
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "from live source feed")
+            set_cached_transcript("ZyX98765432", "en", "cli", "live only source feed")
 
         promoted = promote_transcript_cache(staging_db, live_db)
         assert promoted >= 0
@@ -269,7 +286,7 @@ class TestCachePromotion:
             extra = get_cached_transcript("ZyX98765432", "en", "cli")
 
         assert merged is not None
-        assert merged.transcript == "from live"
+        assert merged.transcript == "from live source feed"
         assert extra is not None
 
     def test_promote_transcript_cache_rejects_missing_source(self, tmp_path):
@@ -282,7 +299,7 @@ class TestCachePromotion:
             clear=False,
         ):
             clear_all_storages()
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "live only")
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "live only source feed")
 
         with pytest.raises(FileNotFoundError):
             promote_transcript_cache(staging_db, live_db)
@@ -296,7 +313,7 @@ class TestCachePromotion:
             clear=False,
         ):
             clear_all_storages()
-            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "live only")
+            set_cached_transcript("dQw4w9WgXcQ", "en", "cli", "live only source feed")
 
         with pytest.raises(ValueError):
             promote_transcript_cache(db_path, db_path)
@@ -388,9 +405,9 @@ class TestCacheDeletion:
         other_video_id = "AbC98765432"
 
         with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_delete"}):
-            set_cached_transcript(video_id, "en", "cli", "Transcript A")
-            set_cached_transcript(video_id, "en", "notebooklm", "Transcript B")
-            set_cached_transcript(other_video_id, "en", "cli", "Transcript C")
+            set_cached_transcript(video_id, "en", "cli", "Transcript A section one")
+            set_cached_transcript(video_id, "en", "notebooklm", "Transcript B section two")
+            set_cached_transcript(other_video_id, "en", "cli", "Transcript C section three")
 
             deleted = delete_cached_transcripts([video_id])
 
@@ -542,7 +559,7 @@ class TestConcurrentCacheWrites:
         video_id = "dQw4w9WgXcQ"
         lang = "en"
         terminal_id = "test_term_concurrent_same"
-        transcripts = ["transcript A", "transcript B", "transcript C", "transcript D"]
+        transcripts = ["transcript A section", "transcript B section", "transcript C section", "transcript D section"]
 
         errors = []
 

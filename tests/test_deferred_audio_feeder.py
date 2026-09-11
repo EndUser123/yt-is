@@ -69,6 +69,35 @@ def test_evict_decision_follows_deletion_rule():
     assert evictable(False) is False
 
 
+def _write_wav(path, *, silent: bool, seconds: int = 2) -> None:
+    import math
+    import struct
+    import wave
+
+    rate = 16000
+    frames = b"".join(
+        struct.pack("<h", 0 if silent else int(8000 * math.sin(2 * math.pi * 440 * i / rate)))
+        for i in range(rate * seconds)
+    )
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(rate)
+        wf.writeframes(frames)
+
+
+def test_silence_gate_marks_digital_silence_unprocessable(tmp_path):
+    from scripts.deferred_audio_feeder import audio_peak_sample
+
+    silent = tmp_path / "silent.wav"
+    tone = tmp_path / "tone.wav"
+    _write_wav(silent, silent=True)
+    _write_wav(tone, silent=False)
+    assert audio_peak_sample(str(silent)) == 0.0
+    assert audio_peak_sample(str(tone)) > 0.001
+    assert audio_peak_sample(str(tmp_path / "missing.wav")) is None
+
+
 def test_pick_work_is_smallest_first_not_spanning():
     items = [
         {"video_id": f"v{i:02d}", "bytes": 1_000_000 * (i + 1)}

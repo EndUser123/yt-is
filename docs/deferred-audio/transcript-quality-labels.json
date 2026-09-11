@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "round": 1,
+ "round": 2,
  "utc": "2026-09-11",
  "method": "operator listen-and-judge (human) + measured silence (auto-silence, peak 0.0)",
  "labels": {
@@ -78,6 +78,48 @@
    "chars": 1252,
    "band": "gte500",
    "verdict": "good",
+   "source": "human"
+  },
+  "rFjuFl7iv7g": {
+   "video_id": "rFjuFl7iv7g",
+   "chars": 27,
+   "band": "21-499",
+   "verdict": "junk",
+   "source": "human"
+  },
+  "flC8RHrKKEo": {
+   "video_id": "flC8RHrKKEo",
+   "chars": 17,
+   "band": "lt21",
+   "verdict": "good",
+   "source": "human"
+  },
+  "cRu1M8hYANY": {
+   "video_id": "cRu1M8hYANY",
+   "chars": 10,
+   "band": "lt21",
+   "verdict": "junk",
+   "source": "human"
+  },
+  "h1kYKeK2AJE": {
+   "video_id": "h1kYKeK2AJE",
+   "chars": 10,
+   "band": "lt21",
+   "verdict": "junk",
+   "source": "human"
+  },
+  "OsE6iFlhMXw": {
+   "video_id": "OsE6iFlhMXw",
+   "chars": 17,
+   "band": "lt21",
+   "verdict": "good",
+   "source": "human"
+  },
+  "7cB6dVSDE3s": {
+   "video_id": "7cB6dVSDE3s",
+   "chars": 10,
+   "band": "lt21",
+   "verdict": "junk",
    "source": "human"
   }
  }
