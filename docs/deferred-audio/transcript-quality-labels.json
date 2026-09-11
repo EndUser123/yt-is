@@ -1,0 +1,84 @@
+{
+ "schema": 1,
+ "round": 1,
+ "utc": "2026-09-11",
+ "method": "operator listen-and-judge (human) + measured silence (auto-silence, peak 0.0)",
+ "labels": {
+  "Qr2KqiR1bk4": {
+   "video_id": "Qr2KqiR1bk4",
+   "chars": 10,
+   "band": "lt21",
+   "verdict": "junk",
+   "source": "auto-silence",
+   "reason": "measured peak level 0.0 \u2014 digital silence cannot contain speech"
+  },
+  "QgaBxYczcqU": {
+   "video_id": "QgaBxYczcqU",
+   "chars": 10,
+   "band": "lt21",
+   "verdict": "junk",
+   "source": "auto-silence",
+   "reason": "measured peak level 0.0 \u2014 digital silence cannot contain speech"
+  },
+  "Pv8I9u20b1c": {
+   "video_id": "Pv8I9u20b1c",
+   "chars": 10,
+   "band": "lt21",
+   "verdict": "junk",
+   "source": "auto-silence",
+   "reason": "measured peak level 0.0 \u2014 digital silence cannot contain speech"
+  },
+  "OYFG5xwUr-8": {
+   "video_id": "OYFG5xwUr-8",
+   "chars": 22,
+   "band": "21-499",
+   "verdict": "junk",
+   "source": "auto-silence",
+   "reason": "measured peak level 0.0 \u2014 digital silence cannot contain speech"
+  },
+  "O4GV2cfP7kQ": {
+   "video_id": "O4GV2cfP7kQ",
+   "chars": 22,
+   "band": "21-499",
+   "verdict": "junk",
+   "source": "auto-silence",
+   "reason": "measured peak level 0.0 \u2014 digital silence cannot contain speech"
+  },
+  "LHQZQCJHOvs": {
+   "video_id": "LHQZQCJHOvs",
+   "chars": 22,
+   "band": "21-499",
+   "verdict": "junk",
+   "source": "auto-silence",
+   "reason": "measured peak level 0.0 \u2014 digital silence cannot contain speech"
+  },
+  "EPkU9ko2o4Y": {
+   "video_id": "EPkU9ko2o4Y",
+   "chars": 798,
+   "band": "gte500",
+   "verdict": "good",
+   "source": "human"
+  },
+  "7UOxdg6hUT8": {
+   "video_id": "7UOxdg6hUT8",
+   "chars": 1530,
+   "band": "gte500",
+   "verdict": "good",
+   "source": "human"
+  },
+  "2W1yuFLVTPE": {
+   "video_id": "2W1yuFLVTPE",
+   "chars": 1006,
+   "band": "gte500",
+   "verdict": "partial",
+   "source": "human"
+  },
+  "HNf1DRE5NbU": {
+   "video_id": "HNf1DRE5NbU",
+   "chars": 1252,
+   "band": "gte500",
+   "verdict": "good",
+   "source": "human"
+  }
+ }
+}
