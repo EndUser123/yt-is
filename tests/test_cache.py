@@ -130,6 +130,37 @@ class TestSubfloorRefusal:
             )
             assert get_cached_transcript("dQw4w9WgXcQ", "en", "cli") is not None
 
+    def test_floor_stays_consistent_with_operator_labels(self):
+        """The floor constant must keep matching the judged labeled set.
+
+        From docs/deferred-audio/transcript-quality-labels.json: every
+        sample at or below 10 chars was judged junk, and the shortest
+        good sample is 17 chars — so the floor must sit in (10, 17].
+        The 27-char audible junk is on record as proof that length is a
+        proxy, not the mechanism (silence gating is the mechanism).
+        """
+        import json
+
+        from csf.cache import MIN_CACHED_TRANSCRIPT_CHARS
+
+        labels_path = (
+            Path(__file__).resolve().parent.parent
+            / "docs" / "deferred-audio" / "transcript-quality-labels.json"
+        )
+        labels = json.loads(labels_path.read_text(encoding="utf-8"))["labels"]
+        short_junk = [
+            v["chars"] for v in labels.values()
+            if v["verdict"] == "junk" and v["chars"] <= 10
+        ]
+        assert len(short_junk) >= 1
+        assert MIN_CACHED_TRANSCRIPT_CHARS > max(short_junk)
+        goods = [
+            v["chars"] for v in labels.values()
+            if v["verdict"] == "good" and v.get("source") == "human"
+        ]
+        assert goods
+        assert MIN_CACHED_TRANSCRIPT_CHARS <= min(goods)
+
     def test_whitespace_only_transcript_is_refused(self):
         with mock.patch.dict(os.environ, {"TERMINAL_ID": "test_term_subfloor"}):
             assert (
