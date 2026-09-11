@@ -1,0 +1,30 @@
+{
+ "schema": 1,
+ "built_utc": "2026-09-11T05:35:31Z",
+ "media_root": "C:\\Users\\brsth\\AppData\\Local\\Temp\\pytest-of-brsth\\pytest-9692\\test_transcriptless_item_is_ne0\\visual",
+ "floor_bytes": 16384,
+ "totals": {
+  "backlog": {
+   "files": 1,
+   "bytes": 250000
+  },
+  "complete": {
+   "files": 0,
+   "bytes": 0
+  },
+  "subfloor": {
+   "files": 0,
+   "bytes": 0
+  }
+ },
+ "items": [
+  {
+   "video_id": "v_x12345678",
+   "path": "C:\\Users\\brsth\\AppData\\Local\\Temp\\pytest-of-brsth\\pytest-9692\\test_transcriptless_item_is_ne0\\visual\\v_x12345678\\audio.mka",
+   "bytes": 250000,
+   "status": "deferred_audio",
+   "bucket": "backlog",
+   "transcript_cached": false
+  }
+ ]
+}
