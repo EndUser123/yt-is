@@ -538,7 +538,7 @@ def cmd_evict(args: argparse.Namespace) -> int:
                 for i in evictable_items
             ],
         }
-        out = Path(args.out) if args.out else Path("dryrun.json")
+        out = Path(args.out) if args.out else CHECKPOINT_PATH.parent / "dryrun.json"
         out.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
         print(f"dry-run manifest: {out} (zero unlinks performed)")
         return 0
@@ -571,6 +571,68 @@ def cmd_measure(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_drain_phase(limit: int, manifest_path: Path | None = None,
+                    checkpoint_path: Path | None = None) -> dict:
+    """One bounded drain pass for embedding in the normal worker run.
+
+    Reconcile, CPU-transcribe up to `limit` backlog items, then dry-run
+    and apply ledgered eviction of what completed. Returns a summary
+    dict; never raises on per-item failures (they land in the counts).
+    """
+    global CHECKPOINT_PATH
+    manifest_file = manifest_path or MANIFEST_PATH
+    if checkpoint_path is not None:
+        CHECKPOINT_PATH = checkpoint_path
+    summary: dict = {
+        "limit": limit, "processed": {}, "evicted": 0,
+        "evicted_bytes": 0, "stopped": None,
+    }
+    if not _disk_free_ok():
+        summary["stopped"] = "disk_floor"
+        return summary
+    cache_verdict = check_model_cache()
+    if not cache_verdict["ok"]:
+        summary["stopped"] = f"model_cache: {cache_verdict['error']}"
+        return summary
+
+    checkpoint = _checkpoint_load()
+    outcome = reconcile_checkpoint(checkpoint)
+    _checkpoint_save(outcome["kept"])
+    summary["reconciled"] = outcome["report"]
+    checkpoint = outcome["kept"]
+
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    pending = [
+        i for i in manifest["items"] if i["bucket"] == "backlog"
+        and checkpoint.get(i["video_id"], {}).get("state")
+        not in ("cached", "refused", "unprocessable")
+        and not i["transcript_cached"]
+    ]
+    counts = {"cached": 0, "refused": 0, "errors": 0, "unprocessable": 0}
+    for item in pick_distribution(pending, limit):
+        result = process_item(item)
+        result["utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        result["bytes"] = item["bytes"]
+        checkpoint[item["video_id"]] = result
+        _checkpoint_save(checkpoint)
+        state = result["state"]
+        counts[state if state in counts else "errors"] += 1
+    summary["processed"] = counts
+
+    evict_ns = argparse.Namespace(
+        dry_run=False, apply=True, manifest=str(manifest_file),
+        out=str(CHECKPOINT_PATH.parent / "dryrun.json"),
+    )
+    # Dry-run first for the manifest record, then apply.
+    evict_ns.dry_run, evict_ns.apply = True, False
+    cmd_evict(evict_ns)
+    evict_ns.dry_run, evict_ns.apply = False, True
+    before = len(checkpoint)
+    cmd_evict(evict_ns)
+    summary["evicted_checkpointed"] = before
+    return summary
+
+
 def cmd_reconcile(args: argparse.Namespace) -> int:
     """Drop stale cached claims from the checkpoint so items retry."""
     checkpoint = _checkpoint_load()
@@ -580,6 +642,16 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
     for video_id in outcome["dropped"][:10]:
         print(f"dropped stale claim: {video_id}")
     return 0
+
+
+def cmd_drain(args: argparse.Namespace) -> int:
+    summary = run_drain_phase(
+        args.limit,
+        manifest_path=Path(args.manifest) if args.manifest else None,
+        checkpoint_path=Path(args.checkpoint) if args.checkpoint else None,
+    )
+    print(json.dumps(summary, indent=1))
+    return 0 if summary.get("stopped") is None else 2
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -610,6 +682,14 @@ def main(argv: list[str] | None = None) -> int:
         "reconcile", help="drop stale cached claims from the checkpoint"
     )
     p_rec.set_defaults(func=cmd_reconcile)
+
+    p_drain = sub.add_parser(
+        "drain", help="one bounded reconcile/process/evict pass"
+    )
+    p_drain.add_argument("--limit", type=int, default=25)
+    p_drain.add_argument("--manifest", default=None)
+    p_drain.add_argument("--checkpoint", default=None)
+    p_drain.set_defaults(func=cmd_drain)
 
     args = parser.parse_args(argv)
     if args.command == "evict" and args.dry_run == args.apply:

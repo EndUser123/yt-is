@@ -216,32 +216,6 @@ def _analysis_status_for(video_id: str, db_path: Path) -> str | None:
     return str(row[0]) if row else None
 
 
-def parse_recovery_result(
-    result_path: Path, exit_code: int, stderr_text: str
-) -> dict:
-    """Decide a Whisper worker outcome from its exit code and result file.
-
-    A nonzero exit with a valid ok result file means a teardown abort after
-    complete inference (CUDA context unload on Windows): the result still
-    decides. Missing or invalid results stay failures.
-    """
-    if exit_code != 0 and not result_path.exists():
-        stderr_tail = (stderr_text or "").strip()[-300:]
-        return {
-            "attempted": True, "ok": False,
-            "error": f"whisper worker crashed (exit {exit_code}): {stderr_tail}",
-        }
-    if not result_path.exists():
-        return {"attempted": True, "ok": False, "error": "whisper worker produced no result"}
-    try:
-        return {"attempted": True, "ok": True, "payload": json.loads(result_path.read_text(encoding="utf-8"))}
-    except json.JSONDecodeError as exc:
-        return {
-            "attempted": True, "ok": False,
-            "error": f"whisper result unreadable ({exc}); worker likely crashed before writing",
-        }
-
-
 def maybe_recover_transcript(
     video_id: str, audio_path: Path, *, db_path: Path, run_id: str
 ) -> dict:
@@ -273,21 +247,31 @@ def maybe_recover_transcript(
     os.close(result_fd)
     result_path = Path(result_name)
     command = [
-        sys.executable, "-m", "csf.whisper_worker",
+        sys.executable, str(REPO_ROOT / "scripts" / "whisper_cpu_runner.py"),
         "--audio-file", str(audio_path),
         "--lang", "en",
         "--result-path", str(result_path),
     ]
+    # Stable worker invocation: `python -m csf.whisper_worker` fail-fasts
+    # (exit 3221226505) during model load on this host; the identical
+    # faster-whisper stack as a plain script is stable. Same env the
+    # deferred-audio feeder pins: CPU-only, feeder-owned model cache
+    # (the machine HF_HOME junction target gets swept by a purge pass).
+    worker_env = dict(os.environ)
+    worker_env["CUDA_VISIBLE_DEVICES"] = ""
+    worker_env.setdefault(
+        "HF_HOME", str(Path(os.environ.get(
+            "YTIS_FEEDER_MODEL_CACHE", "P:/.data/yt-is/model_cache",
+        ))),
+    )
     try:
-        proc = subprocess.run(
+        subprocess.run(
             command, cwd=str(REPO_ROOT), capture_output=True, text=True,
-            timeout=timeout_s, check=False,
+            timeout=timeout_s, check=False, env=worker_env,
         )
-        exit_code = proc.returncode
-        decision = parse_recovery_result(result_path, exit_code, proc.stderr or "")
-        if not decision["ok"]:
-            return decision
-        payload = decision["payload"]
+        if not result_path.exists():
+            return {"attempted": True, "ok": False, "error": "whisper worker produced no result"}
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
     except subprocess.TimeoutExpired:
         return {"attempted": True, "ok": False, "error": f"whisper timeout (>{timeout_s:g}s)"}
     except Exception as exc:
@@ -628,6 +612,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-runtime-s", type=float, default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-ocr", action="store_true")
+    parser.add_argument(
+        "--drain-backlog-n", type=int, default=25,
+        help="deferred-audio drain items after the job loop (0 disables)",
+    )
     parser.add_argument("--run-id", default=None)
     parser.add_argument(
         "--output-root", type=Path, default=None,
@@ -727,6 +715,13 @@ def main(argv: list[str] | None = None) -> int:
     summary["finished_at"] = _utcnow_iso()
     summary["final_queue"] = visual_jobs.visual_queue_stats(db_path)
     summary["media_root_bytes"] = _dir_bytes(media_fetch.media_root(db_path))
+    if not args.dry_run and args.drain_backlog_n > 0:
+        # Deferred-audio drain: backlog items never enter the job queue,
+        # so the per-job eviction pass never sees them. Drain a bounded
+        # batch through the feeder lifecycle every normal run (lazy
+        # import: the feeder imports this module's deletion helpers).
+        from scripts.deferred_audio_feeder import run_drain_phase
+        summary["drain"] = run_drain_phase(args.drain_backlog_n)
     _write_json(run_root / "summary.json", summary)
     print(json.dumps({k: v for k, v in summary.items() if k != "jobs"}, indent=1, default=str))
     return 0 if summary["jobs_failed"] == 0 else 1

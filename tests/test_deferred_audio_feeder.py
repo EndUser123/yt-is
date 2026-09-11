@@ -119,6 +119,23 @@ def test_parse_done_line_counts():
     assert parse_done_line("no summary here") == {"cached": 0, "refused": 0, "errors": 0}
 
 
+def test_drain_command_end_to_end(feeder_env):
+    audio_a = feeder_env.add_video("v_d12345678", "deferred_audio", 300_000)
+    audio_b = feeder_env.add_video("v_e12345678", "failed", 200_000)
+    manifest = feeder_env.media_root / "m.json"
+    checkpoint = feeder_env.media_root / "cp.json"
+    assert _run_cli("inventory", "--manifest", str(manifest)).returncode == 0
+    drain = _run_cli("drain", "--limit", "5", "--manifest", str(manifest),
+                     "--checkpoint", str(checkpoint))
+    assert drain.returncode == 0, drain.stderr
+    assert not audio_a.exists()
+    assert not audio_b.exists()
+    ledger = feeder_env.media_root / "deletion-ledger.jsonl"
+    rows = [json.loads(ln) for ln in ledger.read_text(encoding="utf-8").splitlines()]
+    assert {r["video_id"] for r in rows} == {"v_d12345678", "v_e12345678"}
+    assert sum(r["bytes"] for r in rows) == 500_000
+
+
 def test_process_refuses_without_model_cache(feeder_env, monkeypatch):
     monkeypatch.setenv("YTIS_FEEDER_MODEL_CACHE", str(feeder_env.media_root / "no-such-cache"))
     feeder_env.add_video("v_m12345678", "deferred_audio", 250_000)
