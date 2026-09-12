@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from csf.paths import get_batch_db_path, get_transcript_db_path, load_workspace_env
+from csf.paths import get_batch_db_path, get_transcript_db_path, load_workspace_env  # noqa: E402  (repo bootstrap requires sys.path setup first)
 
 DISK_MIN_FREE_GB = 10       # pipeline needs space for WAL, temp, new transcripts
 MEM_MAX_USED_PCT = 90       # above this, workers may OOM
