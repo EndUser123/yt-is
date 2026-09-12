@@ -1,12 +1,12 @@
 """Cold-tier backup: newest yt-is state snapshots + wiki vault to G:.
 
 The 03:30 YtisStateBackup task already rotates SQLite snapshots on P:
-(P:/.data/yt-is/backups/{batch-status,transcripts}-*.sqlite) and copies
-the newest two off-site to C:. This script adds the G: tier of the same
-ladder — G: is the external USB archive disk, separate physical media
-from both P: (NVMe) and C:. It also mirrors the wiki vault
-(P:/.data/wiki/concepts — irreplaceable, 18 MB) so the knowledge base
-survives a P: drive failure.
+(P:/.data/yt-is/backups/{batch-status,transcripts}-*.sqlite). This script is
+the ONLY off-site tier — G:, the external USB archive disk, separate physical
+media from both P: (NVMe) and C:. (The former C: copy tier was removed
+2026-09-12 per operator directive: no yt-is files on C:.) It also mirrors the
+wiki vault (P:/.data/wiki/concepts — irreplaceable, 18 MB) so the knowledge
+base survives a P: drive failure.
 
 Idempotent: files already at the destination are skipped; re-runs are
 no-ops. Loud failure if G: is absent — never silently skip a cycle.

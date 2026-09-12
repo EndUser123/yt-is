@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -38,7 +39,8 @@ LLM_TIMEOUT_S = 10
 
 BATCH_DB = get_batch_db_path()
 TRANSCRIPT_DB = get_transcript_db_path()
-BACKUP_DIR = Path("C:/Users/brsth/.ytis-state-backup")
+BACKUP_DIR = Path(os.environ.get(
+    "YTIS_COLD_BACKUP_DIR", "G:/backups")) / "ytis" / "db"
 
 
 def check_disk_space() -> tuple[str, str | None]:

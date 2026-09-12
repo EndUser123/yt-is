@@ -31,7 +31,7 @@
 
 | # | Problem | Likelihood | Impact | Procedure |
 |---|---|---|---|---|
-| 16 | P: drive failure | Low | Total data loss | Restore from C:/Users/brsth/.ytis-state-backup |
+| 16 | P: drive failure | Low | Total data loss | Restore from G:/backups/ytis/db (cold tier; C: tier removed 2026-09-12 per operator directive — no yt-is files on C:) |
 | 17 | Google account suspension | Low | All fetching stops | Cannot be automated; operator must resolve with Google |
 | 18 | yt-dlp breaks (YouTube UI change) | Medium | Discovery + yt-dlp fetch stops | Update yt-dlp: `pip install -U yt-dlp`, verify with single-video test |
 | 19 | NotebookLM API changes | Low | Batch path breaks | Update notebooklm-py: `pip install -U notebooklm-py[headless]` |
@@ -59,8 +59,8 @@ python scripts/run_intake_pipeline.py --skip-sync
 ### After P: drive failure
 ```bash
 # 1. Restore latest backups from C: drive
-cp C:/Users/brsth/.ytis-state-backup/batch-status-*.sqlite P:/.data/yt-is/batch_status.sqlite
-cp C:/Users/brsth/.ytis-state-backup/transcripts-*.sqlite P:/.data/yt-is/transcripts.sqlite
+cp G:/backups/ytis/db/batch-status-*.sqlite P:/.data/yt-is/batch_status.sqlite
+cp G:/backups/ytis/db/transcripts-*.sqlite P:/.data/yt-is/transcripts.sqlite
 
 # 2. Verify integrity
 python -c "import sqlite3; print(sqlite3.connect('P:/.data/yt-is/batch_status.sqlite').execute('PRAGMA integrity_check').fetchone())"

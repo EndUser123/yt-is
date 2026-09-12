@@ -82,6 +82,16 @@ gates (discovery/inference/recommendation) unchanged; see
   videos, re-downloadable derived media. Free space 1.8 → 32.2GB. The parked
   deferred_audio process-vs-purge decision (open item 1) now has its first
   executed purge data point.
+- [seen] C: backup tier removed 2026-09-12 (operator directive: no yt-is
+  files on C:): the live YtisStateBackup task still carried the pre-fix
+  payload with the C: copy — re-registered from the already-fixed installer
+  (no C: step); `C:/Users/brsth/.ytis-state-backup` deleted (14 daily
+  full-DB copies, ~33GB; G: cold tier held fresher copies through 09-07);
+  preflight_safety.py BACKUP_DIR repointed to G:/backups/ytis/db (env
+  YTIS_COLD_BACKUP_DIR, os import added); predictable-problems + cold-backup
+  docstring updated to the G:-only ladder. OPEN: `.ytis-nlm-auth-backup`
+  on C: is a credentials bare-repo with a documented C: security rationale —
+  relocation is an operator decision (see session report).
 - [open] Operator-held: whole-file six-section conversion and archive
   prune for this file (parked 2026-08-24, open item 5) — still awaiting
   the separate operator decision; the 2026-09-12 rationalization pass
