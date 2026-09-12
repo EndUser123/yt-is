@@ -163,7 +163,6 @@ def _recover_stopped_drain(
     day so a genuinely broken drain cannot churn. The archived state is kept
     beside the canonical one for review.
     """
-    import time
 
     marker_path = state_path.parent / "continuous-ops-recovery-log.json"
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -442,7 +441,6 @@ def yield_audit_step(db_path: Path) -> dict:
     the operator; no action taken automatically.
     """
     import sqlite3
-    from datetime import datetime as _dt
 
     marker_path = db_path.parent / "unattended-backlog" / "yield-audit-latest.json"
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -533,7 +531,6 @@ def health_check_step(db_path: Path, state_path: Path) -> dict:
 
 
 def run_tick(args) -> dict:
-    import time
 
     import fasteners
 

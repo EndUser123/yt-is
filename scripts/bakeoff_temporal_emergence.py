@@ -1519,7 +1519,8 @@ def _git_head():
         import subprocess
         out = subprocess.run(["git", "-C", str(REPO), "rev-parse",
                               "HEAD"], capture_output=True, text=True,
-                             timeout=15)
+                             timeout=15,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return out.stdout.strip()[:12] if out.returncode == 0 else None
     except Exception:
         return None
