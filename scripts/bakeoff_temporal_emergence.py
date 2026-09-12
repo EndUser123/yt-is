@@ -361,7 +361,6 @@ def episode_core(obs_lane: list[dict]):
     for v in CONFIRM_VARIANTS:
         deadline_days = VARIANT_DEADLINES[v]
         attempts = []
-        cursor = 0
         i = 0
         cur_open = None
         cur_sig = None
