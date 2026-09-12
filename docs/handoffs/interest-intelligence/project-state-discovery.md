@@ -1,3 +1,5 @@
+> State detail frozen as of 2026-08-26 — verify against [PROJECT_STATE.md](PROJECT_STATE.md) (master entry) before relying on this file.
+
 # yt-is Personal Intelligence — Discovery / Concept Intelligence State
 Updated: 2026-08-26 evaluator-v4 explicit-negative diagnostic: V2_SELECTIVITY_FAILURE_CONFIRMED; scope reconciliation applied; no freeze
 

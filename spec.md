@@ -1,5 +1,7 @@
 # yt-is Industrial Pipeline Specification
 
+> **SUPERSEDED** by `spec_v2_review.md` (v2 draft) and then `spec_v3_master.md` (current master). Historical; kept for lineage.
+
 ## Problem
 Processing 140,000 YouTube transcripts requires a shift from **Surgical Retrieval** (1-by-1 local) to **Industrial Ingest** (bulk cloud). Previous local methods like Selenium were found to return "Dirty Data" (40% Signal-to-Noise Ratio) due to page noise pollution.
 

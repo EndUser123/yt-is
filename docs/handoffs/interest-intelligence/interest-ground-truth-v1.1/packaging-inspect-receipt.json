@@ -1,0 +1,431 @@
+{
+ "command": "inspect",
+ "source_sha256": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f",
+ "converter_version": "1.0.0",
+ "frozen_module_sha256": "a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503",
+ "parse_ok": true,
+ "root_keys_and_types": {
+  "artifact": "string",
+  "supersedes": "object",
+  "curation_policy_basis": "array",
+  "changes_from_v1": "array",
+  "saturation": "object",
+  "positives_formal": "array",
+  "positives_nonformal_retyped_out_of_contract": "array",
+  "negatives_typed": "array",
+  "unknown_ledger_inherited_from_v1": "array",
+  "evaluator_contract_addendum": "object",
+  "fresh_context_review": "object",
+  "contamination_attestation_v11": "object",
+  "fresh_context_review_status": "string"
+ },
+ "object_root_shapes": {
+  "supersedes": {
+   "artifact": "string",
+   "sha256": "string",
+   "status": "string",
+   "evaluator_consumption_check": "object"
+  },
+  "saturation": {
+   "policy_sha256": "string",
+   "stop_condition_reached": "bool",
+   "terminal_batches_zero_new": "bool",
+   "execution_log": "array",
+   "contingency_B5_triggered": "bool",
+   "rejected_candidates_recorded_for_reviewer_sample": "array"
+  },
+  "evaluator_contract_addendum": {
+   "only_InterestNegative_scores_interest_false_positives": "bool",
+   "per_class_scoring_pairs": "object",
+   "INSUFFICIENT_EVIDENCE_allowed_per_semantic_type": "bool",
+   "sample_size_honesty": "string",
+   "unscorable_is_not_failure_rule": "string"
+  },
+  "fresh_context_review": {
+   "reviewer": "object",
+   "field_level_agreement": "object",
+   "agreement_detail": "object",
+   "disputes_disposed_by_prereg_rule": "array",
+   "reviewer_cross_evidence_findings_adopted_as_notes": "array",
+   "overall_notes_reviewer": "string"
+  },
+  "contamination_attestation_v11": {
+   "inference_outputs_inspected_for_label_selection": "bool",
+   "discovery_holdouts_used_as_labels": "bool",
+   "stale_12_interest_artifact_inspected": "bool",
+   "architect_or_llm_inference_promoted_to_labels": "bool",
+   "labels_derived_only_from_operator_statements_and_operator_authored_artifacts": "bool"
+  }
+ },
+ "per_container_inspection": {
+  "positives_formal": {
+   "container": {
+    "method": "named_container",
+    "root_key": "positives_formal"
+   },
+   "record_count": 9,
+   "dict_row_count": 9,
+   "nondict_row_count": 0,
+   "field_names": [
+    "aliases",
+    "authority_basis",
+    "authorship_audit",
+    "canonical_label",
+    "context",
+    "curator_pre_review_note",
+    "id",
+    "label_authority",
+    "notes_from_v1_migration",
+    "operator_evidence",
+    "predecessor_id",
+    "question",
+    "related_positives",
+    "scorability",
+    "semantic_class",
+    "temporal_type"
+   ],
+   "field_types": {
+    "id": {
+     "string": 9
+    },
+    "predecessor_id": {
+     "string": 9
+    },
+    "semantic_class": {
+     "string": 9
+    },
+    "canonical_label": {
+     "string": 7
+    },
+    "aliases": {
+     "array": 4
+    },
+    "temporal_type": {
+     "string": 5
+    },
+    "label_authority": {
+     "string": 9
+    },
+    "authorship_audit": {
+     "object": 9
+    },
+    "operator_evidence": {
+     "array": 9
+    },
+    "scorability": {
+     "object": 9
+    },
+    "curator_pre_review_note": {
+     "null": 2,
+     "string": 3
+    },
+    "authority_basis": {
+     "string": 1
+    },
+    "related_positives": {
+     "array": 1
+    },
+    "notes_from_v1_migration": {
+     "string": 1
+    },
+    "question": {
+     "string": 2
+    },
+    "context": {
+     "string": 2
+    }
+   },
+   "field_presence": {
+    "id": 9,
+    "predecessor_id": 9,
+    "semantic_class": 9,
+    "canonical_label": 7,
+    "aliases": 4,
+    "temporal_type": 5,
+    "label_authority": 9,
+    "authorship_audit": 9,
+    "operator_evidence": 9,
+    "scorability": 9,
+    "curator_pre_review_note": 5,
+    "authority_basis": 1,
+    "related_positives": 1,
+    "notes_from_v1_migration": 1,
+    "question": 2,
+    "context": 2
+   },
+   "row_key_presence_signatures": {
+    "aliases,authorship_audit,canonical_label,curator_pre_review_note,id,label_authority,operator_evidence,predecessor_id,scorability,semantic_class,temporal_type": 3,
+    "aliases,authority_basis,authorship_audit,canonical_label,curator_pre_review_note,id,label_authority,operator_evidence,predecessor_id,scorability,semantic_class,temporal_type": 1,
+    "authorship_audit,canonical_label,curator_pre_review_note,id,label_authority,operator_evidence,predecessor_id,scorability,semantic_class,temporal_type": 1,
+    "authorship_audit,canonical_label,id,label_authority,operator_evidence,predecessor_id,related_positives,scorability,semantic_class": 1,
+    "authorship_audit,canonical_label,id,label_authority,notes_from_v1_migration,operator_evidence,predecessor_id,scorability,semantic_class": 1,
+    "authorship_audit,context,id,label_authority,operator_evidence,predecessor_id,question,scorability,semantic_class": 2
+   },
+   "rows_missing_name_all_class_question": true,
+   "nested_object_field_shapes": {
+    "authorship_audit": {
+     "primary_evidence_class": {
+      "string": 9
+     },
+     "tier2_corroboration": {
+      "null": 6,
+      "string": 1
+     }
+    },
+    "scorability": {
+     "value": {
+      "string": 9
+     },
+     "probe_receipt": {
+      "string": 9
+     }
+    }
+   },
+   "literal_field_presence": {
+    "aliases": 4,
+    "probe_receipts": 0,
+    "authority": 0
+   },
+   "suspicious_non_group_fields": [
+    "authority_basis",
+    "canonical_label",
+    "label_authority",
+    "operator_evidence"
+   ],
+   "all_rows_bindable": false,
+   "unbindable_reason_histogram": {
+    "unbindable_class_or_name": 9
+   },
+   "explicit_ids_on_all_rows": true,
+   "duplicate_bound_id_pairs": 0,
+   "order_semantically_load_bearing": false,
+   "structural_schema_sha256": "d1ebdeb4878edd929c57e9412386e89b4849e5ff4d0d39329fd14b3c05d5e30b"
+  },
+  "positives_nonformal_retyped_out_of_contract": {
+   "container": {
+    "method": "named_container",
+    "root_key": "positives_nonformal_retyped_out_of_contract"
+   },
+   "record_count": 3,
+   "dict_row_count": 3,
+   "nondict_row_count": 0,
+   "field_names": [
+    "canonical_label",
+    "id",
+    "moved_out_of",
+    "operator_evidence",
+    "predecessor_id",
+    "reason",
+    "semantic_class"
+   ],
+   "field_types": {
+    "id": {
+     "string": 3
+    },
+    "predecessor_id": {
+     "string": 3
+    },
+    "semantic_class": {
+     "string": 3
+    },
+    "canonical_label": {
+     "string": 3
+    },
+    "moved_out_of": {
+     "string": 3
+    },
+    "reason": {
+     "string": 3
+    },
+    "operator_evidence": {
+     "array": 3
+    }
+   },
+   "field_presence": {
+    "id": 3,
+    "predecessor_id": 3,
+    "semantic_class": 3,
+    "canonical_label": 3,
+    "moved_out_of": 3,
+    "reason": 3,
+    "operator_evidence": 3
+   },
+   "row_key_presence_signatures": {
+    "canonical_label,id,moved_out_of,operator_evidence,predecessor_id,reason,semantic_class": 3
+   },
+   "rows_missing_name_all_class_question": null,
+   "nested_object_field_shapes": {},
+   "literal_field_presence": {
+    "aliases": 0,
+    "probe_receipts": 0,
+    "authority": 0
+   },
+   "suspicious_non_group_fields": [
+    "canonical_label",
+    "operator_evidence"
+   ],
+   "all_rows_bindable": false,
+   "unbindable_reason_histogram": {
+    "unbindable_class_or_name": 3
+   },
+   "explicit_ids_on_all_rows": true,
+   "duplicate_bound_id_pairs": 0,
+   "order_semantically_load_bearing": false,
+   "structural_schema_sha256": "12dee02766d20ea7f49974b6c237960cd24049f4f80c5f1d38359ce31f89ca06"
+  },
+  "negatives_typed": {
+   "container": {
+    "method": "named_container",
+    "root_key": "negatives_typed"
+   },
+   "record_count": 7,
+   "dict_row_count": 7,
+   "nondict_row_count": 0,
+   "field_names": [
+    "candidate_alternative",
+    "canonical_label",
+    "id",
+    "is_formal_false_positive_ground_truth_for",
+    "negative_class",
+    "operator_evidence",
+    "predecessor_id",
+    "scope_note",
+    "secondary_reading",
+    "spelling_note"
+   ],
+   "field_types": {
+    "id": {
+     "string": 7
+    },
+    "predecessor_id": {
+     "string": 7
+    },
+    "negative_class": {
+     "string": 7
+    },
+    "is_formal_false_positive_ground_truth_for": {
+     "string": 1
+    },
+    "canonical_label": {
+     "string": 7
+    },
+    "operator_evidence": {
+     "array": 7
+    },
+    "scope_note": {
+     "string": 3
+    },
+    "spelling_note": {
+     "string": 1
+    },
+    "secondary_reading": {
+     "string": 1
+    },
+    "candidate_alternative": {
+     "string": 1
+    }
+   },
+   "field_presence": {
+    "id": 7,
+    "predecessor_id": 7,
+    "negative_class": 7,
+    "is_formal_false_positive_ground_truth_for": 1,
+    "canonical_label": 7,
+    "operator_evidence": 7,
+    "scope_note": 3,
+    "spelling_note": 1,
+    "secondary_reading": 1,
+    "candidate_alternative": 1
+   },
+   "row_key_presence_signatures": {
+    "canonical_label,id,is_formal_false_positive_ground_truth_for,negative_class,operator_evidence,predecessor_id,scope_note": 1,
+    "canonical_label,id,negative_class,operator_evidence,predecessor_id,scope_note,spelling_note": 1,
+    "canonical_label,id,negative_class,operator_evidence,predecessor_id,secondary_reading": 1,
+    "canonical_label,id,negative_class,operator_evidence,predecessor_id": 3,
+    "candidate_alternative,canonical_label,id,negative_class,operator_evidence,predecessor_id,scope_note": 1
+   },
+   "rows_missing_name_all_class_question": null,
+   "nested_object_field_shapes": {},
+   "literal_field_presence": {
+    "aliases": 0,
+    "probe_receipts": 0,
+    "authority": 0
+   },
+   "suspicious_non_group_fields": [
+    "canonical_label",
+    "negative_class",
+    "operator_evidence"
+   ],
+   "all_rows_bindable": false,
+   "unbindable_reason_histogram": {
+    "unbindable_class_or_name": 7
+   },
+   "explicit_ids_on_all_rows": true,
+   "duplicate_bound_id_pairs": 0,
+   "order_semantically_load_bearing": false,
+   "structural_schema_sha256": "bd6ace1a4292cece0437d3d18c1c7c2b4d5def98223d3e26010114a3a86e0326"
+  },
+  "unknown_ledger_inherited_from_v1": {
+   "container": {
+    "method": "named_container",
+    "root_key": "unknown_ledger_inherited_from_v1"
+   },
+   "record_count": 2,
+   "dict_row_count": 2,
+   "nondict_row_count": 0,
+   "field_names": [
+    "id",
+    "inherits",
+    "reason_unchanged",
+    "topics_guarded_hint_public"
+   ],
+   "field_types": {
+    "id": {
+     "string": 2
+    },
+    "inherits": {
+     "string": 2
+    },
+    "topics_guarded_hint_public": {
+     "string": 1
+    },
+    "reason_unchanged": {
+     "bool": 2
+    }
+   },
+   "field_presence": {
+    "id": 2,
+    "inherits": 2,
+    "topics_guarded_hint_public": 1,
+    "reason_unchanged": 2
+   },
+   "row_key_presence_signatures": {
+    "id,inherits,reason_unchanged,topics_guarded_hint_public": 1,
+    "id,inherits,reason_unchanged": 1
+   },
+   "rows_missing_name_all_class_question": null,
+   "nested_object_field_shapes": {},
+   "literal_field_presence": {
+    "aliases": 0,
+    "probe_receipts": 0,
+    "authority": 0
+   },
+   "suspicious_non_group_fields": [],
+   "all_rows_bindable": false,
+   "unbindable_reason_histogram": {
+    "unbindable_class_or_name": 2
+   },
+   "explicit_ids_on_all_rows": true,
+   "duplicate_bound_id_pairs": 0,
+   "order_semantically_load_bearing": false,
+   "structural_schema_sha256": "d158c83f90986d697f93c71102c1f122e5cd6e30fcc6b10349fa149d5285b9ea"
+  }
+ },
+ "envelope_rename_probe": {
+  "attempted": true,
+  "schema_valid": false,
+  "sanitized_error": "unbindable_class_or_name",
+  "n_labels_bound": null
+ },
+ "status": "INSPECTED"
+}

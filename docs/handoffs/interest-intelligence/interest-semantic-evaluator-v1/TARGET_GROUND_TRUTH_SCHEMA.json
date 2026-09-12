@@ -1,0 +1,113 @@
+{
+  "provenance": {
+    "agent": "zcode",
+    "host": "zcode",
+    "created_utc": "2026-08-28",
+    "role": "DATA_PACKAGING_CUSTODIAN (excluded from ISEM evaluator author, D3 author, ISEM reviewer, sealed-evaluation executor roles)"
+  },
+  "spec": "isem-ground-truth-target-schema",
+  "spec_version": "1.0.0",
+  "purpose": "Machine-readable specification of exactly what the FROZEN ISEM load_ground_truth accepts, derived by code reading only. No private holdout content was touched to produce this file.",
+  "derived_from": {
+    "frozen_module": "ef/eval_interest_semantic.py",
+    "extraction_method": "static code reading of load_ground_truth + helpers (_first_key, _bind_class) + frozen constants + synthetic tests in tests/test_eval_interest_semantic.py",
+    "note": "Field and value constraints below mirror the frozen loader exactly; where the loader is lenient this spec records the lenience, where it fails closed this spec records the refusal."
+  },
+  "root_containers": {
+    "resolution_order": [
+      {
+        "rule": "first root key in ROOT_KEY_PRECEDENCE whose value is a JSON array",
+        "keys_in_precedence_order": ["labels", "targets", "items", "entries", "ground_truth"]
+      },
+      {
+        "rule": "root key 'negatives' whose value is a JSON object; all its values that are arrays are concatenated (object value iteration order) into one row list; an empty merge yields no container",
+        "keys": ["negatives"]
+      },
+      {
+        "rule": "the document itself is a bare JSON array",
+        "keys": []
+      }
+    ],
+    "fail_closed": "if no container resolves, loader raises SchemaBindError('no known root container'); error text discloses only the first 12 sorted root key NAMES",
+    "envelope_keys_outside_containers": "ignored entirely by the loader; they must not collide with the container key names above if the package wants deterministic resolution"
+  },
+  "record_requirements": {
+    "row_type": "each row that is not a JSON object is silently skipped by the frozen loader (rows = [item for item in rows if isinstance(item, dict)] equivalent)",
+    "field_synonym_groups": {
+      "description": "loader is synonym-tolerant over KEY NAMES only; within each group the first key present with a non-null value in the listed precedence order wins; value-level interpretation is fixed",
+      "groups": {
+        "semantic_class": {
+          "synonym_keys_precedence": ["semantic_class", "class", "type", "kind"],
+          "required": true,
+          "value_rule": "string value is normalized (strip, casefold, '-'->'_', ' '->'_', '_negative'->'negative', spaces removed) and must match CLASS_TAXONOMY exactly; unbindable or unknown class raises SchemaBindError"
+        },
+        "canonical_name": {
+          "synonym_keys_precedence": ["canonical_name", "name", "label"],
+          "required": true,
+          "value_rule": "must be a non-null non-empty-after-strip JSON string, else SchemaBindError('unbindable class/name')"
+        },
+        "statement_text": {
+          "synonym_keys_precedence": ["statement_text", "statement", "verbatim_quote", "text"],
+          "required": false,
+          "value_rule": "kept only if a JSON string; any other JSON type binds as null (no error)"
+        },
+        "scorability_field": {
+          "synonym_keys_precedence": ["scorability_field", "scorability", "corpus_scorability"],
+          "required": false,
+          "value_rule": {
+            "bool": "true -> 'corpus_scorable'; false -> null (SCORABILITY_UNKNOWN path)",
+            "string_allowed_casefold": ["corpus_scorable", "corpus_unscorable", "unknown", "true", "scorable", "false", "unscorable"],
+            "string_mapping": {"true|scorable -> corpus_scorable": "", "false|unscorable -> corpus_unscorable": ""},
+            "anything_else": "out-of-set STRINGS raise SchemaBindError('unusable scorability field'); non-bool non-string values (numbers, arrays, objects, null) are silently IGNORED and scorability_field binds null (no error)"
+          }
+        },
+        "label_id": {
+          "synonym_keys_precedence": ["label_id", "target_id", "id"],
+          "required": false,
+          "value_rule": "coerced to string; if the winning value is absent or FALSY (null, empty string, 0, false), a positional id '<class lowercase>_<row index>' is GENERATED (row order becomes semantically load-bearing); duplicate bound ids across all rows raise SchemaBindError"
+        }
+      }
+    },
+    "literal_key_fields": {
+      "description": "fields the loader reads under exactly one literal key name; no synonyms exist, so an artifact using a different key name for these concepts is silently ignored by the loader",
+      "aliases": {
+        "key": "aliases",
+        "value_rule": "null/absent -> []; must be a JSON array else SchemaBindError; elements coerced to strings"
+      },
+      "probe_receipts": {
+        "key": "probe_receipts",
+        "value_rule": "null/absent -> []; non-list values are wrapped into a one-element string list; list elements coerced to strings (never errors)"
+      },
+      "authority": {
+        "key": "authority",
+        "value_rule": "passed through verbatim (any JSON type)"
+      }
+    },
+    "unknown_keys": "all other keys are ignored by the loader; a mechanically faithful package must PRESERVE them unchanged"
+  },
+  "class_taxonomy": {
+    "scoring_contract_classes": ["Interest", "Goal", "InformationNeed", "Question"],
+    "explicit_negative_classes": ["InterestNegative", "GoalNegative", "InformationNeedNegative", "SourceNegative", "ImplementationConstraintNegative", "ToolOrMechanismPreference", "StyleOrProcessPreference", "AmbiguousNegative"],
+    "retyped_outside_contract_never_score": ["WorkPreference", "ImplementationConstraint", "Observation"],
+    "note": "the three lists above are the frozen SEMANTIC_CLASSES; a row binding outside them raises SchemaBindError"
+  },
+  "canonical_bound_form": {
+    "description": "per-row dict the frozen loader produces; this is the semantic surface the evaluator consumes",
+    "fields": ["label_id", "semantic_class", "canonical_name", "aliases", "statement_text", "authority", "scorability_field", "probe_receipts"],
+    "report_envelope": {"source_path": "path string", "sealed_sha256": "file digest", "labels": "[array of bound rows]"}
+  },
+  "seal_verification": {
+    "verify_sealed": "compares the loaded file digest against the frozen SEALED_GT_SHA256 constant and refuses on mismatch",
+    "packaging_note": "a format-only repackaged artifact necessarily has a DIFFERENT digest; rebinding SEALED_GT_SHA256 (or the binding mechanism) to the packaged digest is the evaluator-binding author's step, explicitly out of scope for packaging"
+  },
+  "packaging_canonicalization_rules": {
+    "purpose": "deterministic format-only transform accepted by this spec without value mutation",
+    "rules": [
+      "relocate the record array into root key 'labels' (first precedence key)",
+      "per record, for each field synonym group: if the winning synonym key differs from the canonical key name, rename that one key to the canonical name; losing synonym keys and all unknown keys are preserved untouched",
+      "record order is preserved exactly (positional generated ids make order load-bearing when explicit ids are absent)",
+      "no value of any field is read, altered, added, or dropped",
+      "serialization: UTF-8, ensure_ascii=false, sort_keys=true (record arrays unaffected), fixed indent, trailing newline"
+    ]
+  }
+}

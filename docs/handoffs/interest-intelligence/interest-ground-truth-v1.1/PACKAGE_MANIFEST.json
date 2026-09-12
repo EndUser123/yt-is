@@ -1,0 +1,123 @@
+{
+  "provenance": {
+    "agent": "zcode",
+    "host": "zcode",
+    "created_utc": "2026-08-28",
+    "session_id": "sess_b1bed89e-93f9-484d-8b94-7b809fcb6bee",
+    "role": "DATA_PACKAGING_CUSTODIAN",
+    "role_exclusions": [
+      "ISEM evaluator author",
+      "D3 author",
+      "ISEM reviewer",
+      "sealed-evaluation executor"
+    ]
+  },
+  "manifest": "isem-packaged-holdout-v1.1-manifest",
+  "manifest_version": "1.0.0",
+  "source": {
+    "path_class": "private sealed holdout, gitignored under P:/.data/yt-is/private/",
+    "path": "P:/.data/yt-is/private/interest-intelligence-holdout-v1.1.json",
+    "sha256": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f",
+    "sha256_verified_before_parse": true,
+    "sha256_reverified_after_packaging_unchanged": true,
+    "structural_schema_sha256_per_container": {
+      "positives_formal": "d1ebdeb4878edd929c57e9412386e89b4849e5ff4d0d39329fd14b3c05d5e30b",
+      "positives_nonformal_retyped_out_of_contract": "12dee02766d20ea7f49974b6c237960cd24049f4f80c5f1d38359ce31f89ca06",
+      "negatives_typed": "bd6ace1a4292cece0437d3d18c1c7c2b4d5def98223d3e26010114a3a86e0326",
+      "unknown_ledger_inherited_from_v1": "d158c83f90986d697f93c71102c1f122e5cd6e30fcc6b10349fa149d5285b9ea"
+    }
+  },
+  "converter": {
+    "code_path": "scripts/gt_sealed_packaging.py",
+    "code_sha256": "0678aa26abdf329744ebc5668e75aa463ce3780a161cf66876d69928d68b04d5",
+    "version": "1.0.0",
+    "profile": "ii-v1.1",
+    "declared_rules": [
+      "merge_containers_in_order",
+      "rename_canonical_label_to_canonical_name",
+      "rename_question_to_canonical_name_when_name_absent",
+      "rename_negative_class_to_semantic_class",
+      "transplant_scorability_value_to_scorability_field",
+      "canonical_synonym_group_renames",
+      "exclude_unknown_ledger_inherited_from_v1_non_label_records"
+    ],
+    "containers_used": [
+      "positives_formal",
+      "positives_nonformal_retyped_out_of_contract",
+      "negatives_typed"
+    ],
+    "containers_excluded": {
+      "unknown_ledger_inherited_from_v1": "reference-shaped ledger entries (id/inherits/reason_unchanged/topics_guarded_hint_public); no class or name fields; not label records; inclusion would fail the frozen loader's bindability; resolving them into labels would require a cross-artifact semantic join, which is out of scope for mechanical packaging"
+    },
+    "frozen_module_sha256": "a22b50a868b1946588355c0f4ec7edc83db812c64ff078297a67c2d7f1c3b503"
+  },
+  "package": {
+    "private_path": "P:/.data/yt-is/private/packaged-holdouts/interest-intelligence-holdout-v1.1-ISEM-PACKAGE.json",
+    "sha256": "cd2e1a0c2f2376c3890543e0cafe9dae51bf0852c0e0bd10b6668417946763f3",
+    "byte_length": 23485,
+    "record_count": 19,
+    "serialization": "UTF-8, ensure_ascii=false, sort_keys=true, indent=1, trailing newline"
+  },
+  "target_schema": {
+    "path": "docs/handoffs/interest-intelligence/interest-semantic-evaluator-v1/TARGET_GROUND_TRUTH_SCHEMA.json",
+    "sha256": "d4afa1d512289c942fbd86c70469813c5fce2e5677739b3e3ac57cce9e7787f8",
+    "derived_from": "frozen ef/eval_interest_semantic.py load_ground_truth by code reading only",
+    "revised_after_review": "doc-precision fix for scorability/falsy-id loader semantics (review run-7150581742c6 finding); hash updated accordingly"
+  },
+  "mismatch_classification": "MECHANICAL_SCHEMA_DIFFERENCE",
+  "classification_basis": "source lacks every loader root container and uses two out-of-group key names (canonical_label for the name group, negative_class for the class group) plus a nested scorability object; all differences are resolvable by key-level operations whose binding outcome is forced by the frozen loader's own synonym and bindability rules; no value was read, interpreted, or altered",
+  "semantic_equivalence": {
+    "method": "value_blind_canonical_record_digest_multiset_v1+profile:ii-v1.1",
+    "proof_digest_source_side": "23725eb63c98cd3b2e761591544ea5551fae3b85239d53c774415e6605606b67",
+    "proof_digest_package_side": "23725eb63c98cd3b2e761591544ea5551fae3b85239d53c774415e6605606b67",
+    "n_source_records": 19,
+    "n_package_records": 19,
+    "ordered_digests_equal": true,
+    "multiset_digests_equal": true,
+    "order_semantically_load_bearing": false,
+    "verdict": "PASS",
+    "covers": [
+      "no added records",
+      "no removed records",
+      "no duplicate created or removed",
+      "no field-value mutation",
+      "no polarity/type mutation",
+      "no evidence/provenance mutation"
+    ]
+  },
+  "frozen_loader_compatibility": {
+    "loader": "ef/eval_interest_semantic.py load_ground_truth (unmodified)",
+    "schema_valid": true,
+    "n_labels_bound": 19,
+    "verify_sealed_status": "NOT_RUN_AGAINST_PACKAGE (would refuse by design; rebinding SEALED_GT_SHA256 to the package digest is the evaluator-binding author's step, explicitly out of packaging scope)"
+  },
+  "bound_composition_invariants": {
+    "note": "aggregate counts per frozen taxonomy entry only; no label content",
+    "semantic_class_counts": {
+      "Goal": 1,
+      "ImplementationConstraint": 2,
+      "ImplementationConstraintNegative": 3,
+      "InformationNeed": 2,
+      "Interest": 4,
+      "InterestNegative": 1,
+      "Question": 2,
+      "SourceNegative": 1,
+      "ToolOrMechanismPreference": 2,
+      "WorkPreference": 1
+    },
+    "scorability_field_counts": {
+      "corpus_scorable": 4,
+      "unknown": 5,
+      "none": 10
+    }
+  },
+  "semantic_values_exposed_to_llm": "ZERO",
+  "scoring_performed": false,
+  "semantic_judge_calls": 0,
+  "d3_outputs_inspected": false,
+  "evidence_receipts": {
+    "structure_inspection": "packaging-inspect-receipt.json",
+    "equivalence_and_loader": "packaging-verify-receipt.json",
+    "incident_receipt": "PACKAGING_INCIDENT_RECEIPT.md"
+  }
+}

@@ -1,0 +1,24 @@
+{
+ "command": "verify",
+ "source_sha256": "1c7885081dcb6a61e419273c42b3326428727f6718f47736582717b8535aa48f",
+ "package_sha256": "cd2e1a0c2f2376c3890543e0cafe9dae51bf0852c0e0bd10b6668417946763f3",
+ "package_byte_length": 23485,
+ "equivalence": {
+  "pass": true,
+  "n_source_records": 19,
+  "n_package_records": 19,
+  "ordered_digests_equal": true,
+  "multiset_digests_equal": true,
+  "order_semantically_load_bearing": false,
+  "source_digest_chain_sha256": "23725eb63c98cd3b2e761591544ea5551fae3b85239d53c774415e6605606b67",
+  "package_digest_chain_sha256": "23725eb63c98cd3b2e761591544ea5551fae3b85239d53c774415e6605606b67",
+  "method": "value_blind_canonical_record_digest_multiset_v1+profile:ii-v1.1"
+ },
+ "frozen_loader": {
+  "schema_valid": true,
+  "sanitized_error": null,
+  "n_labels_bound": 19
+ },
+ "converter_version": "1.0.0",
+ "status": "VERIFIED_EQUIVALENT"
+}

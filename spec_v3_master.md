@@ -1,5 +1,7 @@
 # yt-is Industrial Pipeline Specification (v3 Master)
 
+> **CURRENT MASTER SPEC** (supersedes `spec_v2_review.md` and `spec.md`). Root placement per the spec-file-at-project-root convention.
+
 ## Problem: The "Scale Wall"
 Processing 140,000 YouTube transcripts is currently blocked by three "Scale Walls":
 1.  **The Notebook Tax:** 60-90s overhead per video (Create/Delete) in the cloud.

@@ -1,3 +1,11 @@
+> **FROZEN STREAM HANDOFF (2026-09-12 rationalization pass).** The worktree
+> this file governed (`P:/.worktrees/yt-is-refactor-control-planes`, branch
+> `refactor/yt-is-control-planes`) no longer exists; the stream is historical.
+> Kept as frozen evidence of the control-planes refactor contract (four
+> outcomes, protocol, log). Current package state lives in the root
+> `HANDOFF.md`; intelligence workstreams in
+> `docs/handoffs/interest-intelligence/PROJECT_STATE.md`.
+
 # yt-is refactor — shared agent handoff
 
 **Give this path to any LLM working this stream:**

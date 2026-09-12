@@ -1,0 +1,86 @@
+{
+  "receipt": "rre_v1_freeze_amendment_2",
+  "agent": "zcode",
+  "host": "zcode",
+  "created_utc": "2026-08-27T20:55:00",
+  "amendment": "ARCHITECT_AMENDMENT_2_BLINDING_AND_ATTRIBUTION_HARDENING",
+  "status": "RECOMMENDATION_EVALUATOR_AMENDMENT_2_READY_FOR_FRESH_REVIEW",
+  "candidate_ranking_implementations": "NOT_YET_FROZEN (arm A/B/C)",
+  "private_holdout": "DOES_NOT_EXIST_YET \u2014 later independent curator creates it AFTER evaluator + candidates freeze",
+  "preregistration_doc": "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
+  "amendment_doc": "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/ARCHITECT_AMENDMENT_2_BLINDING_AND_ATTRIBUTION_HARDENING.md",
+  "amendment_docs": [
+    "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/ARCHITECT_AMENDMENT_1_REVIEW_REPAIR.md",
+    "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/ARCHITECT_AMENDMENT_2_BLINDING_AND_ATTRIBUTION_HARDENING.md"
+  ],
+  "supersedes": {
+    "rejected_candidate": "v1 (frozen 2026-08-27T07:33:05)",
+    "original_frozen_hashes": {
+      "ef/eval_recommendation_regret.py": "95369544be76f418e9ae86ecbe0882af27ee051e5f9722b85f17444f85b05e85",
+      "scripts/eval_recommendation_regret.py": "26f265b6f6ea559138717c1b0813407e7f6872584a233476e819fe0fa7712ce5",
+      "tests/test_eval_recommendation_regret.py": "0c56aff6cfcae3cd700d17121937f012a4e8a8f803408af680178a3df79ab992",
+      "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md": "3308d67d7deb889fb64d543b808d714cf82d0ef9030cc8fb1d29dc1aa247b255"
+    },
+    "review_report": "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/REVIEW-freeze-20260827.md",
+    "review_commit": "732e2cfa5dbe2848421b48cf5b46d9bf4c68039",
+    "review_verdict": "REJECTED",
+    "v1_preserved_at": "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/rejected-candidate-v1/"
+  },
+  "judge_prompts_sha256": {
+    "pairwise_regret": "57b7910583a052bea1c95b04b4d3b84a72f594e29d99be935bf3884c6f3a5866",
+    "pairwise_usefulness_now": "3a3c19b56c5bf446ab9290acf60a0f28d97764584f4bf7e5c5c984917bc02405",
+    "dimensions": "a3256b609b974b4923fbfc20bc747789e71b3f727c127fee01f7b7126eebbbc5",
+    "listwise": "116c11ae405a810592aa21be4a4c5ca12e538d4b184caf71ce7812df12a9c23c"
+  },
+  "judge_model_config": {
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "timeout_s": 300,
+    "max_attempts": 2
+  },
+  "min_decided_pairs_for_diagnostic_floor": 5,
+  "min_distinct_decided_packets_for_diagnostic_floor": 5,
+  "frozen_artifacts": [
+    {
+      "path": "ef/eval_recommendation_regret.py",
+      "sha256": "195ab347f91ad6409ef0b6b5e33f4e4a0d23a34c055657f033e3b0cab1f90cb2"
+    },
+    {
+      "path": "scripts/eval_recommendation_regret.py",
+      "sha256": "ff9a24bc3b8a932ed2e7f1206c5a8661910c474cfa16ceb2a03ed1566709e4fd"
+    },
+    {
+      "path": "tests/test_eval_recommendation_regret.py",
+      "sha256": "2b7f5f7aefe6508db0b08249a3244ae3cae82daee360b613bf639170b7a36307"
+    },
+    {
+      "path": "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/METRIC_PLAN_PREREGISTRATION.md",
+      "sha256": "15c5e6b199db2e17640f9ded0c87d46239cb615d932b485f7b02bf94259e4cc6"
+    },
+    {
+      "path": "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/ARCHITECT_AMENDMENT_1_REVIEW_REPAIR.md",
+      "sha256": "98bab89a1c731dc528bea1c8bb87b31aec5adc382e833db91da2dea21556bf02"
+    },
+    {
+      "path": "docs/handoffs/interest-intelligence/recommendation-regret-evaluator-v1/ARCHITECT_AMENDMENT_2_BLINDING_AND_ATTRIBUTION_HARDENING.md",
+      "sha256": "61355315ee6067476df52805eec08fd938d6a5a506a65057b458dba28702880b"
+    }
+  ],
+  "contamination_record": [
+    "never opened any file under .data/yt-is/private/",
+    "no future ranking outputs inspected (none exist)",
+    "Interest GT v1.1 not used as recommendation labels",
+    "no real judge packets run (transport only via injected fakes in offline tests)",
+    "feedback schema read from public contract source ef/personal_graph.py only; no live DB read"
+  ],
+  "gate_activation_preconditions": [
+    "fresh top-level freeze review of the amended candidate returns APPROVED",
+    "accepted Interest state exists (inference recall/provenance gate passed and integrated)",
+    "ranking candidates A (similarity+recency baseline) and B (goal/claim-aware) implemented and frozen elsewhere",
+    "independent curator then builds ONE private blinded regret/usefulness packet set under this frozen evaluator",
+    "single judging pass per packet set; no tuning afterward"
+  ],
+  "final_reply_identity": {
+    "session_name": "II Recommendation / Regret Ranking Evaluator"
+  }
+}

@@ -1,5 +1,7 @@
 # yt-is Industrial Pipeline — NLM Staging Scraper Spec
 
+> **COMPONENT SPEC** (NLM staging scraper); complements, does not supersede, `spec_v3_master.md`.
+
 ## Problem
 
 Processing 140,000 YouTube transcripts required a new notebook per video — ~60–90s overhead per video in sequential operation. `NLMIndustrialScraper` existed in `nlm_scraper.py` with terminal-local staging notebook logic, but was unreachable from the transcript fetch chain (`transcript.py`).

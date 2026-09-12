@@ -3,13 +3,89 @@
 **This is the package-local operational reference for `yt-is`.** For active work
 streams, see the integration handoff chain at the bottom of this file.
 
-Last updated: 2026-08-24 (EF pipeline + shared search-fleet capture:
+Last updated: 2026-09-12 (pipeline substrate recovery: NLM auth repaired,
+continuous loop restarted; see the 2026-09-12 snapshot. Previous update:
+2026-08-24 — EF pipeline + shared search-fleet capture:
 five WinSW services port-verified; evidence-fabric fast-forward merged
 to main; 536K blocked rows migrated to excluded with exclusion enforced
 at scan and pending ends; alert egress plus YtisHealthWatch 5-min
 watcher; interest graph /interests and personal intelligence /today
 live on :6393; authoritative snapshot section added after the
 2026-08-17 monitor section).
+
+**Staleness:** this record is stale if `python -m scripts.pipeline_monitor
+health` (from the repo root) reports a state other than
+COMPLETED_WITH_FAILURES with pending≈10.6K, or if 7+ days pass without a
+landing updating it. The 2026-08-24 corpus counts below are superseded by
+the 2026-09-12 snapshot.
+
+## Current authoritative snapshot (2026-09-12)
+
+Recorded via the architect-handoff protocol (agent: grok, session
+01a09247). Supersedes older dated sections for currency; they remain
+historical evidence. Substrate events only — intelligence-workstream
+gates (discovery/inference/recommendation) unchanged; see
+`docs/handoffs/interest-intelligence/PROJECT_STATE.md` for that layer.
+
+- [seen] NLM auth repaired 2026-09-11 ~18:12Z: `a.hominidae` master token
+  failed noninteractive refresh daily since 2026-09-07 (AUTH_BLOCKED);
+  repaired headlessly via `bin/csf-nlm-auth --profile a.hominidae`
+  (54s, ok=true), confirmed by `python -m csf.nlm_keepalive
+  --log-file P:/.data/yt-is/nlm-auth/keepalive.log` — all 3 accounts
+  pass, backup pushed, AUTH_BLOCKED cleared (state now
+  COMPLETED_WITH_FAILURES). csf-nlm-auth is the noninteractive repair
+  tier; the 06:00 keepalive runs only token-only refresh.
+- [seen] Continuous-ops loop restarted 2026-09-12 00:14Z (detached,
+  `scripts/run_continuous_ops.py --loop --interval-s 900`); first tick
+  heartbeat in `.logs/continuous_ops/heartbeat.json`; visual worker
+  launched (run continuous-20260912T001459Z). Tick DRAIN step skips —
+  the relay auto-resumes only from supervisor state `paused`; current
+  status `completed_with_failures` with `resume_mechanism_effective=False`.
+  OPEN FORK: reset supervisor state to `paused` (relay reuses recorded
+  config) vs manual drain block via `run_unattended_backlog.py`
+  (config-sensitive; quota consequences). Not executed.
+- [seen] Corpus counts 2026-09-12 (mode=ro): complete 289,038 / failed
+  4,412 / pending 10,603 (no_captions 5,005, unknown_captions 5,598,
+  captions 0) / channels 1,820. The 08-26 Whisper-parking
+  (deferred_audio terminal status) is why pending is 10.6K, not 435K.
+- [seen] `scripts/dispatcher_keepalive.py` (YtisDispatcherKeepalive, 5-min
+  task) was crashing on every tick since commit df4c0152 (missing
+  `from pathlib import Path`); import restored 2026-09-12, verified
+  (pytest test_dispatcher+test_nlm_keepalive 14 passed, py_compile clean).
+- [seen] Disk pressure open: P: free swung 9.5 → 7.0 → 7.9 GB within one
+  hour while the visual worker ran (downloads_24h≈441). Consumer
+  unverified; disk_low alert live. Visual downloads continue regardless
+  of the loop.
+- [seen] Watcher ledger: 6 nightly tasks logging failures (incl.
+  YtisContentSync exit-1 chronic — matches open item below; RCA not
+  started). Integrity alert on deleted `.agents/skills/ytis-continuous/`
+  files clears when the workspace-repo deletion lands (skill merged into
+  `/ytis`, 2026-09-12).
+- [seen] Docs rationalization pass 2026-09-12 (phases 1-3, yt-is +
+  intelligence workstreams): state records refreshed with staleness
+  conditions (this file + interest-intelligence/PROJECT_STATE.md; five
+  per-track docs bannered frozen); spec lineage banners added (v3
+  master current); AGENT_HANDOFF.md frozen under
+  docs/handoffs/yt-is-refactor-control-planes-20260716/ (worktree gone);
+  CODEX_MEMORY.md deleted (absorbed by DEBUGGING_PLAYBOOK.md); 24 root
+  test-output/log/debris files and two zero-byte sqlite placeholders
+  removed; COMPARISON.md/FINAL_REPORT.md/HARNESS_BRIEF.md +
+  iteration-log.jsonl re-homed to runs-archive/; docs/superpowers/
+  (32 frozen implementation plans) moved to docs/planning/superpowers/
+  with genre README. All changes uncommitted, riding the landing flow.
+- [seen] 2026-09-12 operator-directed full stop + emergency disk purge:
+  continuous loop had already exited on its own (last tick 00:14Z); visual
+  worker (PID 29608) and whisper_cpu_runner (PID 134220) terminated; zero
+  pipeline processes remain. Disk hit 1.8GB free (the .mka accretion below);
+  purged 60 tmp .mka (~1GB) + 126 store .mka >50MB in visual/ and
+  podcast-audio/ (29.4GB) — Whisper recovery audio for failed-transcript
+  videos, re-downloadable derived media. Free space 1.8 → 32.2GB. The parked
+  deferred_audio process-vs-purge decision (open item 1) now has its first
+  executed purge data point.
+- [open] Operator-held: whole-file six-section conversion and archive
+  prune for this file (parked 2026-08-24, open item 5) — still awaiting
+  the separate operator decision; the 2026-09-12 rationalization pass
+  deliberately did NOT move or restructure this file.
 
 ### Hot-path throughput loop outcome (2026-08-12)
 
@@ -2785,8 +2861,7 @@ resuming any throughput work:
 Read these before starting any yt-is work:
 
 - [HANDOFF.md](P:/packages/yt-is/HANDOFF.md) (this file)
-- [CODEX_MEMORY.md](P:/packages/yt-is/CODEX_MEMORY.md)
-- [DEBUGGING_PLAYBOOK.md](P:/packages/yt-is/DEBUGGING_PLAYBOOK.md)
+- [DEBUGGING_PLAYBOOK.md](P:/packages/yt-is/DEBUGGING_PLAYBOOK.md) (absorbs the former CODEX_MEMORY.md, deleted 2026-09-12)
 - [NLM Auth Architecture](P:/packages/yt-is/docs/operations/nlm-auth-architecture.md)
 - The active integration handoff (see "Active work stream" above)
 

@@ -312,7 +312,7 @@ Before running anything, read:
 - `P://packages/yt-is/docs/operations/sharded-lane-artifact-audit.md`
 - `P://packages/yt-is/docs/operations/sharded-lane-series.md`
 - `P://packages/yt-is/docs/operations/nlm-auth-architecture.md`
-- `P://packages/yt-is/docs/superpowers/specs/2026-04-28-hot-path-throughput-optimization-series-design.md`
+- `P://packages/yt-is/docs/planning/superpowers/specs/2026-04-28-hot-path-throughput-optimization-series-design.md`
 
 These files record what has already been proven and what was negative. The
 canonical auth architecture above supersedes the historical browser-root and

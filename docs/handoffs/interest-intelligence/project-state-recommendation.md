@@ -1,3 +1,5 @@
+> State detail frozen as of 2026-08-26 — verify against [PROJECT_STATE.md](PROJECT_STATE.md) (master entry) before relying on this file.
+
 # yt-is Personal Intelligence — Recommendation State
 Updated: 2026-08-26 by feedback-contract hardening session (agent: zcode)
 

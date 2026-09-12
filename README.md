@@ -60,11 +60,22 @@ Full pipeline: scans all tracked channels for new videos, then fetches transcrip
 - **Ctrl-C is safe** — already-scanned channels and fetched videos are saved
 - Re-running after an interrupt is fast (already-checked channels skip through)
 
+### `ytis review`
+Builds the channel review page and opens it in your browser.
+- The page lands at `.logs/channel_review/review.html`
+- Click category cells to classify channels, click ✕ to block one, then click "Export Decisions" to save `review_decisions.json` to Downloads
+- Run `ytis run` to apply the exported decisions and sync
+
 ### `ytis search <query>`
 Semantic search across all transcripts and extracted code.
 - Results include the video title, relevant text snippet, and YouTube URL
 - Uses vector similarity, not keyword matching — "database performance" finds videos about SQL optimization even if they never say "database performance"
 - Needs the search service running: `python -m ef.warm_query_service` (or it falls back to slower CLI search). Since 2026-08-22 this one process serves BOTH faces: the `:6391` HTTP renderers and, when `MCP_HTTP_PORT` is set (the WinSW service sets 8324), the `search_ef` MCP — one BGE-M3 model shared between them
+
+### `ytis web`
+Opens the web search interface in your browser.
+- Checks the query service health endpoint first; if it is up, opens the live UI at `http://127.0.0.1:6391/`
+- If the service is down, opens `docs/search.html` from disk and prints how to start it: `python -m ef.warm_query_service`
 
 ### `ytis today`
 Shows what happened in the last 24 hours: new transcripts, new code extractions, new insight reports.
@@ -82,6 +93,13 @@ Adds a new YouTube channel or playlist to track. Accepts:
 - Playlist URL: `https://youtube.com/playlist?list=PLxxxxxxx`
 
 After adding, run `ytis run` to scan it for videos.
+
+### `ytis import <file>`
+Adds many channels at once from a file. Accepts:
+- A text file with one channel URL or ID per line
+- A YouTube Takeout OPML export (extracts channel IDs from the RSS URLs)
+
+Each channel goes through the same add path as `ytis add`; already-tracked channels count as added. Afterwards, run `ytis run` to scan them for videos.
 
 ## Beyond YouTube
 

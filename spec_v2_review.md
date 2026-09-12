@@ -1,5 +1,7 @@
 # yt-is Industrial Pipeline Specification (v2 Draft)
 
+> **SUPERSEDED** by `spec_v3_master.md` (current master). Historical; kept for lineage.
+
 ## Problem
 Processing 140,000 YouTube transcripts requires a shift from **Surgical Retrieval** (1-by-1 local) to **Industrial Ingest** (bulk cloud). The primary bottleneck is the "Notebook Tax" (60-90s overhead per video) and the fragility of RSS-only discovery.
 
