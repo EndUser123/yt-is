@@ -1146,8 +1146,10 @@ def counterfactual_suite(subjects_streams, selected_families):
                 row["channelnew_unconfirmed_after"] = \
                     not run_t["subject"]["by_family"][cn]["confirmed"]
             if tf == "inject_future":
-                canon = lambda rr: json.dumps(
-                    rr["subject"]["by_family"], sort_keys=True)
+
+                def canon(rr):
+                    return json.dumps(
+                        rr["subject"]["by_family"], sort_keys=True)
                 row["identical"] = canon(base) == canon(run_t)
             checks[tf] = row
         results.append({"sid": sid, "kind": bundle["_kind"], "t": t_iso,
@@ -1356,7 +1358,6 @@ def apply_decision_bars(payload):
     agg = payload["aggregate"]
     ref = ARM_A_REFERENCE
     decisions = {}
-    a_neg = agg["armA"]["negative_emerging_rate"]["rate"]
     a_sep = agg["armA"]["separation"]
     for fam in FAMILIES:
         e = agg[fam]
@@ -1372,7 +1373,6 @@ def apply_decision_bars(payload):
                  "neg_emerging_rate"])
         d2 = pr >= BARS["pos_confirmed_recall_min"]
         d3 = sep is not None and a_sep is not None and sep > a_sep
-        d4 = e.get("median_confirmation_delay_days") is not None or True
         decisions[fam] = {"bars": {"D1_material_neg_drop": d1,
                                    "D2_pos_useful": d2,
                                    "D3_separation_beats_A": d3},
