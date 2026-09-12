@@ -92,6 +92,30 @@ gates (discovery/inference/recommendation) unchanged; see
   docstring updated to the G:-only ladder. OPEN: `.ytis-nlm-auth-backup`
   on C: is a credentials bare-repo with a documented C: security rationale —
   relocation is an operator decision (see session report).
+- [seen] Audio-queue drain started 2026-09-12 (operator directive): manifest
+  rebuilt post-purge (backlog 1,891 files / 8.35GB — the sub-50MB tail; the
+  126 large .mka purged 09-11 are re-downloadable). Feeder verified working
+  in foreground (`drain --limit 1`: transcribed, then terminal `refused` —
+  "sub-floor content", the no-speech/music class; refused is terminal by
+  design, never retried). Whisper CPU path clean (~165s/item per
+  docs/deferred-audio/whisper-root-cause.md; CUDA teardown abort documented
+  there, tolerance fix in run_visual_worker). Full-backlog duration is
+  [INFERENCE]: 1,891 items x 165s/file (single 8MB-file CPU-int8 receipt,
+  whisper-root-cause.md §5) = ~87h IF per-item time matches that one file;
+  actual time varies with audio length — no whole-queue measurement exists.
+  Multi-pass program. A detached first pass ran 00:35-00:41 (buffered stdout
+  lost — no flush on exit under Start-Process redirect; effects visible in
+  checkpoint: 650 kept, 0 stale-dropped).
+- [seen] Drain loop mortality ended 2026-09-12: three hand-rolled pwsh drain
+  loops died silently inside harness process trees (no LOOP-STOP logged; the
+  "harness background wrapper reaps descendant trees" class). Replaced by
+  scheduled task YtisAudioDrain (`scripts/install_audio_drain_task.ps1`):
+  pythonw `drain --limit 25` every 5 min, MultipleInstances IgnoreNew
+  (feeder has no internal lock, so serialization is external), 4h execution
+  limit; Task Scheduler is the supervisor — outside every harness process
+  tree, cannot be reaped with them. First pass verified live 12:26:32.
+  Progress receipt: 1,891 -> 1,339 files / 7.72GB, 552 ledger-evicted to
+  terminal states, `complete: 0` (all refused/sub-floor class so far).
 - [open] Operator-held: whole-file six-section conversion and archive
   prune for this file (parked 2026-08-24, open item 5) — still awaiting
   the separate operator decision; the 2026-09-12 rationalization pass
