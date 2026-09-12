@@ -22,7 +22,6 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-import subprocess
 import sys
 import time
 
@@ -118,7 +117,6 @@ def check_db_lock() -> tuple[str, str | None]:
     if not lock_file.exists():
         return "pass", "no lock"
     try:
-        import psutil
         # If we can delete it, nobody holds it
         lock_file.unlink()
         return "warn", "cleared stale DB lock"
