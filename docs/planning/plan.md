@@ -32,7 +32,7 @@
 
 - [ ] TASK-17 (F1+U2): Sweep ~34 stale session worktrees under `.data/sessions/*/worktree/` — owner/liveness check first (inspect branch tips for unmerged unique work), sanctioned sweeper `P:/.agents/scripts/git/sweep_worktrees.py`; after sweep, re-run one scanner unscoped to validate the ~30x contamination factor drops (falsifier test from wiki concept session-worktrees-nested-in-package-repos)
 - [ ] TASK-18 (F1): Return the package primary checkout to main — currently parked on lane branch `agent/01a08852-visual-closers` (tip 83c36b16; inspect before any rebase/discard, may fold into TASK-17's check)
-- [ ] TASK-19 (gap): Default `.data/sessions` exclusion in the workspace scanners (fmea_scan, safe_write_audit, coupling_audit) — receipt: same scanner returned 12,487 findings unscoped vs 35 scoped to csf/; NOTE: change lands in P:/.agents tooling, not this repo
+- [x] TASK-19: Default `.data/sessions` exclusion in the workspace scanners (fmea_scan, safe_write_audit, coupling_audit) — DONE 2026-09-12: `worktree` + `.data/sessions` added to all three skip sets; falsifier re-scan receipt: unscoped safe_write_audit on yt-is 12,487 → 374 findings (33x collapse, remainder = real package sites); all three compile clean. NOTE landed in P:/.agents tooling
 - [ ] TASK-20 (F4): Atomic-write hardening of state-critical paths — nlm_keepalive._push_backup auth-backup delete-before-copy → tmp+os.replace (the artifact the 2026-09-11 auth repair depended on); csf_logging jsonl writers (:141, :235); transcript cookie-file handling (:1095-:1130)
 - [ ] TASK-21 (F5): check/timeout on the 6 unchecked subprocess sites — connectors.py:44, nlm_batch.py:1353, worker_count_sweep.py:764, batch_size_series.py:214, breadth_series.py:427, visual/media_fetch.py:354
 - [ ] TASK-22 (F2, block-tier trigger met): Decompose nlm_batch.py (8,086 lines / 2,593 callsites) along the persistence seam — staging/notebook persistence, subprocess orchestration, shared-dir globbing, cleanup receipts become separate modules; contradicts frozen outcome "industrial path not locked in god-files" until done; requires refactor or recorded concrete technical constraint
@@ -57,6 +57,8 @@ Sequencing logic: measurement integrity and backlog-unlockers first (they de-ris
 - **Wave 5 — backfill program:** TASK-14 → 15 → 16 (16 depends on Wave 2's verb set; depth decided: 2y)
 
 **Recommended additions not yet accepted (operator call):** drain-resume design packet (= TASK-7's core), YtisContentSync exit-1 RCA, no-caption/deferred-audio lane disposition (47% of pending backlog).
+
+Update 2026-09-12: deferred-audio backlog consumption is mechanized independently of the supervisor — scheduled task **YtisAudioDrain** (`scripts/install_audio_drain_task.ps1`) runs `deferred_audio_feeder.py drain --limit 25` every 5 min, serialized via Task Scheduler IgnoreNew (feeder has no internal lock). This does NOT resolve TASK-7 (that fork is the continuous-ops transcript-drain resume), but it removes the audio queue from that fork's critical path: the audio backlog now drains whether or not the supervisor state is ever fixed.
 
 
 
