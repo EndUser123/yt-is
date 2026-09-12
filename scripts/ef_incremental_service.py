@@ -42,7 +42,8 @@ def _already_running() -> bool:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"(Get-Process -Id {pid}).ProcessName"],
-            capture_output=True, text=True, timeout=20).stdout.strip()
+            capture_output=True, text=True, timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
         return out in ("python", "pythonw")
     except Exception:
         return False

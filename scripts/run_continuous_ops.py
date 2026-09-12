@@ -195,6 +195,7 @@ def _recover_stopped_drain(
             db_path, state_path, python_exe, execute=False, output_root=fresh_root
         ),
         cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=600,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if plan.returncode != 0:
         return {"action": "recovery_failed", "stage": "replan", "rc": plan.returncode}

@@ -52,7 +52,8 @@ def _already_running() -> bool:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"(Get-Process -Id {pid}).ProcessName"],
-            capture_output=True, text=True, timeout=20).stdout.strip()
+            capture_output=True, text=True, timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
         return out in ("python", "pythonw")
     except Exception:
         return False
@@ -79,7 +80,8 @@ def _run(step: str, cmd: list[str]) -> tuple[bool, str]:
     try:
         r = subprocess.run(
             cmd, cwd=str(REPO), capture_output=True, text=True,
-            timeout=CYCLE_TIMEOUT_S, encoding="utf-8", errors="replace")
+            timeout=CYCLE_TIMEOUT_S, encoding="utf-8", errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         detail = (r.stdout or "")[-200:] + " | " + (r.stderr or "")[-200:]
         return r.returncode == 0, f"exit {r.returncode}: {detail}"
     except subprocess.TimeoutExpired:

@@ -310,6 +310,7 @@ def maybe_recover_transcript(
         subprocess.run(
             command, cwd=str(REPO_ROOT), capture_output=True, text=True,
             timeout=timeout_s, check=False, env=worker_env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if not result_path.exists():
             return {"attempted": True, "ok": False, "error": "whisper worker produced no result"}

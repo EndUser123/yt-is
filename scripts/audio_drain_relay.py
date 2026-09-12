@@ -47,6 +47,7 @@ def run_feeder(*args: str, timeout: float | None = None) -> tuple[int, str]:
         proc = subprocess.run(
             [*FEEDER, *args], cwd=str(REPO_ROOT),
             capture_output=True, text=True, timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
         return 124, "batch timeout expired; feeder killed (batch-level stop)"
