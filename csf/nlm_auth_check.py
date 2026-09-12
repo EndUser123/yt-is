@@ -17,12 +17,15 @@ import os
 import json
 import subprocess
 import sys
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 STORAGE_PATH = Path("P:/.data/yt-is/nlm-auth/storage_state.json")
 CANONICAL_AUTH_ROOT = STORAGE_PATH.parent
-BACKUP_REPO = Path("C:/Users/brsth/.ytis-nlm-auth-backup")
+# G: tier (internal disk, operator directive 2026-09-12: no yt-is files on C:).
+BACKUP_REPO = Path(os.environ.get(
+    "YTIS_NLM_AUTH_BACKUP", "G:/backups/ytis/nlm-auth"))
 
 # These are operator-facing account identities, not NotebookLM CLI profile
 # names.  A storage file is selected by identity before a client is opened;

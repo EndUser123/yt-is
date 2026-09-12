@@ -15,7 +15,7 @@ for the accounts used by the multi-account fetch stack.
 1. **Enumerate the affected Google accounts.** Sources: NLM auth profiles
    (`bin/csf-nlm-auth`, `.data/yt-is/nlm-auth/` — never committed), the
    coordinator's account config in `scripts/run_multi_account_fetch.py`, and
-   the backup repo `C:\Users\brsth\.ytis-nlm-auth-backup\`.
+   the backup repo `G:\backups\ytis\nlm-auth\`.
 2. **For each account:** Google Account → Security:
    - "Your devices" / "Manage all devices" → sign out ALL sessions.
    - Change the account password if there is any reuse concern.

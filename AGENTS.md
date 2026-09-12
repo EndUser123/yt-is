@@ -508,7 +508,8 @@ future SourceNotFoundError rows.
 
 The active auth model is one canonical storage file per exact external
 identity, backed up as a same-named file in the local bare repo at
-`C:\Users\brsth\.ytis-nlm-auth-backup\` (no network remote). The authoritative
+`G:\backups\ytis\nlm-auth\` (no network remote; moved off C: 2026-09-12 per
+operator directive — no yt-is files on C:). The authoritative
 map in `csf/nlm_auth_check.py` is:
 
 | Identity | Expected email | Canonical storage |

@@ -17,7 +17,7 @@ Exit 0 = all pass; exit 1 = warnings (pipeline can proceed); exit 2 = blockers.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
