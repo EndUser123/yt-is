@@ -2278,7 +2278,7 @@ def _ingest_extension_document(payload: dict, kind: str, transcripts_db=None):
         conn.execute(
             "insert into transcript_cache "
             "(cache_key, video_id, lang, source, transcript, metadata_json, "
-            "cached_at, terminal_id) values (?,?,?,?,?,?,?,NULL)",
+            "cached_at, terminal_id) values (?,?,?,?,?,?,?,'extension')",
             (cache_key, doc_id, "en", provider, text, metadata,
              _time.strftime("%Y-%m-%dT%H:%M:%S")))
         conn.commit()
@@ -2338,7 +2338,7 @@ def ingest_extension(payload: dict, transcripts_db=None):
         conn.execute(
             "insert into transcript_cache "
             "(cache_key, video_id, lang, source, transcript, metadata_json, "
-            "cached_at, terminal_id) values (?,?,?,?,?,?,?,NULL)",
+            "cached_at, terminal_id) values (?,?,?,?,?,?,?,'extension')",
             (cache_key, video_id, lang, provider, transcript, metadata,
              _time.strftime("%Y-%m-%dT%H:%M:%S")))
         conn.commit()
