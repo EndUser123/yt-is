@@ -40,7 +40,16 @@ from scripts.run_visual_worker import (  # noqa: E402
 
 MEDIA_ROOT = Path(os.environ.get("YTIS_VISUAL_MEDIA_ROOT", "P:/.data/yt-is/visual"))
 BATCH_DB = Path(os.environ.get("YTIS_BATCH_DB", "P:/.data/yt-is/batch_status.sqlite"))
-MANIFEST_PATH = REPO_ROOT / "docs" / "deferred-audio" / "manifest.json"
+MANIFEST_PATH = Path(
+    os.environ.get(
+        "YTIS_FEEDER_MANIFEST",
+        # Operational home beside the checkpoint (untracked). The previous
+        # default — docs/deferred-audio/manifest.json — is git-tracked, so
+        # every self-refreshing cold invocation dirtied the repo (AAR F4,
+        # 2026-09-16). Use --manifest for an explicit snapshot anywhere.
+        "P:/tmp/whisper-teardown/manifest.json",
+    )
+)
 CHECKPOINT_PATH = Path(
     os.environ.get(
         "YTIS_FEEDER_CHECKPOINT",
@@ -491,10 +500,27 @@ def _checkpoint_load() -> dict:
 
 
 def _checkpoint_save(state: dict) -> None:
+    # Same atomicity contract as write_manifest: per-call-unique tmp
+    # (concurrent task pass + manual invocation share this file; a fixed
+    # tmp name lets same-process or cross-process writers collide and
+    # silently drop checkpoint updates — review F-001, 2026-09-16) and
+    # PermissionError retry for Windows replace-under-open contention.
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = CHECKPOINT_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-    tmp.replace(CHECKPOINT_PATH)
+    payload = json.dumps(state, indent=1)
+    for attempt in range(6):
+        tmp = CHECKPOINT_PATH.with_name(
+            f"{CHECKPOINT_PATH.name}.tmp{os.getpid()}-{next(_WRITE_SEQ)}"
+        )
+        tmp.write_text(payload, encoding="utf-8")
+        try:
+            tmp.replace(CHECKPOINT_PATH)
+            return
+        except PermissionError:
+            tmp.unlink(missing_ok=True)
+            time.sleep(0.02 * (attempt + 1))
+    raise PermissionError(
+        f"checkpoint replace still locked after retries: {CHECKPOINT_PATH}"
+    )
 
 
 def process_item(item: dict) -> dict:
@@ -776,6 +802,24 @@ def cmd_measure(args: argparse.Namespace) -> int:
     return 0
 
 
+PASS_LOG_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _append_pass_log(summary: dict) -> None:
+    """One JSON line per drain pass, stdout-independent (pythonw discards
+    stdout; without this, a starved pass streak is invisible — the
+    2026-09-12..15 exit-0 idle class). Rotates at 5 MiB to .jsonl.1."""
+    try:
+        path = CHECKPOINT_PATH.parent / "drain-passes.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > PASS_LOG_MAX_BYTES:
+            path.replace(path.with_suffix(".jsonl.1"))
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(summary, default=str) + "\n")
+    except OSError:
+        pass  # logging must never fail a drain pass
+
+
 def run_drain_phase(limit: int, manifest_path: Path | None = None,
                     checkpoint_path: Path | None = None,
                     max_runtime_s: float | None = None) -> dict:
@@ -799,10 +843,12 @@ def run_drain_phase(limit: int, manifest_path: Path | None = None,
     }
     if not _disk_free_ok():
         summary["stopped"] = "disk_floor"
+        _append_pass_log(summary)
         return summary
     cache_verdict = check_model_cache()
     if not cache_verdict["ok"]:
         summary["stopped"] = f"model_cache: {cache_verdict['error']}"
+        _append_pass_log(summary)
         return summary
 
     checkpoint = _checkpoint_load()
@@ -846,6 +892,7 @@ def run_drain_phase(limit: int, manifest_path: Path | None = None,
     before = len(checkpoint)
     cmd_evict(evict_ns)
     summary["evicted_checkpointed"] = before
+    _append_pass_log(summary)
     return summary
 
 

@@ -491,3 +491,29 @@ def test_write_manifest_never_exposes_partial_file(tmp_path):
     stop.set()
     rt.join()
     assert not errors, f"torn manifest observed: {errors[:3]}"
+
+
+def test_default_manifest_path_is_untracked_operational_home():
+    # AAR F4 class: the old default was docs/deferred-audio/manifest.json,
+    # git-tracked — every self-refreshing cold invocation dirtied the repo.
+    import scripts.deferred_audio_feeder as feeder
+
+    s = str(feeder.MANIFEST_PATH).replace("\\", "/")
+    assert "/docs/" not in s, f"default manifest must not be a tracked docs path: {s}"
+    assert "whisper-teardown" in s or "tmp" in s.lower()
+
+
+def test_drain_pass_log_written_beside_checkpoint(feeder_env):
+    checkpoint = feeder_env.media_root / "passlog_cp.json"
+    assert _run_cli(
+        "drain", "--limit", "0",
+        "--manifest", str(feeder_env.media_root / "passlog_m.json"),
+        "--checkpoint", str(checkpoint),
+    ).returncode == 0
+    log = feeder_env.media_root / "drain-passes.jsonl"
+    assert log.exists(), "each drain pass must append a durable record"
+    import json as _json
+    lines = log.read_text(encoding="utf-8").strip().splitlines()
+    assert lines, "pass log must not be empty after a pass"
+    row = _json.loads(lines[-1])
+    assert "processed" in row and "evicted" in row
