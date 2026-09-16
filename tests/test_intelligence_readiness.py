@@ -57,6 +57,29 @@ def test_evaluator_freeze_accepts_bound_sha(tmp_path, monkeypatch):
     result = evaluator_freeze_status(tmp_path)
     assert result["status"] == "BOUND"
     assert result["implementation_binding"] == "BOUND"
+    assert result["implementation_checkout"]["status"] == "UNVERIFIED"
+
+
+def test_implementation_checkout_detects_content_equivalent_landing(
+        tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from scripts import check_intelligence_readiness as readiness
+
+    candidate = "a" * 40
+
+    def fake_run(cmd, **kwargs):
+        if "cat-file" in cmd:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if "rev-parse" in cmd:
+            return SimpleNamespace(returncode=0, stdout="b" * 40, stderr="")
+        if "diff" in cmd:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(readiness.subprocess, "run", fake_run)
+    result = readiness.implementation_checkout_status(tmp_path, candidate)
+    assert result["status"] == "CONTENT_EQUIVALENT"
+    assert result["compared_to"] == candidate
 
 
 def test_distill_source_contract_requires_canonical_markers(tmp_path):

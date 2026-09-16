@@ -13,6 +13,7 @@ import hashlib
 import inspect
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -53,6 +54,12 @@ EVALUATOR_RECEIPT = (
     "interest-semantic-evaluator-v1/FREEZE_RECEIPT.json"
 )
 IMPLEMENTATION_SHA = re.compile(r"^[0-9a-fA-F]{7,64}$")
+_IMPLEMENTATION_DIFF_EXCLUDES = (
+    ":(exclude)docs/**",
+    ":(exclude)tests/**",
+    # The readiness checker is a diagnostic, not part of inference behavior.
+    ":(exclude)scripts/check_intelligence_readiness.py",
+)
 
 
 def _load(path: Path, name: str):
@@ -71,6 +78,54 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def implementation_checkout_status(repo: Path, candidate: str) -> dict:
+    """Check whether the checkout still matches the bound inference commit.
+
+    The receipt's SHA is necessary but insufficient after a cherry-pick: a
+    new commit can contain identical files under a different identity. This
+    diagnostic checks the commit object and compares the inference tree while
+    excluding documentation, tests, and this checker itself. It never opens a
+    provider or changes the checkout.
+    """
+    if not isinstance(candidate, str) or not IMPLEMENTATION_SHA.fullmatch(candidate):
+        return {"status": "UNVERIFIED", "reason": "invalid implementation SHA"}
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        present = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "-e",
+             f"{candidate}^{{commit}}"],
+            capture_output=True, text=True, creationflags=flags,
+        )
+        if present.returncode != 0:
+            return {"status": "UNVERIFIED",
+                    "reason": "bound commit is absent from this checkout"}
+        head = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True, text=True, creationflags=flags,
+        )
+        if head.returncode != 0:
+            return {"status": "UNVERIFIED",
+                    "reason": "could not resolve checkout HEAD"}
+        diff = subprocess.run(
+            ["git", "-C", str(repo), "diff", "--quiet", candidate, "--",
+             ".", *_IMPLEMENTATION_DIFF_EXCLUDES],
+            capture_output=True, text=True, creationflags=flags,
+        )
+    except OSError as exc:
+        return {"status": "UNVERIFIED", "reason": f"git unavailable: {exc}"}
+    if diff.returncode == 0:
+        status = ("EXACT_COMMIT" if head.stdout.strip().lower() == candidate.lower()
+                  else "CONTENT_EQUIVALENT")
+        return {"status": status, "head": head.stdout.strip(),
+                "compared_to": candidate}
+    if diff.returncode == 1:
+        return {"status": "MISMATCH", "head": head.stdout.strip(),
+                "compared_to": candidate,
+                "reason": "inference code differs from bound commit"}
+    return {"status": "UNVERIFIED",
+            "reason": (diff.stderr or "git diff failed").strip()[:240]}
 
 
 def evaluator_freeze_status(repo: Path) -> dict:
@@ -119,6 +174,8 @@ def evaluator_freeze_status(repo: Path) -> dict:
         "status": status,
         "implementation_binding": binding,
         "candidate_inference_implementation": candidate,
+        "implementation_checkout": implementation_checkout_status(
+            repo, candidate),
         "artifact_drift": drift,
         "receipt_status": receipt.get("status"),
     }

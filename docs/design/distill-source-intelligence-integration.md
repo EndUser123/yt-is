@@ -144,7 +144,11 @@ turning the Markdown Grounded Reference into graph state. Read
 `workflow_status`, `semantic_recall_gate_detail`, and `evaluator_freeze` as
 well; the current implementation reports `BOUND` after the exact committed
 inference SHA is recorded and the public freeze hashes reproduce. The check
-never contacts a provider or opens private evaluation artifacts.
+also reports whether the current checkout is `EXACT_COMMIT`,
+`CONTENT_EQUIVALENT`, `MISMATCH`, or `UNVERIFIED` relative to that binding;
+the current isolated candidate is `CONTENT_EQUIVALENT` because its later
+documentation/test commits do not alter inference code. The check never
+contacts a provider or opens private evaluation artifacts.
 
 ## Deliberate non-goals
 
