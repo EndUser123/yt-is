@@ -36,6 +36,7 @@ _IMPLEMENTATION_SHA = re.compile(r"^[0-9a-fA-F]{7,64}$")
 
 
 def cmd_support(args) -> int:
+    isem.verify_sealed_path(args.gt)
     from ef.evidence_clusters import cached_clusters
     clusters, _coverage = cached_clusters()
     cluster_texts = {}
@@ -104,6 +105,7 @@ def cmd_score(args) -> int:
     verify_manifest(manifest_path)
     verify_inference_binding(manifest_path, args.inference_sha)
 
+    isem.verify_sealed_path(args.gt)
     gt = isem.load_ground_truth(args.gt)
     isem.verify_sealed(gt)
 

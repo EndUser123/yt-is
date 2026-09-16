@@ -161,6 +161,13 @@ def test_verify_sealed_refuses_wrong_hash(tmp_path):
         isem.verify_sealed(gt)
 
 
+def test_verify_sealed_path_rejects_before_json_parse(tmp_path):
+    p = tmp_path / "malformed-gt.json"
+    p.write_text("{not valid json", encoding="utf-8")
+    with pytest.raises(isem.SchemaBindError, match="sha256 mismatch"):
+        isem.verify_sealed_path(p)
+
+
 def test_matching_paths_exact_alias_judge(sealed_gt_factory):
     gt = isem.load_ground_truth(sealed_gt_factory(full_gt()))
     view = isem.ResultView(json.loads(json.dumps(RESULT_GOOD)),
@@ -434,6 +441,39 @@ def test_cli_freeze_receipt_and_manifest_guard(tmp_path):
     r_drift = guarded_run()
     assert r_drift.returncode == 3
     assert "drifted" in r_drift.stderr
+
+
+def test_cli_rejects_unsealed_malformed_holdout_before_parse(tmp_path):
+    import subprocess
+
+    gt = tmp_path / "malformed-gt.json"
+    gt.write_text("{not valid json", encoding="utf-8")
+    result = tmp_path / "result.json"
+    result.write_text("{}", encoding="utf-8")
+    victim = tmp_path / "artifact.py"
+    victim.write_text("x = 1\n", encoding="utf-8")
+    manifest = tmp_path / "manifest.json"
+    implementation_sha = "a" * 40
+    manifest.write_text(json.dumps({
+        "candidate_inference_implementation": implementation_sha,
+        "frozen_artifacts": [{
+            "path": str(victim),
+            "sha256": isem.sha256_file(victim),
+        }],
+    }), encoding="utf-8")
+
+    r = subprocess.run(
+        [sys.executable, str(REPO / "scripts/eval_interest_holdout.py"),
+         "score", "--gt", str(gt), "--result", str(result),
+         "--out", str(tmp_path / "out.json"), "--allow-holdout",
+         "--manifest", str(manifest), "--inference-sha",
+         implementation_sha, "--judge", "stub"],
+        capture_output=True, text=True, cwd=str(REPO))
+
+    combined = r.stdout + r.stderr
+    assert r.returncode != 0
+    assert "sha256 mismatch" in combined
+    assert "JSONDecodeError" not in combined
 
 
 def test_score_refuses_without_explicit_holdout_flag(tmp_path):

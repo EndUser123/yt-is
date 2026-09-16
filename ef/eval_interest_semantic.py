@@ -326,8 +326,28 @@ def load_ground_truth(path) -> dict:
     }
 
 
+def verify_sealed_path(path) -> str:
+    """Verify the raw holdout bytes before any parsing or binding.
+
+    The CLI calls this at the holdout boundary before ``load_ground_truth``.
+    Keeping the file-level check separate from schema binding makes it
+    possible to fail closed on an untrusted or malformed path without first
+    opening the private artifact as structured content.
+    """
+    digest = sha256_file(Path(path))
+    if digest != SEALED_GT_SHA256:
+        raise SchemaBindError(
+            "ground truth sha256 mismatch: expected sealed "
+            f"{SEALED_GT_SHA256}, found {digest} — refusing to score")
+    return digest
+
+
 def verify_sealed(gt_doc: dict) -> None:
-    digest = gt_doc["sealed_sha256"]
+    verify_sealed_digest(gt_doc["sealed_sha256"])
+
+
+def verify_sealed_digest(digest: str) -> None:
+    """Verify the digest recorded after a ground-truth document is bound."""
     if digest != SEALED_GT_SHA256:
         raise SchemaBindError(
             "ground truth sha256 mismatch: expected sealed "
