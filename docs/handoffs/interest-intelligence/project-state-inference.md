@@ -1,7 +1,7 @@
 > State detail is a working handoff; verify against [PROJECT_STATE.md](PROJECT_STATE.md) (master entry) before relying on it.
 
 # yt-is Personal Intelligence — Inference State
-Updated: 2026-09-16 by the distill-source/IL reconciliation and runtime-verification pass
+Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-hardening pass
 
 ## Goal & constraints
 
@@ -84,18 +84,27 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and runtime-verifica
   relabeled as the current source. Explicit providers pass through the same
   request-level URL/ID validation, and the legacy `bin/csf-analyze` entrypoint
   applies that validation before explicit mode overrides.
-- [verified-offline] The latest affected reconciliation, provenance,
-  bootstrap, provider, isolation, dashboard, and evaluator suite passes 355
-  tests; the structural readiness check reports `READY` and the canonical
-  `/distill-source` marker check also reports `READY`.
+- [verified-offline] The current candidate's scope-matched semantic-evaluator
+  and interest-graph regression suite passes 78 tests; bytecode compilation
+  and diff checks also pass. The repository-wide suite is not green: the
+  unrelated `tests/ef/test_incremental_watermark.py::test_watermark_advances_when_boundary_tie_has_ineligible_rows`
+  test currently reports `processed == 5` instead of `4` after 70 passing
+  tests.
+- [verified-offline] The structural readiness check reports `READY` and the
+  canonical `/distill-source` marker check reports `READY`, but the semantic
+  evaluator freeze is currently `INVALID` because its receipt still binds
+  the earlier implementation SHA and its frozen artifact hashes drift from
+  the latest candidate.
 - [unverified] The semantic recall, perturbation/stability, and recommendation
   gates have not passed. The evaluator receipt remains
   `NOT_YET_FROZEN`, and no private holdout was opened.
-- [claimed] One live inference produced coherent software, trading, options,
-  macro, media-production, and knowledge-automation interests/goals.
-- [claimed] That reported result did not visibly recover several deliberately
-  relevant validation domains including longevity, ADHD mitigation, and
-  cognitive enhancement.
+- [historical-context] An earlier live inference reportedly produced
+  coherent software, trading, options, macro, media-production, and
+  knowledge-automation interests/goals, but it is not acceptance evidence.
+- [historical-context] That earlier result reportedly did not visibly recover
+  several deliberately relevant validation domains including longevity, ADHD
+  mitigation, and cognitive enhancement; this remains a hypothesis for the
+  pending semantic-recall evaluation, not a current verdict.
 - [verified-offline] Focused tests cover schema validation, malformed provider
   output, typed relationship persistence, provenance integrity, and the
   active-entrypoint dashboard/bootstrap paths.
@@ -128,11 +137,17 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and runtime-verifica
 
 ## Next action
 
-Use the package's current pathspec/review landing discipline to independently
-review and commit the reconciled driver plus provenance boundary; do not
-recreate the retired v6 plane. Bind that exact implementation identity into
-the evaluator receipt, then run the authorized semantic recall and
-perturbation/stability evaluation. The warm-service runtime gate is now
-`READY`; do not open the private holdout until the evaluator receipt binds the
-exact committed implementation SHA. Keep recommendation ranking blocked
-until the semantic gate and provenance audit pass.
+The reconciled driver, provenance boundary, resume path, and pre-parse sealed
+holdout guard are committed on the isolated candidate branch at
+`2805ed43456a693f5e9a3cbbd38f5ee985b3231a` and pushed to
+`codex/yt-is-il-frozen-candidate`. Do not recreate the retired v6 plane.
+
+First perform the independent freeze review and deliberately regenerate the
+evaluator receipt against the final reviewed implementation; do not open the
+private holdout while the receipt is stale. Then obtain fresh live-provider
+capacity and explicit authorization, run the resumable full-coverage
+bootstrap with native JSON-schema enforcement, and verify transactional graph
+and source-artifact writes. Only after the semantic recall/provenance and
+stability gates pass should the recommendation-regret candidate arms be
+frozen and the private recommendation evaluation run. The live typed-interest
+catalog currently contains zero rows.
