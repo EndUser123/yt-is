@@ -594,6 +594,33 @@ def test_run_batch_inference_uses_exact_batch_ids(monkeypatch, tmp_path):
     assert meta["requested_model"] == "fake-model"
 
 
+def test_run_batch_inference_drops_only_dangling_optional_edges(
+        monkeypatch, tmp_path):
+    from ef.interest_candidates import build_bootstrap_plan
+    plan = build_bootstrap_plan(inventory_of(n=30)["clusters"])
+    batch = plan.batches[0]
+
+    def invoke(provider, prompt, prompt_file, timeout):
+        p = valid_payload()
+        supplied_id = int(batch.cluster_ids[0])
+        for item in p["inferred_interests"]:
+            item["cluster_ids"] = [supplied_id]
+        p["inferred_interests"][0]["related_to"] = ["Not returned"]
+        return p, "fake-model"
+
+    monkeypatch.setattr(big, "_invoke_and_extract", invoke)
+    fragments, meta = big.run_batch_inference(
+        plan.plan_id, batch, [synth_packet(c) for c in batch.cluster_ids],
+        prompt_path=tmp_path / "p.txt")
+
+    assert fragments["interests"][0]["interest"]["related_to"] == []
+    assert meta["reference_hygiene_receipts"] == [{
+        "repair_type": "drop_dangling_related_to",
+        "container": "inferred_interests[0]",
+        "dropped_target": "Not returned",
+    }]
+
+
 def test_run_batch_inference_rejects_foreign_cluster(monkeypatch, tmp_path):
     from ef.interest_candidates import build_bootstrap_plan
     plan = build_bootstrap_plan(inventory_of(n=26)["clusters"])

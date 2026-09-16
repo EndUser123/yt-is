@@ -970,6 +970,12 @@ def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
           f"prompt {len(prompt):,} chars -> {provider}")
     parsed, requested_model = _invoke_and_extract(
         provider, prompt, prompt_file, timeout)
+    # Optional relationship edges cannot change the inferred-interest
+    # inventory or evidence meaning. Drop only dangling optional targets
+    # deterministically, retain the receipt, and keep required-reference and
+    # all other contract defects fail-closed.
+    parsed, reference_hygiene_receipts = deterministic_reference_hygiene(
+        parsed)
     validate_inference(parsed, set(supplied))
     fragments = build_fragments(plan_id, batch.batch_id, parsed)
     meta = {
@@ -979,6 +985,7 @@ def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
         "prompt_version": PROMPT_VERSION,
         "cluster_ids": supplied,
         "result_hash": canonical_result_hash(parsed),
+        "reference_hygiene_receipts": reference_hygiene_receipts,
     }
     return fragments, meta
 
