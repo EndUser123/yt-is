@@ -811,7 +811,12 @@ def provider_command(provider: str, prompt_file: Path, prompt: str):
                 f"provider prompt exceeds {MAX_PROVIDER_PROMPT_CHARS} "
                 "characters; refusing silent truncation"
             )
+        # agy supports native final-response JSON Schema enforcement. Keep the
+        # local mechanical validator as the authority, but make the provider
+        # reject enum/shape drift before it reaches the bootstrap driver.
+        schema = json.dumps(inference_output_schema(), separators=(",", ":"))
         cmd = ["agy", "--model", model, "-p", prompt,
+               "--json-schema", schema,
                "--dangerously-skip-permissions",
                "--disable-slash-commands", "--print-timeout", "10m"]
     else:
