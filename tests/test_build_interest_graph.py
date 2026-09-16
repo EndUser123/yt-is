@@ -594,6 +594,13 @@ def test_run_batch_inference_uses_exact_batch_ids(monkeypatch, tmp_path):
     assert meta["requested_model"] == "fake-model"
 
 
+def test_prompt_requests_bounded_response_size():
+    prompt = big.build_prompt([synth_packet(i) for i in range(1, 3)])
+    assert "under 300 characters" in prompt
+    assert "questions, and 4" in prompt
+    assert "regret_candidates" in prompt
+
+
 def test_run_batch_inference_drops_only_dangling_optional_edges(
         monkeypatch, tmp_path):
     from ef.interest_candidates import build_bootstrap_plan
