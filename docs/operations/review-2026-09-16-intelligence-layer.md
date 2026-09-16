@@ -44,6 +44,11 @@ Residual review risks:
    and `/interest/{id}` together, including grounded evidence and read-only
    behavior. This is offline runtime evidence, not proof of the deployed
    populated catalog.
+9. A current read-only probe of the deployed service returned `/health` 200,
+   `/interests` 200, and `/interest/nonexistent` 404, but the live catalog has
+   zero `source_artifacts`, `inference_runs`, `interests`, and `evidence_links`;
+   it also lacks `inference_edge_events`. The service is reachable, not yet a
+   populated intelligence workflow.
 
 Next actions are parent-controlled landing of the isolated candidate, followed
 by the authorized semantic recall/stability and recommendation gates. The
