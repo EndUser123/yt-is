@@ -907,6 +907,78 @@ def test_run_bootstrap_happy_path_artifacts(tmp_path, monkeypatch):
     assert covered == set(range(1, 31))
 
 
+def test_run_bootstrap_reuses_validated_batches_without_batch_provider_calls(
+        tmp_path, monkeypatch):
+    first = run_fake_bootstrap(
+        tmp_path / "first", monkeypatch, inventory_of(n=30),
+        make_fake_invoke(merge_pairs=True))
+    first_dir = Path(first["run_dir"])
+    recon_invoke = make_fake_invoke(merge_pairs=True)
+
+    def no_batch_provider(*args, **kwargs):
+        raise AssertionError("cached batches should avoid provider calls")
+
+    monkeypatch.setattr(big, "_invoke_and_extract", no_batch_provider)
+    resumed = big.run_bootstrap(
+        allow_spend=True,
+        artifact_root=tmp_path / "resumed",
+        resume_artifact_dir=first_dir,
+        inventory=inventory_of(n=30),
+        hydrate=lambda ids: [synth_packet(c) for c in ids],
+        invoke=recon_invoke,
+    )
+    assert resumed["summary"]["reused_batch_count"] == 2
+    assert resumed["summary"]["provider_calls"] == 1
+    from ef.interest_candidates import build_bootstrap_plan
+    plan = build_bootstrap_plan(inventory_of(n=30)["clusters"])
+    assert resumed["summary"]["reused_batches"] == [
+        b.batch_id for b in plan.batches]
+
+
+def test_resumable_batch_requires_exact_identity_and_revalidates(tmp_path):
+    from ef.interest_candidates import build_bootstrap_plan
+
+    plan = build_bootstrap_plan(inventory_of(n=30)["clusters"])
+    batch = plan.batches[0]
+    supplied_id = int(batch.cluster_ids[0])
+    payload = valid_payload()
+    for item in payload["inferred_interests"]:
+        item["cluster_ids"] = [supplied_id]
+    payload["regret_candidates"][0]["cluster_ids"] = [supplied_id]
+    fragments = big.build_fragments(plan.plan_id, batch.batch_id, payload)
+    meta = {
+        "plan_id": plan.plan_id,
+        "batch_id": batch.batch_id,
+        "provider": "fake",
+        "requested_model": "fake-model",
+        "cluster_ids": list(batch.cluster_ids),
+        "result_hash": big.canonical_result_hash(payload),
+        "implementation_source_hash": big._implementation_source_hash(),
+    }
+    (tmp_path / "batch-01-input-metadata.json").write_text(
+        json.dumps({"plan_id": plan.plan_id, "batch_id": batch.batch_id,
+                    "cluster_ids": list(batch.cluster_ids)}),
+        encoding="utf-8")
+    (tmp_path / "batch-01-validated-result.json").write_text(
+        json.dumps({"meta": meta, "fragments": fragments}),
+        encoding="utf-8")
+
+    loaded, loaded_meta = big._load_resumable_batch(
+        tmp_path, plan.plan_id, batch, 1, big._implementation_source_hash(),
+        "fake")
+    assert loaded == fragments
+    assert loaded_meta == meta
+
+    meta["result_hash"] = "0" * 64
+    (tmp_path / "batch-01-validated-result.json").write_text(
+        json.dumps({"meta": meta, "fragments": fragments}),
+        encoding="utf-8")
+    with pytest.raises(ValueError, match="result hash mismatch"):
+        big._load_resumable_batch(
+            tmp_path, plan.plan_id, batch, 1, big._implementation_source_hash(),
+            "fake")
+
+
 def test_run_bootstrap_persists_grounded_source_lineage(
         tmp_path, monkeypatch):
     """The authoritative bootstrap preserves source/hash/edge lineage."""

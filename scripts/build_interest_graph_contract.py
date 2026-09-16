@@ -959,6 +959,93 @@ def build_fragments(plan_id: str, batch_id: str, payload: dict) -> dict:
     }
 
 
+def _implementation_source_hash() -> str:
+    """Hash the active contract driver for safe batch-artifact reuse."""
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
+def _load_resumable_batch(resume_dir: Path, plan_id: str, batch,
+                          batch_index: int, source_hash: str,
+                          provider: str | None = None):
+    """Load one cached validated batch, or return ``None`` if absent.
+
+    Cached fragments are never trusted merely because a file exists. The
+    exact plan/batch/source identity is checked, the fragment payload is
+    reconstructed and revalidated, and its canonical hash plus deterministic
+    fragment projection must still match. Any present-but-invalid artifact
+    fails closed instead of silently triggering a paid replacement call.
+    """
+    result_path = resume_dir / f"batch-{batch_index:02d}-validated-result.json"
+    metadata_path = resume_dir / f"batch-{batch_index:02d}-input-metadata.json"
+    if not result_path.exists() and not metadata_path.exists():
+        return None
+    if not result_path.exists() or not metadata_path.exists():
+        raise ValueError(
+            f"resume batch {batch.batch_id} has incomplete cached artifacts")
+    try:
+        artifact = json.loads(result_path.read_text(encoding="utf-8"))
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"resume batch {batch.batch_id} artifact unreadable: {exc}") from exc
+    meta = artifact.get("meta")
+    fragments = artifact.get("fragments")
+    if not isinstance(meta, dict) or not isinstance(fragments, dict):
+        raise ValueError(f"resume batch {batch.batch_id} artifact malformed")
+    expected_ids = list(batch.cluster_ids)
+    if (meta.get("plan_id") != plan_id
+            or metadata.get("plan_id") != plan_id
+            or meta.get("batch_id") != batch.batch_id
+            or metadata.get("batch_id") != batch.batch_id
+            or meta.get("cluster_ids") != expected_ids
+            or metadata.get("cluster_ids") != expected_ids):
+        raise ValueError(
+            f"resume batch {batch.batch_id} identity does not match current plan")
+    if meta.get("implementation_source_hash") != source_hash:
+        raise ValueError(
+            f"resume batch {batch.batch_id} was produced by a different "
+            "implementation source")
+    if provider is not None and meta.get("provider") != provider:
+        raise ValueError(
+            f"resume batch {batch.batch_id} provider does not match current "
+            f"route ({meta.get('provider')!r} != {provider!r})")
+    for key in ("interests", "questions", "regret_candidates"):
+        if not isinstance(fragments.get(key), list):
+            raise ValueError(
+                f"resume batch {batch.batch_id} fragments.{key} is not a list")
+    if any(not isinstance(f, dict) for f in fragments["interests"]):
+        raise ValueError(
+            f"resume batch {batch.batch_id} contains malformed interest fragment")
+    if any(not isinstance(q, dict) for q in fragments["questions"]):
+        raise ValueError(
+            f"resume batch {batch.batch_id} contains malformed question fragment")
+    if any(not isinstance(rc, dict)
+           for rc in fragments["regret_candidates"]):
+        raise ValueError(
+            f"resume batch {batch.batch_id} contains malformed regret fragment")
+    payload = {
+        "inferred_interests": [f.get("interest") for f in
+                               fragments["interests"]],
+        "questions": [{k: v for k, v in q.items() if k != "batch_id"}
+                      for q in fragments["questions"]],
+        "regret_candidates": [
+            {k: v for k, v in rc.items() if k != "batch_id"}
+            for rc in fragments["regret_candidates"]],
+    }
+    try:
+        validate_inference(payload, set(expected_ids))
+    except InferenceContractError as exc:
+        raise ValueError(
+            f"resume batch {batch.batch_id} cached payload failed validation: "
+            f"{exc}") from exc
+    if canonical_result_hash(payload) != meta.get("result_hash"):
+        raise ValueError(f"resume batch {batch.batch_id} result hash mismatch")
+    if build_fragments(plan_id, batch.batch_id, payload) != fragments:
+        raise ValueError(
+            f"resume batch {batch.batch_id} fragment projection mismatch")
+    return fragments, meta
+
+
 def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
                         timeout: int = 580, prompt_path=None,
                         grounded_sources_by_cluster=None):
@@ -995,6 +1082,7 @@ def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
     validate_inference(parsed, set(supplied))
     fragments = build_fragments(plan_id, batch.batch_id, parsed)
     meta = {
+        "plan_id": plan_id,
         "batch_id": batch.batch_id,
         "provider": provider,
         "requested_model": requested_model,
@@ -1002,6 +1090,7 @@ def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
         "cluster_ids": supplied,
         "result_hash": canonical_result_hash(parsed),
         "reference_hygiene_receipts": reference_hygiene_receipts,
+        "implementation_source_hash": _implementation_source_hash(),
     }
     return fragments, meta
 
@@ -1395,7 +1484,7 @@ def _validate_grounded_source_inputs(eligible_cluster_ids,
 def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
                   timeout: int = 580, store=False, inventory=None,
                   hydrate=None, invoke=None, grounded_sources_by_cluster=None,
-                  grounded_sources=()):
+                  grounded_sources=(), resume_artifact_dir=None):
     """Execute the full-coverage bounded bootstrap end to end.
 
     Fail-closed: any batch/reconciliation/validation failure marks the
@@ -1427,6 +1516,11 @@ def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
     run_dir = Path(artifact_root) if artifact_root else (
         ARTIFACT_ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}_"
                         f"{uuid.uuid4().hex[:8]}_{plan.plan_id}")
+    resume_dir = (Path(resume_artifact_dir)
+                  if resume_artifact_dir else None)
+    if resume_dir is not None and resume_dir.resolve() == run_dir.resolve():
+        raise ValueError(
+            "resume-artifact-dir must differ from the new artifact-dir")
     _write_json(run_dir / "plan.json", plan.to_dict())
     _write_json(run_dir / "inventory-summary.json", {
         "total_semantic_non_series":
@@ -1439,19 +1533,29 @@ def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
     all_fragments = {"interests": [], "questions": [],
                      "regret_candidates": []}
     provider_calls = 0
+    reused_batches = []
     requested_model = None
+    source_hash = _implementation_source_hash()
     try:
         for i, batch in enumerate(plan.batches, 1):
-            packets = hydrate_fn(list(batch.cluster_ids))
-            fragments, meta = run_batch_inference(
-                plan.plan_id, batch, packets, provider=provider,
-                timeout=timeout,
-                prompt_path=run_dir / "prompts" /
-                            f"{batch.batch_id}-prompt.txt",
-                grounded_sources_by_cluster=grounded_sources_by_cluster)
-            provider_calls += 1
+            cached = (_load_resumable_batch(
+                resume_dir, plan.plan_id, batch, i, source_hash, provider)
+                      if resume_dir is not None else None)
+            if cached is not None:
+                fragments, meta = cached
+                reused_batches.append(batch.batch_id)
+            else:
+                packets = hydrate_fn(list(batch.cluster_ids))
+                fragments, meta = run_batch_inference(
+                    plan.plan_id, batch, packets, provider=provider,
+                    timeout=timeout,
+                    prompt_path=run_dir / "prompts" /
+                                f"{batch.batch_id}-prompt.txt",
+                    grounded_sources_by_cluster=grounded_sources_by_cluster)
+                provider_calls += 1
             requested_model = meta["requested_model"]
             _write_json(run_dir / f"batch-{i:02d}-input-metadata.json", {
+                "plan_id": plan.plan_id,
                 "batch_id": batch.batch_id,
                 "cluster_ids": list(batch.cluster_ids)})
             _write_json(run_dir / f"batch-{i:02d}-validated-result.json",
@@ -1501,6 +1605,8 @@ def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
             "status": "success", "plan_id": plan.plan_id,
             "policy": plan.policy, "provider": provider,
             "provider_calls": provider_calls,
+            "reused_batches": reused_batches,
+            "reused_batch_count": len(reused_batches),
             "stored": bool(store),
             "batches": len(plan.batches),
             "eligible_clusters": len(plan.eligible_cluster_ids),
@@ -1557,6 +1663,9 @@ def main(argv=None) -> int:
                     help="authorize multi-call provider execution")
     ap.add_argument("--artifact-dir", default=None,
                     help="override runtime artifact root (tests)")
+    ap.add_argument("--resume-artifact-dir", default=None,
+                    help="reuse validated batches from a prior failed run; "
+                         "requires matching plan, source hash, and artifacts")
     ap.add_argument("--grounded-source-manifest", default=None,
                     help="versioned JSON source-to-cluster manifest; only "
                          "used with --run-bootstrap")
@@ -1609,6 +1718,7 @@ def main(argv=None) -> int:
                 eligible_cluster_ids=plan.eligible_cluster_ids)
         result = run_bootstrap(provider=a.provider, allow_spend=a.allow_spend,
                                artifact_root=a.artifact_dir, store=a.store,
+                               resume_artifact_dir=a.resume_artifact_dir,
                                inventory=bootstrap_inventory,
                                grounded_sources_by_cluster=
                                grounded_sources_by_cluster)
