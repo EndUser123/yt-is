@@ -4,7 +4,7 @@ This package review assessed the active yt-is intelligence-layer and its
 `/distill-source` integration. The public wrapper resolves the strict
 `scripts.build_interest_graph_contract` driver. Grounded source artifacts flow
 through evidence-cluster packets, typed persistence, and source-backed graph
-links. The final affected offline regression suite passed 360 tests after the
+links. The final affected offline regression suite passed 361 tests after the
 URL-routing, prompt-boundary, run-provenance, and event-lineage additions.
 The stable wrapper also no longer exposes the retired unvalidated `store()`
 writer.
@@ -40,6 +40,10 @@ Residual review risks:
    SHA differed from the evaluator-bound SHA. The readiness checker now
    reports this distinction explicitly; the original binding must not be
    reused after a SHA-changing landing without an explicit rebind.
+8. A temporary seeded-catalog HTTP proof now verifies `/health`, `/interests`,
+   and `/interest/{id}` together, including grounded evidence and read-only
+   behavior. This is offline runtime evidence, not proof of the deployed
+   populated catalog.
 
 Next actions are parent-controlled landing of the isolated candidate, followed
 by the authorized semantic recall/stability and recommendation gates. The

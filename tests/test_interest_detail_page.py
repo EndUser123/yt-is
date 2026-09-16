@@ -7,10 +7,12 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from ef import personal_graph
+from ef import warm_query_service
 from ef.grounded_source import bind_evidence_clusters, from_transcript_result
 from ef.warm_query_service import (
     Handler,
     _interest_detail,
+    _render_interests_page,
     _render_interest_page,
 )
 
@@ -159,3 +161,53 @@ def test_http_route_serves_typed_interest_and_rejects_bad_path(tmp_path, monkeyp
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_http_populated_typed_surface_is_read_only(tmp_path, monkeypatch):
+    """Health and both typed-interest surfaces work against a seeded catalog."""
+    from http.server import ThreadingHTTPServer
+
+    db = tmp_path / "catalog.sqlite"
+    _seed(db)
+    monkeypatch.setattr(personal_graph, "CATALOG", db)
+    warm_event = threading.Event()
+    warm_event.set()
+    monkeypatch.setattr(warm_query_service, "_warm_ok", warm_event)
+    monkeypatch.setattr(warm_query_service, "get_query", lambda: object())
+
+    before = personal_graph.connect(db)
+    before_count = before.execute(
+        "SELECT COUNT(*) FROM interests").fetchone()[0]
+    before.close()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/health", timeout=5) as response:
+            assert response.status == 200
+            health = response.read().decode("utf-8")
+        assert '"status": "ready"' in health
+
+        with urlopen(base + "/interests", timeout=5) as response:
+            assert response.status == 200
+            index = response.read().decode("utf-8")
+        assert "Decision quality" in index
+        assert "/interest/int-detail" in index
+
+        with urlopen(base + "/interest/int-detail", timeout=5) as response:
+            assert response.status == 200
+            detail = response.read().decode("utf-8")
+        assert "The exact supporting transcript span." in detail
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    after = personal_graph.connect(db)
+    try:
+        assert after.execute(
+            "SELECT COUNT(*) FROM interests").fetchone()[0] == before_count
+    finally:
+        after.close()
