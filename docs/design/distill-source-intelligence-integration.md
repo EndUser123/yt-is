@@ -113,9 +113,12 @@ are not interchangeable with the current reconciled driver: the D3 manifest
 binds an older six-file implementation, does not include
 `ef/grounded_source.py` or the manifest adapter, and records that persistence
 was not performed. Its implementation-manifest hash must therefore not be
-copied into the current evaluator receipt. The current receipt remains
-`NOT_YET_FROZEN` until the active reconciled implementation is committed,
-reviewed, and bound as one exact implementation identity.
+copied into the current evaluator receipt. The current receipt now binds the
+reviewed implementation identity
+`dc05c855c4fe3072b708ce77f62bfe48ce8ec30c`. That binding is a public
+integrity precondition only; it does not open the private holdout or promote
+semantic quality. The holdout and recommendation gates remain separately
+authorized acceptance work.
 
 During reconciliation, `scripts/build_interest_graph.py` remains the stable
 entrypoint and retains the prior owner implementation for recovery. Its active
@@ -132,10 +135,9 @@ checks the canonical `/distill-source` skill markers and reports
 `distill_source_contract: READY`; this verifies contract presence without
 turning the Markdown Grounded Reference into graph state. Read
 `workflow_status`, `semantic_recall_gate_detail`, and `evaluator_freeze` as
-well; the current implementation is expected to report
-`WAITING_ON_IMPLEMENTATION_FREEZE` until an exact committed inference SHA is
-bound. The check never contacts a provider or opens private evaluation
-artifacts.
+well; the current implementation reports `BOUND` after the exact committed
+inference SHA is recorded and the public freeze hashes reproduce. The check
+never contacts a provider or opens private evaluation artifacts.
 
 ## Deliberate non-goals
 

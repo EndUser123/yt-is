@@ -4,16 +4,16 @@ This package review assessed the active yt-is intelligence-layer and its
 `/distill-source` integration. The public wrapper resolves the strict
 `scripts.build_interest_graph_contract` driver. Grounded source artifacts flow
 through evidence-cluster packets, typed persistence, and source-backed graph
-links. The final affected offline regression suite passed 355 tests after the
+links. The final affected offline regression suite passed 358 tests after the
 URL-routing, prompt-boundary, run-provenance, and event-lineage additions.
 The stable wrapper also no longer exposes the retired unvalidated `store()`
 writer.
 
 Current status is `needs_attention`, not complete. The readiness receipt remains
 structurally `READY` but workflow `INCOMPLETE`; semantic recall is outstanding,
-and the evaluator is `NOT_YET_FROZEN` / `NOT_BOUND`. The private holdout must
-remain closed until one exact committed implementation identity is reviewed
-and bound.
+and the evaluator is publicly bound to implementation
+`dc05c855c4fe3072b708ce77f62bfe48ce8ec30c`. The private holdout remains
+closed until the authorized semantic evaluation is run.
 
 Residual review risks:
 
@@ -36,7 +36,8 @@ Residual review risks:
 6. The legacy `bin/csf-analyze` entrypoint now applies the same binding before
    explicit mode overrides, closing the equivalent CLI/API bypass.
 
-Next actions are to independently review and commit/bind the exact
-implementation identity, then run the authorized semantic recall/stability
-and recommendation gates. The final affected suite and readiness/driver gates
-have been rerun successfully; private holdout access remains closed.
+Next actions are parent-controlled landing of the isolated candidate, followed
+by the authorized semantic recall/stability and recommendation gates. The
+final affected suite and readiness/driver gates have been rerun successfully;
+private holdout access remains closed. The implementation review was a
+self-review (`verify_mode=self`), not an independent specialist review.
