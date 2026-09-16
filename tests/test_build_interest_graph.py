@@ -850,6 +850,72 @@ def test_run_bootstrap_happy_path_artifacts(tmp_path, monkeypatch):
     assert covered == set(range(1, 31))
 
 
+def test_run_bootstrap_persists_grounded_source_lineage(
+        tmp_path, monkeypatch):
+    """The authoritative bootstrap preserves source/hash/edge lineage."""
+    import ef.personal_graph as personal_graph
+    from ef.grounded_source import from_transcript_text
+
+    db = tmp_path / "catalog.sqlite"
+    monkeypatch.setattr(personal_graph, "CATALOG", db)
+    source = from_transcript_text(
+        "video-grounded-1",
+        "https://www.youtube.com/watch?v=video-grounded-1",
+        "A complete synthetic transcript span for cluster one.",
+        title="Grounded synthetic source",
+        language="en",
+        source="test-transcript",
+        source_stage="fixture",
+    )
+    invoke = make_fake_invoke(merge_pairs=True)
+
+    result = run_fake_bootstrap(
+        tmp_path / "run-artifacts",
+        monkeypatch,
+        inventory_of(n=30),
+        invoke,
+        store=True,
+        grounded_sources_by_cluster={1: (source,)},
+    )
+    assert result["summary"]["stored"] is True
+
+    conn = personal_graph.connect()
+    try:
+        stored = conn.execute(
+            "SELECT source_url, source_hash, evidence_cluster_ids_json "
+            "FROM source_artifacts WHERE source_id=?",
+            (source.source_id,),
+        ).fetchone()
+        assert stored is not None
+        assert stored[0] == source.source_url
+        assert stored[1] == source.source_hash
+        assert json.loads(stored[2]) == [1]
+
+        run = conn.execute(
+            "SELECT provenance_json FROM inference_runs"
+        ).fetchone()
+        provenance = json.loads(run[0])
+        assert provenance["grounded_source_ids"] == [source.source_id]
+        assert provenance["grounded_source_hashes"] == [source.source_hash]
+
+        edge = conn.execute(
+            "SELECT 1 FROM evidence_links "
+            "WHERE src_kind='source_artifact' AND src_id=? "
+            "AND dst_kind='interest' AND relation='supports' LIMIT 1",
+            (source.source_id,),
+        ).fetchone()
+        assert edge is not None
+        event = conn.execute(
+            "SELECT 1 FROM inference_edge_events "
+            "WHERE src_kind='source_artifact' AND src_id=? "
+            "AND dst_kind='interest' AND relation='supports' LIMIT 1",
+            (source.source_id,),
+        ).fetchone()
+        assert event is not None
+    finally:
+        conn.close()
+
+
 def test_run_bootstrap_fail_closed_on_bad_batch(tmp_path, monkeypatch):
     good = make_fake_invoke(merge_pairs=True)
 
