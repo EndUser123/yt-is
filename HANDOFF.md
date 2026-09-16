@@ -116,6 +116,21 @@ gates (discovery/inference/recommendation) unchanged; see
   tree, cannot be reaped with them. First pass verified live 12:26:32.
   Progress receipt: 1,891 -> 1,339 files / 7.72GB, 552 ledger-evicted to
   terminal states, `complete: 0` (all refused/sub-floor class so far).
+- [seen] Drain starvation incident closed 2026-09-16: the 2026-09-12 task
+  wired `drain` directly, and drain read `docs/deferred-audio/manifest.json`
+  without ever rebuilding it (only `inventory` writes a manifest). The work
+  list froze at the 09-12 00:34 snapshot; passes exhausted it by 09-15 and
+  then idled — daily outcome counts decayed 1319/353/186/35/0 while 1,181
+  real files waited, and evictions starved too (the cached-join lives in
+  the manifest: 1,637 checkpoint-cached items sat on disk unlinked; last
+  dryrun.json = unlinks 0, files 0). Fix: `cmd_drain` rebuilds the manifest
+  from live disk/DB state by default; `--frozen-manifest` opts out (frozen
+  + missing manifest fails rc=2, never writes). Task now passes
+  `--manifest P:\tmp\whisper-teardown\manifest.json` — untracked, beside
+  the checkpoint; the default docs path is git-tracked and must not churn
+  every 5 min. Tests: tests/test_deferred_audio_feeder.py 18 passed
+  (3 new refresh-contract tests). Task re-registered; first refreshed pass
+  live 07:17:36 (PID 176332).
 - [open] Operator-held: whole-file six-section conversion and archive
   prune for this file (parked 2026-08-24, open item 5) — still awaiting
   the separate operator decision; the 2026-09-12 rationalization pass
@@ -367,13 +382,16 @@ Shared current state:
   present.
 - [claimed] A live v2 inference run produced useful inferred interests,
   questions, underlying goals, and regret candidates.
-- [seen] v2 is PARTIAL rather than accepted-complete: inferred typed
-  relationships/provenance are not yet faithfully persisted, declared LLM JSON
-  is not mechanically schema-validated, candidate selection is top-N /
-  breadth-biased, and downstream typed-graph consumption is incomplete.
-- [absent-unverified] A working `/interest/{id}` typed drill-down.
-- [absent-unverified] Focused automated coverage for the new inference,
-  personal-graph, and feedback contracts.
+- [implemented-in-working-tree] v2 now mechanically validates provider output,
+  persists typed relationships/provenance transactionally, and performs full
+  cluster-coverage bootstrap with bounded reconciliation; the legacy top-N path
+  remains an explicit baseline only.
+- [implemented-in-working-tree] A read-only `/interest/{id}` typed drill-down
+  exposes goals, information needs, questions, relationships, cluster support,
+  and grounded-source evidence.
+- [verified-offline] Focused automated coverage for the inference,
+  personal-graph, provenance, provider, and dashboard contracts passes in the
+  current worktree; semantic recall and ranking acceptance remain open.
 
 Shared next gate:
 - [seen] Complete inference contract fidelity and high-recall candidate

@@ -812,9 +812,23 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
 
 
 def cmd_drain(args: argparse.Namespace) -> int:
+    manifest_file = Path(args.manifest) if args.manifest else MANIFEST_PATH
+    if not args.frozen_manifest:
+        # Rebuild the work list from live disk/DB state. A drain that
+        # reads a stale manifest silently starves: 2026-09-12..15 the
+        # scheduled task exhausted the frozen 09-12 manifest and then
+        # idled for days while 1,181 real files waited (evictions starve
+        # too — the cached-join lives in the manifest).
+        write_manifest(build_inventory(), manifest_file)
+    elif not manifest_file.exists():
+        print(
+            f"no manifest at {manifest_file}; "
+            "run inventory first or drop --frozen-manifest"
+        )
+        return 2
     summary = run_drain_phase(
         args.limit,
-        manifest_path=Path(args.manifest) if args.manifest else None,
+        manifest_path=manifest_file,
         checkpoint_path=Path(args.checkpoint) if args.checkpoint else None,
     )
     print(json.dumps(summary, indent=1))
@@ -856,6 +870,10 @@ def main(argv: list[str] | None = None) -> int:
     p_drain.add_argument("--limit", type=int, default=25)
     p_drain.add_argument("--manifest", default=None)
     p_drain.add_argument("--checkpoint", default=None)
+    p_drain.add_argument(
+        "--frozen-manifest", action="store_true",
+        help="use the manifest as-is (caller manages freshness)",
+    )
     p_drain.set_defaults(func=cmd_drain)
 
     args = parser.parse_args(argv)

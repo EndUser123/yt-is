@@ -11,6 +11,12 @@
 #
 # Desktop quietness: pythonw.exe (no console). Never swap back to python.exe:
 # a console window would flash on the operator's desktop every 5 minutes.
+#
+# Manifest: --manifest points at the untracked operational home beside the
+# checkpoint (P:\tmp\whisper-teardown). Do NOT drop --manifest: the default
+# docs/deferred-audio/manifest.json is git-tracked, and the drain now
+# rebuilds its manifest every pass (2026-09-12..15 starvation fix: a drain
+# reading a stale manifest idled for days while 1,181 files waited).
 
 $TaskName = "YtisAudioDrain"
 $PythonW = "C:\Python314\pythonw.exe"
@@ -28,7 +34,7 @@ if ($existing) {
 }
 
 $act = New-ScheduledTaskAction -Execute $PythonW `
-    -Argument "scripts\deferred_audio_feeder.py drain --limit 25" `
+    -Argument "scripts\deferred_audio_feeder.py drain --limit 25 --manifest P:\tmp\whisper-teardown\manifest.json" `
     -WorkingDirectory $Root
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 5) `

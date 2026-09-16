@@ -380,3 +380,37 @@ def test_transcriptless_item_is_never_unlinked(feeder_env):
     apply_run = _run_cli("evict", "--apply", "--manifest", str(manifest_path))
     assert apply_run.returncode == 0, apply_run.stderr
     assert audio.exists(), "transcript-less audio must never be unlinked"
+
+
+def test_drain_rebuilds_work_list_without_inventory(feeder_env):
+    # 2026-09-12..15 starvation class: drain used to require a fresh
+    # external inventory; scheduled passes starved on the stale manifest.
+    manifest = feeder_env.media_root / "drain_m.json"
+    checkpoint = feeder_env.media_root / "drain_cp.json"
+    assert _run_cli(
+        "drain", "--limit", "5", "--manifest", str(manifest),
+        "--checkpoint", str(checkpoint),
+    ).returncode == 0
+    assert manifest.exists(), "drain must refresh the manifest itself"
+
+
+def test_drain_frozen_manifest_requires_existing_manifest(feeder_env):
+    missing = feeder_env.media_root / "missing.json"
+    rc = _run_cli(
+        "drain", "--frozen-manifest", "--limit", "1", "--manifest", str(missing),
+    )
+    assert rc.returncode == 2, "frozen drain must fail visibly, not crash"
+    assert not missing.exists(), "frozen drain must never write a manifest"
+
+
+def test_drain_frozen_manifest_leaves_existing_manifest_untouched(feeder_env):
+    manifest = feeder_env.media_root / "frozen_m.json"
+    assert _run_cli(
+        "inventory", "--manifest", str(manifest),
+    ).returncode == 0
+    before = manifest.read_bytes()
+    assert _run_cli(
+        "drain", "--frozen-manifest", "--limit", "0", "--manifest", str(manifest),
+        "--checkpoint", str(feeder_env.media_root / "frozen_cp.json"),
+    ).returncode == 0
+    assert manifest.read_bytes() == before, "frozen drain must not rewrite"
