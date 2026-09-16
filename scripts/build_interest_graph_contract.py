@@ -72,6 +72,7 @@ PROMPT_VERSION = "v2.1-contract-fidelity"
 CANDIDATE_POLICY = f"top{MAX_CLUSTERS}-breadth-biased"   # legacy/baseline
 STDERR_DIAGNOSTIC_LIMIT = 2000
 MAX_PROVIDER_PROMPT_CHARS = 100_000
+AGY_MODEL = "gemini-3.8-flash-high"  # verified by `agy models` 2026-09-16
 
 # Full-coverage bootstrap bounds. Dashboard-style top-N is allowed;
 # inference bootstrap top-N is NOT.
@@ -799,14 +800,15 @@ def provider_command(provider: str, prompt_file: Path, prompt: str):
                f"Read {prompt_file} and return ONLY the JSON. "
                "No prose, no markdown fences."]
     elif provider == "agy":
-        model = "gemini/gemini-2.5-pro"
+        model = AGY_MODEL
         if len(prompt) > MAX_PROVIDER_PROMPT_CHARS:
             raise ValueError(
                 f"provider prompt exceeds {MAX_PROVIDER_PROMPT_CHARS} "
                 "characters; refusing silent truncation"
             )
-        cmd = ["agy", "-p", "--no-session", "--no-tools",
-               "--model", model, prompt]
+        cmd = ["agy", "--model", model, "-p", prompt,
+               "--dangerously-skip-permissions",
+               "--disable-slash-commands", "--print-timeout", "10m"]
     else:
         raise ValueError(f"unknown provider: {provider}")
     return cmd, model

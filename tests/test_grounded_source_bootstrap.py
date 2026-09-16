@@ -209,7 +209,10 @@ def test_bootstrap_rejects_grounded_source_association_outside_plan(tmp_path):
 def test_agy_prompt_is_not_silently_truncated(tmp_path):
     prompt = "x" * big.MAX_PROVIDER_PROMPT_CHARS
     command, _model = big.provider_command("agy", tmp_path / "prompt.txt", prompt)
-    assert command[-1] == prompt
+    assert prompt in command
+    assert command[0] == "agy"
+    assert "--dangerously-skip-permissions" in command
+    assert "--print-timeout" in command
     with pytest.raises(ValueError, match="silent truncation"):
         big.provider_command(
             "agy", tmp_path / "prompt.txt",
