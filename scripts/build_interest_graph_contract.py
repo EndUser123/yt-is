@@ -72,7 +72,7 @@ PROMPT_VERSION = "v2.1-contract-fidelity"
 CANDIDATE_POLICY = f"top{MAX_CLUSTERS}-breadth-biased"   # legacy/baseline
 STDERR_DIAGNOSTIC_LIMIT = 2000
 MAX_PROVIDER_PROMPT_CHARS = 100_000
-AGY_MODEL = "gemini-3.8-flash-high"  # verified by `agy models` 2026-09-16
+AGY_MODEL = "gemini-3.1-pro-high"  # verified by `agy models` 2026-09-16
 
 # Full-coverage bootstrap bounds. Dashboard-style top-N is allowed;
 # inference bootstrap top-N is NOT.
@@ -169,6 +169,9 @@ Hard constraints:
   reference interest names that appear in this same JSON's inferred_interests.
 - Every interest needs a non-empty evidence_summary and at least one
   cluster_id. confidence is a number between 0 and 1 (not true/false).
+- The word "project" describes a stance, not an interest kind. The kind value
+  must be exactly one of domain, topic, subtopic, method, or monitor; never
+  emit kind=project.
 - Keep every string concise (preferably under 300 characters); do not repeat
   the evidence packet. Use at most 4 related_to names per interest, 6
   questions, and 4 regret_candidates so the complete JSON fits in one

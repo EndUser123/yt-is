@@ -402,7 +402,7 @@ def test_run_inference_plain_stdout_provider(monkeypatch, tmp_path,
         provider="agy", clusters=synthetic_clusters(),
         prompt_path=tmp_path / "prompt.txt",
         result_path=tmp_path / "result.json")
-    assert meta["requested_model"] == "gemini-3.8-flash-high"
+    assert meta["requested_model"] == "gemini-3.1-pro-high"
 
 
 # ---------------------------------------------------------------------------

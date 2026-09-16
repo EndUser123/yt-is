@@ -211,6 +211,7 @@ def test_agy_prompt_is_not_silently_truncated(tmp_path):
     command, _model = big.provider_command("agy", tmp_path / "prompt.txt", prompt)
     assert prompt in command
     assert command[0] == "agy"
+    assert "gemini-3.1-pro-high" in command
     assert "--dangerously-skip-permissions" in command
     assert "--print-timeout" in command
     with pytest.raises(ValueError, match="silent truncation"):
