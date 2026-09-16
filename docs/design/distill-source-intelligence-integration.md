@@ -76,7 +76,7 @@ accepted by the full-coverage CLI:
 
 ```text
 python scripts/make_grounded_source_manifest.py \
-  --input P:/.data/yt-is/analyses/<video-id>.json \
+  --input P:/.data/yt-is/analyses/runs/<video-id>/<run-id>.json \
   --out P:/.data/yt-is/ef/grounded-sources.json
 python scripts/build_interest_graph.py --run-bootstrap --allow-spend \
   --grounded-source-manifest P:/.data/yt-is/ef/grounded-sources.json \
@@ -99,9 +99,11 @@ joins a stored semantic run back to its exact execution artifacts while the
 deduplicated graph edges remain graph-level relationships.
 
 YouTube routing requires a supported YouTube host and a URL video ID matching
-the requested video ID. Analysis JSON publication uses atomic replacement, but
-the legacy `{video_id}.json` path remains a last-writer-wins coordination
-surface for concurrent analysis attempts.
+the requested video ID. Each CLI analysis publishes an immutable run artifact
+under `analyses/runs/{video_id}/{run_id}.json` using atomic replacement. The
+legacy `analyses/{video_id}.json` path is still updated for compatibility, but
+it is explicitly a last-writer-wins alias and is not the canonical manifest
+input.
 
 ## Freeze boundary and branch identity
 

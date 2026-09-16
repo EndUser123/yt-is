@@ -24,8 +24,9 @@ Residual review risks:
    source/model blocks as untrusted data, but arbitrary instruction-like source
    text remains model-visible and there is no provider-enforced structured-data
    boundary.
-3. `bin/csf-analyze` publishes atomically, but the canonical analysis filename
-   remains `{video_id}.json`; concurrent writers are still last-writer-wins.
+3. `bin/csf-analyze` now publishes a unique canonical run artifact under
+   `analyses/runs/{video_id}/{run_id}.json`; the flat `{video_id}.json` file
+   remains a documented compatibility alias and is still last-writer-wins.
 4. Transcript artifacts now reject a `TranscriptResult` whose embedded
    `video_id` differs from the requested ID. This closes the observed
    provider-to-artifact relabeling gap, but does not independently prove

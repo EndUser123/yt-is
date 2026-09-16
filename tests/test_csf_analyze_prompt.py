@@ -132,3 +132,17 @@ def test_analysis_result_writer_publishes_complete_json_atomically(tmp_path):
 
     assert path.read_text(encoding="utf-8") == '{\n  "new": "complete"\n}'
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_analysis_output_paths_have_unique_canonical_run_artifact(tmp_path):
+    path = Path(__file__).resolve().parents[1] / "bin" / "csf-analyze"
+    loader = SourceFileLoader("csf_analyze_output_paths_test", str(path))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+
+    canonical, compatibility = module._analysis_output_paths(
+        tmp_path, "abc12345678", "run-1")
+
+    assert canonical == tmp_path / "runs" / "abc12345678" / "run-1.json"
+    assert compatibility == tmp_path / "abc12345678.json"

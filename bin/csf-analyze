@@ -14,6 +14,7 @@ import json
 import shutil
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse, parse_qs
@@ -682,6 +683,15 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _analysis_output_paths(
+    output_dir: Path, video_id: str, run_id: str
+) -> tuple[Path, Path]:
+    """Return the immutable run artifact and legacy compatibility alias."""
+    canonical = output_dir / "runs" / video_id / f"{run_id}.json"
+    compatibility_alias = output_dir / f"{video_id}.json"
+    return canonical, compatibility_alias
+
+
 def analyze_video(
     video_id: str,
     video_url: str,
@@ -896,22 +906,31 @@ def main() -> None:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Save result - shared across terminals on P drive
+    # Publish an immutable run artifact. The legacy flat path remains as a
+    # compatibility alias for existing callers, but is never the canonical
+    # input to the grounded-source manifest workflow.
     output_dir = Path("P:/.data/yt-is/analyses")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / f"{video_id}.json"
+    run_id = (f"{time.strftime('%Y%m%dT%H%M%S')}_"
+              f"{os.getpid()}_{uuid.uuid4().hex[:12]}")
+    result["analysis_run_id"] = run_id
+    out_path, compatibility_path = _analysis_output_paths(
+        output_dir, video_id, run_id)
     _write_json_atomic(out_path, result)
+    _write_json_atomic(compatibility_path, result)
 
     log_action(
         "analysis_complete",
         {
             "video_id": video_id,
             "output": str(out_path),
+            "compatibility_output": str(compatibility_path),
+            "analysis_run_id": run_id,
             "source": source,
         },
     )
 
     print(f"Analysis saved to {out_path}")
+    print(f"Legacy compatibility alias updated at {compatibility_path}")
     title = result.get("title") or result.get("content", "N/A")
     summary = (result.get("summary") or "")[:200]
     print(f"Title: {title}")
