@@ -120,6 +120,13 @@ integrity precondition only; it does not open the private holdout or promote
 semantic quality. The holdout and recommendation gates remain separately
 authorized acceptance work.
 
+Landing invariant: the semantic evaluator binding is to one exact committed
+implementation identity. A cherry-pick produces a new commit SHA even when
+the resulting implementation files are byte-identical. Therefore the bound
+holdout run must either execute from the original bound commit/worktree or
+rebind the evaluator receipt to the final landed implementation SHA and
+re-verify the public manifest before scoring.
+
 During reconciliation, `scripts/build_interest_graph.py` remains the stable
 entrypoint and retains the prior owner implementation for recovery. Its active
 runtime delegates to `scripts/build_interest_graph_contract.py`, the canonical

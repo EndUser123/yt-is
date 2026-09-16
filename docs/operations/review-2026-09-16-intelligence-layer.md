@@ -35,6 +35,10 @@ Residual review risks:
    before an explicit provider is invoked, closing the direct-provider bypass.
 6. The legacy `bin/csf-analyze` entrypoint now applies the same binding before
    explicit mode overrides, closing the equivalent CLI/API bypass.
+7. A landing replay was content-identical across 4,429 tracked implementation
+   files and passed the 359-test affected suite, but its cherry-picked commit
+   SHA differed from the evaluator-bound SHA. The original binding must not be
+   reused after a SHA-changing landing without an explicit rebind.
 
 Next actions are parent-controlled landing of the isolated candidate, followed
 by the authorized semantic recall/stability and recommendation gates. The
