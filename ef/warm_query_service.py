@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 import signal
 import sys
@@ -22,7 +23,7 @@ import threading
 import time
 import math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, quote_plus
+from urllib.parse import urlparse, parse_qs, quote, quote_plus, unquote
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -410,6 +411,23 @@ class Handler(BaseHTTPRequestHandler):
                             "text/html; charset=utf-8")
             except Exception as e:
                 self._text(500, f"interests page unavailable: {e}")
+
+        elif parsed.path.startswith("/interest/"):
+            interest_id = unquote(parsed.path[len("/interest/"):]).strip()
+            if (not interest_id or len(interest_id) > 256
+                    or "/" in interest_id or "\\" in interest_id):
+                self._json(400, {"error": "malformed interest id"})
+                return
+            try:
+                html = _render_interest_page(interest_id)
+            except LookupError:
+                self._json(404, {"error": "interest not found"})
+                return
+            except Exception as e:
+                self._text(500, f"interest page unavailable: {e}")
+                return
+            self._bytes(200, html.encode("utf-8"),
+                        "text/html; charset=utf-8")
 
         elif parsed.path == "/today":
             try:
@@ -1008,12 +1026,280 @@ function fb(kind, id, imp, v) {{
 </body></html>"""
 
 
+def _catalog_ro_connection(catalog_db=None):
+    """Open the typed-graph catalog read-only for dashboard projections."""
+    if catalog_db is None:
+        from ef import personal_graph
+        catalog_db = personal_graph.CATALOG
+    path = Path(catalog_db)
+    return sqlite3.connect(
+        f"file:{path.as_posix()}?mode=ro", uri=True, timeout=10.0)
+
+
+def _decode_json(value, fallback):
+    try:
+        decoded = json.loads(value) if value else fallback
+    except (TypeError, json.JSONDecodeError):
+        return fallback
+    return decoded
+
+
+def _interest_detail(interest_id: str, catalog_db=None) -> dict | None:
+    """Return a bounded, read-only projection of one typed interest.
+
+    This is intentionally a projection, not a second graph authority.  It
+    reads only the typed personal-graph tables and preserves the distinction
+    between inferred state, supporting clusters, and source representations.
+    """
+    conn = _catalog_ro_connection(catalog_db)
+    conn.row_factory = sqlite3.Row
+    try:
+        try:
+            row = conn.execute(
+                "SELECT interest_id, name, kind, parent_id, temporal_state, "
+                "stance, confidence, goal_id, observed_vs_inferred, "
+                "evidence_json, exclusions_json, updated_at "
+                "FROM interests WHERE interest_id=?", (interest_id,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if row is None:
+            return None
+
+        detail = {
+            "interest_id": row["interest_id"],
+            "name": row["name"],
+            "kind": row["kind"],
+            "parent_id": row["parent_id"],
+            "temporal_state": row["temporal_state"],
+            "stance": row["stance"],
+            "confidence": row["confidence"],
+            "goal_id": row["goal_id"],
+            "observed_vs_inferred": row["observed_vs_inferred"],
+            "updated_at": row["updated_at"],
+            "evidence": _decode_json(row["evidence_json"], {}),
+            "exclusions": _decode_json(row["exclusions_json"], {}),
+            "goal": None,
+            "parent": None,
+            "information_needs": [],
+            "questions": [],
+            "related": [],
+            "support_clusters": [],
+            "sources": [],
+        }
+
+        if detail["goal_id"]:
+            try:
+                goal = conn.execute(
+                    "SELECT goal_id, statement, status FROM goals WHERE goal_id=?",
+                    (detail["goal_id"],),
+                ).fetchone()
+                if goal:
+                    detail["goal"] = dict(goal)
+            except sqlite3.OperationalError:
+                pass
+        if detail["parent_id"]:
+            try:
+                parent = conn.execute(
+                    "SELECT interest_id, name FROM interests WHERE interest_id=?",
+                    (detail["parent_id"],),
+                ).fetchone()
+                if parent:
+                    detail["parent"] = dict(parent)
+            except sqlite3.OperationalError:
+                pass
+
+        try:
+            detail["information_needs"] = [dict(r) for r in conn.execute(
+                "SELECT need_id, statement, status, goal_id, updated_at "
+                "FROM information_needs WHERE interest_id=? "
+                "ORDER BY updated_at DESC, need_id", (interest_id,)
+            ).fetchall()]
+        except sqlite3.OperationalError:
+            pass
+        try:
+            detail["questions"] = [dict(r) for r in conn.execute(
+                "SELECT question_id, text, status, opened_at, updated_at "
+                "FROM questions WHERE interest_id=? "
+                "ORDER BY updated_at DESC, question_id", (interest_id,)
+            ).fetchall()]
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            related = conn.execute(
+                "SELECT dst_id FROM evidence_links "
+                "WHERE src_kind='interest' AND src_id=? "
+                "AND relation='related_to' ORDER BY dst_id", (interest_id,)
+            ).fetchall()
+            related_ids = [r["dst_id"] for r in related]
+            if related_ids:
+                marks = ",".join("?" for _ in related_ids)
+                detail["related"] = [dict(r) for r in conn.execute(
+                    f"SELECT interest_id, name FROM interests "
+                    f"WHERE interest_id IN ({marks}) ORDER BY name",
+                    related_ids,
+                ).fetchall()]
+            cluster_rows = conn.execute(
+                "SELECT DISTINCT src_id FROM evidence_links "
+                "WHERE dst_kind='interest' AND dst_id=? "
+                "AND src_kind='evidence_cluster' AND relation='supports' "
+                "ORDER BY src_id", (interest_id,)
+            ).fetchall()
+            detail["support_clusters"] = [r["src_id"] for r in cluster_rows]
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            source_rows = conn.execute(
+                "SELECT DISTINCT sa.source_id, sa.source_url, sa.title, "
+                "sa.source_status, sa.representations_json, sa.spans_json, "
+                "sa.retrieval_json, sa.source_hash "
+                "FROM source_artifacts sa JOIN evidence_links el "
+                "ON el.src_kind='source_artifact' AND el.src_id=sa.source_id "
+                "WHERE el.dst_kind='interest' AND el.dst_id=? "
+                "AND el.relation='supports' ORDER BY sa.title, sa.source_id",
+                (interest_id,),
+            ).fetchall()
+            for source in source_rows:
+                spans = _decode_json(source["spans_json"], [])
+                if not isinstance(spans, list):
+                    spans = []
+                detail["sources"].append({
+                    "source_id": source["source_id"],
+                    "source_url": source["source_url"],
+                    "title": source["title"],
+                    "source_status": source["source_status"],
+                    "representations": _decode_json(
+                        source["representations_json"], []),
+                    "retrieval": _decode_json(source["retrieval_json"], {}),
+                    "source_hash": source["source_hash"],
+                    "spans": [s for s in spans if isinstance(s, dict)],
+                })
+        except sqlite3.OperationalError:
+            pass
+        return detail
+    finally:
+        conn.close()
+
+
+def _render_interest_page(interest_id: str) -> str:
+    """Render one typed-interest drill-down with explicit provenance labels."""
+    import html as _html
+
+    detail = _interest_detail(interest_id)
+    if detail is None:
+        raise LookupError(interest_id)
+
+    def esc(value) -> str:
+        return _html.escape("" if value is None else str(value))
+
+    confidence = detail["confidence"]
+    confidence_text = (f"{float(confidence):.2f}"
+                       if isinstance(confidence, (int, float)) else "unknown")
+    state = detail["temporal_state"] or "unknown"
+    epistemic = detail["observed_vs_inferred"] or "unknown"
+    goal_html = ""
+    if detail["goal"]:
+        goal_html = (
+            f"<section><h2>Goal</h2><p>{esc(detail['goal']['statement'])}</p>"
+            f"<p class='dim'>status: {esc(detail['goal']['status'])}</p></section>")
+    parent_html = ""
+    if detail["parent"]:
+        href = quote(detail["parent"]["interest_id"], safe="")
+        parent_html = (f"<p class='dim'>Subtopic of: "
+                       f"<a href='/interest/{href}'>{esc(detail['parent']['name'])}</a></p>")
+
+    needs_html = "".join(
+        f"<li>{esc(n['statement'])} <span class='dim'>({esc(n['status'])})</span></li>"
+        for n in detail["information_needs"])
+    questions_html = "".join(
+        f"<li>{esc(q['text'])} <span class='dim'>({esc(q['status'])})</span></li>"
+        for q in detail["questions"])
+    related_html = " · ".join(
+        f"<a href='/interest/{quote(r['interest_id'], safe='')}'>{esc(r['name'])}</a>"
+        for r in detail["related"])
+    clusters_html = " · ".join(esc(c) for c in detail["support_clusters"])
+
+    source_cards = []
+    for source in detail["sources"]:
+        span_html = []
+        for span in source["spans"]:
+            text = span.get("text", "")
+            if not isinstance(text, str):
+                continue
+            display = text
+            if len(display) > 800:
+                display = display[:800] + " … [display excerpt; full span retained]"
+            locator = span.get("locator")
+            prefix = f"[{esc(locator)}] " if locator else ""
+            span_html.append(f"<blockquote>{prefix}{esc(display)}</blockquote>")
+        url_html = (f"<a href='{esc(source['source_url'])}'>open source</a>"
+                    if source["source_url"] else "source URL unavailable")
+        source_cards.append(
+            f"<article class='source'><h3>{esc(source['title'])}</h3>"
+            f"<p class='dim'>{esc(source['source_status'])} · "
+            f"{esc(', '.join(source['representations'] or ['none']))} · {url_html}</p>"
+            f"{''.join(span_html) or '<p class=\"dim\">No textual span available; '
+            "media provenance only.</p>"}</article>")
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ytis — {esc(detail['name'])}</title>
+<style>
+body {{ font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }}
+a {{ color: #58a6ff; text-decoration: none; }}
+h1 {{ color: #58a6ff; }} h2 {{ margin-top: 1.6rem; font-size: 1.1rem; }}
+section, .source {{ background: #161b22; border: 1px solid #30363d;
+border-radius: 8px; padding: .8rem 1rem; margin: .8rem 0; max-width: 980px; }}
+.dim {{ color: #8b949e; }} .pill {{ display: inline-block; border: 1px solid #30363d;
+border-radius: 999px; padding: .15rem .55rem; margin-right: .3rem; }}
+blockquote {{ border-left: 3px solid #30363d; margin: .6rem 0; padding: .3rem .8rem;
+white-space: pre-wrap; font-size: .9rem; }}
+</style></head><body>
+<nav><a href="/today">Today</a> · <a href="/interests">Interests</a> ·
+<a href="/graph">Graph</a> · <a href="/status">Status</a></nav>
+<h1>{esc(detail['name'])}</h1>
+<p><span class='pill'>{esc(detail['kind'])}</span>
+<span class='pill'>{esc(state)}</span>
+<span class='pill'>{esc(epistemic)}</span>
+<span class='pill'>confidence: {confidence_text}</span></p>
+{parent_html}
+{goal_html}
+<section><h2>Information needs</h2>
+{f'<ul>{needs_html}</ul>' if needs_html else '<p class="dim">None recorded.</p>'}</section>
+<section><h2>Questions</h2>
+{f'<ul>{questions_html}</ul>' if questions_html else '<p class="dim">None recorded.</p>'}</section>
+<section><h2>Relationships and support</h2>
+<p><b>Related:</b> {related_html or '<span class="dim">none recorded</span>'}</p>
+<p><b>Evidence clusters:</b> {clusters_html or '<span class="dim">none recorded</span>'}</p>
+</section>
+<section><h2>Grounded source evidence</h2>
+<p class='dim'>Source artifacts are provenance records, not model conclusions.
+Missing textual spans mean the source was identified without invented transcript evidence.</p>
+{''.join(source_cards) or '<p class="dim">No directly linked source artifacts recorded.</p>'}
+</section>
+</body></html>"""
+
+
 def _render_interests_page() -> str:
     from ef import interest_stats as ist
     from ef.evidence_clusters import cached_clusters
     from urllib.parse import parse_qs as _pq
     import html as _html
     refresh = "refresh=1" in (self_query := "")
+    typed_interests = []
+    try:
+        typed_conn = _catalog_ro_connection()
+        typed_conn.row_factory = sqlite3.Row
+        typed_interests = [dict(row) for row in typed_conn.execute(
+            "SELECT interest_id, name, kind, temporal_state, confidence, "
+            "observed_vs_inferred FROM interests "
+            "ORDER BY confidence DESC, name LIMIT 100"
+        ).fetchall()]
+        typed_conn.close()
+    except Exception:
+        typed_interests = []
     try:
         clusters, coverage = cached_clusters(refresh=refresh)
     except Exception:
@@ -1056,6 +1342,13 @@ def _render_interests_page() -> str:
             f"<td class='num'>{e['breadth']}</td>"
             f"<td class='num'>{e['depth']:,}</td>"
             f"<td class='num'>{e['active_months']}</td></tr>")
+    typed_html = "".join(
+        f"<li><a href='/interest/{quote(i['interest_id'], safe='')}'>{_html.escape(i['name'])}</a> "
+        f"<span class='dim'>{_html.escape(i.get('kind') or 'unknown')} · "
+        f"{_html.escape(i.get('temporal_state') or 'unknown')} · "
+        f"{_html.escape(i.get('observed_vs_inferred') or 'unknown')} · "
+        f"confidence {i.get('confidence') if i.get('confidence') is not None else 'unknown'}</span></li>"
+        for i in typed_interests)
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>ytis — Interests</title>
 <style>
@@ -1095,10 +1388,14 @@ clusters fused with specificity-weighted entities, representative
 documents, and cluster-level temporal stats. Entities are features of
 clusters, not the ontology (operator-directed revision). The v2 LLM
 interpretation layer (stances, latent goals, cross-domain themes,
-negative evidence, regret analysis) consumes these packets —
+negative evidence, regret analysis) consumes these packets. Typed
+inferences, when populated, are available in the drill-down below —
 <a href='/interests?refresh=1'>rebuild</a>.</div>
 <div class='banner cov'><b>Coverage chain</b> (an absent interest may be
 missing data, not absent interest):<br>{cov}</div>
+<section class='card'><h2>Typed interests</h2>
+{f'<ul>{typed_html}</ul>' if typed_html else '<p class="dim">No validated typed inference has been persisted yet.</p>'}
+</section>
 {''.join(cards)}
 <details><summary>Observed entity layer (v1) — breadth-weighted</summary>
 <table><tr><th>entity</th><th>breadth</th><th>depth</th>
@@ -2497,15 +2794,16 @@ def main():
     # search_ef service (retired the same day; ~2.4-3.4 GB saved).
     mcp_port = os.environ.get("MCP_HTTP_PORT", "")
     if mcp_port:
-        from ef.mcp_server import mcp as _mcp
+        from ef.mcp_server import mcp as _mcp, select_http_transport
 
         _mcp.settings.host = HOST
         _mcp.settings.port = int(mcp_port)
+        _mcp_transport = select_http_transport(_mcp)
         threading.Thread(
-            target=_mcp.run, kwargs={"transport": "streamable-http"},
+            target=_mcp.run, kwargs={"transport": _mcp_transport},
             daemon=True, name="mcp-face",
         ).start()
-        print(f"  MCP face starting on {HOST}:{mcp_port}")
+        print(f"  MCP face starting on {HOST}:{mcp_port} ({_mcp_transport})")
 
     server.serve_forever()
     return 0

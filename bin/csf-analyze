@@ -25,27 +25,11 @@ if TYPE_CHECKING:
 # Transcript sanitization — prevents prompt injection from YouTube captions
 # ---------------------------------------------------------------------------
 
-_PROMPT_INJECTION_PATTERNS = [
-    re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.I),
-    re.compile(r"disregard\s+(all\s+)?prior\s+(instructions?|commands?)", re.I),
-    re.compile(r"forget\s+(all\s+)?previous\s+instructions", re.I),
-    re.compile(r"you\s+are\s+now\s+(?:a|an)\s+", re.I),
-    re.compile(r"system\s*:\s*", re.I),
-    re.compile(r"<\|(?:system|user|assistant)\|>", re.I),
-]
+def _sanitize_for_prompt(text: str) -> str:
+    """Sanitize untrusted source text without truncating it."""
+    from csf.prompt_safety import sanitize_source_for_prompt
 
-
-def _sanitize_for_prompt(text: str, max_chars: int = 8000) -> str:
-    """Strip prompt injection patterns and truncate before embedding in LLM prompt.
-
-    YouTube captions are user-supplied content and could contain attempts to
-    manipulate the LLM's behavior. This sanitization removes common injection
-    patterns while preserving legitimate transcript content.
-    """
-    sanitized = text
-    for pattern in _PROMPT_INJECTION_PATTERNS:
-        sanitized = pattern.sub("[redacted]", sanitized)
-    return sanitized[:max_chars]
+    return sanitize_source_for_prompt(text)
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +202,7 @@ def _run_with_timeout(
         stderr=subprocess.PIPE,
         text=True,
         env=env,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     timed_out = False
     try:
@@ -241,9 +226,8 @@ def _run_with_timeout(
 # Add csf to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from csf.logging import log_action
+from csf.csf_logging import log_action
 from csf.terminal_context import resolve_tid
-from csf.cks_store import append_to_cks
 
 
 def is_youtube_url(url: str) -> bool:
@@ -287,7 +271,6 @@ def analyze_by_url_cli(video_id: str, video_url: str, model: str | None = None) 
         '  "key_points" (list of 3 strings).\n\n'
         "Return ONLY the JSON, no explanation or markdown formatting."
     )
-
     cmd = [gemini_path, "--output-format", "json"]
     if model:
         cmd.extend(["--model", model])
@@ -433,6 +416,7 @@ def gemini_video_analyze(video_id: str, video_url: str) -> dict:
         '  "key_points" (list of 3 strings - most important takeaways).\n\n'
         "Return ONLY the JSON, no explanation or markdown formatting."
     )
+    analysis_model = "gemini-3.1-flash-lite-preview"
 
     # Validate URL scheme before calling SDK
     parsed = urlparse(video_url)
@@ -460,7 +444,7 @@ def gemini_video_analyze(video_id: str, video_url: str) -> dict:
             client = genai.Client(api_key=api_key)
             video_part = Part.from_uri(file_uri=video_url, mime_type="video/mp4")
             response = client.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
+                model=analysis_model,
                 contents=[video_part, prompt],
             )
             text = response.text.strip()
@@ -491,7 +475,7 @@ def gemini_video_analyze(video_id: str, video_url: str) -> dict:
             metadata={
                 "pipeline": "csf-analyze",
                 "video_url": video_url,
-                "model": model,
+                "model": analysis_model,
                 "transcript_source": "youtube_transcript_api",
             },
         )
@@ -544,6 +528,14 @@ def _analyze_via_transcript(
         model: Gemini model to use. None means auto-select.
     """
     transcript_text = get_youtube_transcript(video_id)
+    from ef.grounded_source import from_transcript_text
+
+    grounded_source = from_transcript_text(
+        video_id,
+        video_url,
+        transcript_text,
+        source="youtube_transcript_api",
+    ).to_dict()
 
     gemini_path = shutil.which("gemini")
     if not gemini_path:
@@ -552,6 +544,7 @@ def _analyze_via_transcript(
             "content": transcript_text,
             "video_id": video_id,
             "fallback_reason": reason,
+            "grounded_source": grounded_source,
         }
 
     prompt = (
@@ -578,6 +571,7 @@ def _analyze_via_transcript(
             capture_output=True,
             text=True,
             timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
         _append_timing(time.monotonic() - start)
@@ -586,6 +580,7 @@ def _analyze_via_transcript(
             "content": transcript_text,
             "video_id": video_id,
             "fallback_reason": f"transcript analysis timed out after {timeout:.0f}s: {reason}",
+            "grounded_source": grounded_source,
         }
 
     _append_timing(time.monotonic() - start)
@@ -595,18 +590,21 @@ def _analyze_via_transcript(
             "content": transcript_text,
             "video_id": video_id,
             "fallback_reason": f"gemini CLI also failed: {result.stderr}",
+            "grounded_source": grounded_source,
         }
 
     text = result.stdout.strip()
     try:
         parsed = json.loads(text)
         parsed["fallback_reason"] = reason
+        parsed["grounded_source"] = grounded_source
         return parsed
     except json.JSONDecodeError:
         return {
             "content": transcript_text,
             "video_id": video_id,
             "fallback_reason": f"gemini CLI returned non-JSON: {reason}",
+            "grounded_source": grounded_source,
         }
 
 
@@ -635,6 +633,10 @@ def analyze_to_cks(
         RuntimeError: if gemini CLI not found or analysis fails
         ValueError: if URL scheme is invalid
     """
+    # CKS is an optional sink. Load it only for the explicit write path so a
+    # missing external CKS installation cannot prevent ordinary analysis.
+    from csf.cks_store import append_to_cks
+
     result = analyze_video(video_id, video_url, mode=mode, model=model)
     append_to_cks(
         {
@@ -659,7 +661,25 @@ def _result_to_dict(result: "VideoAnalysisResult") -> dict:
         "visual_tags": result.visual_tags,
         "mode": result.mode,
         "fallback_reason": result.fallback_reason,
+        "grounded_source": (
+            result.grounded_source.to_dict()
+            if result.grounded_source is not None else None
+        ),
     }
+
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    """Publish one analysis result without exposing a partial JSON file."""
+    temporary = path.with_name(
+        f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, indent=2, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def analyze_video(
@@ -686,6 +706,12 @@ def analyze_video(
               consistently-failing providers. In auto mode, also used to record
               provider outcomes for future routing decisions.
     """
+    # Keep the legacy CLI/API entrypoint behind the same request binding as
+    # the orchestrator, including explicit mode overrides.
+    from csf.orchestrator import _validate_analysis_request
+
+    _validate_analysis_request(video_id, video_url)
+
     # Normalize "cli" → "transcript" for backwards compatibility
     if mode == "cli":
         mode = "transcript"
@@ -874,7 +900,7 @@ def main() -> None:
     output_dir = Path("P:/.data/yt-is/analyses")
     output_dir.mkdir(parents=True, exist_ok=True)
     out_path = output_dir / f"{video_id}.json"
-    out_path.write_text(json.dumps(result, indent=2))
+    _write_json_atomic(out_path, result)
 
     log_action(
         "analysis_complete",

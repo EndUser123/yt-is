@@ -86,6 +86,10 @@ class TestOcrClipProvider:
             assert result.mode == "ocr_clip"
             assert result.code_snippets == ["def hello():", "x = 1"]
             assert result.visual_tags == ["code screenshot", "slide"]
+            assert result.grounded_source is not None
+            assert result.grounded_source.representations == (
+                "transcript", "frames")
+            assert dict(result.grounded_source.retrieval)["frame_count"] == "1"
 
     def test_ocr_fails_raises_nonfatal(self):
         """OCR failure with empty transcript raises NonFatalAnalysisError."""
@@ -142,4 +146,3 @@ class TestOcrClipProvider:
             assert isinstance(result, VideoAnalysisResult)
             assert result.code_snippets == ["def hello():", "x = 1"]
             assert result.visual_tags == []
-

@@ -50,6 +50,17 @@ class TestSelectProvider:
         with pytest.raises(ValueError, match="Invalid URL scheme"):
             select_provider("dQw4w9WgXcQ", "ftp://youtube.com/watch?v=dQw4w9WgXcQ")
 
+    def test_select_provider_rejects_unrelated_https_url(self):
+        """A YouTube video ID cannot be paired with an unrelated HTTPS URL."""
+        with pytest.raises(ValueError, match="Invalid YouTube video URL"):
+            select_provider("dQw4w9WgXcQ", "https://example.test/video")
+
+    def test_select_provider_rejects_mismatched_youtube_video_id(self):
+        """The URL's video ID must equal the requested video ID."""
+        with pytest.raises(ValueError, match="Invalid YouTube video URL"):
+            select_provider(
+                "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=9bZkp7q19f0")
+
     @mock.patch("csf.orchestrator.has_cached_transcript", return_value=False)
     def test_select_provider_tier1_when_local_model_available(self, mock_cached):
         """When _load_local_model_provider succeeds, LocalModelProvider is returned."""
@@ -214,3 +225,12 @@ class TestAnalyzeVideo:
                 provider=mock_provider,
             )
 
+    def test_analyze_video_validates_explicit_provider_request(self):
+        provider = mock.Mock()
+        with pytest.raises(ValueError, match="Invalid YouTube video URL"):
+            analyze_video(
+                "dQw4w9WgXcQ",
+                "https://www.youtube.com/watch?v=9bZkp7q19f0",
+                provider=provider,
+            )
+        provider.analyze.assert_not_called()

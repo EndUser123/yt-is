@@ -680,6 +680,7 @@ def _fetch_via_gemini_cli(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         stdout, stderr = proc.communicate(timeout=300)
     except subprocess.TimeoutExpired:
@@ -1349,6 +1350,7 @@ def _run_whisper_transcription_subprocess(
             text=True,
             timeout=timeout_s,
             check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
         result_path.unlink(missing_ok=True)
@@ -1472,6 +1474,7 @@ def _fetch_via_whisper(video_id: str, lang: str) -> tuple[bool, str | None, str 
                     capture_output=True,
                     text=True,
                     timeout=selector_remaining_s,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             except subprocess.TimeoutExpired:
                 return (

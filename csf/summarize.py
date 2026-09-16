@@ -11,14 +11,15 @@ import subprocess
 import re
 
 from csf.providers import VideoAnalysisResult
+from csf.prompt_safety import sanitize_source_for_prompt
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_MAX_CHARS = 32_000  # ~8000 tokens (1 token ≈ 4 chars for English)
-_TRUNCATE_TO = 30_000
-_TRUNCATE_MARKER = " [truncated]..."
+# The complete transcript is intentionally passed through.  If a provider
+# cannot accept the resulting prompt, the caller receives an explicit
+# fallback rather than a summary of an undisclosed suffix.
 
 
 # ---------------------------------------------------------------------------
@@ -44,20 +45,24 @@ def summarize(
         VideoAnalysisResult with mode="transcript" on any failure,
         mode="summarize" on success.
     """
-    # ---- Truncate transcript if needed ----
-    if len(transcript) > _MAX_CHARS:
-        transcript = transcript[-_TRUNCATE_TO:] + _TRUNCATE_MARKER
-
     # ---- Build prompt with separate sections ----
-    snippets_block = (
-        "\n".join(f"- {s}" for s in code_snippets) if code_snippets else "None"
-    )
-    tags_block = "\n".join(f"- {t}" for t in visual_tags) if visual_tags else "None"
+    def prompt_items(items) -> str:
+        """Render source-derived list items through the prompt boundary."""
+        if not items:
+            return "None"
+        rendered = []
+        for item in items:
+            text = item if isinstance(item, str) else str(item)
+            rendered.append(f"- {sanitize_source_for_prompt(text)}")
+        return "\n".join(rendered)
+
+    snippets_block = prompt_items(code_snippets)
+    tags_block = prompt_items(visual_tags)
 
     prompt = (
         "Analyze this video and extract structured information.\n\n"
         "## TRANSCRIPT\n"
-        f"{transcript}\n\n"
+        f"{sanitize_source_for_prompt(transcript)}\n\n"
         "## CODE SNIPPETS (on-screen code)\n"
         f"{snippets_block}\n\n"
         "## VISUAL TAGS\n"
@@ -83,6 +88,7 @@ def summarize(
             capture_output=True,
             text=True,
             timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired:
         return _fail(f"summarize_timeout_{timeout:.0f}s")

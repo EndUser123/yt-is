@@ -5,9 +5,15 @@ Flow: YouTube transcript fetch → FFmpeg frame extraction → EasyOCR code capt
 
 from __future__ import annotations
 
+import os
+from dataclasses import replace
 from pathlib import Path
 
 from csf.providers import NonFatalAnalysisError, VideoAnalysisResult
+from ef.grounded_source import (
+    from_transcript_result,
+    with_inspected_representations,
+)
 from csf.video_utils import (
     extract_frames,
     NonFatalAnalysisError as VideoUtilsNonFatalAnalysisError,
@@ -47,8 +53,13 @@ class OcrClipProvider:
         try:
             from csf.transcript import fetch_transcript_chain, LanguageConfig
 
-            result = fetch_transcript_chain(video_id, LanguageConfig(prefer_lang="en"))
-            transcript_text = result.transcript
+            transcript_result = fetch_transcript_chain(
+                video_id,
+                LanguageConfig(
+                    prefer_lang=os.environ.get("YTIS_TRANSCRIPT_LANGUAGE", "en"),
+                ),
+            )
+            transcript_text = transcript_result.transcript
         except Exception as e:
             raise NonFatalAnalysisError(
                 f"OcrClipProvider: transcript fetch failed for {video_id}: {e}"
@@ -58,6 +69,9 @@ class OcrClipProvider:
             raise NonFatalAnalysisError(
                 f"OcrClipProvider: no transcript available for {video_id}"
             )
+
+        grounded_source = from_transcript_result(
+            video_id, video_url, transcript_result)
 
         # ---- Step 2: Extract frames via FFmpeg ----
         frames: list[Path] = []
@@ -76,11 +90,23 @@ class OcrClipProvider:
 
         if not frames:
             # No frames extracted — proceed with empty code_snippets/visual_tags
-            return summarize(
-                transcript=transcript_text,
-                code_snippets=[],
-                visual_tags=[],
+            return replace(
+                summarize(
+                    transcript=transcript_text,
+                    code_snippets=[],
+                    visual_tags=[],
+                ),
+                grounded_source=grounded_source,
             )
+
+        grounded_source = with_inspected_representations(
+            grounded_source,
+            ("frames",),
+            retrieval={
+                "frame_extraction": "ffmpeg",
+                "frame_count": str(len(frames)),
+            },
+        )
 
         # ---- Step 3: EasyOCR — capture on-screen code ----
         code_snippets: list[str] = []
@@ -100,10 +126,13 @@ class OcrClipProvider:
 
         # ---- Step 5: LLM summarization ----
         try:
-            return summarize(
-                transcript=transcript_text,
-                code_snippets=code_snippets,
-                visual_tags=visual_tags,
+            return replace(
+                summarize(
+                    transcript=transcript_text,
+                    code_snippets=code_snippets,
+                    visual_tags=visual_tags,
+                ),
+                grounded_source=grounded_source,
             )
         except Exception as e:
             # Summarization failure — return partial result rather than failing entirely
@@ -116,4 +145,5 @@ class OcrClipProvider:
                 visual_tags=visual_tags,
                 mode="ocr_clip",
                 fallback_reason=f"summarize_failed: {e}",
+                grounded_source=grounded_source,
             )

@@ -131,8 +131,12 @@ def test_required_top_level_arrays_and_unknown_keys_rejected():
         del p[key]
         errs = conformance_errors(p, schema)
         assert any(key in e for e in errs), key
+        with pytest.raises(big.InferenceContractError):
+            big.validate_inference(p, SUPPLIED)
     errs = conformance_errors(mut(oops=1), schema)
     assert any("oops" in e for e in errs)
+    with pytest.raises(big.InferenceContractError):
+        big.validate_inference(mut(oops=1), SUPPLIED)
 
 
 def test_empty_interest_list_is_a_violation():

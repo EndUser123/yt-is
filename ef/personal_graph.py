@@ -90,6 +90,20 @@ CREATE TABLE IF NOT EXISTS evidence_links (
     strength REAL,
     created_at TEXT
 );
+-- Append-only event lineage for deduplicated graph edges. The graph edge
+-- remains unique for query consumers; this table records each run that
+-- emitted that edge without changing the graph's deduplication semantics.
+CREATE TABLE IF NOT EXISTS inference_edge_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    src_kind TEXT NOT NULL,
+    src_id TEXT NOT NULL,
+    dst_kind TEXT NOT NULL,
+    dst_id TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(run_id, src_kind, src_id, dst_kind, dst_id, relation)
+);
 CREATE TABLE IF NOT EXISTS feedback (
     ts TEXT NOT NULL,
     surface TEXT NOT NULL,       -- today|interests|regret|research
@@ -130,8 +144,25 @@ CREATE TABLE IF NOT EXISTS inference_runs (
     candidate_policy TEXT,
     cluster_ids_json TEXT,
     result_hash TEXT,
+    provenance_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT,
     status TEXT                  -- running|success|failed
+);
+CREATE TABLE IF NOT EXISTS source_artifacts (
+    source_id TEXT PRIMARY KEY,
+    source_url TEXT,
+    title TEXT NOT NULL,
+    source_status TEXT NOT NULL,       -- complete|partial|unknown|unavailable
+    representations_json TEXT NOT NULL,
+    transcript_language TEXT,
+    transcript_kind TEXT,
+    spans_json TEXT NOT NULL,
+    retrieval_json TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    evidence_cluster_ids_json TEXT NOT NULL,
+    artifact_version TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 -- -----------------------------------------------------------------------
 -- Impression + feedback-event contract (2026-08-26).
@@ -221,6 +252,8 @@ CREATE TABLE IF NOT EXISTS item_workflow_state (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_links_edge
     ON evidence_links(src_kind, src_id, dst_kind, dst_id, relation);
+CREATE INDEX IF NOT EXISTS idx_inference_edge_events_run
+    ON inference_edge_events(run_id);
 CREATE INDEX IF NOT EXISTS idx_interests_parent
     ON interests(parent_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_surface
@@ -237,6 +270,8 @@ _COLUMN_ADDITIONS = (
     ("goals", "inference_run_id", "TEXT"),
     ("questions", "updated_at", "TEXT"),
     ("questions", "inference_run_id", "TEXT"),
+    ("inference_runs", "provenance_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("source_artifacts", "evidence_cluster_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
 )
 
 
@@ -314,6 +349,132 @@ def _edge(conn: sqlite3.Connection, src_kind: str, src_id: str,
         "(src_kind, src_id, dst_kind, dst_id, relation, strength, created_at) "
         "VALUES (?, ?, ?, ?, ?, NULL, ?)",
         (src_kind, src_id, dst_kind, dst_id, relation, now))
+    conn.execute(
+        "INSERT OR IGNORE INTO inference_edge_events "
+        "(run_id, src_kind, src_id, dst_kind, dst_id, relation, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (run_id, src_kind, src_id, dst_kind, dst_id, relation, now))
+
+
+def _write_grounded_source_artifact(conn, artifact, now: str | None = None) -> None:
+    """Write an immutable source artifact without committing the transaction.
+
+    Replays with the same content hash are idempotent.  A source id cannot be
+    rebound to different content or an incompatible artifact version; only
+    its evidence-cluster associations may be extended.
+    """
+    from ef.grounded_source import GroundedSourceArtifact, validate_artifact
+
+    validate_artifact(artifact)
+    stamp = now or _now()
+    existing = conn.execute(
+        "SELECT source_url, title, source_status, representations_json, "
+        "transcript_language, transcript_kind, spans_json, retrieval_json, "
+        "source_hash, evidence_cluster_ids_json, artifact_version "
+        "FROM source_artifacts WHERE source_id=?",
+        (artifact.source_id,),
+    ).fetchone()
+    if existing is not None:
+        if existing[8] != artifact.source_hash:
+            raise ValueError(
+                f"source id {artifact.source_id!r} is already bound to "
+                "different content"
+            )
+        if existing[10] != artifact.artifact_version:
+            raise ValueError(
+                f"source id {artifact.source_id!r} has an incompatible "
+                "artifact version"
+            )
+        try:
+            stored = GroundedSourceArtifact.from_dict({
+                "source_id": artifact.source_id,
+                "source_url": existing[0],
+                "title": existing[1],
+                "source_status": existing[2],
+                "representations": json.loads(existing[3] or "[]"),
+                "transcript_language": existing[4],
+                "transcript_kind": existing[5],
+                "spans": json.loads(existing[6] or "[]"),
+                "retrieval": json.loads(existing[7] or "{}"),
+                "source_hash": existing[8],
+                "evidence_cluster_ids": json.loads(existing[9] or "[]"),
+                "artifact_version": existing[10],
+            })
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"stored source artifact {artifact.source_id!r} is invalid"
+            ) from exc
+
+        def immutable_fields(value):
+            return (
+                value.source_id,
+                value.source_url,
+                value.title,
+                value.source_status,
+                value.representations,
+                value.transcript_language,
+                value.transcript_kind,
+                value.spans,
+                value.retrieval,
+                value.source_hash,
+                value.artifact_version,
+            )
+
+        if immutable_fields(stored) != immutable_fields(artifact):
+            raise ValueError(
+                f"source id {artifact.source_id!r} has different immutable "
+                "provenance metadata"
+            )
+        try:
+            prior_cluster_ids = json.loads(existing[9] or "[]")
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("stored source cluster provenance is invalid") from exc
+        merged_cluster_ids = sorted(set(prior_cluster_ids) |
+                                    set(artifact.evidence_cluster_ids))
+        conn.execute(
+            "UPDATE source_artifacts SET evidence_cluster_ids_json=?, "
+            "updated_at=? WHERE source_id=?",
+            (json.dumps(merged_cluster_ids), stamp, artifact.source_id),
+        )
+        return
+    conn.execute(
+        """INSERT INTO source_artifacts
+           (source_id, source_url, title, source_status,
+            representations_json, transcript_language, transcript_kind,
+            spans_json, retrieval_json, source_hash,
+            evidence_cluster_ids_json, artifact_version, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            artifact.source_id,
+            artifact.source_url,
+            artifact.title,
+            artifact.source_status,
+            json.dumps(list(artifact.representations), ensure_ascii=False),
+            artifact.transcript_language,
+            artifact.transcript_kind,
+            json.dumps([{"text": span.text, "locator": span.locator,
+                         "representation": span.representation,
+                         "source_role": span.source_role}
+                        for span in artifact.spans], ensure_ascii=False),
+            json.dumps(dict(artifact.retrieval), ensure_ascii=False),
+            artifact.source_hash,
+            json.dumps(list(artifact.evidence_cluster_ids)),
+            artifact.artifact_version,
+            stamp,
+            stamp,
+        ),
+    )
+
+
+def store_grounded_source_artifact(conn: sqlite3.Connection, artifact) -> dict:
+    """Persist one validated source representation as an idempotent record."""
+    try:
+        _write_grounded_source_artifact(conn, artifact)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {"source_id": artifact.source_id, "source_hash": artifact.source_hash}
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +484,8 @@ def _edge(conn: sqlite3.Connection, src_kind: str, src_id: str,
 def store_validated_inference(conn: sqlite3.Connection, payload: dict, *,
                               run_id: str, provider: str, model: str,
                               prompt_version: str, candidate_policy: str,
-                              cluster_ids, result_hash: str) -> dict:
+                              cluster_ids, result_hash: str,
+                              grounded_sources=(), provenance=None) -> dict:
     """Persist one validated v2 inference as a complete typed graph.
 
     payload must already have passed the caller's mechanical contract
@@ -342,10 +504,15 @@ def store_validated_inference(conn: sqlite3.Connection, payload: dict, *,
         conn.execute(
             "INSERT INTO inference_runs (run_id, provider, model, "
             "prompt_version, candidate_policy, cluster_ids_json, "
-            "result_hash, created_at, status) VALUES (?,?,?,?,?,?,?,?,?)",
+            "result_hash, provenance_json, created_at, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (run_id, provider, model, prompt_version, candidate_policy,
-             json.dumps([int(c) for c in cluster_ids]), result_hash, now,
-             "running"))
+             json.dumps([int(c) for c in cluster_ids]), result_hash,
+             json.dumps(provenance or {}, ensure_ascii=False, sort_keys=True),
+             now, "running"))
+
+        for artifact in grounded_sources:
+            _write_grounded_source_artifact(conn, artifact, now)
 
         ids = {_norm_text(it["name"]):
                interest_identity_id(it["kind"], it["name"]) for it in interests}
@@ -359,6 +526,16 @@ def store_validated_inference(conn: sqlite3.Connection, payload: dict, *,
         _store_questions(conn, questions, ids, run_id, now)
         _store_regret_candidates(conn, regrets, ids, run_id, now)
         _store_evidence_and_related_edges(conn, interests, ids, run_id, now)
+        for artifact in grounded_sources:
+            for cluster_id in artifact.evidence_cluster_ids:
+                _edge(conn, "source_artifact", artifact.source_id,
+                      "evidence_cluster", str(cluster_id), "supports",
+                      run_id, now)
+                for interest in interests:
+                    if cluster_id in interest.get("cluster_ids", []):
+                        _edge(conn, "source_artifact", artifact.source_id,
+                              "interest", ids[_norm_text(interest["name"])],
+                              "supports", run_id, now)
 
         conn.execute("UPDATE inference_runs SET status='success' "
                      "WHERE run_id=?", (run_id,))

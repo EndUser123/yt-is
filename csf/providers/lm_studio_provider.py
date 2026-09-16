@@ -10,9 +10,20 @@ import httpx
 
 from csf.providers import VideoAnalysisResult, NonFatalAnalysisError
 from csf.providers import TranscriptProvider
+from ef.grounded_source import GroundedSourceArtifact
+from csf.prompt_safety import sanitize_source_for_prompt
 
 DEFAULT_LM_STUDIO_URL = "http://localhost:1234/v1"
 LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL", DEFAULT_LM_STUDIO_URL).rstrip("/")
+
+
+def _full_transcript_text(result: VideoAnalysisResult) -> str:
+    """Return the available text without silently truncating the source."""
+    source = getattr(result, "grounded_source", None)
+    if isinstance(source, GroundedSourceArtifact) and source.source_text:
+        return source.source_text
+    summary = getattr(result, "summary", "")
+    return summary if isinstance(summary, str) else ""
 
 
 class LocalModelProvider:
@@ -32,7 +43,9 @@ class LocalModelProvider:
             "key_points (list of 3-5 strings). Respond ONLY with valid JSON."
         )
         model = os.environ.get("LM_STUDIO_MODEL", "google/gemma-4-31b")
-        user_prompt = f"Video URL: {video_url}\n\nTranscript:\n{getattr(transcript, 'summary', '')[:8000]}"
+        transcript_text = sanitize_source_for_prompt(
+            _full_transcript_text(transcript))
+        user_prompt = f"Video URL: {video_url}\n\nTranscript:\n{transcript_text}"
 
         payload = {
             "model": model,
@@ -62,6 +75,7 @@ class LocalModelProvider:
                 key_topics=data.get("key_topics", []),
                 key_points=data.get("key_points", []),
                 mode="local_model",
+                grounded_source=transcript.grounded_source,
             )
         except Exception as e:
             raise NonFatalAnalysisError(f"LocalModelProvider: JSON parse failed: {e}")
@@ -90,7 +104,7 @@ class OllamaVisionProvider:
             "model": _OLLAMA_MODEL,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Video: {video_url}\nTranscript: {getattr(transcript, 'summary', '')[:8000]}"},
+                {"role": "user", "content": f"Video: {video_url}\nTranscript: {sanitize_source_for_prompt(_full_transcript_text(transcript))}"},
             ],
             "stream": False,
             "options": {"temperature": 0.3, "num_predict": 1024},
@@ -114,6 +128,7 @@ class OllamaVisionProvider:
                 key_topics=data.get("key_topics", []),
                 key_points=data.get("key_points", []),
                 mode="ollama_vision",
+                grounded_source=transcript.grounded_source,
             )
         except Exception as e:
             raise NonFatalAnalysisError(f"OllamaVisionProvider: JSON parse failed: {e}")

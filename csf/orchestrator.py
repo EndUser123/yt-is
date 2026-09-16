@@ -22,7 +22,7 @@ from __future__ import annotations
 import threading
 import datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 from typing import Any
 from collections.abc import Callable
 
@@ -31,8 +31,16 @@ from csf.providers import (
     VideoAnalysisResult,
     TranscriptProvider,
 )
+from ef.grounded_source import (GroundedSourceArtifact, from_media_reference,
+                                from_transcript_text)
 from csf.cache import has_cached_transcript  # noqa: F401  # kept for callers
 from csf.transcript import _VIDEO_ID_PATTERN
+
+_YOUTUBE_VIDEO_HOSTS = frozenset({
+    "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+    "youtube-nocookie.com", "www.youtube-nocookie.com", "youtu.be",
+})
+_YOUTUBE_PATH_VIDEO_PREFIXES = frozenset({"shorts", "embed", "live"})
 
 # ---------------------------------------------------------------------------
 # Module-level thread-safe Gemini availability state
@@ -41,6 +49,53 @@ from csf.transcript import _VIDEO_ID_PATTERN
 _gemini_available: bool = True
 _last_reset_date: datetime.date | None = None
 _gemini_lock = threading.Lock()
+
+
+def _normalized_source_url(value: str) -> tuple:
+    """Return a stable URL identity for provider-artifact binding."""
+    parsed = urlparse(value)
+    return (
+        parsed.scheme.casefold(),
+        parsed.netloc.casefold(),
+        parsed.path.rstrip("/") or "/",
+        tuple(sorted(parse_qsl(parsed.query, keep_blank_values=True))),
+    )
+
+
+def _validate_provider_artifact_binding(
+    artifact: GroundedSourceArtifact,
+    video_id: str,
+    video_url: str,
+) -> None:
+    """Reject stale or cross-source artifacts at the provider boundary."""
+    if artifact.source_id != video_id:
+        raise ValueError(
+            f"grounded source id {artifact.source_id!r} does not match "
+            f"requested video id {video_id!r}"
+        )
+    if artifact.source_url is None or _normalized_source_url(
+            artifact.source_url) != _normalized_source_url(video_url):
+        raise ValueError(
+            f"grounded source URL {artifact.source_url!r} does not match "
+            f"requested video URL {video_url!r}"
+        )
+
+
+def _video_id_from_youtube_url(video_url: str) -> str | None:
+    """Extract a video ID from the supported YouTube URL forms."""
+    parsed = urlparse(video_url)
+    hostname = parsed.hostname.casefold() if parsed.hostname else ""
+    if hostname not in _YOUTUBE_VIDEO_HOSTS:
+        return None
+    if hostname == "youtu.be":
+        return parsed.path.strip("/").split("/", 1)[0] or None
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    if query.get("v"):
+        return query["v"]
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 2 and parts[0].casefold() in _YOUTUBE_PATH_VIDEO_PREFIXES:
+        return parts[1]
+    return None
 
 
 def _get_pacific_date() -> datetime.date:
@@ -139,6 +194,39 @@ class GeminiSDKProvider:
             raise NonFatalAnalysisError(f"Gemini SDK failed for {video_id}: {e}") from e
 
         # Map raw dict result to VideoAnalysisResult
+        try:
+            grounded_source = (
+                GroundedSourceArtifact.from_dict(raw_result["grounded_source"])
+                if isinstance(raw_result.get("grounded_source"), dict)
+                else None
+            )
+            if grounded_source is not None:
+                _validate_provider_artifact_binding(
+                    grounded_source, video_id, video_url)
+        except (TypeError, ValueError) as exc:
+            raise NonFatalAnalysisError(
+                f"Gemini SDK returned invalid grounded source for "
+                f"{video_id}: {exc}"
+            ) from exc
+        if grounded_source is None and raw_result.get("fallback_reason"):
+            fallback_text = raw_result.get("content")
+            if isinstance(fallback_text, str) and fallback_text.strip():
+                grounded_source = from_transcript_text(
+                    video_id,
+                    video_url,
+                    fallback_text,
+                    source="youtube_transcript_api",
+                )
+        if grounded_source is None and not raw_result.get("fallback_reason"):
+            grounded_source = from_media_reference(
+                video_id,
+                video_url,
+                title=raw_result.get("title"),
+                retrieval={
+                    "analysis_provider": "gemini_sdk",
+                    "media_transport": "youtube_url_passthrough",
+                },
+            )
         return VideoAnalysisResult(
             title=raw_result.get("title", "Unknown"),
             summary=raw_result.get("summary", ""),
@@ -148,6 +236,7 @@ class GeminiSDKProvider:
             visual_tags=[],
             mode="gemini_sdk",
             fallback_reason=raw_result.get("fallback_reason"),
+            grounded_source=grounded_source,
         )
 
 
@@ -207,20 +296,7 @@ def _build_ordered_candidates(
         List of (name, instance) tuples, ordered by priority. At least one
         entry (TranscriptProvider) is always present.
     """
-    # Validate video_id format
-    if not _VIDEO_ID_PATTERN.match(video_id):
-        raise ValueError(
-            f"Invalid video_id format: {video_id!r}. "
-            "Expected 11-character YouTube video ID (alphanumeric, hyphen, underscore)."
-        )
-
-    # Validate video_url scheme
-    parsed = urlparse(video_url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(
-            f"Invalid URL scheme: {parsed.scheme!r}. "
-            "video_url must use http or https scheme."
-        )
+    _validate_analysis_request(video_id, video_url)
 
     # Check and reset Gemini availability on every call
     with _gemini_lock:
@@ -275,6 +351,30 @@ def _build_ordered_candidates(
         instantiated.append(("transcript", TranscriptProvider()))
 
     return instantiated
+
+
+def _validate_analysis_request(video_id: str, video_url: str) -> None:
+    """Validate and bind the requested YouTube ID and URL before provider use."""
+    # Validate video_id format
+    if not _VIDEO_ID_PATTERN.match(video_id):
+        raise ValueError(
+            f"Invalid video_id format: {video_id!r}. "
+            "Expected 11-character YouTube video ID (alphanumeric, hyphen, underscore)."
+        )
+
+    # Validate video_url as a YouTube video URL and bind it to video_id.
+    parsed = urlparse(video_url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"Invalid URL scheme: {parsed.scheme!r}. "
+            "video_url must use http or https scheme."
+        )
+    url_video_id = _video_id_from_youtube_url(video_url)
+    if url_video_id != video_id:
+        raise ValueError(
+            "Invalid YouTube video URL: host and video ID must match "
+            f"video_id {video_id!r}."
+        )
 
 
 def select_provider(
@@ -332,6 +432,8 @@ def analyze_video(
         ValueError: if video_id format or video_url scheme is invalid.
         NonFatalAnalysisError: if ALL provider tiers fail.
     """
+    _validate_analysis_request(video_id, video_url)
+
     # If caller provided an explicit provider, use it directly (no failover).
     if provider is not None:
         try:

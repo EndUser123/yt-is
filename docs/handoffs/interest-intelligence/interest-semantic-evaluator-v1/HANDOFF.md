@@ -22,7 +22,8 @@ Two orthogonal outputs now emitted by `evaluate()`:
    Amendment basis: architect directive + PUBLIC counts only; sealed
    holdout still unread; matching/scorability/stability unchanged.
 
-Tests: 23 passing (17 original + 6 amendment proofs incl. the five the
+Tests: 24 passing (17 original + 6 amendment proofs plus the score-time
+inference-SHA binding proof, incl. the five the
 architect specified).
 
 ## What exists (working tree of packages/yt-is, verified 2026-08-27)

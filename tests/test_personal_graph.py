@@ -4,6 +4,7 @@ All tests use temporary SQLite databases (connect(db_path=<tmp>)); the
 production catalog is never touched. Synthetic topics only.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -140,12 +141,14 @@ def test_schema_creates_all_tables(tmp_path):
                 "SELECT name FROM sqlite_master WHERE type='table'")}
         for table in ("interests", "goals", "questions", "claims",
                       "evidence_links", "feedback", "information_needs",
-                      "regret_candidates", "inference_runs"):
+                      "regret_candidates", "inference_runs",
+                      "inference_edge_events"):
             assert table in tables, f"missing table {table}"
         indexes = {
             row[0] for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='index'")}
         assert "idx_evidence_links_edge" in indexes
+        assert "idx_inference_edge_events_run" in indexes
     finally:
         conn.close()
 
@@ -253,7 +256,11 @@ def test_store_no_unresolved_relationship_ids(db):
 
 
 def test_inference_run_provenance(db):
-    store(db)
+    store(db, provenance={
+        "plan_id": "plan_test",
+        "artifact_dir": "P:/runs/test",
+        "grounded_source_ids": ["video-1"],
+    })
     run = db.execute("SELECT * FROM inference_runs").fetchone()
     assert run["status"] == "success"
     assert run["provider"] == "codex"
@@ -262,6 +269,19 @@ def test_inference_run_provenance(db):
     assert run["candidate_policy"] == "top25-breadth-biased"
     assert run["cluster_ids_json"] == "[1, 2, 3, 4]"
     assert run["result_hash"] == "a" * 64
+    assert json.loads(run["provenance_json"]) == {
+        "artifact_dir": "P:/runs/test",
+        "grounded_source_ids": ["video-1"],
+        "plan_id": "plan_test",
+    }
+    event_count = db.execute(
+        "SELECT COUNT(*) FROM inference_edge_events "
+        "WHERE run_id=?", (run["run_id"],)).fetchone()[0]
+    assert event_count > 0
+    assert db.execute(
+        "SELECT COUNT(*) FROM inference_edge_events "
+        "WHERE run_id=? AND relation='supports'", (run["run_id"],)
+    ).fetchone()[0] > 0
     # Every semantic row carries its run.
     for table in ("interests", "goals", "information_needs", "questions",
                   "regret_candidates"):
@@ -315,10 +335,12 @@ def test_identical_rerun_does_not_duplicate(db):
     snapshot = {t: count(db, t) for t in (
         "interests", "goals", "information_needs", "questions",
         "regret_candidates", "evidence_links")}
+    event_snapshot = count(db, "inference_edge_events")
     store(db, run_id="run_20260824T000001_test")
     after = {t: count(db, t) for t in snapshot}
     assert after == snapshot  # semantic objects and edges stay flat
     assert count(db, "inference_runs") == 2  # runs are events
+    assert count(db, "inference_edge_events") == event_snapshot * 2
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +355,8 @@ def test_failure_mid_persistence_rolls_back_everything(db, monkeypatch):
     with pytest.raises(RuntimeError, match="injected failure"):
         store(db)
     for table in ("interests", "goals", "information_needs", "questions",
-                  "regret_candidates", "evidence_links", "inference_runs"):
+                  "regret_candidates", "evidence_links", "inference_runs",
+                  "inference_edge_events"):
         assert count(db, table) == 0, f"{table} not rolled back"
 
 

@@ -4,7 +4,8 @@ Subcommands:
   support          deterministic evidence-cluster needle probe (no labels
                    content printed; per-label supporting cluster ids only)
   score            run the frozen evaluator; verifies the sealed holdout
-                   sha256 and the FROZEN_MANIFEST before touching it
+                   sha256, the FROZEN_MANIFEST, and the architect-bound
+                   inference implementation SHA before touching it
   stability        emit preregistered perturbation manifests + variant
                    inventories for post-freeze Arm-B re-runs
   freeze-receipt   recompute artifact hashes into FREEZE_RECEIPT.json
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -30,6 +32,7 @@ from ef import eval_interest_semantic as isem  # noqa: E402
 DEFAULT_MANIFEST = REPO / ("docs/handoffs/interest-intelligence/"
                            "interest-semantic-evaluator-v1/"
                            "FREEZE_RECEIPT.json")
+_IMPLEMENTATION_SHA = re.compile(r"^[0-9a-fA-F]{7,64}$")
 
 
 def cmd_support(args) -> int:
@@ -99,6 +102,7 @@ def make_judge(name, cache):
 def cmd_score(args) -> int:
     manifest_path = Path(args.manifest or DEFAULT_MANIFEST)
     verify_manifest(manifest_path)
+    verify_inference_binding(manifest_path, args.inference_sha)
 
     gt = isem.load_ground_truth(args.gt)
     isem.verify_sealed(gt)
@@ -200,6 +204,34 @@ def verify_manifest(manifest_path: Path) -> None:
         for p in problems:
             print("  -", p, file=sys.stderr)
         raise SystemExit(3)
+
+
+def verify_inference_binding(manifest_path: Path, inference_sha: str) -> None:
+    """Require score-time binding to the architect-selected implementation."""
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        print(f"FATAL: could not read evaluator manifest: {exc}",
+              file=sys.stderr)
+        raise SystemExit(3) from exc
+    expected = manifest.get("candidate_inference_implementation")
+    if (not isinstance(expected, str)
+            or not _IMPLEMENTATION_SHA.fullmatch(expected)):
+        print(
+            "FATAL: inference implementation is not frozen in the evaluator "
+            "manifest; refusing to open the holdout",
+            file=sys.stderr,
+        )
+        raise SystemExit(4)
+    if (not isinstance(inference_sha, str)
+            or not _IMPLEMENTATION_SHA.fullmatch(inference_sha)
+            or inference_sha.lower() != expected.lower()):
+        print(
+            "FATAL: --inference-sha does not match the frozen evaluator "
+            "manifest binding",
+            file=sys.stderr,
+        )
+        raise SystemExit(4)
 
 
 def cmd_stability(args) -> int:
@@ -307,6 +339,8 @@ def main(argv=None) -> int:
                         "marks the Interest PASS criterion complete")
     s.add_argument("--out", required=True)
     s.add_argument("--manifest", default=None)
+    s.add_argument("--inference-sha", required=True,
+                   help="architect-frozen inference implementation Git SHA")
     s.add_argument("--allow-holdout", action="store_true")
     s.set_defaults(fn=lambda a: (
         SystemExit("refusing to open holdout without --allow-holdout")

@@ -411,8 +411,11 @@ def test_cli_freeze_receipt_and_manifest_guard(tmp_path):
     victim.write_text("x = 1\n", encoding="utf-8")
     digest = isem.sha256_file(victim)
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({"frozen_artifacts": [
-        {"path": str(victim), "sha256": digest}]}),
+    implementation_sha = "a" * 40
+    manifest.write_text(json.dumps({
+        "candidate_inference_implementation": implementation_sha,
+        "frozen_artifacts": [
+            {"path": str(victim), "sha256": digest}]}),
         encoding="utf-8")
 
     def guarded_run():
@@ -421,7 +424,8 @@ def test_cli_freeze_receipt_and_manifest_guard(tmp_path):
              str(REPO / "scripts/eval_interest_holdout.py"),
              "score", "--gt", "X", "--result", "X", "--out",
              str(tmp_path / "r.json"), "--allow-holdout",
-             "--manifest", str(manifest)],
+             "--manifest", str(manifest), "--inference-sha",
+             implementation_sha],
             capture_output=True, text=True, cwd=str(REPO))
 
     r_ok = guarded_run()   # hashes match: proceeds into score inputs
@@ -441,9 +445,38 @@ def test_score_refuses_without_explicit_holdout_flag(tmp_path):
         [sys.executable,
          str(REPO / "scripts/eval_interest_holdout.py"),
          "score", "--gt", str(p), "--result", str(rp),
-         "--out", str(tmp_path / "o.json")],
+         "--out", str(tmp_path / "o.json"), "--inference-sha",
+         "a" * 40],
         capture_output=True, text=True, cwd=str(REPO))
     assert "refusing" in (r.stderr + r.stdout)
+
+
+def test_score_requires_matching_frozen_inference_sha(tmp_path):
+    import subprocess
+    victim = tmp_path / "artifact.py"
+    victim.write_text("x = 1\n", encoding="utf-8")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({
+        "candidate_inference_implementation": "b" * 40,
+        "frozen_artifacts": [{
+            "path": str(victim),
+            "sha256": isem.sha256_file(victim),
+        }],
+    }), encoding="utf-8")
+    common = [sys.executable, str(REPO / "scripts/eval_interest_holdout.py"),
+              "score", "--gt", "missing", "--result", "missing",
+              "--out", str(tmp_path / "out.json"), "--manifest",
+              str(manifest), "--allow-holdout"]
+
+    missing = subprocess.run(common, capture_output=True, text=True,
+                             cwd=str(REPO))
+    assert missing.returncode != 0
+    assert "--inference-sha" in (missing.stderr + missing.stdout)
+
+    wrong = subprocess.run(common + ["--inference-sha", "c" * 40],
+                           capture_output=True, text=True, cwd=str(REPO))
+    assert wrong.returncode == 4
+    assert "does not match" in wrong.stderr
 
 
 def test_result_view_wrapper_form_bindings():
