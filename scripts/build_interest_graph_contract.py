@@ -362,9 +362,11 @@ def extract_agent_message(stdout: str) -> str | None:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(event, dict):
+            continue
         if event.get("type") == "item.completed":
             item = event.get("item", {})
-            if item.get("type") == "agent_message":
+            if isinstance(item, dict) and item.get("type") == "agent_message":
                 agent_text = item.get("text") or agent_text
     return agent_text
 

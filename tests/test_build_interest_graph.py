@@ -339,6 +339,12 @@ def test_provider_subprocess_uses_utf8_and_handles_empty_stdout(
     assert seen["errors"] == "replace"
 
 
+def test_extract_agent_message_ignores_non_object_jsonl_events():
+    assert big.extract_agent_message('"plain scalar event"') is None
+    assert big.extract_agent_message(
+        '{"type":"item.completed","item":"not an object"}') is None
+
+
 def test_run_inference_contract_violation_writes_no_artifact(
         monkeypatch, tmp_path, no_path_lookup):
     payload = mut("inferred_interests.0.cluster_ids", [999])
