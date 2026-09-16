@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -140,6 +141,21 @@ def main(argv=None):
     while True:
         out = assign_pass(conn)
         print(f"[assign] {out}", flush=True)
+        if out.get("error"):
+            # Starvation made visible (2026-09-16 task audit): centroids
+            # only ever came from a manual `python -m ef.clustering` full
+            # recluster; an empty topic_clusters table means no new topic
+            # can ever form while this task reports green. Fail the run
+            # so the scheduled-task history shows the degradation.
+            print(json.dumps({
+                "status": "degraded",
+                "error": out["error"],
+                "remediation": "run `python -m ef.clustering` (full "
+                               "recluster) or schedule it; see task "
+                               "audit 2026-09-16",
+            }), flush=True)
+            conn.close()
+            return 1
         if not args.catchup or out["assigned"] == 0:
             break
     conn.close()

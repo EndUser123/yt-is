@@ -27,19 +27,19 @@ from pathlib import Path
 
 SRC_DIR = Path("P:/.data/yt-is/backups")
 WIKI_SRC = Path("P:/.data/wiki/concepts")
-BACKUP_ROOT = Path(os.environ.get(
-    "YTIS_COLD_BACKUP_DIR", "G:/backups"))
+BACKUP_ROOT = Path(os.environ.get("YTIS_COLD_BACKUP_DIR", "G:/backups"))
 DB_DEST = BACKUP_ROOT / "ytis" / "db"
 WIKI_DEST = BACKUP_ROOT / "wiki" / "concepts"
 
 PATTERNS = ["batch-status-*.sqlite", "transcripts-*.sqlite"]
-COPY_NEWEST = 3   # per pattern, per run
-KEEP_DEST = 7     # per pattern, at destination
+COPY_NEWEST = 3  # per pattern, per run
+KEEP_DEST = 7  # per pattern, at destination
 
 
 def _newest(pattern: str, n: int) -> list[Path]:
-    return sorted(SRC_DIR.glob(pattern),
-                  key=lambda p: p.stat().st_mtime, reverse=True)[:n]
+    return sorted(SRC_DIR.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)[
+        :n
+    ]
 
 
 def copy_db_snapshots(dry_run: bool) -> tuple[int, int]:
@@ -51,13 +51,15 @@ def copy_db_snapshots(dry_run: bool) -> tuple[int, int]:
             if dest.exists():
                 continue
             if dry_run:
-                print(json.dumps({"action": "copy", "src": str(src),
-                                  "dest": str(dest)}))
+                print(
+                    json.dumps({"action": "copy", "src": str(src), "dest": str(dest)})
+                )
                 continue
             shutil.copy2(src, dest)
             copied += 1
-        versions = sorted(DB_DEST.glob(pattern),
-                          key=lambda p: p.stat().st_mtime, reverse=True)
+        versions = sorted(
+            DB_DEST.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         for old in versions[KEEP_DEST:]:
             if dry_run:
                 print(json.dumps({"action": "prune", "path": str(old)}))
@@ -71,16 +73,15 @@ def mirror_wiki(dry_run: bool) -> tuple[int, int]:
     """Latest-copy mirror: new/changed files in, gone files out."""
     copied = deleted = 0
     WIKI_DEST.mkdir(parents=True, exist_ok=True)
-    src_files = {p.relative_to(WIKI_SRC): p
-                 for p in WIKI_SRC.rglob("*") if p.is_file()}
-    dest_files = {p.relative_to(WIKI_DEST): p
-                  for p in WIKI_DEST.rglob("*") if p.is_file()}
+    src_files = {p.relative_to(WIKI_SRC): p for p in WIKI_SRC.rglob("*") if p.is_file()}
+    dest_files = {
+        p.relative_to(WIKI_DEST): p for p in WIKI_DEST.rglob("*") if p.is_file()
+    }
     for rel, src in src_files.items():
         dest = WIKI_DEST / rel
         if rel in dest_files and dest.exists():
             s, d = src.stat(), dest.stat()
-            if s.st_size == d.st_size and \
-                    int(s.st_mtime) == int(d.st_mtime):
+            if s.st_size == d.st_size and int(s.st_mtime) == int(d.st_mtime):
                 continue
         if dry_run:
             print(json.dumps({"action": "wiki-copy", "path": str(rel)}))
@@ -91,8 +92,7 @@ def mirror_wiki(dry_run: bool) -> tuple[int, int]:
     for rel, dest in dest_files.items():
         if rel not in src_files:
             if dry_run:
-                print(json.dumps({"action": "wiki-delete",
-                                  "path": str(rel)}))
+                print(json.dumps({"action": "wiki-delete", "path": str(rel)}))
                 continue
             dest.unlink()
             deleted += 1
@@ -107,16 +107,18 @@ def backup_capture_state(dry_run: bool) -> int:
     The archive is backed up by scripts/dht-capture/backup_live.py AFTER
     the nightly chain's graceful app close (WAL checkpointed, verified)."""
     copied = 0
-    for name in ("dht-capture-selection.json",
-                 "dht-capture-catalog.json"):
+    for name in ("dht-capture-selection.json", "dht-capture-catalog.json"):
         src = Path("P:/.data/yt-is") / name
         if not src.exists():
             continue
         dest_dir = BACKUP_ROOT / "ytis" / "dht-live"
         dest_dir.mkdir(parents=True, exist_ok=True)
         if dry_run:
-            print(json.dumps({"action": "copy", "src": str(src),
-                              "dest": str(dest_dir / name)}))
+            print(
+                json.dumps(
+                    {"action": "copy", "src": str(src), "dest": str(dest_dir / name)}
+                )
+            )
             continue
         shutil.copy2(src, dest_dir / name)
         copied += 1
@@ -126,26 +128,47 @@ def backup_capture_state(dry_run: bool) -> int:
 def main(argv=None) -> int:
     started = time.time()
     parser = argparse.ArgumentParser(
-        description="Cold-tier backup of yt-is state + wiki vault to G:")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="print planned actions, write nothing")
+        description="Cold-tier backup of yt-is state + wiki vault to G:"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print planned actions, write nothing"
+    )
     args = parser.parse_args(argv)
 
     if not Path(BACKUP_ROOT.anchor).exists():
-        print(json.dumps({"status": "failed",
-                          "reason": f"backup drive not mounted: {BACKUP_ROOT}"}))
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "reason": f"backup drive not mounted: {BACKUP_ROOT}",
+                }
+            )
+        )
         return 1
 
     db_copied, pruned = copy_db_snapshots(args.dry_run)
     wiki_copied, wiki_deleted = mirror_wiki(args.dry_run)
     capture_copied = backup_capture_state(args.dry_run)
-    print(json.dumps({
-        "status": "ok",
-        "db_copied": db_copied, "pruned": pruned,
-        "wiki_copied": wiki_copied, "wiki_deleted": wiki_deleted,
-        "capture_copied": capture_copied,
-        "seconds": round(time.time() - started, 1)}))
-    return 0
+    # Silent-desync guard (2026-09-16 task audit): this 03:35 consumer
+    # used to exit 0 with db_copied=0 when the 03:30 producer failed —
+    # the only off-site tier could go stale behind a green signal. Zero
+    # copies is abnormal at the daily cadence; fail visibly so the
+    # scheduled-task history shows the degradation.
+    status = "ok" if db_copied > 0 else "degraded-no-new-snapshots"
+    print(
+        json.dumps(
+            {
+                "status": status,
+                "db_copied": db_copied,
+                "pruned": pruned,
+                "wiki_copied": wiki_copied,
+                "wiki_deleted": wiki_deleted,
+                "capture_copied": capture_copied,
+                "seconds": round(time.time() - started, 1),
+            }
+        )
+    )
+    return 0 if db_copied > 0 else 1
 
 
 if __name__ == "__main__":

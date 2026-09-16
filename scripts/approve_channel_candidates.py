@@ -117,6 +117,18 @@ def main() -> int:
         args.dry_run = True
 
     data = json.loads(CANDIDATES_PATH.read_text(encoding="utf-8"))
+    # Starvation made visible (2026-09-16 task audit): this file is
+    # written only by a manual `scripts/channel_candidates.py` run or a
+    # warm-service page hit — a stale file means channel discovery is
+    # frozen even though this apply keeps reporting green. Warn loudly;
+    # consuming old approved entries remains valid work.
+    import time as _t
+    _age_days = (_t.time() - CANDIDATES_PATH.stat().st_mtime) / 86400
+    if _age_days > 7:
+        print(f"WARNING: channel-candidates.json is {_age_days:.1f} days "
+              f"old — the producer has not run; refresh via "
+              f"`python scripts/channel_candidates.py` (see task audit "
+              f"2026-09-16)")
     approved = [c for c in data["candidates"] if c.get("status") == "approved"]
     print(f"approved candidates: {len(approved)} (approved_by: "
           f"{data.get('approved_by')})")

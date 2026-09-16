@@ -768,7 +768,16 @@ def main(argv: list[str] | None = None) -> int:
         # so the per-job eviction pass never sees them. Drain a bounded
         # batch through the feeder lifecycle every normal run (lazy
         # import: the feeder imports this module's deletion helpers).
-        from scripts.deferred_audio_feeder import run_drain_phase
+        # Cold-invocation contract (2026-09-16 starvation class): rebuild
+        # the work list here — do not assume the scheduled task's 5-minute
+        # refresh ran; the worker must survive the task being disabled.
+        from scripts.deferred_audio_feeder import (
+            MANIFEST_PATH,
+            build_inventory,
+            run_drain_phase,
+            write_manifest,
+        )
+        write_manifest(build_inventory(), MANIFEST_PATH)
         summary["drain"] = run_drain_phase(
             args.drain_backlog_n,
             max_runtime_s=args.drain_max_runtime_s,
