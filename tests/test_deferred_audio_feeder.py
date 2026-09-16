@@ -414,3 +414,80 @@ def test_drain_frozen_manifest_leaves_existing_manifest_untouched(feeder_env):
         "--checkpoint", str(feeder_env.media_root / "frozen_cp.json"),
     ).returncode == 0
     assert manifest.read_bytes() == before, "frozen drain must not rewrite"
+
+
+def test_process_refreshes_manifest_without_inventory(feeder_env):
+    manifest = feeder_env.media_root / "proc_m.json"
+    rc = _run_cli("process", "--limit", "1", "--manifest", str(manifest))
+    assert rc.returncode == 0, rc.stderr
+    assert manifest.exists(), "process must refresh the manifest itself"
+
+
+def test_process_frozen_manifest_requires_existing(feeder_env):
+    rc = _run_cli(
+        "process", "--frozen-manifest", "--limit", "1",
+        "--manifest", str(feeder_env.media_root / "missing.json"),
+    )
+    assert rc.returncode == 2, "frozen process must fail visibly, not crash"
+    assert not (feeder_env.media_root / "missing.json").exists()
+
+
+def test_evict_refreshes_manifest_without_inventory(feeder_env):
+    manifest = feeder_env.media_root / "evict_m.json"
+    rc = _run_cli(
+        "evict", "--dry-run", "--manifest", str(manifest),
+        "--out", str(feeder_env.media_root / "evict_dry.json"),
+    )
+    assert rc.returncode == 0, rc.stderr
+    assert manifest.exists(), "evict must refresh the manifest itself"
+
+
+def test_evict_frozen_manifest_requires_existing(feeder_env):
+    rc = _run_cli(
+        "evict", "--frozen-manifest", "--manifest",
+        str(feeder_env.media_root / "missing.json"),
+    )
+    assert rc.returncode == 2, "frozen evict must fail visibly, not crash"
+
+
+def test_write_manifest_never_exposes_partial_file(tmp_path):
+    import json
+    import threading
+
+    from scripts.deferred_audio_feeder import write_manifest
+
+    path = tmp_path / "m.json"
+    write_manifest({"seed": True}, path)
+    stop = threading.Event()
+    errors: list[str] = []
+
+    def writer(n: int) -> None:
+        for i in range(40):
+            try:
+                write_manifest({"w": n, "i": i}, path)
+            except Exception as exc:
+                errors.append(f"writer{n}: {exc}")
+
+    def reader() -> None:
+        import time as _t
+
+        while not stop.is_set():
+            try:
+                json.loads(path.read_text(encoding="utf-8"))
+            except PermissionError:
+                # Transient Windows lock during atomic replace: retry,
+                # the same contract _read_manifest implements.
+                _t.sleep(0.01)
+            except Exception as exc:
+                errors.append(str(exc))
+
+    rt = threading.Thread(target=reader)
+    rt.start()
+    threads = [threading.Thread(target=writer, args=(n,)) for n in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    stop.set()
+    rt.join()
+    assert not errors, f"torn manifest observed: {errors[:3]}"

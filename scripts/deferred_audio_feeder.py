@@ -17,6 +17,7 @@ appends a ledger row via the phase-1 helpers. Never a raw unlink.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import shutil
@@ -347,12 +348,30 @@ def build_inventory() -> dict:
     return manifest
 
 
+_WRITE_SEQ = itertools.count()
+
+
 def write_manifest(manifest: dict, path: Path = MANIFEST_PATH) -> Path:
+    # Atomic (tmp + replace): the scheduled drain rewrites its manifest
+    # every pass, so a concurrent reader must never observe a torn file.
+    # tmp name is unique per write call (pid + atomic sequence) so any
+    # number of concurrent writers never collide. On Windows, replace
+    # onto a file a reader has open raises PermissionError; retry with
+    # backoff — readers hold handles for microseconds.
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(manifest, indent=1), encoding="utf-8"
-    )
-    return path
+    payload = json.dumps(manifest, indent=1)
+    for attempt in range(6):
+        tmp = path.with_name(
+            f"{path.name}.tmp{os.getpid()}-{next(_WRITE_SEQ)}"
+        )
+        tmp.write_text(payload, encoding="utf-8")
+        try:
+            tmp.replace(path)
+            return path
+        except PermissionError:
+            tmp.unlink(missing_ok=True)
+            time.sleep(0.02 * (attempt + 1))
+    raise PermissionError(f"manifest replace still locked after retries: {path}")
 
 
 def verify_sample(manifest: dict, n: int = 20) -> list[str]:
@@ -613,8 +632,23 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_manifest(path: Path) -> dict:
+    """Read a manifest JSON, retrying transient Windows lock denials.
+
+    During an atomic replace a new open of the destination can briefly
+    fail with PermissionError; that is lock contention, not corruption.
+    A torn/partial file is impossible by construction (write_manifest).
+    """
+    for attempt in range(6):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError:
+            time.sleep(0.02 * (attempt + 1))
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _load_backlog(manifest_path: Path) -> list[dict]:
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = _read_manifest(manifest_path)
     return [i for i in manifest["items"] if i["bucket"] == "backlog"]
 
 
@@ -627,8 +661,15 @@ def cmd_process(args: argparse.Namespace) -> int:
         print(f"STOP: {cache_verdict['error']}")
         return 4
     manifest_path = Path(args.manifest) if args.manifest else MANIFEST_PATH
-    if not manifest_path.exists():
-        print(f"no manifest at {manifest_path}; run inventory first")
+    if not args.frozen_manifest:
+        # Cold-invocation contract (2026-09-12..15 starvation class —
+        # see cmd_drain): rebuild from live state, no inventory step.
+        write_manifest(build_inventory(), manifest_path)
+    elif not manifest_path.exists():
+        print(
+            f"no manifest at {manifest_path}; "
+            "run inventory first or drop --frozen-manifest"
+        )
         return 2
     backlog = _load_backlog(manifest_path)
     checkpoint = _checkpoint_load()
@@ -675,8 +716,15 @@ def _cache_has(video_id: str) -> bool:
 
 def cmd_evict(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest) if args.manifest else MANIFEST_PATH
-    if not manifest_path.exists():
-        print(f"no manifest at {manifest_path}; run inventory first")
+    if not args.frozen_manifest:
+        # Cold-invocation contract (2026-09-12..15 starvation class —
+        # see cmd_drain): rebuild from live state, no inventory step.
+        write_manifest(build_inventory(), manifest_path)
+    elif not manifest_path.exists():
+        print(
+            f"no manifest at {manifest_path}; "
+            "run inventory first or drop --frozen-manifest"
+        )
         return 2
     backlog = _load_backlog(manifest_path)
     evictable_items = _cached_backlog_items(backlog)
@@ -763,7 +811,7 @@ def run_drain_phase(limit: int, manifest_path: Path | None = None,
     summary["reconciled"] = outcome["report"]
     checkpoint = outcome["kept"]
 
-    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    manifest = _read_manifest(manifest_file)
     pending = [
         i for i in manifest["items"] if i["bucket"] == "backlog"
         and checkpoint.get(i["video_id"], {}).get("state")
@@ -789,6 +837,7 @@ def run_drain_phase(limit: int, manifest_path: Path | None = None,
     evict_ns = argparse.Namespace(
         dry_run=False, apply=True, manifest=str(manifest_file),
         out=str(CHECKPOINT_PATH.parent / "dryrun.json"),
+        frozen_manifest=True,  # phase refreshed at entry; keep one rebuild
     )
     # Dry-run first for the manifest record, then apply.
     evict_ns.dry_run, evict_ns.apply = True, False
@@ -847,12 +896,20 @@ def main(argv: list[str] | None = None) -> int:
     p_proc = sub.add_parser("process", help="CPU-transcribe backlog items")
     p_proc.add_argument("--limit", type=int, default=5)
     p_proc.add_argument("--manifest", default=None)
+    p_proc.add_argument(
+        "--frozen-manifest", action="store_true",
+        help="use the manifest as-is (caller manages freshness)",
+    )
     p_proc.set_defaults(func=cmd_process)
 
     p_evict = sub.add_parser("evict", help="dry-run or apply ledgered eviction")
     p_evict.add_argument("--dry-run", action="store_true")
     p_evict.add_argument("--apply", action="store_true")
     p_evict.add_argument("--manifest", default=None)
+    p_evict.add_argument(
+        "--frozen-manifest", action="store_true",
+        help="use the manifest as-is (caller manages freshness)",
+    )
     p_evict.add_argument("--out", default=None)
     p_evict.set_defaults(func=cmd_evict)
 

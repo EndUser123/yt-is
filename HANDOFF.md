@@ -131,6 +131,18 @@ gates (discovery/inference/recommendation) unchanged; see
   every 5 min. Tests: tests/test_deferred_audio_feeder.py 18 passed
   (3 new refresh-contract tests). Task re-registered; first refreshed pass
   live 07:17:36 (PID 176332).
+- [seen] Cold-invocation contract extended + crash-safety 2026-09-16: ALL
+  work-deriving subcommands (`drain`, `process`, `evict`) now rebuild the
+  manifest from live state when invoked — no manual `inventory` step ever
+  required; `--frozen-manifest` opts out everywhere and fails rc=2 on a
+  missing file instead of crashing. The embedded pass-phase evicts stay
+  frozen (one rebuild per drain pass). Manifest writes are atomic
+  (unique-per-call tmp + replace, PermissionError retry for Windows
+  lock contention) and readers retry transient open denials — the
+  concurrency test drove out two real Windows defects (same-name tmp
+  collision across same-process writers; reader open denied during
+  replace). Receipt: 23 tests passed; a cold `evict --dry-run` surfaced
+  579 files / 1.29 GB evictable that the frozen manifest had hidden.
 - [open] Operator-held: whole-file six-section conversion and archive
   prune for this file (parked 2026-08-24, open item 5) — still awaiting
   the separate operator decision; the 2026-09-12 rationalization pass
