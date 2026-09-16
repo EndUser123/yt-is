@@ -35,9 +35,9 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from csf.batch_status import upsert_channel
-from csf.categorize import CATEGORIES, OTHER_CATEGORY
-from csf.paths import get_batch_db_path
+from csf.batch_status import upsert_channel  # noqa: E402 — post-bootstrap
+from csf.categorize import OTHER_CATEGORY  # noqa: E402 — post-bootstrap
+from csf.paths import get_batch_db_path  # noqa: E402 — post-bootstrap
 
 CANDIDATES_PATH = Path("P:/.data/yt-is/ef/channel-candidates.json")
 RECEIPT_DIR = REPO / ".logs" / "channel_candidates_apply"

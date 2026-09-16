@@ -32,7 +32,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-import numpy as np
+import numpy as np  # noqa: E402 — post-bootstrap (REPO path insert above)
 
 CATALOG = Path("P:/.data/yt-is/ef/catalog.sqlite")
 BATCH = 2000
@@ -48,7 +48,6 @@ def _connect():
 def assign_pass(conn) -> dict:
     import hashlib
 
-    from qdrant_client import models
 
     from ef import server
     from ef import projection_server as ps
