@@ -322,6 +322,23 @@ def test_run_inference_validates_and_writes_artifact(
     assert seen["creationflags"], "no-window creationflags required"
 
 
+def test_provider_subprocess_uses_utf8_and_handles_empty_stdout(
+        monkeypatch, tmp_path, no_path_lookup):
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen.update(kwargs)
+        return FakeCompleted(0, _jsonl_of(valid_payload()))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    payload, _model = big._invoke_and_extract(
+        "codex", "prompt", tmp_path / "prompt.txt")
+
+    assert payload == valid_payload()
+    assert seen["encoding"] == "utf-8"
+    assert seen["errors"] == "replace"
+
+
 def test_run_inference_contract_violation_writes_no_artifact(
         monkeypatch, tmp_path, no_path_lookup):
     payload = mut("inferred_interests.0.cluster_ids", [999])

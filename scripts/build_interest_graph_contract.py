@@ -816,15 +816,20 @@ def _invoke_and_extract(provider: str, prompt: str, prompt_file: Path,
     cmd, requested_model = provider_command(provider, prompt_file, prompt)
 
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                       cwd="P:/", creationflags=creationflags)
+    # Codex emits UTF-8 JSONL.  Do not let the Windows locale decode it as
+    # CP1252: a non-ASCII model response otherwise raises in subprocess's
+    # reader thread and can leave stdout as None before this function sees it.
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace",
+                       timeout=timeout, cwd="P:/",
+                       creationflags=creationflags)
     if r.returncode != 0:
         diag = (r.stderr or r.stdout or "").strip()
         raise ProviderExecutionError(
             f"provider {provider} exited {r.returncode}: "
             f"{diag[-STDERR_DIAGNOSTIC_LIMIT:]}")
 
-    raw = r.stdout.strip()
+    raw = (r.stdout or "").strip()
     agent_text = extract_agent_message(raw)
     if agent_text:
         raw = agent_text
