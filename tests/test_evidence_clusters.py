@@ -285,6 +285,7 @@ def test_connections_are_closed_not_just_committed(catalog_path, tmp_path,
     import gc
     opened = []
     real_catalog = ec._catalog
+    real_catalog_at = ec._catalog_at
 
     def spy(*a, **k):
         c = real_catalog(*a, **k)
@@ -292,6 +293,13 @@ def test_connections_are_closed_not_just_committed(catalog_path, tmp_path,
         return c
 
     monkeypatch.setattr(ec, "_catalog", spy)
+
+    def spy_at(*a, **k):
+        c = real_catalog_at(*a, **k)
+        opened.append(c)
+        return c
+
+    monkeypatch.setattr(ec, "_catalog_at", spy_at)
     batch = tmp_path / "batch.sqlite"
     b = sqlite3.connect(batch)
     b.executescript("""

@@ -228,7 +228,7 @@ def coverage_chain() -> dict:
         complete = b.execute(
             "SELECT COUNT(*) FROM analysis_status WHERE status='complete'"
         ).fetchone()[0]
-    with _catalog() as c:
+    with closing(_catalog()) as c:
         indexed = c.execute("SELECT COUNT(*) FROM eu").fetchone()[0]
         clusters = c.execute(
             "SELECT COUNT(*) FROM topic_clusters WHERE is_series=0"

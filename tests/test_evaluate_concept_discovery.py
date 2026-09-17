@@ -41,6 +41,14 @@ def build_catalog(path, *, with_target=True, burst="2026-08"):
         CREATE TABLE eu (eu_id TEXT PRIMARY KEY, video_id TEXT,
             channel_id TEXT, channel_title TEXT, title TEXT, source TEXT,
             captured_at TEXT, published_at TEXT);
+        CREATE TABLE eu_time_recovery (
+            eu_id TEXT PRIMARY KEY, valid_start TEXT NOT NULL,
+            valid_end TEXT NOT NULL, method TEXT NOT NULL,
+            approx INTEGER NOT NULL DEFAULT 0,
+            previous_published_at TEXT NOT NULL DEFAULT '',
+            source_field TEXT NOT NULL, basis TEXT NOT NULL DEFAULT '',
+            migration_version INTEGER NOT NULL DEFAULT 1,
+            migrated_at TEXT NOT NULL DEFAULT '');
         CREATE TABLE chunk_clusters (chunk_id TEXT, point_id INTEGER,
             video_id TEXT, cluster_id INTEGER, assigned_at TEXT);
         CREATE TABLE topic_clusters (cluster_id INTEGER PRIMARY KEY,
