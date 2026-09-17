@@ -1,7 +1,8 @@
 > State detail is a working handoff; verify against [PROJECT_STATE.md](PROJECT_STATE.md) (master entry) before relying on it.
 
 # yt-is Personal Intelligence — Inference State
-Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-hardening pass
+Updated: 2026-09-16 by the distill-source/IL reconciliation, evaluator-hardening,
+offline-verification, and test-isolation pass
 
 ## Goal & constraints
 
@@ -87,13 +88,11 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-harden
 - [verified-offline] The current candidate's scope-matched semantic-evaluator,
   interest-graph, EF freshness/status, concept-discovery, transcript-cache,
   deferred-audio, discovery-evaluator, and evidence-cluster suites pass
-  250 tests in total; bytecode compilation and diff checks also pass. The
-  latest full-repository run reached 2,809 passes, 8 skips, and 12 failures
-  before the last fixture and connection-closure repairs. Those repairs now
-  pass in focused suites; a fresh full-repository completion run remains
-  outstanding, with the known remaining failures limited to host-state
-  conditions (`P:\.tmp` is a broken junction and the health watcher sees
-  real machine alerts).
+  250 tests in total; the dedicated grounded-source/IL scope passes 141
+  tests. A fresh full-repository run passes 2,821 tests, with 8 expected
+  live/retained-artifact skips and 12 dependency warnings. The run also
+  exercises the DA-03 media fixture and the health watcher after the test
+  isolation and scoped-check repairs.
 - [verified-offline] The structural readiness check reports `READY` and the
   canonical `/distill-source` marker check reports `READY`, but the semantic
   evaluator freeze is currently `INVALID` because its receipt still binds
@@ -142,9 +141,9 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-harden
 ## Next action
 
 The reconciled driver, provenance boundary, resume path, pre-parse sealed
-holdout guard, ingestion concurrency repairs, and evidence-cluster closure
-fix are committed on the isolated candidate branch at
-`09fb694f` and pushed to
+holdout guard, ingestion concurrency repairs, evidence-cluster closure fix,
+and offline test repairs are committed on the isolated candidate branch at
+`0521971a` and pushed to
 `codex/yt-is-il-frozen-candidate`. Do not recreate the retired v6 plane.
 
 First perform the independent freeze review and deliberately regenerate the
