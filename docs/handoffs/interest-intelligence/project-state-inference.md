@@ -86,11 +86,14 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-harden
   applies that validation before explicit mode overrides.
 - [verified-offline] The current candidate's scope-matched semantic-evaluator,
   interest-graph, EF freshness/status, concept-discovery, transcript-cache,
-  and deferred-audio suites pass 184 tests in total; bytecode compilation and
-  diff checks also pass. A prior repository-wide sweep reached 889 passing
-  tests before an intermittent Windows manifest-replace lock; the exact
-  deferred-audio suite now passes after the bounded retry and writer-lock
-  repair, but a fresh full-repository completion run remains outstanding.
+  deferred-audio, discovery-evaluator, and evidence-cluster suites pass
+  250 tests in total; bytecode compilation and diff checks also pass. The
+  latest full-repository run reached 2,809 passes, 8 skips, and 12 failures
+  before the last fixture and connection-closure repairs. Those repairs now
+  pass in focused suites; a fresh full-repository completion run remains
+  outstanding, with the known remaining failures limited to host-state
+  conditions (`P:\.tmp` is a broken junction and the health watcher sees
+  real machine alerts).
 - [verified-offline] The structural readiness check reports `READY` and the
   canonical `/distill-source` marker check reports `READY`, but the semantic
   evaluator freeze is currently `INVALID` because its receipt still binds
@@ -139,9 +142,9 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-harden
 ## Next action
 
 The reconciled driver, provenance boundary, resume path, pre-parse sealed
-holdout guard, and ingestion concurrency repairs are committed on the
-isolated candidate branch at
-`a74ac01a55cc5f5d66799d90158db56a20936f0a` and pushed to
+holdout guard, ingestion concurrency repairs, and evidence-cluster closure
+fix are committed on the isolated candidate branch at
+`09fb694f` and pushed to
 `codex/yt-is-il-frozen-candidate`. Do not recreate the retired v6 plane.
 
 First perform the independent freeze review and deliberately regenerate the
