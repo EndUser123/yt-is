@@ -45,14 +45,13 @@ if not FFMPEG:
     pytest.skip("ffmpeg not on PATH; install Gyan ffmpeg to run this test",
                 allow_module_level=True)
 
-TEST_VIDEO = Path(r"P:\.tmp\test_dht_video.mp4")
 ARTIFACT_DIR = Path(r"P:\.data\dht-artifacts\perfect_strategy\ch_000000")
 ARTIFACT_NAME = f"0_test_video.md"
 
 
-def _generate_test_video() -> Path:
+def _generate_test_video(output_path: Path) -> Path:
     """5-second 5fps synthetic video with embedded text labels."""
-    TEST_VIDEO.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     # Use drawtext to put both an SPX-style price and a date on the video
     cmd = [
         FFMPEG, "-y", "-f", "lavfi",
@@ -61,14 +60,14 @@ def _generate_test_video() -> Path:
                 "drawtext=text='18-Nov-22':fontsize=18:fontcolor=white:x=20:y=60,"
                 "drawtext=text='IRON CONDOR':fontsize=18:fontcolor=yellow:x=20:y=100"),
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        str(TEST_VIDEO),
+        str(output_path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, f"ffmpeg failed: {proc.stderr[-500:]}"
-    return TEST_VIDEO
+    return output_path
 
 
-def test_da03_end_to_end():
+def test_da03_end_to_end(tmp_path):
     """Run the DA-03 video pipeline on a synthetic video, assert the
     artifact .md exists, OCR captured the embedded text, and the
     video file is deleted (handoff DA-03 falsifier)."""
@@ -78,7 +77,7 @@ def test_da03_end_to_end():
     from ef import authority
 
     # 1) Generate a test video
-    video_path = _generate_test_video()
+    video_path = _generate_test_video(tmp_path / "test_dht_video.mp4")
     assert video_path.exists()
     initial_size = video_path.stat().st_size
     assert initial_size > 0
@@ -91,7 +90,7 @@ def test_da03_end_to_end():
         ocr_verbatim, _vision_via_openrouter,
     )
 
-    out_dir = Path(r"P:\.tmp\test_da03_frames")
+    out_dir = tmp_path / "test_da03_frames"
     out_dir.mkdir(parents=True, exist_ok=True)
     sample = frame_sampler.extract_pass1(video_path, out_dir)
     assert len(sample.frames) > 0, "frame_sampler extracted no frames"
@@ -125,16 +124,16 @@ def test_da03_end_to_end():
     assert FFMPEG, "ffmpeg should have been located"
 
 
-def test_da03_frame_sampler_smoke():
+def test_da03_frame_sampler_smoke(tmp_path):
     """Verify the frame_sampler wiring — ffmpeg present, returns frames
     + timestamps, sane duration."""
     from csf.visual import frame_sampler
-    video_path = _generate_test_video()
+    video_path = _generate_test_video(tmp_path / "test_dht_video.mp4")
     try:
         meta = frame_sampler.probe_video(video_path)
         assert meta["duration_s"] >= 4.0, f"duration too low: {meta['duration_s']}"
         assert meta["duration_s"] <= 6.0, f"duration too high: {meta['duration_s']}"
-        out_dir = Path(r"P:\.tmp\test_da03_smoke_frames")
+        out_dir = tmp_path / "test_da03_smoke_frames"
         out_dir.mkdir(parents=True, exist_ok=True)
         sample = frame_sampler.extract_pass1(video_path, out_dir, frame_cap=10)
         assert len(sample.frames) > 0

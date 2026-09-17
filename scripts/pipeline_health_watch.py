@@ -619,31 +619,33 @@ def run_once(
         elif auth_warning:
             lines.append(f"[auth-warning] {auth_warning}")
 
-    task_alert, task_warning = check_scheduled_tasks()
-    if task_alert:
-        lines.append(f"[tasks] {task_alert}")
-    elif task_warning:
-        lines.append(f"[tasks-warning] {task_warning}")
+    if include_control_plane:
+        task_alert, task_warning = check_scheduled_tasks()
+        if task_alert:
+            lines.append(f"[tasks] {task_alert}")
+        elif task_warning:
+            lines.append(f"[tasks-warning] {task_warning}")
 
-    intake_alert, _ = check_empty_intake_runs()
-    if intake_alert:
-        lines.append(f"[intake] {intake_alert}")
+        intake_alert, _ = check_empty_intake_runs()
+        if intake_alert:
+            lines.append(f"[intake] {intake_alert}")
 
-    shrink_alert = check_worktree_shrink()
-    if shrink_alert:
-        lines.append(f"[worktrees] {shrink_alert}")
+    if include_host:
+        shrink_alert = check_worktree_shrink()
+        if shrink_alert:
+            lines.append(f"[worktrees] {shrink_alert}")
 
-    volume_alert = check_backup_volume()
-    if volume_alert:
-        lines.append(f"[volume] {volume_alert}")
+        volume_alert = check_backup_volume()
+        if volume_alert:
+            lines.append(f"[volume] {volume_alert}")
 
-    integrity_alert = check_workspace_integrity()
-    if integrity_alert:
-        lines.append(f"[integrity] {integrity_alert}")
+        integrity_alert = check_workspace_integrity()
+        if integrity_alert:
+            lines.append(f"[integrity] {integrity_alert}")
 
-    surfaces_alert = check_extended_surfaces()
-    if surfaces_alert:
-        lines.append(f"[surfaces] {surfaces_alert}")
+        surfaces_alert = check_extended_surfaces()
+        if surfaces_alert:
+            lines.append(f"[surfaces] {surfaces_alert}")
 
     if lines:
         content = (
