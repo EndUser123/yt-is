@@ -102,6 +102,11 @@ offline-verification, and test-isolation pass
   evaluator freeze is currently `INVALID` because its receipt still binds
   the earlier implementation SHA and its frozen artifact hashes drift from
   the latest candidate.
+- [verified-offline] A non-authoritative replacement receipt was generated in
+  a volatile staging path and its four public artifact hashes plus proposed
+  implementation binding reproduce successfully against `aab1ea22`. The
+  canonical receipt remains untouched until an independent host-witnessed
+  review approves the rebind.
 - [unverified] The semantic recall, perturbation/stability, and recommendation
   gates have not passed. The evaluator receipt remains
   `NOT_YET_FROZEN`, and no private holdout was opened.
