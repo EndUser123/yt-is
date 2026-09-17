@@ -84,12 +84,13 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-harden
   relabeled as the current source. Explicit providers pass through the same
   request-level URL/ID validation, and the legacy `bin/csf-analyze` entrypoint
   applies that validation before explicit mode overrides.
-- [verified-offline] The current candidate's scope-matched semantic-evaluator
-  and interest-graph regression suite passes 78 tests; bytecode compilation
-  and diff checks also pass. The repository-wide suite is not green: the
-  unrelated `tests/ef/test_incremental_watermark.py::test_watermark_advances_when_boundary_tie_has_ineligible_rows`
-  test currently reports `processed == 5` instead of `4` after 70 passing
-  tests.
+- [verified-offline] The current candidate's scope-matched semantic-evaluator,
+  interest-graph, EF freshness/status, concept-discovery, transcript-cache,
+  and deferred-audio suites pass 184 tests in total; bytecode compilation and
+  diff checks also pass. A prior repository-wide sweep reached 889 passing
+  tests before an intermittent Windows manifest-replace lock; the exact
+  deferred-audio suite now passes after the bounded retry and writer-lock
+  repair, but a fresh full-repository completion run remains outstanding.
 - [verified-offline] The structural readiness check reports `READY` and the
   canonical `/distill-source` marker check reports `READY`, but the semantic
   evaluator freeze is currently `INVALID` because its receipt still binds
@@ -137,9 +138,10 @@ Updated: 2026-09-16 by the distill-source/IL reconciliation and evaluator-harden
 
 ## Next action
 
-The reconciled driver, provenance boundary, resume path, and pre-parse sealed
-holdout guard are committed on the isolated candidate branch at
-`2805ed43456a693f5e9a3cbbd38f5ee985b3231a` and pushed to
+The reconciled driver, provenance boundary, resume path, pre-parse sealed
+holdout guard, and ingestion concurrency repairs are committed on the
+isolated candidate branch at
+`a74ac01a55cc5f5d66799d90158db56a20936f0a` and pushed to
 `codex/yt-is-il-frozen-candidate`. Do not recreate the retired v6 plane.
 
 First perform the independent freeze review and deliberately regenerate the
