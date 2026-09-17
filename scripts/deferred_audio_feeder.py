@@ -24,6 +24,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -349,6 +350,7 @@ def build_inventory() -> dict:
 
 
 _WRITE_SEQ = itertools.count()
+_MANIFEST_WRITE_LOCK = threading.Lock()
 
 
 def write_manifest(manifest: dict, path: Path = MANIFEST_PATH) -> Path:
@@ -358,19 +360,23 @@ def write_manifest(manifest: dict, path: Path = MANIFEST_PATH) -> Path:
     # number of concurrent writers never collide. On Windows, replace
     # onto a file a reader has open raises PermissionError; retry with
     # backoff — readers hold handles for microseconds.
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(manifest, indent=1)
-    for attempt in range(6):
-        tmp = path.with_name(
-            f"{path.name}.tmp{os.getpid()}-{next(_WRITE_SEQ)}"
-        )
-        tmp.write_text(payload, encoding="utf-8")
-        try:
-            tmp.replace(path)
-            return path
-        except PermissionError:
-            tmp.unlink(missing_ok=True)
-            time.sleep(0.02 * (attempt + 1))
+    with _MANIFEST_WRITE_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(manifest, indent=1)
+        # Windows readers outside this module (for example antivirus or a
+        # validation process) cannot use the process-local lock, so retain a
+        # bounded but meaningful retry window for destination sharing.
+        for attempt in range(20):
+            tmp = path.with_name(
+                f"{path.name}.tmp{os.getpid()}-{next(_WRITE_SEQ)}"
+            )
+            tmp.write_text(payload, encoding="utf-8")
+            try:
+                tmp.replace(path)
+                return path
+            except PermissionError:
+                tmp.unlink(missing_ok=True)
+                time.sleep(0.02 * (attempt + 1))
     raise PermissionError(f"manifest replace still locked after retries: {path}")
 
 

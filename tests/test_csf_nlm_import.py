@@ -202,9 +202,10 @@ def test_replace_cached_transcript_if_better_upgrades(monkeypatch, tmp_path):
     )
     cache.clear_all_storages()
     try:
-        # Write short transcript
+        # Write a short but usable transcript; sub-floor content is rejected
+        # by the cache quality boundary before replacement semantics apply.
         cache.set_cached_transcript(
-            "dQw4w9WgXcQ", "en", "notebooklm", "short", bind_verified=True
+            "dQw4w9WgXcQ", "en", "notebooklm", "short transcript", bind_verified=True
         )
         assert cache.has_cached_transcript("dQw4w9WgXcQ")
         # Upgrade with longer

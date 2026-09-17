@@ -107,7 +107,12 @@ def hermetic(tmp_path, monkeypatch):
     monkeypatch.setenv("YTIS_BATCH_STATUS_DB_PATH", str(tdb))
     monkeypatch.setattr(authority, "STATUS_DB", sdb)
     monkeypatch.setattr(authority, "QUARANTINED_VIDEO_IDS", ())
-    monkeypatch.setattr(buildspec, "load_spec", lambda: {"generation": GEN})
+    monkeypatch.setattr(buildspec, "load_spec", lambda: {
+        "generation": GEN,
+        # This fixture explicitly exercises the spec-driven exclusion path;
+        # production defaults to an empty exclusion set.
+        "excluded_sources": ["reddit"],
+    })
     monkeypatch.setattr(buildspec, "spec_digest", lambda spec: "t")
     monkeypatch.setattr(buildspec, "active_generation", lambda: GEN)
     monkeypatch.setattr(embedding, "BGEM3Dual", lambda: _Enc())

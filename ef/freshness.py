@@ -214,12 +214,12 @@ def incremental_update(batch_limit: int = 2000) -> dict:
           {src_excl_sql}""".format(src_excl_sql=src_excl_sql)
 
     def _eligible_boundary_count(ts, quarantined):
-        q = ("select count(*) from transcript_cache where cached_at = ?"
-             " and length(transcript) >= 100"
-             " and (terminal_id is null or terminal_id not like 'test%')"
+        q = ("select count(*) from transcript_cache t where t.cached_at = ?"
+             " and length(t.transcript) >= 100"
+             " and (t.terminal_id is null or t.terminal_id not like 'test%')"
              + (" and t.source not in (" + ",".join("?" * len(excluded_sources)) + ")"
                 if excluded_sources else "")
-             + (" and video_id not in (%s)" % ",".join("?" * len(quarantined))
+             + (" and t.video_id not in (%s)" % ",".join("?" * len(quarantined))
                 if quarantined else ""))
         params = [ts, *sorted(excluded_sources)] if excluded_sources else [ts]
         return conn.execute(q, (*params, *quarantined)).fetchone()[0]
@@ -241,7 +241,7 @@ def incremental_update(batch_limit: int = 2000) -> dict:
             tie_sql = _SEL % "t.cached_at = ?"
             seen = {(r["video_id"], r["lang"], r["source"]) for r in rows}
             extra = [dict(r) for r in conn.execute(
-                tie_sql, (boundary_ts,)).fetchall()
+                tie_sql, (boundary_ts, *sorted(excluded_sources))).fetchall()
                 if (r["video_id"], r["lang"], r["source"]) not in seen]
             rows.extend(extra)
         elif boundary_total > TIE_COMPLETION_MAX:

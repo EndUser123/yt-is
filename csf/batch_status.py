@@ -212,9 +212,11 @@ class _BatchStatusStorage:
     def _ensure_table(self) -> None:
         """Create analysis_status and channel_metadata tables, migrate columns if needed."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(self._db_path, timeout=30.0)
+        # Arm the timeout before WAL acquisition; switching journal mode can
+        # itself wait on a writer lock.
+        conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS analysis_status (
@@ -743,11 +745,15 @@ class _BatchStatusStorage:
         """Get a connection to the batch status DB."""
         if read_only:
             uri = f"file:{self._db_path.resolve().as_posix()}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True)
+            conn = sqlite3.connect(uri, uri=True, timeout=30.0)
         else:
-            conn = sqlite3.connect(self._db_path)
+            conn = sqlite3.connect(self._db_path, timeout=30.0)
+            # WAL acquisition can block on another writer; the timeout must
+            # be armed before that pragma executes.
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        if read_only:
+            conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
     @contextmanager
@@ -3025,15 +3031,16 @@ def run_v2_cross_db_backfill(
             "Set YTIS_TRANSCRIPTS_DB to the correct path."
         )
 
-    conn = sqlite3.connect(str(batch_db_path))
+    conn = sqlite3.connect(str(batch_db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
 
     counts: dict[str, int] = {}
     try:
         # Attach the transcripts DB
         conn.execute(
-            f"ATTACH DATABASE '{transcripts_db_path}' AS cache_db"
+            "ATTACH DATABASE ? AS cache_db",
+            (str(Path(transcripts_db_path)),),
         )
 
         # Schema validation: verify transcript_cache table exists
