@@ -964,8 +964,36 @@ def _implementation_source_hash() -> str:
     return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
+def _hashable_grounded_source(value):
+    """Project grounded-source objects into deterministic JSON data."""
+    if isinstance(value, GroundedSourceArtifact):
+        return value.to_dict()
+    if isinstance(value, dict):
+        return {str(key): _hashable_grounded_source(item)
+                for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_hashable_grounded_source(item) for item in value]
+    return value
+
+
+def _batch_input_hash(batch_clusters, grounded_sources_by_cluster=None) -> str:
+    """Hash the exact hydrated prompt inputs used by one provider batch."""
+    projected = []
+    for cluster in batch_clusters:
+        item = _hashable_grounded_source(dict(cluster))
+        sources = []
+        if grounded_sources_by_cluster:
+            sources.extend(grounded_sources_by_cluster.get(
+                int(cluster["cluster_id"]), ()))
+        sources.extend(cluster.get("grounded_sources", ()))
+        item["grounded_sources"] = _hashable_grounded_source(sources)
+        projected.append(item)
+    return canonical_result_hash(projected)
+
+
 def _load_resumable_batch(resume_dir: Path, plan_id: str, batch,
                           batch_index: int, source_hash: str,
+                          input_hash: str,
                           provider: str | None = None):
     """Load one cached validated batch, or return ``None`` if absent.
 
@@ -998,7 +1026,9 @@ def _load_resumable_batch(resume_dir: Path, plan_id: str, batch,
             or meta.get("batch_id") != batch.batch_id
             or metadata.get("batch_id") != batch.batch_id
             or meta.get("cluster_ids") != expected_ids
-            or metadata.get("cluster_ids") != expected_ids):
+            or metadata.get("cluster_ids") != expected_ids
+            or meta.get("input_hash") != input_hash
+            or metadata.get("input_hash") != input_hash):
         raise ValueError(
             f"resume batch {batch.batch_id} identity does not match current plan")
     if meta.get("implementation_source_hash") != source_hash:
@@ -1091,6 +1121,8 @@ def run_batch_inference(plan_id, batch, batch_clusters, provider="codex",
         "result_hash": canonical_result_hash(parsed),
         "reference_hygiene_receipts": reference_hygiene_receipts,
         "implementation_source_hash": _implementation_source_hash(),
+        "input_hash": _batch_input_hash(
+            batch_clusters, grounded_sources_by_cluster),
     }
     return fragments, meta
 
@@ -1538,14 +1570,17 @@ def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
     source_hash = _implementation_source_hash()
     try:
         for i, batch in enumerate(plan.batches, 1):
+            packets = hydrate_fn(list(batch.cluster_ids))
+            input_hash = _batch_input_hash(
+                packets, grounded_sources_by_cluster)
             cached = (_load_resumable_batch(
-                resume_dir, plan.plan_id, batch, i, source_hash, provider)
+                resume_dir, plan.plan_id, batch, i, source_hash, input_hash,
+                provider)
                       if resume_dir is not None else None)
             if cached is not None:
                 fragments, meta = cached
                 reused_batches.append(batch.batch_id)
             else:
-                packets = hydrate_fn(list(batch.cluster_ids))
                 fragments, meta = run_batch_inference(
                     plan.plan_id, batch, packets, provider=provider,
                     timeout=timeout,
@@ -1557,7 +1592,8 @@ def run_bootstrap(provider="codex", allow_spend=False, artifact_root=None,
             _write_json(run_dir / f"batch-{i:02d}-input-metadata.json", {
                 "plan_id": plan.plan_id,
                 "batch_id": batch.batch_id,
-                "cluster_ids": list(batch.cluster_ids)})
+                "cluster_ids": list(batch.cluster_ids),
+                "input_hash": input_hash})
             _write_json(run_dir / f"batch-{i:02d}-validated-result.json",
                         {"meta": meta, "fragments": fragments})
             all_fragments["interests"].extend(fragments["interests"])

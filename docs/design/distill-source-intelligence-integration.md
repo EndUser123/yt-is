@@ -98,6 +98,11 @@ with the plan ID, run artifact directory, and grounded source IDs/hashes. This
 joins a stored semantic run back to its exact execution artifacts while the
 deduplicated graph edges remain graph-level relationships.
 
+Resumable provider batches also bind both metadata files to a deterministic hash
+of the exact hydrated cluster inputs and grounded-source lineage. The runner
+rehydrates current inputs before reusing a cached batch, while still avoiding a
+provider call for a matching artifact; any input drift fails closed.
+
 YouTube routing requires a supported YouTube host and a URL video ID matching
 the requested video ID. Each CLI analysis publishes an immutable run artifact
 under `analyses/runs/{video_id}/{run_id}.json` using atomic replacement. The

@@ -93,6 +93,10 @@ offline-verification, and test-isolation pass
   live/retained-artifact skips and 12 dependency warnings. The run also
   exercises the DA-03 media fixture and the health watcher after the test
   isolation and scoped-check repairs.
+- [verified-offline] Resumable semantic batches now bind cache reuse to the
+  exact hydrated cluster inputs and grounded-source lineage. The runner
+  rehydrates before reuse and rejects input-hash drift, closing the previously
+  unverified gap between plan identity and the full provider prompt.
 - [verified-offline] The structural readiness check reports `READY` and the
   canonical `/distill-source` marker check reports `READY`, but the semantic
   evaluator freeze is currently `INVALID` because its receipt still binds

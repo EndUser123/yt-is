@@ -954,10 +954,15 @@ def test_resumable_batch_requires_exact_identity_and_revalidates(tmp_path):
         "cluster_ids": list(batch.cluster_ids),
         "result_hash": big.canonical_result_hash(payload),
         "implementation_source_hash": big._implementation_source_hash(),
+        "input_hash": big._batch_input_hash(
+            [synth_packet(c["cluster_id"])
+             for c in inventory_of(n=30)["clusters"]
+             if c["cluster_id"] in batch.cluster_ids]),
     }
     (tmp_path / "batch-01-input-metadata.json").write_text(
         json.dumps({"plan_id": plan.plan_id, "batch_id": batch.batch_id,
-                    "cluster_ids": list(batch.cluster_ids)}),
+                    "cluster_ids": list(batch.cluster_ids),
+                    "input_hash": meta["input_hash"]}),
         encoding="utf-8")
     (tmp_path / "batch-01-validated-result.json").write_text(
         json.dumps({"meta": meta, "fragments": fragments}),
@@ -965,9 +970,19 @@ def test_resumable_batch_requires_exact_identity_and_revalidates(tmp_path):
 
     loaded, loaded_meta = big._load_resumable_batch(
         tmp_path, plan.plan_id, batch, 1, big._implementation_source_hash(),
-        "fake")
+        meta["input_hash"], "fake")
     assert loaded == fragments
     assert loaded_meta == meta
+
+    changed = [synth_packet(c["cluster_id"])
+               for c in inventory_of(n=30)["clusters"]
+               if c["cluster_id"] in batch.cluster_ids]
+    changed[0] = dict(changed[0], label="changed prompt label")
+    with pytest.raises(ValueError, match="identity does not match"):
+        big._load_resumable_batch(
+            tmp_path, plan.plan_id, batch, 1,
+            big._implementation_source_hash(),
+            big._batch_input_hash(changed), "fake")
 
     meta["result_hash"] = "0" * 64
     (tmp_path / "batch-01-validated-result.json").write_text(
@@ -976,7 +991,7 @@ def test_resumable_batch_requires_exact_identity_and_revalidates(tmp_path):
     with pytest.raises(ValueError, match="result hash mismatch"):
         big._load_resumable_batch(
             tmp_path, plan.plan_id, batch, 1, big._implementation_source_hash(),
-            "fake")
+            meta["input_hash"], "fake")
 
 
 def test_run_bootstrap_persists_grounded_source_lineage(
