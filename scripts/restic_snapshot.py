@@ -31,26 +31,20 @@ PASSWORD_FILE = "G:/backups/restic-fleet-password"
 LOG_DIR = Path("P:/.data/logs/restic")
 FORGET_MARKER = LOG_DIR / "last-forget"
 
-BACKUP_PATHS = [
+# Tiered for graceful degradation (FMEA 2026-09-18): on a below-floor tick,
+# SHEDDABLE_PATHS are dropped (largest / least-irreplaceable first) and only
+# CRITICAL_PATHS back up, tagged `degraded`. Normal ticks (free >= floor)
+# back up CRITICAL + SHEDDABLE exactly as before — BACKUP_PATHS keeps its
+# full-run meaning.
+CRITICAL_PATHS = [
     "P:/.agents",
     "P:/.data/wiki",
     "P:/.data/yt-is/alerts",
     "P:/.data/yt-is/unattended-backlog",
     "P:/.data/telemetry",
     "P:/.data/info-harness",
-    # 2026-08-29 sweep-incident coverage gap: uncommitted receipts under
-    # these subroots had NO recovery path when a concurrent session's git
-    # sweep deleted them (incident note .data/model-fitness/receipts/
-    # summary.md L87+). Restic is the uncommitted-state recovery layer.
-    "P:/.data/benchmarks",
-    "P:/.data/model-fitness",
-    "P:/.data/model-discovery",
-    # harness worktrees: iteration-5 casualty 2026-08-26 had zero snapshot
-    # coverage; 681MB first-pass, deduped thereafter
-    "P:/packages/yt-is/.worktrees",
-    # object stores (1.6GB + 130MB measured 2026-08-26): covers ALL
-    # unlanded commits reachable from branch refs — the 217-commit
-    # unlanded class had zero recovery path before this
+    # object stores: covers ALL unlanded commits reachable from branch
+    # refs — the 217-commit unlanded class had zero recovery path before
     "P:/.git",
     "P:/packages/yt-is/.git",
     # session close-chain receipts (authority.json, closed.json,
@@ -59,6 +53,24 @@ BACKUP_PATHS = [
     # compresses well under zstd)
     "P:/.data/sessions",
 ]
+SHEDDABLE_PATHS = [
+    # yt-is worktrees: redundant under the lane-dirt layer (uncommitted
+    # dirt covered there; committed work recoverable from yt-is .git refs)
+    "P:/packages/yt-is/.worktrees",
+    # 2026-08-29 sweep-incident coverage gap: uncommitted receipts under
+    # these subroots had NO recovery path when a concurrent session's git
+    # sweep deleted them (incident note .data/model-fitness/receipts/
+    # summary.md L87+). Restic is the uncommitted-state recovery layer.
+    # Shed-first under capacity pressure: largest, slowest-changing.
+    "P:/.data/benchmarks",
+    "P:/.data/model-discovery",
+    "P:/.data/model-fitness",
+]
+BACKUP_PATHS = CRITICAL_PATHS + SHEDDABLE_PATHS
+
+# Below this, restic cannot write safely at all — absolute last resort
+# (the 60GB operator floor degrades to critical-only before this trips).
+MIN_FLOOR_BYTES = 1 * 2**30
 
 # --- Lane-dirt layer (2026-09-18) -------------------------------------
 # Covers the died-mid-turn class: uncommitted dirt in lane worktrees of
@@ -151,6 +163,25 @@ def log(message: str) -> None:
         fh.write(message + "\n")
 
 
+def plan_backup_run(free_bytes: int, floor_bytes: int):
+    """Decide this tick's backup set (graceful degradation, FMEA 2026-09-18).
+
+    Returns (paths, shed_paths, skip):
+      free >= floor:  (CRITICAL + SHEDDABLE, [], False)  — normal run
+      MIN_FLOOR..floor: (CRITICAL, SHEDDABLE, False)     — degraded run
+          (caller runs emergency retention first, tags degraded)
+      free < MIN_FLOOR: ([], [], True)                   — skip everything
+
+    Pure function: no I/O, deterministic, the test surface for the
+    degradation semantics.
+    """
+    if free_bytes >= floor_bytes:
+        return list(BACKUP_PATHS), [], False
+    if free_bytes >= MIN_FLOOR_BYTES:
+        return list(CRITICAL_PATHS), list(SHEDDABLE_PATHS), False
+    return [], [], True
+
+
 def main() -> int:
     if not Path(REPO).is_dir():
         log(f"[{datetime.now().isoformat()}] ERROR: repo {REPO} not found - G: offline?")
@@ -160,25 +191,65 @@ def main() -> int:
         return 1
 
     # Pre-run space check (watcher alert 2026-08-26: G: at 78GB free, a
-    # restic run can fail mid-write once the ~31GB repo + working set
-    # outgrow headroom). Abort BEFORE starting instead of failing mid-write.
+    # restic run can fail mid-write once the repo + working set outgrow
+    # headroom). Graceful degradation (FMEA 2026-09-18): below the operator
+    # floor, run emergency retention first, re-measure, then back up the
+    # CRITICAL tier only (tag=degraded) instead of skipping everything.
     import shutil as _shutil
     _repo_vol = Path(REPO).anchor or "G:/"
     _free = _shutil.disk_usage(_repo_vol).free
-    if _free < 60 * 2**30:
-        log(f"[{datetime.now().isoformat()}] SKIP: {_repo_vol} only "
-            f"{_free / 2**30:.0f}GB free (<60GB floor) - freeing space is "
-            f"the operator call; retry next tick")
-        return 1
+    backup_paths, shed_paths, skip = plan_backup_run(_free, 60 * 2**30)
 
     env = dict(os.environ)
     env["RESTIC_REPOSITORY"] = REPO
     env["RESTIC_PASSWORD_FILE"] = PASSWORD_FILE
 
+    if skip:
+        log(f"[{datetime.now().isoformat()}] SKIP: {_repo_vol} only "
+            f"{_free / 2**30:.2f}GB free (<1GB hard floor) - freeing space "
+            f"is the operator call; retry next tick")
+        return 1
+
+    if shed_paths:
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log(f"[{stamp}] DEGRADED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
+            f"free {_free / 2**30:.2f}GB < 60GB floor - emergency retention, "
+            f"shed {len(shed_paths)} sheddable paths, critical tier only "
+            f"(tag=degraded); capacity call is the operator's")
+        # Emergency retention: force past the daily gate — this prune may
+        # reclaim enough to restore headroom, and skipping it here wastes
+        # the one reclaim lever restic owns. Marker written on success so
+        # the normal daily block does not re-run it.
+        try:
+            ret = subprocess.run(
+                [str(RESTIC), "forget", "--keep-within", "24h",
+                 "--keep-daily", "7", "--keep-weekly", "4", "--prune"],
+                capture_output=True, text=True, timeout=300, env=env,
+                creationflags=NO_WINDOW,
+            )
+            log(f"[{stamp}] emergency retention rc={ret.returncode}")
+            if ret.returncode == 0:
+                FORGET_MARKER.write_text(datetime.now(timezone.utc).isoformat())
+            elif ret.stderr:
+                log(f"  stderr: {ret.stderr[:300]}")
+        except subprocess.TimeoutExpired:
+            log(f"[{stamp}] ERROR: emergency retention timed out (continuing degraded)")
+        except OSError as exc:
+            log(f"[{stamp}] ERROR: emergency retention failed: {exc!r}")
+        _free = _shutil.disk_usage(_repo_vol).free
+        if _free < MIN_FLOOR_BYTES:
+            log(f"[{stamp}] SKIP: {_free / 2**30:.2f}GB free even after "
+                f"retention + shedding (<1GB hard floor)")
+            return 1
+
     t0 = time.time()
     try:
+        cmd = [str(RESTIC), "backup"] + backup_paths + ["--tag", "scheduled"]
+        if shed_paths:
+            cmd.append("--tag")
+            cmd.append("degraded")
         proc = subprocess.run(
-            [str(RESTIC), "backup"] + BACKUP_PATHS + ["--tag", "scheduled"],
+            cmd,
             capture_output=True, text=True, timeout=540, env=env,
             creationflags=NO_WINDOW,
         )
@@ -188,7 +259,8 @@ def main() -> int:
         return 1
     elapsed = time.time() - t0
     log(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] rc={proc.returncode} "
-        f"elapsed={elapsed:.1f}s")
+        f"elapsed={elapsed:.1f}s paths={len(backup_paths)} "
+        f"degraded={'yes' if shed_paths else 'no'}")
     if proc.returncode != 0 and proc.stderr:
         log(f"  stderr: {proc.stderr[:300]}")
 
