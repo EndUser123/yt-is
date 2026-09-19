@@ -341,18 +341,40 @@ def assign_new_chunks(conn: sqlite3.Connection, client: QdrantClient) -> dict:
         np.frombuffer(r[1], dtype=np.float32) for r in rows
     ])
 
-    # Find chunks without assignments
-    unassigned = conn.execute(
-        """SELECT chunk_id, point_id, video_id FROM chunks
-           WHERE chunk_id NOT IN (SELECT chunk_id FROM chunk_clusters)
-           LIMIT 10000"""
-    ).fetchall()
+    # Unassigned-chunk source (schema fix, 2026-09-19): Qdrant payloads
+    # are the point of truth for point_id/video_id — the catalog's chunk
+    # table carries neither (chunk_id + eu_id only), and the original
+    # query against a nonexistent `chunks` table raised OperationalError
+    # on every invocation: the incremental path never worked, so only
+    # full recluster runs ever wrote assignments (the starvation audit's
+    # deeper root cause).
+    assigned_set = {
+        r[0] for r in conn.execute("SELECT chunk_id FROM chunk_clusters").fetchall()
+    }
+    unassigned = []
+    offset = None
+    while True:
+        pts, offset = client.scroll(
+            collection_name=COLLECTION, limit=256, offset=offset,
+            with_payload=True, with_vectors=False,
+        )
+        for p in pts:
+            cid = str((p.payload or {}).get("chunk_id", "") or "")
+            if cid and cid not in assigned_set:
+                unassigned.append((
+                    cid,
+                    p.id,  # native id type for retrieve (Qdrant rejects
+                           # stringified integers; only UUIDs may be str)
+                    str((p.payload or {}).get("video_id", "") or ""),
+                ))
+        if offset is None:
+            break
     if not unassigned:
         return {"action": "skip", "reason": "no_new_chunks"}
 
-    # Fetch their vectors from Qdrant (point_ids stored as text in SQLite,
-    # Qdrant accepts int or str IDs on retrieval)
-    point_ids = [int(r[1]) for r in unassigned if r[1]]
+    # Fetch their vectors from Qdrant (point_ids kept as text — the full
+    # path stores them as text and Qdrant accepts str IDs on retrieval)
+    point_ids = [r[1] for r in unassigned]
     if not point_ids:
         return {"action": "skip", "reason": "no_point_ids"}
 
@@ -384,13 +406,15 @@ def assign_new_chunks(conn: sqlite3.Connection, client: QdrantClient) -> dict:
 
         for j, p in enumerate(batch_points):
             if best_sim[j] > 0.3:
-                matching = next((r for r in unassigned if r[1] == p.id), None)
+                matching = next(
+                    (r for r in unassigned if str(r[1]) == str(p.id)), None
+                )
                 if matching:
                     conn.execute(
                         "INSERT OR REPLACE INTO chunk_clusters "
                         "(chunk_id, point_id, video_id, cluster_id, assigned_at) "
                         "VALUES (?, ?, ?, ?, ?)",
-                        (matching[0], matching[1], matching[2], cluster_ids[best[j]], now),
+                        (matching[0], str(matching[1]), matching[2], cluster_ids[best[j]], now),
                     )
                     assigned += 1
 
