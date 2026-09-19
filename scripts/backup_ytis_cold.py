@@ -33,7 +33,10 @@ WIKI_DEST = BACKUP_ROOT / "wiki" / "concepts"
 
 PATTERNS = ["batch-status-*.sqlite", "transcripts-*.sqlite"]
 COPY_NEWEST = 3  # per pattern, per run
-KEEP_DEST = 7  # per pattern, at destination
+# 2026-09-18: 7 -> 3 per operator ratification (G: at 100%; recovery points
+# older than 3 days never needed on record; transcripts/batch DBs are full
+# copies with heavy duplication across days). Decision: session 2026-09-18.
+KEEP_DEST = 3  # per pattern, at destination
 
 
 def _newest(pattern: str, n: int) -> list[Path]:

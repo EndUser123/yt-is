@@ -17,7 +17,7 @@ if ($existing) {
 }
 
 $chain = @"
-import subprocess, sys, shutil
+import subprocess, sys
 from pathlib import Path
 
 for script in [r"$Root\bin\csf-backup-channel-state", r"$Root\bin\csf-backup-transcripts"]:
@@ -27,23 +27,21 @@ for script in [r"$Root\bin\csf-backup-channel-state", r"$Root\bin\csf-backup-tra
     except Exception as exc:
         print(f"backup failed: {script}: {exc}")
 
-# Off-site copy (C: drive -- survives P: drive failure)
-offsite = Path(r"C:\Users\brsth\.ytis-state-backup")
-offsite.mkdir(exist_ok=True)
+# Off-site tier: G: USB drive (configured by scripts/backup_ytis_cold.py at 03:35).
+# No C: copy here -- operator directive: never copy to C: without explicit permission.
+# The YtisColdBackup scheduled task (03:35) handles the G: tier of the backup ladder.
+
+# Retention: keep last 3 .sqlite on P: per pattern; older snapshots are redundant
+# once YtisColdBackup (03:35) has mirrored the newest 3 to G: (KEEP_DEST=3 there;
+# 7 -> 3 on both tiers 2026-09-18, operator-ratified, G: at 100%).
 src = Path(r"P:\.data\yt-is\backups")
 for pattern in ["batch-status-*.sqlite", "transcripts-*.sqlite"]:
-    files = sorted(src.glob(pattern), key=lambda f: f.stat().st_mtime, reverse=True)[:2]
-    for f in files:
-        dest = offsite / f.name
-        if not dest.exists():
-            shutil.copy2(f, dest)
-            print(f"off-site: {f.name}")
-
-# Retention: keep last 30 on P:, prune older
-all_files = sorted(src.glob("*.sqlite"), key=lambda f: f.stat().st_mtime, reverse=True)
-for old_file in all_files[30:]:
-    old_file.unlink()
-    print(f"pruned: {old_file.name}")
+    keep = sorted(src.glob(pattern), key=lambda f: f.stat().st_mtime, reverse=True)[:3]
+    keep_names = {f.name for f in keep}
+    for old_file in src.glob(pattern):
+        if old_file.name not in keep_names:
+            old_file.unlink()
+            print(f"pruned: {old_file.name}")
 "@
 
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($chain))
