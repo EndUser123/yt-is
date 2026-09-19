@@ -27,9 +27,12 @@ for script in [r"$Root\bin\csf-backup-channel-state", r"$Root\bin\csf-backup-tra
     except Exception as exc:
         print(f"backup failed: {script}: {exc}")
 
-# Off-site tier: G: USB drive (configured by scripts/backup_ytis_cold.py at 03:35).
+# Off-site tier (M4 2026-09-18, backup-fabric): the consistent copies this
+# task stages in P:\.data\yt-is\backups are now a restic CRITICAL_PATH —
+# restic owns transport + retention + (pending offsite target) off-site
+# delivery. The former G: cold tier (YtisColdBackup task +
+# backup_ytis_cold.py) was retired 2026-09-18.
 # No C: copy here -- operator directive: never copy to C: without explicit permission.
-# The YtisColdBackup scheduled task (03:35) handles the G: tier of the backup ladder.
 
 # Retention: keep last 3 .sqlite on P: per pattern; older snapshots are redundant
 # once YtisColdBackup (03:35) has mirrored the newest 3 to G: (KEEP_DEST=3 there;
