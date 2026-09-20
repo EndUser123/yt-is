@@ -28,7 +28,6 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 from qdrant_client import QdrantClient
