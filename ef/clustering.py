@@ -53,6 +53,31 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Live-progress channels: the launcher captures stdout until exit, so a
+# running recluster is otherwise invisible. The heartbeat log is tail-able
+# (`Get-Content logs/recluster-heartbeat.log -Wait`) and the JSON state is
+# machine-readable for status surfaces.
+HB_LOG = Path(__file__).resolve().parents[1] / "logs" / "recluster-heartbeat.log"
+HB_STATE = EF_DIR / "clustering-progress.json"
+
+
+def _heartbeat(phase: str, done: int | None = None, total: int | None = None) -> None:
+    """Record run progress for live monitoring. Best-effort — never raises."""
+    try:
+        HB_LOG.parent.mkdir(parents=True, exist_ok=True)
+        line = f"{_utcnow()} {phase}"
+        if total:
+            pct = round(100 * (done or 0) / total, 1)
+            line += f" {done or 0}/{total} ({pct}%)"
+        with HB_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        HB_STATE.write_text(json.dumps(
+            {"phase": phase, "done": done, "total": total, "ts": _utcnow()},
+        ), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _connect_catalog() -> sqlite3.Connection:
     conn = sqlite3.connect(str(CATALOG_DB), timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -122,6 +147,7 @@ def fetch_dense_vectors(client: QdrantClient) -> tuple[np.ndarray, list[dict]]:
         if offset is None:
             break
         print(f"  fetched {len(all_ids):,} points...", flush=True)
+        _heartbeat("fetch", done=len(all_ids))
 
     return np.array(all_vecs, dtype=np.float32), all_payloads
 
@@ -152,6 +178,7 @@ def run_clustering(vectors: np.ndarray) -> np.ndarray:
     # UMAP dimensionality reduction — the key fix for high-dim embeddings
     print(f"  UMAP: {sample_vecs.shape[1]}d → {UMAP_N_COMPONENTS}d "
           f"(n_neighbors={UMAP_N_NEIGHBORS}, min_dist={UMAP_MIN_DIST})...", flush=True)
+    _heartbeat("umap_fit", total=len(sample_vecs))
     reducer = umap.UMAP(
         n_components=UMAP_N_COMPONENTS,
         n_neighbors=UMAP_N_NEIGHBORS,
@@ -165,6 +192,7 @@ def run_clustering(vectors: np.ndarray) -> np.ndarray:
 
     # HDBSCAN on the reduced space
     print(f"  HDBSCAN on {len(sample_reduced):,} reduced vectors...", flush=True)
+    _heartbeat("hdbscan", total=len(sample_reduced))
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=MIN_CLUSTER_SIZE,
         min_samples=MIN_SAMPLES,
@@ -187,9 +215,17 @@ def run_clustering(vectors: np.ndarray) -> np.ndarray:
         for lbl in unique_labels
     ])
 
-    # Transform ALL vectors through the fitted UMAP model
+    # Transform ALL vectors through the fitted UMAP model — batched so the
+    # multi-hour pass reports live progress (per-point results are
+    # independent of batch composition given the fitted model).
     print(f"  transforming all {n:,} vectors through UMAP...", flush=True)
-    all_reduced = reducer.transform(normalized)
+    _heartbeat("umap_transform", done=0, total=n)
+    transform_batch = 25_000
+    all_reduced = np.empty((n, UMAP_N_COMPONENTS), dtype=np.float32)
+    for t_start in range(0, n, transform_batch):
+        t_end = min(t_start + transform_batch, n)
+        all_reduced[t_start:t_end] = reducer.transform(normalized[t_start:t_end])
+        _heartbeat("umap_transform", done=t_end, total=n)
 
     # Assign all points to nearest centroid in reduced space
     from sklearn.metrics import pairwise_distances
@@ -217,6 +253,7 @@ def run_clustering(vectors: np.ndarray) -> np.ndarray:
     n_noise = int((labels == -1).sum())
     print(f"  result: {n_clusters} clusters, {n_noise:,} noise points "
           f"({100 * n_noise / n:.1f}%)", flush=True)
+    _heartbeat("clusters_found", done=n_clusters)
     return labels
 
 
@@ -499,6 +536,7 @@ def main(argv: list[str] | None = None) -> int:
     # Full recluster
     print("=== Topic Clustering ===")
     print(f"started: {_utcnow()}")
+    _heartbeat("started")
 
     conn = _connect_catalog()
     _ensure_cluster_tables(conn)
@@ -534,6 +572,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(json.dumps(result, indent=1))
     print(f"\nreceipt: {receipt_path}")
+    _heartbeat("complete", done=result.get("n_clusters") or result.get("clusters", 0))
     return 0
 
 
