@@ -1,0 +1,436 @@
+{
+  "generated_utc": "2026-08-27T23:55:52Z",
+  "cohorts": {
+    "positives_scorable": 42,
+    "positives_missing_T": 0,
+    "negatives_paired_scorable": 124
+  },
+  "aggregate": {
+    "armA": {
+      "positive_candidate_recall": {
+        "rate": 1.0,
+        "lo": 0.9162,
+        "hi": 1.0,
+        "k": 42,
+        "n": 42
+      },
+      "positive_emerging_recall": {
+        "rate": 0.8571,
+        "lo": 0.7216,
+        "hi": 0.9328,
+        "k": 36,
+        "n": 42
+      },
+      "negative_candidate_rate": {
+        "rate": 0.7984,
+        "lo": 0.7193,
+        "hi": 0.8595,
+        "k": 99,
+        "n": 124
+      },
+      "negative_emerging_rate": {
+        "rate": 0.6048,
+        "lo": 0.5169,
+        "hi": 0.6865,
+        "k": 75,
+        "n": 124
+      },
+      "separation": 0.2523
+    },
+    "counts": {},
+    "armB_EU1-W30": {
+      "positive_rate": {
+        "rate": 0.7381,
+        "lo": 0.5893,
+        "hi": 0.847,
+        "k": 31,
+        "n": 42
+      },
+      "negative_rate": {
+        "rate": 0.5081,
+        "lo": 0.4212,
+        "hi": 0.5945,
+        "k": 63,
+        "n": 124
+      },
+      "separation": 0.23,
+      "median_confirmation_delay_days": 134
+    },
+    "armB_EU2-W60": {
+      "positive_rate": {
+        "rate": 0.5952,
+        "lo": 0.4449,
+        "hi": 0.7296,
+        "k": 25,
+        "n": 42
+      },
+      "negative_rate": {
+        "rate": 0.3548,
+        "lo": 0.2761,
+        "hi": 0.4423,
+        "k": 44,
+        "n": 124
+      },
+      "separation": 0.2404,
+      "median_confirmation_delay_days": 155
+    },
+    "armB_BUCKETS-W120": {
+      "positive_rate": {
+        "rate": 0.5714,
+        "lo": 0.4221,
+        "hi": 0.7088,
+        "k": 24,
+        "n": 42
+      },
+      "negative_rate": {
+        "rate": 0.4113,
+        "lo": 0.3286,
+        "hi": 0.4993,
+        "k": 51,
+        "n": 124
+      },
+      "separation": 0.1601,
+      "median_confirmation_delay_days": 112.0
+    },
+    "armB_POSTERIOR-EXCL-W30": {
+      "positive_rate": {
+        "rate": 0.0714,
+        "lo": 0.0246,
+        "hi": 0.1901,
+        "k": 3,
+        "n": 42
+      },
+      "negative_rate": {
+        "rate": 0.121,
+        "lo": 0.0747,
+        "hi": 0.19,
+        "k": 15,
+        "n": 124
+      },
+      "separation": -0.0495,
+      "median_confirmation_delay_days": 1358
+    },
+    "armB_CHANNELNEW-W30": {
+      "positive_rate": {
+        "rate": 0.4286,
+        "lo": 0.2912,
+        "hi": 0.5779,
+        "k": 18,
+        "n": 42
+      },
+      "negative_rate": {
+        "rate": 0.3226,
+        "lo": 0.2467,
+        "hi": 0.4091,
+        "k": 40,
+        "n": 124
+      },
+      "separation": 0.106,
+      "median_confirmation_delay_days": 115.5
+    },
+    "armC": {
+      "positive_rate": {
+        "rate": 0.7381,
+        "lo": 0.5893,
+        "hi": 0.847,
+        "k": 31,
+        "n": 42
+      },
+      "negative_rate": {
+        "rate": 0.5081,
+        "lo": 0.4212,
+        "hi": 0.5945,
+        "k": 63,
+        "n": 124
+      },
+      "separation": 0.23,
+      "median_confirmation_delay_days": 134
+    },
+    "armD": {
+      "positive_rate": {
+        "rate": 0.3571,
+        "lo": 0.2299,
+        "hi": 0.5083,
+        "k": 15,
+        "n": 42
+      },
+      "negative_rate": {
+        "rate": 0.0968,
+        "lo": 0.0562,
+        "hi": 0.1616,
+        "k": 12,
+        "n": 124
+      },
+      "separation": 0.2604,
+      "median_confirmation_delay_days": 30
+    }
+  },
+  "counts_positive_episodes": {
+    "episodes_opened": 42,
+    "episodes_confirmed": 31,
+    "expired_unconfirmed": 11
+  },
+  "stability_leave_one_out": {
+    "armB_EU1-W30": {
+      "n_pos": 42,
+      "n_neg": 124,
+      "k_pos": 31,
+      "k_neg": 63,
+      "loo_negative_rate_range": [
+        0.5041,
+        0.5122
+      ],
+      "loo_positive_rate_range": [
+        0.7317,
+        0.7561
+      ],
+      "empirical_note": "single-subject removal shifts rates within the LOO ranges; argmax-contribution drops are marginal-identical for a boolean cohort metric, so the analytic range IS the leave-one-out envelope"
+    },
+    "armB_EU2-W60": {
+      "n_pos": 42,
+      "n_neg": 124,
+      "k_pos": 25,
+      "k_neg": 44,
+      "loo_negative_rate_range": [
+        0.3496,
+        0.3577
+      ],
+      "loo_positive_rate_range": [
+        0.5854,
+        0.6098
+      ],
+      "empirical_note": "single-subject removal shifts rates within the LOO ranges; argmax-contribution drops are marginal-identical for a boolean cohort metric, so the analytic range IS the leave-one-out envelope"
+    },
+    "armB_BUCKETS-W120": {
+      "n_pos": 42,
+      "n_neg": 124,
+      "k_pos": 24,
+      "k_neg": 51,
+      "loo_negative_rate_range": [
+        0.4065,
+        0.4146
+      ],
+      "loo_positive_rate_range": [
+        0.561,
+        0.5854
+      ],
+      "empirical_note": "single-subject removal shifts rates within the LOO ranges; argmax-contribution drops are marginal-identical for a boolean cohort metric, so the analytic range IS the leave-one-out envelope"
+    },
+    "armB_POSTERIOR-EXCL-W30": {
+      "n_pos": 42,
+      "n_neg": 124,
+      "k_pos": 3,
+      "k_neg": 15,
+      "loo_negative_rate_range": [
+        0.1138,
+        0.122
+      ],
+      "loo_positive_rate_range": [
+        0.0488,
+        0.0732
+      ],
+      "empirical_note": "single-subject removal shifts rates within the LOO ranges; argmax-contribution drops are marginal-identical for a boolean cohort metric, so the analytic range IS the leave-one-out envelope"
+    },
+    "armB_CHANNELNEW-W30": {
+      "n_pos": 42,
+      "n_neg": 124,
+      "k_pos": 18,
+      "k_neg": 40,
+      "loo_negative_rate_range": [
+        0.3171,
+        0.3252
+      ],
+      "loo_positive_rate_range": [
+        0.4146,
+        0.439
+      ],
+      "empirical_note": "single-subject removal shifts rates within the LOO ranges; argmax-contribution drops are marginal-identical for a boolean cohort metric, so the analytic range IS the leave-one-out envelope"
+    },
+    "armC": {
+      "n_pos": 42,
+      "n_neg": 124,
+      "k_pos": 31,
+      "k_neg": 63,
+      "loo_negative_rate_range": [
+        0.5041,
+        0.5122
+      ],
+      "loo_positive_rate_range": [
+        0.7317,
+        0.7561
+      ],
+      "empirical_note": "single-subject removal shifts rates within the LOO ranges; argmax-contribution drops are marginal-identical for a boolean cohort metric, so the analytic range IS the leave-one-out envelope"
+    },
+    "armD": {
+      "n_pos": 42,
+      "n_neg": 124,
+      "k_pos": 15,
+      "k_neg": 12,
+      "loo_negative_rate_range": [
+        0.0894,
+        0.0976
+      ],
+      "loo_positive_rate_range": [
+        0.3415,
+        0.3659
+      ],
+      "empirical_note": "single-subject removal shifts rates within the LOO ranges; argmax-contribution drops are marginal-identical for a boolean cohort metric, so the analytic range IS the leave-one-out envelope"
+    }
+  },
+  "perturbation": {
+    "perturbation10": {
+      "armA_candidate_retained": {
+        "unperturbed_true": 21,
+        "retained": 18,
+        "ratio": 0.8571
+      },
+      "armA_emerging_retained": {
+        "unperturbed_true": 35,
+        "retained": 34,
+        "ratio": 0.9714
+      },
+      "armB_EU1-W30_confirmed_retained": {
+        "unperturbed_true": 28,
+        "retained": 25,
+        "ratio": 0.8929
+      },
+      "armB_EU2-W60_confirmed_retained": {
+        "unperturbed_true": 19,
+        "retained": 17,
+        "ratio": 0.8947
+      },
+      "armB_BUCKETS-W120_confirmed_retained": {
+        "unperturbed_true": 15,
+        "retained": 13,
+        "ratio": 0.8667
+      },
+      "armB_POSTERIOR-EXCL-W30_confirmed_retained": {
+        "unperturbed_true": 3,
+        "retained": 3,
+        "ratio": 1.0
+      },
+      "armB_CHANNELNEW-W30_confirmed_retained": {
+        "unperturbed_true": 17,
+        "retained": 16,
+        "ratio": 0.9412
+      },
+      "armC_confirmed_retained": {
+        "unperturbed_true": 28,
+        "retained": 25,
+        "ratio": 0.8929
+      },
+      "armD_confirmed_retained": {
+        "unperturbed_true": 15,
+        "retained": 14,
+        "ratio": 0.9333
+      }
+    },
+    "perturbation20": {
+      "armA_candidate_retained": {
+        "unperturbed_true": 21,
+        "retained": 20,
+        "ratio": 0.9524
+      },
+      "armA_emerging_retained": {
+        "unperturbed_true": 35,
+        "retained": 32,
+        "ratio": 0.9143
+      },
+      "armB_EU1-W30_confirmed_retained": {
+        "unperturbed_true": 28,
+        "retained": 24,
+        "ratio": 0.8571
+      },
+      "armB_EU2-W60_confirmed_retained": {
+        "unperturbed_true": 19,
+        "retained": 17,
+        "ratio": 0.8947
+      },
+      "armB_BUCKETS-W120_confirmed_retained": {
+        "unperturbed_true": 15,
+        "retained": 13,
+        "ratio": 0.8667
+      },
+      "armB_POSTERIOR-EXCL-W30_confirmed_retained": {
+        "unperturbed_true": 3,
+        "retained": 3,
+        "ratio": 1.0
+      },
+      "armB_CHANNELNEW-W30_confirmed_retained": {
+        "unperturbed_true": 17,
+        "retained": 14,
+        "ratio": 0.8235
+      },
+      "armC_confirmed_retained": {
+        "unperturbed_true": 28,
+        "retained": 24,
+        "ratio": 0.8571
+      },
+      "armD_confirmed_retained": {
+        "unperturbed_true": 15,
+        "retained": 13,
+        "ratio": 0.8667
+      }
+    }
+  },
+  "determinism": {
+    "run1_sha256": "0675466c3decccf4b56d28ddb0cf6b1e35c76fcf0eb17be8a686e0bfe4861b12",
+    "run2_sha256": "0675466c3decccf4b56d28ddb0cf6b1e35c76fcf0eb17be8a686e0bfe4861b12",
+    "identical": true
+  },
+  "parity_arm_a": {
+    "enforced": true,
+    "expected_emerging_recall": 0.833333,
+    "got_emerging_recall": 0.8571,
+    "expected_negative_rate": 0.580645,
+    "got_negative_rate": 0.6048,
+    "cohort": {
+      "n_pos": 42,
+      "n_neg": 124
+    },
+    "emerging_recall_match": false,
+    "negative_rate_match": false,
+    "pass_published_reference": false,
+    "current_reference": {
+      "expected_emerging_recall": 0.857143,
+      "match": true,
+      "expected_negative_rate": 0.604839,
+      "match_neg": true,
+      "note": "frozen-evaluator NON_BLIND rerun 2026-08-26T20:28 on current catalog; per-subject equality verified (0 mismatches over 124 negatives)"
+    },
+    "pass_current_reference": true,
+    "drift_enumeration": [
+      [
+        "neg4_b7cde8de123d",
+        "VRAM",
+        "promotes_today_only"
+      ],
+      [
+        "neg4_6d2d89811736",
+        "Google Drive",
+        "promotes_today_only"
+      ],
+      [
+        "neg4_dbae634cb94a",
+        "Margin requirement",
+        "promotes_today_only"
+      ],
+      [
+        "neg4_0631120ee9f2",
+        "Microsoft 365",
+        "promotes_today_only"
+      ],
+      [
+        "neg4_f31ad0c431c0",
+        "Somalia",
+        "promoted_morning_only"
+      ],
+      [
+        "v4_42dc215cdea6",
+        "Claude Code (positive)",
+        "lanes_promote_today_not_morning"
+      ]
+    ],
+    "pass_any": true
+  }
+}
